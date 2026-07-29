@@ -242,12 +242,13 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
       wpts.sort((a, b) => {
         const na = a.querySelector('name')?.textContent?.trim() || '';
         const nb = b.querySelector('name')?.textContent?.trim() || '';
-        const ka = na.match(/^\D*(\d+)([a-z])/);
-        const kb = nb.match(/^\D*(\d+)([a-z])/);
+        // Letter suffix is optional: WRC1a (driving/WalkAbout) and MXR1 (plain walk/hike) both match
+        const ka = na.match(/^\D*(\d+)([a-z]?)/i);
+        const kb = nb.match(/^\D*(\d+)([a-z]?)/i);
         if (ka && kb) {
           const sa = parseInt(ka[1], 10), sb = parseInt(kb[1], 10);
           if (sa !== sb) return sa - sb;
-          return ka[2].charCodeAt(0) - kb[2].charCodeAt(0);
+          return (ka[2] || '').localeCompare(kb[2] || '');
         }
         if (ka) return -1;
         if (kb) return 1;

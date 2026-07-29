@@ -50,6 +50,20 @@ function parseGpxWaypoints(xmlText) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xmlText, 'application/xml');
   const wpts = Array.from(doc.querySelectorAll('wpt'));
+  wpts.sort((a, b) => {
+    const na = a.querySelector('name')?.textContent?.trim() || '';
+    const nb = b.querySelector('name')?.textContent?.trim() || '';
+    const ka = na.match(/^\D*(\d+)([a-z]?)/i);
+    const kb = nb.match(/^\D*(\d+)([a-z]?)/i);
+    if (ka && kb) {
+      const sa = parseInt(ka[1], 10), sb = parseInt(kb[1], 10);
+      if (sa !== sb) return sa - sb;
+      return (ka[2] || '').localeCompare(kb[2] || '');
+    }
+    if (ka) return -1;
+    if (kb) return 1;
+    return 0;
+  });
   return wpts.map(wpt => ({
     lat: parseFloat(wpt.getAttribute('lat')),
     lng: parseFloat(wpt.getAttribute('lon')),
@@ -151,6 +165,22 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving }) 
     e.target.value = '';
   };
 
+  const handleSortByNumber = () => {
+    const sorted = [...waypoints].sort((a, b) => {
+      const ka = (a.name || '').match(/^\D*(\d+)([a-z]?)/i);
+      const kb = (b.name || '').match(/^\D*(\d+)([a-z]?)/i);
+      if (ka && kb) {
+        const sa = parseInt(ka[1], 10), sb = parseInt(kb[1], 10);
+        if (sa !== sb) return sa - sb;
+        return (ka[2] || '').localeCompare(kb[2] || '');
+      }
+      if (ka) return -1;
+      if (kb) return 1;
+      return 0;
+    });
+    onChange(sorted);
+  };
+
   return (
     <div className="space-y-5">
       <div>
@@ -165,12 +195,22 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving }) 
       </div>
 
       {/* GPX Import */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <label className="flex items-center gap-2 cursor-pointer bg-blue-700/30 hover:bg-blue-700/50 border border-blue-600/50 rounded-lg px-4 py-2 text-blue-300 hover:text-blue-100 transition-colors text-sm font-medium">
           <Upload className="w-4 h-4" />
           Import GPX Waypoints
           <input type="file" accept=".gpx,application/gpx+xml" className="hidden" onChange={handleGpxImport} />
         </label>
+        {waypoints.length > 1 && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleSortByNumber}
+            className="bg-slate-700 border-slate-600 text-slate-300 hover:text-white hover:bg-slate-600 gap-2 text-sm"
+          >
+            <ChevronDown className="w-4 h-4" /> Sort by Number
+          </Button>
+        )}
         {gpxImportResult && (
           gpxImportResult.error
             ? <span className="text-red-400 text-sm">{gpxImportResult.error}</span>
