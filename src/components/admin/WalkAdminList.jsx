@@ -1,8 +1,7 @@
 import React from 'react';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Plus, Trash2, Mountain, Loader2, MapPin, Pencil } from 'lucide-react';
+import { Trash2, Mountain, Loader2, MapPin, Pencil } from 'lucide-react';
 
 const difficultyColors = {
   easy: 'bg-green-900 text-green-300',
@@ -11,7 +10,7 @@ const difficultyColors = {
   difficult: 'bg-red-900 text-red-300',
 };
 
-export default function WalkAdminList({ walks, isLoading, onNew, onEdit, onDelete, userRole = 'admin' }) {
+export default function WalkAdminList({ walks, isLoading, onEdit, onDelete, userRole = 'admin' }) {
   const [confirmDelete, setConfirmDelete] = React.useState(null); // holds the walk object
   const [isDeleting, setIsDeleting] = React.useState(false);
   const isAdmin = userRole === 'admin';
@@ -35,16 +34,9 @@ export default function WalkAdminList({ walks, isLoading, onNew, onEdit, onDelet
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6 mt-2">
-        <div>
-          <h2 className="text-xl font-bold text-white">Tours</h2>
-          <p className="text-slate-400 text-sm">{walks.length} tours in database</p>
-        </div>
-        {isAdmin && (
-          <Button onClick={onNew} className="bg-amber-500 hover:bg-amber-600 text-white gap-2">
-            <Plus className="w-4 h-4" /> Add New Tour
-          </Button>
-        )}
+      <div className="mb-6 mt-2">
+        <h2 className="text-xl font-bold text-white">Tours</h2>
+        <p className="text-slate-400 text-sm">{walks.length} tours in database</p>
       </div>
 
       {isLoading ? (
@@ -55,7 +47,7 @@ export default function WalkAdminList({ walks, isLoading, onNew, onEdit, onDelet
         <div className="text-center py-16 text-slate-500">
           <Mountain className="w-16 h-16 mx-auto mb-4 opacity-30" />
           <p className="text-lg font-medium">No walks yet</p>
-          <p className="text-sm">Click "Add New Walk" to create the first trail</p>
+          <p className="text-sm">Go to Start → New Tour to create the first one</p>
         </div>
       ) : (
         <div className="space-y-3">

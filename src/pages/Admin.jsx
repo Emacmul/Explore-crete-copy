@@ -145,7 +145,6 @@ export default function Admin() {
             walks={walks}
             isLoading={walksLoading}
             userRole={userRole}
-            onNew={() => setEditingWalk({})}
             onEdit={(walk) => setEditingWalk(walk)}
             onDelete={handleDelete}
           />
