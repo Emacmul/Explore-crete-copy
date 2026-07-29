@@ -7,7 +7,6 @@ import { createPageUrl } from '@/utils';
 import { Link } from 'react-router-dom';
 import WalkEditor from '../components/admin/WalkEditor';
 import WalkAdminList from '../components/admin/WalkAdminList';
-import VoucherManager from '../components/admin/VoucherManager';
 import WalksDashboard from '../components/admin/WalksDashboard';
 import AdminStartScreen from '../components/admin/AdminStartScreen';
 import UsersManager from '../components/admin/UsersManager';
@@ -18,7 +17,6 @@ export default function Admin() {
   const [userRole, setUserRole] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [editingWalk, setEditingWalk] = useState(null);
-  const [voucherWalk, setVoucherWalk] = useState(null);
   const [view, setView] = useState('start');
   const [focusWaypointIndex, setFocusWaypointIndex] = useState(null);
   const queryClient = useQueryClient();
@@ -69,14 +67,14 @@ export default function Admin() {
     } else {
       await base44.entities.Walk.create(walkData);
     }
-    queryClient.invalidateQueries({ queryKey: ['walks'] });
+    await queryClient.invalidateQueries({ queryKey: ['walks'] });
     setEditingWalk(null);
     setFocusWaypointIndex(null);
   };
 
   const handleDelete = async (walkId) => {
     await base44.entities.Walk.delete(walkId);
-    queryClient.invalidateQueries({ queryKey: ['walks'] });
+    await queryClient.invalidateQueries({ queryKey: ['walks'] });
   };
 
   if (isLoading) {
@@ -87,7 +85,7 @@ export default function Admin() {
     );
   }
 
-  const showBackToStart = editingWalk !== null || voucherWalk !== null || view !== 'start';
+  const showBackToStart = editingWalk !== null || view !== 'start';
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
@@ -111,7 +109,7 @@ export default function Admin() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => { setEditingWalk(null); setVoucherWalk(null); setView('start'); }}
+                onClick={() => { setEditingWalk(null); setView('start'); }}
                 className="text-slate-300 hover:text-white gap-2"
               >
                 <ArrowLeft className="w-4 h-4" /> Start
@@ -138,11 +136,6 @@ export default function Admin() {
             userRole={userRole}
             focusWaypointIndex={focusWaypointIndex}
           />
-        ) : voucherWalk !== null ? (
-          <VoucherManager
-            walk={voucherWalk}
-            onBack={() => setVoucherWalk(null)}
-          />
         ) : view === 'users' ? (
           <UsersManager />
         ) : view === 'dashboard' ? (
@@ -151,10 +144,10 @@ export default function Admin() {
           <WalkAdminList
             walks={walks}
             isLoading={walksLoading}
+            userRole={userRole}
             onNew={(categoryCode) => setEditingWalk({ tour_category: categoryCode, route_type: getRouteTypeForCategory(categoryCode) })}
             onEdit={(walk) => setEditingWalk(walk)}
             onDelete={handleDelete}
-            onVouchers={(walk) => setVoucherWalk(walk)}
           />
         ) : (
           <AdminStartScreen

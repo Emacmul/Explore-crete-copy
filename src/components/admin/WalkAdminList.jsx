@@ -2,10 +2,9 @@ import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Plus, Pencil, Trash2, Mountain, Loader2, Ticket, MapPin, Mail, CheckCircle2, ChevronDown } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { Plus, Pencil, Trash2, Mountain, Loader2, MapPin, ChevronDown } from 'lucide-react';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
-import { TOUR_CATEGORIES, getTourCategory } from '@/lib/tourCategories';
+import { TOUR_CATEGORIES } from '@/lib/tourCategories';
 
 const difficultyColors = {
   easy: 'bg-green-900 text-green-300',
@@ -14,18 +13,10 @@ const difficultyColors = {
   difficult: 'bg-red-900 text-red-300',
 };
 
-export default function WalkAdminList({ walks, isLoading, onNew, onEdit, onDelete, onVouchers }) {
+export default function WalkAdminList({ walks, isLoading, onNew, onEdit, onDelete, userRole = 'admin' }) {
   const [confirmDelete, setConfirmDelete] = React.useState(null); // holds the walk object
   const [isDeleting, setIsDeleting] = React.useState(false);
-  const [sendingEmail, setSendingEmail] = React.useState(null);
-  const [emailSent, setEmailSent] = React.useState({});
-
-  const handleSendEmail = async (walk) => {
-    setSendingEmail(walk.id);
-    const res = await base44.functions.invoke('sendNewWalkEmail', { walkId: walk.id });
-    setSendingEmail(null);
-    setEmailSent(prev => ({ ...prev, [walk.id]: res.data?.sent || 0 }));
-  };
+  const isAdmin = userRole === 'admin';
 
   const handleDelete = (walk) => {
     setConfirmDelete(walk);
@@ -81,11 +72,11 @@ export default function WalkAdminList({ walks, isLoading, onNew, onEdit, onDelet
       ) : (
         <div className="space-y-3">
           {walks.map(walk => (
-            <div key={walk.id} className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
-              {/* Main row — click anywhere to edit */}
+            <div key={walk.id} className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden flex items-center">
+              {/* Main content — click anywhere here to edit */}
               <button
                 onClick={() => onEdit(walk)}
-                className="w-full text-left px-4 py-4 flex items-center gap-4 hover:bg-slate-700/60 transition-colors group"
+                className="flex-1 min-w-0 text-left px-4 py-4 flex items-center gap-4 hover:bg-slate-700/60 transition-colors group"
               >
                 <span className="font-mono text-sm bg-slate-700 text-amber-300 px-3 py-1 rounded font-bold shrink-0">
                   {walk.code}
@@ -96,7 +87,7 @@ export default function WalkAdminList({ walks, isLoading, onNew, onEdit, onDelet
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <p className="font-semibold text-white truncate">{walk.name}</p>
-                    <span className="text-xs text-amber-400 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                    <span className="text-xs text-amber-400 flex items-center gap-1 shrink-0">
                       <Pencil className="w-3 h-3" /> Edit
                     </span>
                   </div>
@@ -114,52 +105,18 @@ export default function WalkAdminList({ walks, isLoading, onNew, onEdit, onDelet
                     </span>
                   </div>
                 </div>
-                <Pencil className="w-4 h-4 text-slate-500 group-hover:text-amber-400 transition-colors shrink-0" />
               </button>
 
-              {/* Action strip */}
-              <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-t border-slate-700 bg-slate-900/30">
-                <Button
-                  size="sm"
-                  onClick={() => onEdit(walk)}
-                  className="bg-amber-500 hover:bg-amber-600 text-white gap-1.5 text-xs h-7"
-                >
-                  <Pencil className="w-3 h-3" /> Edit Tour
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onVouchers(walk)}
-                  className="text-amber-400 hover:text-amber-300 hover:bg-slate-700 gap-1.5 text-xs h-7"
-                >
-                  <Ticket className="w-3 h-3" /> Vouchers
-                </Button>
-                {emailSent[walk.id] != null ? (
-                  <span className="flex items-center gap-1 text-xs text-green-400 px-2">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Sent to {emailSent[walk.id]} members
-                  </span>
-                ) : (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleSendEmail(walk)}
-                    disabled={sendingEmail === walk.id}
-                    className="text-blue-400 hover:text-blue-300 hover:bg-slate-700 gap-1.5 text-xs h-7"
-                  >
-                    {sendingEmail === walk.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
-                    {sendingEmail === walk.id ? 'Sending…' : 'Email all members'}
-                  </Button>
-                )}
-                <div className="flex-1" />
-                <Button
-                  variant="ghost"
-                  size="sm"
+              {/* Delete — admin only, replaces the old edit-pencil spot */}
+              {isAdmin && (
+                <button
                   onClick={() => handleDelete(walk)}
-                  className="h-7 text-xs gap-1.5 text-red-400 border border-red-700/50 hover:bg-red-900/40"
+                  title="Delete tour"
+                  className="shrink-0 p-4 text-slate-500 hover:text-red-400 transition-colors"
                 >
-                  <Trash2 className="w-3 h-3" /> Delete Tour
-                </Button>
-              </div>
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
             </div>
           ))}
         </div>

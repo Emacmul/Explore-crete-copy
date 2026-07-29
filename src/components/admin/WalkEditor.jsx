@@ -91,15 +91,17 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   const gpxInputRef = useRef(null);
   const canImportGpx = !!(form.code?.trim() && form.name?.trim() && form.tour_category);
   const isDrivingAudioTourForGate = form.route_type === 'driving_audio_tour';
-  const canSave = !!(
-    form.code?.trim() &&
-    form.name?.trim() &&
-    form.tour_category &&
-    form.start_lat !== '' && form.start_lat != null && !isNaN(Number(form.start_lat)) &&
-    form.start_lng !== '' && form.start_lng != null && !isNaN(Number(form.start_lng)) &&
-    form.region?.trim() &&
-    (isDrivingAudioTourForGate || !!form.difficulty)
-  );
+  const canSave = isNarrator
+    ? true // narrators only ever edit waypoints; General-tab requirements are the admin's responsibility and narrators have no way to fix them
+    : !!(
+      form.code?.trim() &&
+      form.name?.trim() &&
+      form.tour_category &&
+      form.start_lat !== '' && form.start_lat != null && !isNaN(Number(form.start_lat)) &&
+      form.start_lng !== '' && form.start_lng != null && !isNaN(Number(form.start_lng)) &&
+      form.region?.trim() &&
+      (isDrivingAudioTourForGate || !!form.difficulty)
+    );
 
   // Shared helper: compute distance + elevation from a trailPath array + elevations array
   const computeStats = (trailPath, elevations) => {
