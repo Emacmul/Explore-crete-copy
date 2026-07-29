@@ -8,6 +8,22 @@ import { Plus, Trash2, ChevronDown, ChevronUp, Info, ImagePlus, Loader2, X, Grip
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { base44 } from '@/api/base44Client';
 
+// Sorts waypoints by their number (MXR1, MXR2... for walks, or WRC1a, WRC1b... for driving/WalkAbout tours)
+function sortWaypointsByNumber(list) {
+  return [...list].sort((a, b) => {
+    const ka = (a.code || a.name || '').match(/^\D*(\d+)([a-z]?)/i);
+    const kb = (b.code || b.name || '').match(/^\D*(\d+)([a-z]?)/i);
+    if (ka && kb) {
+      const sa = parseInt(ka[1], 10), sb = parseInt(kb[1], 10);
+      if (sa !== sb) return sa - sb;
+      return (ka[2] || '').localeCompare(kb[2] || '');
+    }
+    if (ka) return -1;
+    if (kb) return 1;
+    return 0;
+  });
+}
+
 const WAYPOINT_TYPES = [
   { value: 'start', label: '🚩 Start Point', color: 'text-green-400' },
   { value: 'end', label: '🏁 End Point', color: 'text-red-400' },
@@ -49,33 +65,29 @@ const compressImage = (file) => new Promise((resolve) => {
 function parseGpxWaypoints(xmlText) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xmlText, 'application/xml');
-  const wpts = Array.from(doc.querySelectorAll('wpt'));
-  wpts.sort((a, b) => {
-    const na = a.querySelector('name')?.textContent?.trim() || '';
-    const nb = b.querySelector('name')?.textContent?.trim() || '';
-    const ka = na.match(/^\D*(\d+)([a-z]?)/i);
-    const kb = nb.match(/^\D*(\d+)([a-z]?)/i);
-    if (ka && kb) {
-      const sa = parseInt(ka[1], 10), sb = parseInt(kb[1], 10);
-      if (sa !== sb) return sa - sb;
-      return (ka[2] || '').localeCompare(kb[2] || '');
-    }
-    if (ka) return -1;
-    if (kb) return 1;
-    return 0;
-  });
-  return wpts.map(wpt => ({
+  const raw = Array.from(doc.querySelectorAll('wpt')).map(wpt => ({
     lat: parseFloat(wpt.getAttribute('lat')),
     lng: parseFloat(wpt.getAttribute('lon')),
     elevation: wpt.querySelector('ele') ? parseFloat(wpt.querySelector('ele').textContent) : null,
-    name: wpt.querySelector('name')?.textContent?.trim() || 'Unnamed',
+    name: wpt.querySelector('name')?.textContent?.trim() || 'Unnamed', // temporary, used for sorting only
     type: 'landmark',
     description: '',
     image_url: '',
   })).filter(wp => !isNaN(wp.lat) && !isNaN(wp.lng));
+  const sorted = sortWaypointsByNumber(raw);
+  // Split the imported name into an auto-managed code and a blank descriptive name
+  return sorted.map(wp => ({ ...wp, code: wp.name, name: '' }));
 }
 
-export default function WaypointEditor({ waypoints, onChange, onSave, saving }) {
+// Renumbers waypoints sequentially (MXR1, MXR2, MXR3...) based on the tour's code and their current
+// list position — used for plain Walk/Hike tours only, where names are just a running count, not
+// structural IDs tied to scripts (unlike WalkAbout/Driving tours, which never use this component).
+function renumberWaypoints(list, code) {
+  if (!code) return list;
+  return list.map((wp, i) => ({ ...wp, code: `${code}${i + 1}` }));
+}
+
+export default function WaypointEditor({ waypoints, onChange, onSave, saving, code }) {
   const [expanded, setExpanded] = useState(null);
   const [newWp, setNewWp] = useState(EMPTY_WAYPOINT);
   const [showAddForm, setShowAddForm] = useState(true);
@@ -86,10 +98,6 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving }) 
     setAddError('');
     const lat = parseFloat(String(newWp.lat).replace(',', '.'));
     const lng = parseFloat(String(newWp.lng).replace(',', '.'));
-    if (!newWp.name.trim()) {
-      setAddError('Please enter a name for this key point.');
-      return;
-    }
     if (isNaN(lat) || String(newWp.lat).trim() === '') {
       setAddError('Please enter a valid latitude (e.g. 35.3019).');
       return;
@@ -98,7 +106,7 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving }) 
       setAddError('Please enter a valid longitude (e.g. 23.9633).');
       return;
     }
-    const updated = [...waypoints, { ...newWp, lat, lng }];
+    const updated = renumberWaypoints([...waypoints, { ...newWp, lat, lng }], code);
     onChange(updated);
     setNewWp(EMPTY_WAYPOINT);
     setShowAddForm(false);
@@ -106,7 +114,7 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving }) 
   };
 
   const removeWaypoint = (index) => {
-    onChange(waypoints.filter((_, i) => i !== index));
+    onChange(renumberWaypoints(waypoints.filter((_, i) => i !== index), code));
     if (expanded === index) setExpanded(null);
   };
 
@@ -120,7 +128,7 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving }) 
     const updated = [...waypoints];
     const [moved] = updated.splice(result.source.index, 1);
     updated.splice(result.destination.index, 0, moved);
-    onChange(updated);
+    onChange(renumberWaypoints(updated, code));
   };
 
   const [uploadingIndex, setUploadingIndex] = useState(null); // null = new form, number = existing index
@@ -157,28 +165,12 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving }) 
         setGpxImportResult({ error: 'No waypoints found in this GPX file.' });
         return;
       }
-      onChange([...waypoints, ...parsed]);
+      onChange(sortWaypointsByNumber([...waypoints, ...parsed]));
       setGpxImportResult({ count: parsed.length });
       setTimeout(() => setGpxImportResult(null), 4000);
     };
     reader.readAsText(file);
     e.target.value = '';
-  };
-
-  const handleSortByNumber = () => {
-    const sorted = [...waypoints].sort((a, b) => {
-      const ka = (a.name || '').match(/^\D*(\d+)([a-z]?)/i);
-      const kb = (b.name || '').match(/^\D*(\d+)([a-z]?)/i);
-      if (ka && kb) {
-        const sa = parseInt(ka[1], 10), sb = parseInt(kb[1], 10);
-        if (sa !== sb) return sa - sb;
-        return (ka[2] || '').localeCompare(kb[2] || '');
-      }
-      if (ka) return -1;
-      if (kb) return 1;
-      return 0;
-    });
-    onChange(sorted);
   };
 
   return (
@@ -201,16 +193,6 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving }) 
           Import GPX Waypoints
           <input type="file" accept=".gpx,application/gpx+xml" className="hidden" onChange={handleGpxImport} />
         </label>
-        {waypoints.length > 1 && (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleSortByNumber}
-            className="bg-slate-700 border-slate-600 text-slate-300 hover:text-white hover:bg-slate-600 gap-2 text-sm"
-          >
-            <ChevronDown className="w-4 h-4" /> Sort by Number
-          </Button>
-        )}
         {gpxImportResult && (
           gpxImportResult.error
             ? <span className="text-red-400 text-sm">{gpxImportResult.error}</span>
@@ -273,11 +255,11 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving }) 
             </Select>
           </div>
           <div>
-            <Label className="text-slate-400 text-xs mb-1 block">Name *</Label>
+            <Label className="text-slate-400 text-xs mb-1 block">Name (optional)</Label>
             <Input
               value={newWp.name}
               onChange={e => setNewWp(p => ({ ...p, name: e.target.value }))}
-              placeholder="e.g. Rocky descent"
+              placeholder="e.g. Rocky descent — the code (e.g. MXR30) is assigned automatically"
               className="bg-slate-700 border-slate-500 text-white"
             />
           </div>
@@ -362,7 +344,12 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving }) 
                   <span className="text-xs text-slate-600 font-mono w-5 text-center">{index + 1}</span>
                   <span className="text-sm">{typeInfo?.label.split(' ')[0]}</span>
                   <div className="flex-1 min-w-0">
-                    <span className="text-white font-medium">{wp.name}</span>
+                    {wp.code && (
+                      <span className="font-mono text-xs bg-slate-600 text-amber-300 px-1.5 py-0.5 rounded font-bold mr-2">{wp.code}</span>
+                    )}
+                    <span className={wp.name ? "text-white font-medium" : "text-slate-500 italic"}>
+                      {wp.name || 'No description yet'}
+                    </span>
                     <span className={`ml-2 text-xs ${typeInfo?.color}`}>
                       {typeInfo?.label.split(' ').slice(1).join(' ')}
                     </span>
@@ -403,11 +390,18 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving }) 
                         />
                       </div>
                     </div>
+                    {wp.code && (
+                      <div>
+                        <Label className="text-slate-400 text-xs mb-1 block">Code (auto-managed)</Label>
+                        <div className="bg-slate-800 border border-slate-600 rounded h-8 flex items-center px-3 font-mono text-amber-300 text-sm">{wp.code}</div>
+                      </div>
+                    )}
                     <div>
-                      <Label className="text-slate-400 text-xs mb-1 block">Name</Label>
+                      <Label className="text-slate-400 text-xs mb-1 block">Name (optional description)</Label>
                       <Input
                         value={wp.name}
                         onChange={e => updateWaypoint(index, 'name', e.target.value)}
+                        placeholder="e.g. Rocky descent"
                         className="bg-slate-700 border-slate-500 text-white h-8 text-sm"
                       />
                     </div>

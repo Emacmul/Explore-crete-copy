@@ -114,7 +114,9 @@ export default function WalkDetailMap({ walk, followGps = false }) {
         });
         const wpLabel = roleConfig ? roleConfig.label : (waypointConfig[wp.type]?.label || wp.type);
         const wpColor = iconConfig.color;
-        const wpName = isDrivingTour ? (wp.segment_title || wp.name) : wp.name;
+        const wpName = isDrivingTour
+          ? (wp.segment_title || wp.name)
+          : (wp.code && wp.name ? `${wp.code} — ${wp.name}` : (wp.code || wp.name));
 
         return (
         <Marker

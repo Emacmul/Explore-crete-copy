@@ -301,7 +301,8 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
         return {
           lat: parseFloat(wpt.getAttribute('lat')),
           lng: parseFloat(wpt.getAttribute('lon')),
-          name: nameTxt,
+          code: nameTxt,
+          name: '',
           description: descTxt,
           type: 'landmark',
           image_url: '',
@@ -983,6 +984,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 onChange={wps => set('waypoints', wps)}
                 onSave={handleSave}
                 saving={saving}
+                code={form.code}
               />
             )}
             <SaveButton onSave={handleSave} saving={saving} canSave={canSave} />

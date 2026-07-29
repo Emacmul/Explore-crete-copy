@@ -202,7 +202,9 @@ export default function WalkDetail({ walk, onClose }) {
                     const displayIcon = roleConfig ? roleConfig.icon : Icon;
                     const displayBg = roleConfig ? roleConfig.bg : config.bg;
                     const displayColor = roleConfig ? roleConfig.color : config.color;
-                    const displayName = isDrivingTour ? (waypoint.segment_title || waypoint.name) : waypoint.name;
+                    const displayName = isDrivingTour
+                      ? (waypoint.segment_title || waypoint.name)
+                      : (waypoint.code && waypoint.name ? `${waypoint.code} — ${waypoint.name}` : (waypoint.code || waypoint.name));
                     const displayLabel = roleConfig ? roleConfig.label : (waypoint.type ? waypoint.type.replace('_', ' ') : null);
 
                     return (

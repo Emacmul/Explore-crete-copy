@@ -159,7 +159,12 @@
             "type": "string"
           },
           "name": {
-            "type": "string"
+            "type": "string",
+            "description": "Admin/narrator-entered descriptive label shown alongside the code, e.g. 'Rocky descent'"
+          },
+          "code": {
+            "type": "string",
+            "description": "Auto-numbered walk/hike waypoint code (e.g. MXR14) — kept in sync automatically with list position, separate from the descriptive name"
           },
           "description": {
             "type": "string"
