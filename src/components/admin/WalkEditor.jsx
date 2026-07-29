@@ -560,6 +560,12 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
           <div className="space-y-5">
 
             {/* Tour/Route Code & Name — required first, since waypoint IDs and segment IDs are built from the code */}
+            {!canImportGpx && (
+              <div className="flex items-center gap-2 bg-amber-900/20 border border-amber-700/40 rounded-lg px-3 py-2">
+                <span className="flex items-center justify-center w-5 h-5 rounded-full bg-amber-500 text-slate-900 text-xs font-bold shrink-0">1</span>
+                <p className="text-amber-200 text-sm">Enter a Code and Name below to unlock GPX/FIT import.</p>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label className="text-slate-300 mb-1.5 block">{isDrivingAudioTour ? "Tour Code *" : "Route Code *"}</Label>
@@ -567,7 +573,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                   value={form.code}
                   onChange={e => set('code', e.target.value)}
                   placeholder={isDrivingAudioTour ? "e.g. BOR" : "e.g. CRE-007"}
-                  className="bg-slate-700 border-slate-600 text-white font-mono"
+                  className={`bg-slate-700 text-white font-mono ${!form.code?.trim() ? 'border-amber-500/70 focus-visible:ring-amber-500' : 'border-slate-600'}`}
                 />
                 <p className="text-xs text-slate-500 mt-1">{isDrivingAudioTour ? "Three-letter tour code, e.g. BOR" : "Unique identifier shown to users"}</p>
               </div>
@@ -577,7 +583,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                   value={form.name}
                   onChange={e => set('name', e.target.value)}
                   placeholder={isDrivingAudioTour ? "e.g. Battle of the Rivers" : "e.g. Balos Lagoon Trail"}
-                  className="bg-slate-700 border-slate-600 text-white"
+                  className={`bg-slate-700 text-white ${!form.name?.trim() ? 'border-amber-500/70 focus-visible:ring-amber-500' : 'border-slate-600'}`}
                 />
               </div>
             </div>
