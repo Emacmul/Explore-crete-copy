@@ -1,8 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import React, { useState } from 'react';
 import { useOfflineWalks } from '@/components/offline/useOfflineWalks';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, WifiOff, Loader2 } from 'lucide-react';
+import { ArrowLeft, WifiOff } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -11,29 +10,9 @@ import WalkDetail from '../components/walks/WalkDetail';
 import OfflineBadge from '../components/walks/OfflineBadge';
 
 export default function MyWalks() {
-  const [user, setUser] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [selectedWalk, setSelectedWalk] = useState(null);
   const { getAllOfflineWalks } = useOfflineWalks();
   const offlineWalks = getAllOfflineWalks();
-
-  useEffect(() => {
-    const init = async () => {
-      const isAuth = await base44.auth.isAuthenticated();
-      if (!isAuth) { base44.auth.redirectToLogin(); return; }
-      setUser(await base44.auth.me());
-      setIsLoading(false);
-    };
-    init();
-  }, []);
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-amber-50 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-amber-50">

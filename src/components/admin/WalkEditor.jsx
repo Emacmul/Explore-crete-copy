@@ -14,6 +14,7 @@ import TourSimulator from './TourSimulator';
 import TrailPathEditor from './TrailPathEditor';
 import AdminPreviewMap from './AdminPreviewMap';
 import { validateDrivingTour, generateGpx, generateKml, downloadTextFile, buildSegmentId, getRoleColour } from '@/lib/routeExport';
+import { toast } from '@/components/ui/use-toast';
 
 const DEFAULT_INTERESTS = ['Wild Flowers', 'History', 'Mythology', 'Archaeology', 'Photography', 'Routes of Faith'];
 
@@ -40,13 +41,16 @@ const EMPTY_WALK = {
   segment_scripts: [],
 };
 
-function SaveButton({ onSave, saving }) {
+function SaveButton({ onSave, saving, canSave }) {
   return (
-    <div className="border-t border-slate-700 pt-4 flex justify-end">
-      <Button onClick={onSave} disabled={saving} className="bg-amber-500 hover:bg-amber-600 gap-2">
+    <div className="border-t border-slate-700 pt-4 flex flex-col items-end gap-1.5">
+      <Button onClick={onSave} disabled={saving || !canSave} className="bg-amber-500 hover:bg-amber-600 gap-2 disabled:opacity-40 disabled:cursor-not-allowed">
         {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
         Save Route
       </Button>
+      {!canSave && !saving && (
+        <p className="text-xs text-slate-500">Fill in Code, Name, and the Starting Point coordinates to enable saving.</p>
+      )}
     </div>
   );
 }
@@ -84,6 +88,13 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   const [gpxImportDone, setGpxImportDone] = useState(false);
   const [elevFetching, setElevFetching] = useState(false);
   const gpxInputRef = useRef(null);
+  const canImportGpx = !!(form.code?.trim() && form.name?.trim());
+  const canSave = !!(
+    form.code?.trim() &&
+    form.name?.trim() &&
+    form.start_lat !== '' && form.start_lat != null && !isNaN(Number(form.start_lat)) &&
+    form.start_lng !== '' && form.start_lng != null && !isNaN(Number(form.start_lng))
+  );
 
   // Shared helper: compute distance + elevation from a trailPath array + elevations array
   const computeStats = (trailPath, elevations) => {
@@ -194,6 +205,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
     }));
     setGpxImporting(false);
     setGpxImportDone(true);
+    setActiveTab('details');
     setTimeout(() => setGpxImportDone(false), 4000);
   };
 
@@ -444,21 +456,35 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   };
 
   const handleFileImport = (e) => {
-    console.log('handleFileImport called, files:', e.target.files);
+    if (!canImportGpx) {
+      toast({
+        variant: 'destructive',
+        title: 'Cannot import yet',
+        description: `Please fill in the ${isDrivingAudioTour ? 'Tour' : 'Route'} Code and Name first.`,
+      });
+      e.target.value = '';
+      return;
+    }
     const file = e.target.files[0];
-    console.log('File:', file?.name);
     if (!file) return;
-    console.log('File extension check:', file.name.toLowerCase());
     if (file.name.toLowerCase().endsWith('.fit')) {
-      console.log('→ Routing to FIT handler');
       handleFitImport(e);
     } else {
-      console.log('→ Routing to GPX handler');
       handleGpxImport(e);
     }
   };
 
   const handleSave = async () => {
+    if (!form.code?.trim() || !form.name?.trim()) {
+      toast({
+        variant: 'destructive',
+        title: 'Cannot save yet',
+        description: `Please fill in the ${isDrivingAudioTour ? 'Tour' : 'Route'} Code and ${isDrivingAudioTour ? 'Tour' : 'Route'} Name before saving.`,
+      });
+      setActiveTab('details');
+      return;
+    }
+
     setSaving(true);
     const data = {
       ...form,
@@ -469,8 +495,19 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
       start_lat: Number(form.start_lat),
       start_lng: Number(form.start_lng),
     };
-    await onSave(data);
-    setSaving(false);
+
+    try {
+      await onSave(data);
+    } catch (err) {
+      console.error('Save failed:', err);
+      toast({
+        variant: 'destructive',
+        title: 'Save failed — nothing was saved',
+        description: err?.message || 'An unexpected error occurred while saving. Please try again.',
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const tabs = isNarrator
@@ -522,12 +559,39 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
         {activeTab === 'details' && (
           <div className="space-y-5">
 
+            {/* Tour/Route Code & Name — required first, since waypoint IDs and segment IDs are built from the code */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-slate-300 mb-1.5 block">{isDrivingAudioTour ? "Tour Code *" : "Route Code *"}</Label>
+                <Input
+                  value={form.code}
+                  onChange={e => set('code', e.target.value)}
+                  placeholder={isDrivingAudioTour ? "e.g. BOR" : "e.g. CRE-007"}
+                  className="bg-slate-700 border-slate-600 text-white font-mono"
+                />
+                <p className="text-xs text-slate-500 mt-1">{isDrivingAudioTour ? "Three-letter tour code, e.g. BOR" : "Unique identifier shown to users"}</p>
+              </div>
+              <div>
+                <Label className="text-slate-300 mb-1.5 block">{isDrivingAudioTour ? "Tour Name *" : "Route Name *"}</Label>
+                <Input
+                  value={form.name}
+                  onChange={e => set('name', e.target.value)}
+                  placeholder={isDrivingAudioTour ? "e.g. Battle of the Rivers" : "e.g. Balos Lagoon Trail"}
+                  className="bg-slate-700 border-slate-600 text-white"
+                />
+              </div>
+            </div>
+
             {/* GPX Import */}
             <div className="flex items-center gap-3 bg-blue-900/20 border border-blue-700/40 rounded-xl px-4 py-3">
               <FileUp className="w-5 h-5 text-blue-400 shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="text-blue-200 text-sm font-medium">Import from GPX or FIT</p>
-                <p className="text-blue-400 text-xs">Pre-fills start point, trail path, waypoints, distance & elevation from your eTrex GPX or FIT file</p>
+                <p className="text-blue-400 text-xs">
+                  {canImportGpx
+                    ? 'Pre-fills start point, trail path, waypoints, distance & elevation from your eTrex GPX or FIT file'
+                    : `Fill in the ${isDrivingAudioTour ? 'Tour' : 'Route'} Code and Name above first — waypoint IDs are built from the code`}
+                </p>
               </div>
               {gpxImportDone ? (
                 <span className="flex items-center gap-1.5 text-green-400 text-sm font-medium shrink-0">
@@ -535,8 +599,15 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 </span>
               ) : (
                 <>
-                  <input ref={gpxInputRef} id="gpx-input" type="file" accept=".gpx,.fit,application/gpx+xml" className="sr-only" onChange={(e) => { console.log('File input change:', e.target.files); handleFileImport(e); }} />
-                  <label htmlFor="gpx-input" className={`flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-1.5 text-sm font-medium transition-colors shrink-0 cursor-pointer`}>
+                  <input ref={gpxInputRef} id="gpx-input" type="file" accept=".gpx,.fit,application/gpx+xml" className="sr-only" disabled={!canImportGpx} onChange={(e) => { handleFileImport(e); }} />
+                  <label
+                    htmlFor={canImportGpx ? "gpx-input" : undefined}
+                    className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors shrink-0 ${
+                      canImportGpx
+                        ? 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'
+                        : 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                    }`}
+                  >
                      {(gpxImporting || elevFetching) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                      {gpxImporting ? 'Reading…' : elevFetching ? 'Fetching elevation…' : 'Choose GPX / FIT'}
                    </label>
@@ -568,28 +639,6 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 </p>
               </div>
             )}
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label className="text-slate-300 mb-1.5 block">{isDrivingAudioTour ? "Tour Code *" : "Route Code *"}</Label>
-                <Input
-                  value={form.code}
-                  onChange={e => set('code', e.target.value)}
-                  placeholder={isDrivingAudioTour ? "e.g. BOR" : "e.g. CRE-007"}
-                  className="bg-slate-700 border-slate-600 text-white font-mono"
-                />
-                <p className="text-xs text-slate-500 mt-1">{isDrivingAudioTour ? "Three-letter tour code, e.g. BOR" : "Unique identifier shown to users"}</p>
-              </div>
-              <div>
-                <Label className="text-slate-300 mb-1.5 block">{isDrivingAudioTour ? "Tour Name *" : "Route Name *"}</Label>
-                <Input
-                  value={form.name}
-                  onChange={e => set('name', e.target.value)}
-                  placeholder={isDrivingAudioTour ? "e.g. Battle of the Rivers" : "e.g. Balos Lagoon Trail"}
-                  className="bg-slate-700 border-slate-600 text-white"
-                />
-              </div>
-            </div>
 
             <div>
               <Label className="text-slate-300 mb-1.5 block">Description</Label>
@@ -652,20 +701,8 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
 
             {!isDrivingAudioTour && (
             <>
-            {/* Walk access and category */}
+            {/* Walk access */}
             <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label className="text-slate-300 mb-1.5 block">Route Category</Label>
-                <Select value={form.walk_category || 'official'} onValueChange={v => set('walk_category', v)}>
-                  <SelectTrigger className="bg-slate-700 border-slate-600 text-white">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="official">Official Magical Crete Route</SelectItem>
-                    <SelectItem value="community">Community Contribution</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
               <div>
                 <Label className="text-slate-300 mb-1.5 block">Free Sample Walk</Label>
                 <div className="flex items-center gap-3 h-9 bg-slate-700 border border-slate-600 rounded-md px-3">
@@ -680,32 +717,6 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 </div>
               </div>
             </div>
-
-            <div>
-              <Label className="text-slate-300 mb-1.5 block">Included In Membership</Label>
-              <div className="flex items-center gap-3 h-9 bg-slate-700 border border-slate-600 rounded-md px-3">
-                <button
-                  type="button"
-                  onClick={() => set('is_member_included', !form.is_member_included)}
-                  className={`w-10 h-5 rounded-full transition-colors relative ${form.is_member_included ? 'bg-green-500' : 'bg-slate-500'}`}
-                >
-                  <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${form.is_member_included ? 'translate-x-5' : 'translate-x-0.5'}`} />
-                </button>
-                <span className="text-slate-300 text-sm">{form.is_member_included ? 'Yes' : 'No'}</span>
-              </div>
-            </div>
-
-            {form.walk_category === 'community' && (
-              <div>
-                <Label className="text-slate-300 mb-1.5 block">Contributor Name</Label>
-                <Input
-                  value={form.contributor_name || ''}
-                  onChange={e => set('contributor_name', e.target.value)}
-                  placeholder="Name shown in the app"
-                  className="bg-slate-700 border-slate-600 text-white"
-                />
-              </div>
-            )}
 
             {/* Main Interests */}
             <div>
@@ -915,7 +926,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
               </p>
             </div>
 
-            <SaveButton onSave={handleSave} saving={saving} />
+            <SaveButton onSave={handleSave} saving={saving} canSave={canSave} />
           </div>
         )}
 
@@ -925,7 +936,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
               trailPath={form.trail_path}
               onChange={path => set('trail_path', path)}
             />
-            <SaveButton onSave={handleSave} saving={saving} />
+            <SaveButton onSave={handleSave} saving={saving} canSave={canSave} />
           </div>
         )}
 
@@ -952,7 +963,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 saving={saving}
               />
             )}
-            <SaveButton onSave={handleSave} saving={saving} />
+            <SaveButton onSave={handleSave} saving={saving} canSave={canSave} />
           </div>
         )}
 
@@ -970,7 +981,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 }} segmentScripts={form.segment_scripts || []} onSegmentScriptsChange={(scripts) => set('segment_scripts', scripts)} />
               </>
             )}
-            <SaveButton onSave={handleSave} saving={saving} />
+            <SaveButton onSave={handleSave} saving={saving} canSave={canSave} />
           </div>
         )}
       </div>

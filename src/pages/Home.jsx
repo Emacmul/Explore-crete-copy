@@ -2,9 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
-import { Loader2, LogOut, MapPin, User, ShieldCheck, WifiOff, Footprints } from 'lucide-react';
+import { Loader2, LogOut, MapPin, User, ShieldCheck, WifiOff } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
+import { useAuth } from '@/lib/AuthContext';
 import { useOfflineWalks } from '../components/offline/useOfflineWalks';
 import { motion, AnimatePresence } from 'framer-motion';
 import CreteMap from '../components/map/CreteMap';
@@ -20,7 +21,7 @@ import { getTourCategory } from '../lib/tourCategories';
 import NewWalkAnnouncementModal, { getUnseenAnnouncement } from '../components/walks/NewWalkAnnouncementModal';
 
 export default function Home() {
-  const [user, setUser] = useState(null);
+  const { user, logout } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [selectedWalk, setSelectedWalk] = useState(null);
   const [showDetail, setShowDetail] = useState(false);
@@ -37,36 +38,22 @@ export default function Home() {
   const updatingRef = useRef(false);
 
   useEffect(() => {
-    const checkAuth = async () => {
+    const checkRegistration = async () => {
       try {
-        const isAuth = await base44.auth.isAuthenticated();
-
-        if (!isAuth) {
-          base44.auth.redirectToLogin();
-          return;
-        }
-
-        const userData = await base44.auth.me();
-        setUser(userData);
-
-        const appUsers = await base44.entities.AppUser.filter({ user_id: userData.id });
+        const appUsers = await base44.entities.AppUser.filter({ user_id: user.id });
 
         if (appUsers.length > 0 && appUsers[0].registration_complete) {
           setRegistrationComplete(true);
         }
       } catch (error) {
-        console.error('Auth check error:', error);
-
-        if (error?.status === 401 || error?.status === 403) {
-          base44.auth.redirectToLogin();
-        }
+        console.error('Registration check error:', error);
       } finally {
         setIsLoading(false);
       }
     };
 
-    checkAuth();
-  }, []);
+    if (user) checkRegistration();
+  }, [user]);
 
   const { data: walks = [], isLoading: walksLoading } = useQuery({
     queryKey: ['walks'],
@@ -141,7 +128,7 @@ export default function Home() {
   };
 
   const handleLogout = () => {
-    base44.auth.logout();
+    logout();
   };
 
   const handleCategorySelect = (code) => {
@@ -250,13 +237,6 @@ export default function Home() {
                     {offlineCount}
                   </span>
                 )}
-              </Button>
-            </Link>
-
-            <Link to={createPageUrl('MyRecordedWalks')}>
-              <Button variant="outline" size="sm" className="gap-2 border-amber-300 text-amber-700 hover:bg-amber-50">
-                <Footprints className="w-4 h-4" />
-                <span className="hidden sm:inline">Recorded Walks</span>
               </Button>
             </Link>
 
