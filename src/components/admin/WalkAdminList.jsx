@@ -2,9 +2,7 @@ import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Plus, Pencil, Trash2, Mountain, Loader2, MapPin, ChevronDown } from 'lucide-react';
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
-import { TOUR_CATEGORIES } from '@/lib/tourCategories';
+import { Plus, Trash2, Mountain, Loader2, MapPin, Pencil } from 'lucide-react';
 
 const difficultyColors = {
   easy: 'bg-green-900 text-green-300',
@@ -42,21 +40,11 @@ export default function WalkAdminList({ walks, isLoading, onNew, onEdit, onDelet
           <h2 className="text-xl font-bold text-white">Tours</h2>
           <p className="text-slate-400 text-sm">{walks.length} tours in database</p>
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button className="bg-amber-500 hover:bg-amber-600 text-white gap-2">
-              <Plus className="w-4 h-4" /> Add New Tour <ChevronDown className="w-3.5 h-3.5" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {TOUR_CATEGORIES.map(cat => (
-              <DropdownMenuItem key={cat.code} onClick={() => onNew(cat.code)} className="gap-2">
-                <span className="font-mono text-xs font-bold bg-slate-100 px-1.5 py-0.5 rounded">{cat.code}</span>
-                {cat.label}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {isAdmin && (
+          <Button onClick={onNew} className="bg-amber-500 hover:bg-amber-600 text-white gap-2">
+            <Plus className="w-4 h-4" /> Add New Tour
+          </Button>
+        )}
       </div>
 
       {isLoading ? (

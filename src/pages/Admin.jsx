@@ -145,7 +145,7 @@ export default function Admin() {
             walks={walks}
             isLoading={walksLoading}
             userRole={userRole}
-            onNew={(categoryCode) => setEditingWalk({ tour_category: categoryCode, route_type: getRouteTypeForCategory(categoryCode) })}
+            onNew={() => setEditingWalk({})}
             onEdit={(walk) => setEditingWalk(walk)}
             onDelete={handleDelete}
           />

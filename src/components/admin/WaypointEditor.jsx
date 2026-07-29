@@ -4,25 +4,9 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Trash2, ChevronDown, ChevronUp, Info, ImagePlus, Loader2, X, GripVertical, Upload, FileCheck, Save } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, ChevronUp, Info, ImagePlus, Loader2, X, GripVertical, Save } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { base44 } from '@/api/base44Client';
-
-// Sorts waypoints by their number (MXR1, MXR2... for walks, or WRC1a, WRC1b... for driving/WalkAbout tours)
-function sortWaypointsByNumber(list) {
-  return [...list].sort((a, b) => {
-    const ka = (a.code || a.name || '').match(/^\D*(\d+)([a-z]?)/i);
-    const kb = (b.code || b.name || '').match(/^\D*(\d+)([a-z]?)/i);
-    if (ka && kb) {
-      const sa = parseInt(ka[1], 10), sb = parseInt(kb[1], 10);
-      if (sa !== sb) return sa - sb;
-      return (ka[2] || '').localeCompare(kb[2] || '');
-    }
-    if (ka) return -1;
-    if (kb) return 1;
-    return 0;
-  });
-}
 
 const WAYPOINT_TYPES = [
   { value: 'start', label: '🚩 Start Point', color: 'text-green-400' },
@@ -62,23 +46,6 @@ const compressImage = (file) => new Promise((resolve) => {
   reader.readAsDataURL(file);
 });
 
-function parseGpxWaypoints(xmlText) {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(xmlText, 'application/xml');
-  const raw = Array.from(doc.querySelectorAll('wpt')).map(wpt => ({
-    lat: parseFloat(wpt.getAttribute('lat')),
-    lng: parseFloat(wpt.getAttribute('lon')),
-    elevation: wpt.querySelector('ele') ? parseFloat(wpt.querySelector('ele').textContent) : null,
-    name: wpt.querySelector('name')?.textContent?.trim() || 'Unnamed', // temporary, used for sorting only
-    type: 'landmark',
-    description: '',
-    image_url: '',
-  })).filter(wp => !isNaN(wp.lat) && !isNaN(wp.lng));
-  const sorted = sortWaypointsByNumber(raw);
-  // Split the imported name into an auto-managed code and a blank descriptive name
-  return sorted.map(wp => ({ ...wp, code: wp.name, name: '' }));
-}
-
 // Renumbers waypoints sequentially (MXR1, MXR2, MXR3...) based on the tour's code and their current
 // list position — used for plain Walk/Hike tours only, where names are just a running count, not
 // structural IDs tied to scripts (unlike WalkAbout/Driving tours, which never use this component).
@@ -92,7 +59,6 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving, co
   const [newWp, setNewWp] = useState(EMPTY_WAYPOINT);
   const [showAddForm, setShowAddForm] = useState(true);
   const [addError, setAddError] = useState('');
-  const [gpxImportResult, setGpxImportResult] = useState(null);
 
   const addWaypoint = () => {
     setAddError('');
@@ -155,24 +121,6 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving, co
     }
   };
 
-  const handleGpxImport = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const parsed = parseGpxWaypoints(ev.target.result);
-      if (parsed.length === 0) {
-        setGpxImportResult({ error: 'No waypoints found in this GPX file.' });
-        return;
-      }
-      onChange(sortWaypointsByNumber([...waypoints, ...parsed]));
-      setGpxImportResult({ count: parsed.length });
-      setTimeout(() => setGpxImportResult(null), 4000);
-    };
-    reader.readAsText(file);
-    e.target.value = '';
-  };
-
   return (
     <div className="space-y-5">
       <div>
@@ -181,23 +129,10 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving, co
           <Info className="w-4 h-4 mt-0.5 shrink-0" />
           <span>
             Add important places: turnoffs, danger spots, viewpoints, water sources etc.
-            Each point appears as a labelled marker on the walk's detail map.
+            Each point appears as a labelled marker on the walk's detail map. To import a full set of
+            waypoints from a GPX/FIT file, use Import on the General tab.
           </span>
         </div>
-      </div>
-
-      {/* GPX Import */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <label className="flex items-center gap-2 cursor-pointer bg-blue-700/30 hover:bg-blue-700/50 border border-blue-600/50 rounded-lg px-4 py-2 text-blue-300 hover:text-blue-100 transition-colors text-sm font-medium">
-          <Upload className="w-4 h-4" />
-          Import GPX Waypoints
-          <input type="file" accept=".gpx,application/gpx+xml" className="hidden" onChange={handleGpxImport} />
-        </label>
-        {gpxImportResult && (
-          gpxImportResult.error
-            ? <span className="text-red-400 text-sm">{gpxImportResult.error}</span>
-            : <span className="flex items-center gap-1 text-green-400 text-sm"><FileCheck className="w-4 h-4" /> {gpxImportResult.count} waypoint{gpxImportResult.count !== 1 ? 's' : ''} imported</span>
-        )}
       </div>
 
       {/* Add new waypoint form */}
