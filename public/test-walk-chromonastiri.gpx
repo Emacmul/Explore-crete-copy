@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="South Rethymno Walks" xmlns="http://www.topografix.com/GPX/1/1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
+
+  <metadata>
+    <name>Chromonastiri Loop — Test Walk</name>
+    <desc>A short test loop around Chromonastiri village, south Rethymno. Dirt tracks and field paths. ~3km.</desc>
+    <author><name>South Rethymno Walks</name></author>
+  </metadata>
+
+  <!-- Waypoints -->
+  <wpt lat="35.3273" lon="24.5105">
+    <name>Start — Chromonastiri Village Square</name>
+    <desc>Park near the plateia. The war museum is just here if you fancy a look first.</desc>
+    <sym>Flag, Green</sym>
+  </wpt>
+
+  <wpt lat="35.3248" lon="24.5128">
+    <name>Byzantine Church of Agios Ioannis</name>
+    <desc>12th century church on the left. Worth a pause — frescoes inside if the door is open.</desc>
+    <sym>Church</sym>
+  </wpt>
+
+  <wpt lat="35.3231" lon="24.5092">
+    <name>Turnoff — Goat Track South</name>
+    <desc>Leave the dirt road here and take the narrower goat track heading southwest into the maquis. Easy to miss — look for the cairn on the right.</desc>
+    <sym>Triangle, Blue</sym>
+  </wpt>
+
+  <wpt lat="35.3219" lon="24.5061">
+    <name>Viewpoint — Vrysinas Ridge</name>
+    <desc>Good views northwest toward Rethymno and the sea. Mount Vrysinas behind you to the south.</desc>
+    <sym>Summit</sym>
+  </wpt>
+
+  <wpt lat="35.3238" lon="24.5044">
+    <name>⚠️ Overgrown Section</name>
+    <desc>About 80m of thick maquis here. Stick to the GPS track — the path disappears but reappears on the other side of the scrub.</desc>
+    <sym>Danger</sym>
+  </wpt>
+
+  <wpt lat="35.3267" lon="24.5071">
+    <name>Seasonal Spring</name>
+    <desc>Water in winter/spring only. Do not rely on this in summer.</desc>
+    <sym>Water Source</sym>
+  </wpt>
+
+  <wpt lat="35.3273" lon="24.5105">
+    <name>Finish — Back at the Plateia</name>
+    <desc>You made it. Kafeneon is 50m to the right.</desc>
+    <sym>Flag, Red</sym>
+  </wpt>
+
+  <!-- Track -->
+  <trk>
+    <name>Chromonastiri Loop</name>
+    <trkseg>
+      <!-- Start: village square -->
+      <trkpt lat="35.3273" lon="24.5105"><ele>358</ele></trkpt>
+      <trkpt lat="35.3270" lon="24.5110"><ele>356</ele></trkpt>
+      <trkpt lat="35.3265" lon="24.5118"><ele>354</ele></trkpt>
+      <trkpt lat="35.3258" lon="24.5124"><ele>351</ele></trkpt>
+      <!-- Down toward Byzantine church -->
+      <trkpt lat="35.3251" lon="24.5127"><ele>345</ele></trkpt>
+      <trkpt lat="35.3248" lon="24.5128"><ele>342</ele></trkpt>
+      <trkpt lat="35.3244" lon="24.5126"><ele>340</ele></trkpt>
+      <trkpt lat="35.3239" lon="24.5122"><ele>337</ele></trkpt>
+      <!-- Heading south on dirt track -->
+      <trkpt lat="35.3235" lon="24.5116"><ele>334</ele></trkpt>
+      <trkpt lat="35.3233" lon="24.5108"><ele>331</ele></trkpt>
+      <trkpt lat="35.3231" lon="24.5098"><ele>329</ele></trkpt>
+      <!-- Turnoff onto goat track -->
+      <trkpt lat="35.3231" lon="24.5092"><ele>327</ele></trkpt>
+      <trkpt lat="35.3228" lon="24.5085"><ele>325</ele></trkpt>
+      <trkpt lat="35.3224" lon="24.5079"><ele>323</ele></trkpt>
+      <trkpt lat="35.3221" lon="24.5071"><ele>321</ele></trkpt>
+      <!-- Viewpoint -->
+      <trkpt lat="35.3219" lon="24.5061"><ele>318</ele></trkpt>
+      <trkpt lat="35.3220" lon="24.5055"><ele>316</ele></trkpt>
+      <!-- Overgrown section -->
+      <trkpt lat="35.3222" lon="24.5049"><ele>315</ele></trkpt>
+      <trkpt lat="35.3228" lon="24.5044"><ele>314</ele></trkpt>
+      <trkpt lat="35.3235" lon="24.5042"><ele>314</ele></trkpt>
+      <trkpt lat="35.3238" lon="24.5044"><ele>315</ele></trkpt>
+      <!-- Heading back north, spring area -->
+      <trkpt lat="35.3244" lon="24.5050"><ele>318</ele></trkpt>
+      <trkpt lat="35.3251" lon="24.5055"><ele>322</ele></trkpt>
+      <trkpt lat="35.3258" lon="24.5059"><ele>326</ele></trkpt>
+      <!-- Spring -->
+      <trkpt lat="35.3267" lon="24.5071"><ele>335</ele></trkpt>
+      <trkpt lat="35.3270" lon="24.5080"><ele>340</ele></trkpt>
+      <trkpt lat="35.3272" lon="24.5090"><ele>347</ele></trkpt>
+      <!-- Back to start -->
+      <trkpt lat="35.3273" lon="24.5100"><ele>354</ele></trkpt>
+      <trkpt lat="35.3273" lon="24.5105"><ele>358</ele></trkpt>
+    </trkseg>
+  </trk>
+
+</gpx>

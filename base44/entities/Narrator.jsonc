@@ -1,0 +1,28 @@
+{
+  "name": "Narrator",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Narrator display name"
+    },
+    "language": {
+      "type": "string",
+      "description": "Language this narrator speaks (e.g. English, German, Arabic)"
+    },
+    "words_per_minute": {
+      "type": "number",
+      "description": "Average speaking speed in words per minute, used for script timing calculations",
+      "default": 130
+    },
+    "sample_audio_url": {
+      "type": "string",
+      "description": "URL to a sample audio clip of this narrator for reference"
+    }
+  },
+  "required": [
+    "name",
+    "language",
+    "words_per_minute"
+  ]
+}

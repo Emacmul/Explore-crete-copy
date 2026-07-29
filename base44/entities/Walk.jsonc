@@ -1,0 +1,297 @@
+{
+  "name": "Walk",
+  "type": "object",
+  "properties": {
+    "tour_category": {
+      "type": "string",
+      "enum": [
+        "WHT",
+        "WBT",
+        "DDV"
+      ],
+      "default": "WHT",
+      "description": "Tour category: WHT=Walking/Hiking Tour, WBT=Walkabout Tour, DDV=Driving Tour"
+    },
+    "route_type": {
+      "type": "string",
+      "enum": [
+        "walk",
+        "driving_audio_tour"
+      ],
+      "default": "walk",
+      "description": "Internal editor type: walk for WHT, driving_audio_tour for WBT and DDV"
+    },
+    "code": {
+      "type": "string",
+      "description": "Unique identifying code for the walk or 3-letter tour code"
+    },
+    "name": {
+      "type": "string",
+      "description": "Name of the walk or tour"
+    },
+    "description": {
+      "type": "string",
+      "description": "Detailed description of the walk or tour"
+    },
+    "safety_notes": {
+      "type": "string",
+      "description": "Safety information and required equipment for this walk"
+    },
+    "difficulty": {
+      "type": "string",
+      "enum": [
+        "easy",
+        "moderate",
+        "challenging",
+        "difficult"
+      ],
+      "description": "Difficulty level (walking routes only)"
+    },
+    "distance_km": {
+      "type": "number",
+      "description": "Total distance in kilometres"
+    },
+    "duration_hours": {
+      "type": "number",
+      "description": "Estimated duration in hours"
+    },
+    "elevation_gain_m": {
+      "type": "number",
+      "description": "Total elevation gain in metres"
+    },
+    "start_lat": {
+      "type": "number",
+      "description": "Starting point latitude"
+    },
+    "start_lng": {
+      "type": "number",
+      "description": "Starting point longitude"
+    },
+    "region": {
+      "type": "string",
+      "description": "Region or province of Crete"
+    },
+    "main_interest": {
+      "type": "string",
+      "description": "Main interest or theme"
+    },
+    "walk_category": {
+      "type": "string",
+      "enum": [
+        "official",
+        "community"
+      ],
+      "default": "official",
+      "description": "Official Magical Crete walk or community-contributed walk"
+    },
+    "is_sample_walk": {
+      "type": "boolean",
+      "default": false,
+      "description": "One of the free sample walks available to all users"
+    },
+    "is_member_included": {
+      "type": "boolean",
+      "default": false,
+      "description": "Included as part of the yearly member allocation"
+    },
+    "price_eur": {
+      "type": "number",
+      "default": 15,
+      "description": "Purchase price for non-members"
+    },
+    "contributor_name": {
+      "type": "string",
+      "description": "Name of community contributor if applicable"
+    },
+    "requires_review": {
+      "type": "boolean",
+      "default": false,
+      "description": "Community walk awaiting approval"
+    },
+    "approved": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether the walk is publicly visible"
+    },
+    "default_driving_speed_kmh": {
+      "type": "number",
+      "description": "Default average driving speed for audio tours (helper only)"
+    },
+    "gpx_file_uri": {
+      "type": "string",
+      "description": "Private storage URI for GPX file"
+    },
+    "gpx_filename": {
+      "type": "string",
+      "description": "Original GPX filename"
+    },
+    "trail_path": {
+      "type": "array",
+      "description": "Array of coordinates forming the trail",
+      "items": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number"
+          },
+          "lng": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "waypoints": {
+      "type": "array",
+      "description": "Important points along the trail",
+      "items": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number"
+          },
+          "lng": {
+            "type": "number"
+          },
+          "elevation": {
+            "type": "number"
+          },
+          "type": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "image_url": {
+            "type": "string"
+          },
+          "waypoint_role": {
+            "type": "string",
+            "enum": [
+              "primary_start",
+              "primary_stop",
+              "secondary"
+            ],
+            "description": "Driving tour waypoint role"
+          },
+          "segment_id": {
+            "type": "string",
+            "description": "Driving tour segment ID e.g. BOR03"
+          },
+          "segment_title": {
+            "type": "string",
+            "description": "Driving tour segment title"
+          },
+          "avg_segment_speed_kmh": {
+            "type": "number",
+            "description": "Average segment speed in km/h (required on Primary-Start)"
+          },
+          "waypoint_colour": {
+            "type": "string",
+            "description": "Auto-assigned marker colour for driving tour waypoints"
+          },
+          "narration_script": {
+            "type": "string",
+            "description": "Narration script text for this location (may include SSML break tags)"
+          },
+          "trigger_audio": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether this waypoint triggers an audio clip on geofence entry"
+          },
+          "audio_clip_url": {
+            "type": "string",
+            "description": "URL of the audio clip to play when triggered"
+          },
+          "trigger_radius_m": {
+            "type": "number",
+            "default": 150,
+            "description": "Geofence radius in metres around this waypoint"
+          },
+          "trigger_once": {
+            "type": "boolean",
+            "default": true,
+            "description": "If true, audio plays only once per tour; if false, replays on each re-entry"
+          },
+          "use_bearing": {
+            "type": "boolean",
+            "default": false,
+            "description": "If true, audio only triggers when the user's movement direction is within the bearing range"
+          },
+          "bearing_direction": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 359,
+            "description": "Required movement bearing in degrees (0=N, 90=E, 180=S, 270=W)"
+          },
+          "bearing_tolerance": {
+            "type": "number",
+            "default": 30,
+            "minimum": 0,
+            "maximum": 180,
+            "description": "Tolerance in degrees around bearing_direction"
+          }
+        }
+      }
+    },
+    "segment_scripts": {
+      "type": "array",
+      "description": "Combined narration scripts per segment, saved for simulator break-tag editing",
+      "items": {
+        "type": "object",
+        "properties": {
+          "segment_number": {
+            "type": "string",
+            "description": "Segment number"
+          },
+          "segment_id": {
+            "type": "string",
+            "description": "Segment ID e.g. WRC01"
+          },
+          "combined_script": {
+            "type": "string",
+            "description": "All waypoint narration scripts in this segment combined in order (a, b, c\u2026) with break tags between them"
+          },
+          "combined_audio_url": {
+            "type": "string",
+            "description": "Google TTS audio URL for the combined draft script"
+          },
+          "final_script": {
+            "type": "string",
+            "description": "Final edited script after simulator break-tag adjustments for speech/speed matching"
+          },
+          "final_audio_url": {
+            "type": "string",
+            "description": "Draft audio URL after simulator adjustments (Google TTS, used for simulator testing only)"
+          },
+          "finished_audio_url": {
+            "type": "string",
+            "description": "Final production audio from ElevenLabs \u2014 only uploadable after the segment is tested and accepted in the simulator"
+          },
+          "status": {
+            "type": "string",
+            "default": "draft",
+            "description": "draft = combined but not yet finalized; finalized = break tags adjusted and draft audio saved; accepted = tested in simulator and approved, finished audio upload unlocked"
+          }
+        }
+      }
+    },
+    "image_url": {
+      "type": "string",
+      "description": "Main walk image"
+    },
+    "announced_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When members were notified"
+    }
+  },
+  "required": [
+    "code",
+    "name",
+    "start_lat",
+    "start_lng"
+  ]
+}

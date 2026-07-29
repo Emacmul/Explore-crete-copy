@@ -1,0 +1,91 @@
+{
+  "name": "AppUser",
+  "type": "object",
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "description": "Base44 user ID"
+    },
+    "email": {
+      "type": "string",
+      "description": "Email address"
+    },
+    "first_name": {
+      "type": "string",
+      "description": "First name"
+    },
+    "last_name": {
+      "type": "string",
+      "description": "Last name"
+    },
+    "role": {
+      "type": "string",
+      "enum": [
+        "admin",
+        "narrator"
+      ],
+      "description": "Admin panel role: admin=full access, narrator=narration-only access. Leave unset for regular app users."
+    },
+    "date_of_birth": {
+      "type": "string",
+      "format": "date",
+      "description": "Date of birth"
+    },
+    "gender": {
+      "type": "string",
+      "enum": [
+        "male",
+        "female",
+        "prefer_not_to_say"
+      ],
+      "description": "Gender"
+    },
+    "password": {
+      "type": "string",
+      "description": "User-chosen password"
+    },
+    "newsletter_opted_in": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether user has opted into newsletter emails"
+    },
+    "registration_complete": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether profile setup is complete"
+    },
+    "membership_code": {
+      "type": "string",
+      "description": "Membership code entered by the user"
+    },
+    "is_member": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether the user has an active Magical Crete membership"
+    },
+    "membership_started_at": {
+      "type": "string",
+      "format": "date",
+      "description": "Date the current membership started"
+    },
+    "membership_expires_at": {
+      "type": "string",
+      "format": "date",
+      "description": "Date the current membership expires"
+    },
+    "included_walks_remaining": {
+      "type": "number",
+      "default": 0,
+      "description": "Number of included member walks still available in the current membership year"
+    },
+    "included_walks_year": {
+      "type": "string",
+      "description": "Membership year this included-walk allowance belongs to"
+    }
+  },
+  "required": [
+    "email",
+    "first_name",
+    "last_name"
+  ]
+}

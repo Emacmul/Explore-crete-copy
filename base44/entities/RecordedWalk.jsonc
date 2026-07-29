@@ -1,0 +1,85 @@
+{
+  "name": "RecordedWalk",
+  "type": "object",
+  "properties": {
+    "owner_user_id": {
+      "type": "string",
+      "description": "Base44 user ID of the walk owner"
+    },
+    "owner_email": {
+      "type": "string",
+      "description": "Email of the walk owner"
+    },
+    "owner_name": {
+      "type": "string",
+      "description": "Display name of the walk owner"
+    },
+    "name": {
+      "type": "string",
+      "description": "User-given name for the walk"
+    },
+    "recorded_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the walk was recorded"
+    },
+    "duration_seconds": {
+      "type": "number",
+      "description": "Total active duration in seconds (excludes paused time)"
+    },
+    "distance_km": {
+      "type": "number",
+      "description": "Total distance in kilometres"
+    },
+    "trail_path": {
+      "type": "array",
+      "description": "Array of lat/lng coordinates recorded during the walk",
+      "items": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number"
+          },
+          "lng": {
+            "type": "number"
+          },
+          "timestamp": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "gpx_data": {
+      "type": "string",
+      "description": "GPX XML string generated from the recorded path"
+    },
+    "notes": {
+      "type": "string",
+      "description": "User notes about the walk (Wayfinder only)"
+    },
+    "photos": {
+      "type": "array",
+      "description": "Array of photo URLs added to the walk (Wayfinder only)",
+      "items": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "caption": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "is_shared": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether this walk is shared with other app users"
+    }
+  },
+  "required": [
+    "name",
+    "owner_user_id"
+  ]
+}

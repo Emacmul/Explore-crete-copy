@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="https://media.base44.com/images/public/69a7d073cd7cd9b51cfe0fd0/4aafe06dc_generated_image.png" />
+    <link rel="apple-touch-icon" href="https://media.base44.com/images/public/69a7d073cd7cd9b51cfe0fd0/4aafe06dc_generated_image.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#0f766e" />
+    <meta name="description" content="Explore Crete — walking tours, hiking routes, and driving audio tours across Crete, Greece." />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Explore Crete" />
+    <title>Explore Crete</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').catch(() => {});
+        });
+        // Auto-reload when a new service worker takes over
+        navigator.serviceWorker.addEventListener('message', (event) => {
+          if (event.data && event.data.type === 'SW_UPDATED') {
+            window.location.reload();
+          }
+        });
+      }
+    </script>
+  </body>
+</html>
