@@ -14,12 +14,13 @@ import TourSimulator from './TourSimulator';
 import TrailPathEditor from './TrailPathEditor';
 import AdminPreviewMap from './AdminPreviewMap';
 import { validateDrivingTour, generateGpx, generateKml, downloadTextFile, buildSegmentId, getRoleColour } from '@/lib/routeExport';
+import { getRouteTypeForCategory } from '@/lib/tourCategories';
 import { toast } from '@/components/ui/use-toast';
 
 const DEFAULT_INTERESTS = ['Wild Flowers', 'History', 'Mythology', 'Archaeology', 'Photography', 'Routes of Faith'];
 
 const EMPTY_WALK = {
-  tour_category: 'WHT', // WHT | WBT | DDV
+  tour_category: '', // WHT | WBT | DDV — no silent default, must be chosen
   route_type: 'walk', // 'walk' | 'driving_audio_tour'
   code: '',
   name: '',
@@ -49,7 +50,7 @@ function SaveButton({ onSave, saving, canSave }) {
         Save Route
       </Button>
       {!canSave && !saving && (
-        <p className="text-xs text-slate-500">Fill in Code, Name, and the Starting Point coordinates to enable saving.</p>
+        <p className="text-xs text-slate-500">Fill in Code, Name, Route Type, Region, Difficulty (where shown), and the Starting Point coordinates to enable saving.</p>
       )}
     </div>
   );
@@ -88,12 +89,16 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   const [gpxImportDone, setGpxImportDone] = useState(false);
   const [elevFetching, setElevFetching] = useState(false);
   const gpxInputRef = useRef(null);
-  const canImportGpx = !!(form.code?.trim() && form.name?.trim());
+  const canImportGpx = !!(form.code?.trim() && form.name?.trim() && form.tour_category);
+  const isDrivingAudioTourForGate = form.route_type === 'driving_audio_tour';
   const canSave = !!(
     form.code?.trim() &&
     form.name?.trim() &&
+    form.tour_category &&
     form.start_lat !== '' && form.start_lat != null && !isNaN(Number(form.start_lat)) &&
-    form.start_lng !== '' && form.start_lng != null && !isNaN(Number(form.start_lng))
+    form.start_lng !== '' && form.start_lng != null && !isNaN(Number(form.start_lng)) &&
+    form.region?.trim() &&
+    (isDrivingAudioTourForGate || !!form.difficulty)
   );
 
   // Shared helper: compute distance + elevation from a trailPath array + elevations array
@@ -460,7 +465,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
       toast({
         variant: 'destructive',
         title: 'Cannot import yet',
-        description: `Please fill in the ${isDrivingAudioTour ? 'Tour' : 'Route'} Code and Name first.`,
+        description: 'Please select a Route Type and fill in the Code and Name first.',
       });
       e.target.value = '';
       return;
@@ -475,11 +480,11 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   };
 
   const handleSave = async () => {
-    if (!form.code?.trim() || !form.name?.trim()) {
+    if (!canSave) {
       toast({
         variant: 'destructive',
         title: 'Cannot save yet',
-        description: `Please fill in the ${isDrivingAudioTour ? 'Tour' : 'Route'} Code and ${isDrivingAudioTour ? 'Tour' : 'Route'} Name before saving.`,
+        description: 'Please fill in Route Type, Code, Name, Region, Difficulty (where shown), and the Starting Point coordinates before saving.',
       });
       setActiveTab('details');
       return;
@@ -531,10 +536,6 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
             {walk?.id ? `Editing: ${walk.code || walk.name}` : 'New Route'}
           </h2>
         </div>
-        <Button onClick={handleSave} disabled={saving} className="bg-amber-500 hover:bg-amber-600 gap-2">
-          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          Save Route
-        </Button>
       </div>
 
       {/* Tabs */}
@@ -559,11 +560,35 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
         {activeTab === 'details' && (
           <div className="space-y-5">
 
-            {/* Tour/Route Code & Name — required first, since waypoint IDs and segment IDs are built from the code */}
+            {/* Route Type — chosen first, since it decides Code/Name labels and the waypoint shape used on import */}
+            <div>
+              <Label className="text-slate-300 mb-1.5 block">Route Type *</Label>
+              <Select
+                value={form.tour_category || undefined}
+                onValueChange={(v) => {
+                  set('tour_category', v);
+                  set('route_type', getRouteTypeForCategory(v));
+                }}
+              >
+                <SelectTrigger className={`bg-slate-700 text-white ${!form.tour_category ? 'border-amber-500/70 focus-visible:ring-amber-500' : 'border-slate-600'}`}>
+                  <SelectValue placeholder="Select route type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="WHT">Walk/Hike</SelectItem>
+                  <SelectItem value="WBT">WalkAbout</SelectItem>
+                  <SelectItem value="DDV">Driving Tour</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-slate-500 mt-1">
+                Walk/Hike uses the existing walking-app workflow. WalkAbout and Driving Tour prepare GPX data for the Speech/Speed Route Checker.
+              </p>
+            </div>
+
+            {/* Tour/Route Code & Name — required next, since waypoint IDs and segment IDs are built from the code */}
             {!canImportGpx && (
               <div className="flex items-center gap-2 bg-amber-900/20 border border-amber-700/40 rounded-lg px-3 py-2">
                 <span className="flex items-center justify-center w-5 h-5 rounded-full bg-amber-500 text-slate-900 text-xs font-bold shrink-0">1</span>
-                <p className="text-amber-200 text-sm">Enter a Code and Name below to unlock GPX/FIT import.</p>
+                <p className="text-amber-200 text-sm">Select a Route Type and enter a Code and Name below to unlock GPX/FIT import.</p>
               </div>
             )}
             <div className="grid grid-cols-2 gap-4">
@@ -596,7 +621,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 <p className="text-blue-400 text-xs">
                   {canImportGpx
                     ? 'Pre-fills start point, trail path, waypoints, distance & elevation from your eTrex GPX or FIT file'
-                    : `Fill in the ${isDrivingAudioTour ? 'Tour' : 'Route'} Code and Name above first — waypoint IDs are built from the code`}
+                    : `Select Route Type and fill in the ${isDrivingAudioTour ? 'Tour' : 'Route'} Code and Name above first — waypoint IDs and shape are built from these`}
                 </p>
               </div>
               {gpxImportDone ? (
@@ -621,25 +646,9 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
               )}
             </div>
 
-            <div>
-              <Label className="text-slate-300 mb-1.5 block">Route Type</Label>
-              <Select value={form.route_type || 'walk'} onValueChange={v => set('route_type', v)}>
-                <SelectTrigger className="bg-slate-700 border-slate-600 text-white">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="walk">Walking Route</SelectItem>
-                  <SelectItem value="driving_audio_tour">Driving Audio Tour</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-slate-500 mt-1">
-                Walking routes use the existing walking-app workflow. Driving audio tours prepare GPX data for the Speech/Speed Route Checker.
-              </p>
-            </div>
-
             {isDrivingAudioTour && (
               <div className="bg-purple-900/20 border border-purple-700/40 rounded-xl px-4 py-3">
-                <p className="text-purple-200 text-sm font-medium">Driving Audio Tour mode</p>
+                <p className="text-purple-200 text-sm font-medium">{form.tour_category === 'WBT' ? 'WalkAbout Tour mode' : 'Driving Audio Tour mode'}</p>
                 <p className="text-purple-300 text-xs mt-1">
                   Use the Waypoints tab to define Primary-Start, Primary-Stop, Secondary points, segment IDs, titles, colours and average segment speeds once the waypoint editor has been updated for driving-tour fields.
                 </p>
@@ -710,7 +719,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
             {/* Walk access */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label className="text-slate-300 mb-1.5 block">Free Sample Walk</Label>
+                <Label className="text-slate-300 mb-1.5 block">Free sample</Label>
                 <div className="flex items-center gap-3 h-9 bg-slate-700 border border-slate-600 rounded-md px-3">
                   <button
                     type="button"
@@ -833,7 +842,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
             {!isDrivingAudioTour && (
             <div className="grid grid-cols-3 gap-4">
               <div>
-                <Label className="text-slate-300 mb-1.5 block">Distance (km)</Label>
+                <Label className="text-slate-300 mb-1.5 block">Approx. Distance (km)</Label>
                 <Input type="number" value={form.distance_km} onChange={e => set('distance_km', e.target.value)}
                   placeholder="e.g. 12.5" className="bg-slate-700 border-slate-600 text-white" />
               </div>
@@ -850,48 +859,6 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
             </div>
 
             )}
-
-            {/* GPX File — private upload */}
-            <div>
-              <Label className="text-slate-300 mb-1.5 block">GPX File</Label>
-              {form.gpx_file_uri ? (
-                <div className="flex items-center gap-3 bg-green-900/30 border border-green-700/50 rounded-lg px-4 py-3">
-                  <FileCheck className="w-5 h-5 text-green-400 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-green-300 text-sm font-medium">{form.gpx_filename || 'GPX file uploaded'}</p>
-                    <p className="text-green-600 text-xs">Stored securely — customers receive a temporary download link on redemption</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => { set('gpx_file_uri', ''); set('gpx_filename', ''); }}
-                    className="text-slate-500 hover:text-red-400 transition-colors"
-                    title="Remove file"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              ) : (
-                <label className={`flex items-center gap-2 cursor-pointer bg-slate-700 border border-dashed border-slate-500 rounded-lg px-4 py-3 text-slate-400 hover:text-white hover:border-amber-500/50 transition-colors text-sm w-full ${gpxUploading ? 'opacity-60 pointer-events-none' : ''}`}>
-                  {gpxUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                  {gpxUploading ? 'Uploading securely…' : 'Upload GPX file (stored privately)'}
-                  <input
-                    type="file"
-                    accept=".gpx,application/gpx+xml"
-                    className="hidden"
-                    onChange={async (e) => {
-                      const file = e.target.files[0];
-                      if (!file) return;
-                      setGpxUploading(true);
-                      const { file_uri } = await base44.integrations.Core.UploadPrivateFile({ file });
-                      set('gpx_file_uri', file_uri);
-                      set('gpx_filename', file.name);
-                      setGpxUploading(false);
-                      e.target.value = '';
-                    }}
-                  />
-                </label>
-              )}
-            </div>
 
             {isDrivingAudioTour && (
               <div className="grid grid-cols-2 gap-4">
@@ -942,6 +909,52 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
               trailPath={form.trail_path}
               onChange={path => set('trail_path', path)}
             />
+
+            {/* GPX File — private upload, handed to the customer as a download */}
+            <div>
+              <Label className="text-slate-300 mb-1.5 block">
+                Customer GPX Download
+                <span className="ml-2 text-xs text-slate-500 font-normal">The raw file customers download to load into their own GPS device or navigation app — separate from the map data above</span>
+              </Label>
+              {form.gpx_file_uri ? (
+                <div className="flex items-center gap-3 bg-green-900/30 border border-green-700/50 rounded-lg px-4 py-3">
+                  <FileCheck className="w-5 h-5 text-green-400 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-green-300 text-sm font-medium">{form.gpx_filename || 'GPX file uploaded'}</p>
+                    <p className="text-green-600 text-xs">Stored securely — customers receive a temporary download link on redemption</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { set('gpx_file_uri', ''); set('gpx_filename', ''); }}
+                    className="text-slate-500 hover:text-red-400 transition-colors"
+                    title="Remove file"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <label className={`flex items-center gap-2 cursor-pointer bg-slate-700 border border-dashed border-slate-500 rounded-lg px-4 py-3 text-slate-400 hover:text-white hover:border-amber-500/50 transition-colors text-sm w-full ${gpxUploading ? 'opacity-60 pointer-events-none' : ''}`}>
+                  {gpxUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                  {gpxUploading ? 'Uploading securely…' : 'Upload GPX file (stored privately)'}
+                  <input
+                    type="file"
+                    accept=".gpx,application/gpx+xml"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files[0];
+                      if (!file) return;
+                      setGpxUploading(true);
+                      const { file_uri } = await base44.integrations.Core.UploadPrivateFile({ file });
+                      set('gpx_file_uri', file_uri);
+                      set('gpx_filename', file.name);
+                      setGpxUploading(false);
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
+              )}
+            </div>
+
             <SaveButton onSave={handleSave} saving={saving} canSave={canSave} />
           </div>
         )}
