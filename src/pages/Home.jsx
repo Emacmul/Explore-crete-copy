@@ -211,7 +211,7 @@ export default function Home() {
             <Link to={createPageUrl('MyWalks')}>
               <Button variant="outline" size="sm" className="gap-2 border-green-300 text-green-700 hover:bg-green-50 relative">
                 <WifiOff className="w-4 h-4" />
-                <span className="hidden sm:inline">My Walks</span>
+                <span className="hidden sm:inline">My Library</span>
 
                 {offlineCount > 0 && (
                   <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-green-500 text-white text-xs rounded-full flex items-center justify-center font-bold">
