@@ -138,7 +138,7 @@ export default function TourSimulatorMap({ trailPath, waypoints, triggered, curr
         const radiusHandlePos = destinationPoint(wp.lat, wp.lng, bearingDir + 90, radius);
 
         return (
-          <React.Fragment key={i}>
+          <React.Fragment key={wp.segment_id || `${wp.lat},${wp.lng},${i}`}>
             <Marker position={[wp.lat, wp.lng]} icon={wpIcon(colour, emoji)} />
 
             {/* Pastel red radius circle — scales with zoom (uses metres) */}

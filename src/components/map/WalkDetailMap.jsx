@@ -120,7 +120,7 @@ export default function WalkDetailMap({ walk, followGps = false }) {
 
         return (
         <Marker
-          key={i}
+          key={wp.segment_id || `${wp.lat},${wp.lng},${i}`}
           position={[wp.lat, wp.lng]}
           icon={wpIcon}
         >
