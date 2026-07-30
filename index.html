@@ -19,7 +19,15 @@
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js').catch(() => {});
+          navigator.serviceWorker.register('/sw.js').then((reg) => {
+            // A single-page app never triggers the browser's own update check on its own —
+            // that normally only happens on a full page load. Poll for updates ourselves so a
+            // long-open admin session still notices when a new version has been deployed.
+            setInterval(() => reg.update().catch(() => {}), 60000);
+            document.addEventListener('visibilitychange', () => {
+              if (document.visibilityState === 'visible') reg.update().catch(() => {});
+            });
+          }).catch(() => {});
         });
         // Auto-reload when a new service worker takes over
         navigator.serviceWorker.addEventListener('message', (event) => {

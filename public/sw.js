@@ -6,7 +6,7 @@
  * Stale-while-revalidate for static assets (JS/CSS/images).
  */
 
-const CACHE_VERSION = 'explore-crete-v3';
+const CACHE_VERSION = 'explore-crete-v4';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 
 // Install: activate immediately, don't wait for old SW to release
