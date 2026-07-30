@@ -507,7 +507,19 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
     };
 
     try {
-      await onSave(data);
+      const wasNewTour = !form.id;
+      const saved = await onSave(data);
+      // Keep the form's own id in sync with what was actually persisted, so the *next* save
+      // updates this same record instead of accidentally creating a second one.
+      if (saved?.id && saved.id !== form.id) {
+        setForm(prev => ({ ...prev, id: saved.id }));
+      }
+      if (wasNewTour) {
+        // First save after import — the tour now exists, so jump straight to describing waypoints
+        // rather than leaving the admin sitting on the General tab wondering what happened.
+        setActiveTab('waypoints');
+        toast({ title: 'Tour saved', description: 'Now add descriptions for the imported waypoints below.' });
+      }
     } catch (err) {
       console.error('Save failed:', err);
       toast({
@@ -538,7 +550,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
             <ArrowLeft className="w-4 h-4" /> Back
           </Button>
           <h2 className="text-xl font-bold text-white">
-            {walk?.id ? `Editing: ${walk.code || walk.name}` : 'New Route'}
+            {form.id ? `Editing: ${form.code || form.name}` : 'New Route'}
           </h2>
         </div>
       </div>
@@ -959,8 +971,6 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 </label>
               )}
             </div>
-
-            <SaveButton onSave={handleSave} saving={saving} canSave={canSave} />
           </div>
         )}
 

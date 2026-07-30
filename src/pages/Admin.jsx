@@ -71,8 +71,9 @@ export default function Admin() {
       queryClient.setQueryData(['walks'], (old) => [{ ...walkData, ...saved }, ...(old || [])]);
     }
     queryClient.invalidateQueries({ queryKey: ['walks'] });
-    setEditingWalk(null);
-    setFocusWaypointIndex(null);
+    // Deliberately does NOT close the editor or reset focus here — Save persists changes and keeps
+    // the admin/narrator working; only clicking Back actually leaves the editing screen.
+    return saved;
   };
 
   const handleDelete = async (walkId) => {
