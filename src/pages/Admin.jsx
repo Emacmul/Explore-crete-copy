@@ -70,7 +70,9 @@ export default function Admin() {
       saved = await base44.entities.Walk.create(walkData);
       queryClient.setQueryData(['walks'], (old) => [{ ...walkData, ...saved }, ...(old || [])]);
     }
-    queryClient.invalidateQueries({ queryKey: ['walks'] });
+    // No immediate invalidateQueries here on purpose: an instant re-fetch can land before the
+    // server has caught up internally on its own write, silently overwriting the correct result
+    // above with stale data. The list is fully rebuilt from a real fetch next time this page loads.
     // Deliberately does NOT close the editor or reset focus here — Save persists changes and keeps
     // the admin/narrator working; only clicking Back actually leaves the editing screen.
     return saved;
@@ -78,9 +80,9 @@ export default function Admin() {
 
   const handleDelete = async (walkId) => {
     await base44.entities.Walk.delete(walkId);
-    // Update the list immediately rather than waiting on a refetch, which can lag
+    // Same reasoning as handleSave — update the list directly, don't immediately re-fetch and risk
+    // a stale response overwriting the correct result.
     queryClient.setQueryData(['walks'], (old) => (old || []).filter(w => w.id !== walkId));
-    queryClient.invalidateQueries({ queryKey: ['walks'] });
   };
 
   if (isLoading) {
