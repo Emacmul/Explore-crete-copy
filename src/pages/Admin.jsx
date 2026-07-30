@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Loader2, LogOut, ShieldCheck, ArrowLeft, Mic } from 'lucide-react';
 import { createPageUrl } from '@/utils';
@@ -19,7 +18,8 @@ export default function Admin() {
   const [editingWalk, setEditingWalk] = useState(null);
   const [view, setView] = useState('start');
   const [focusWaypointIndex, setFocusWaypointIndex] = useState(null);
-  const queryClient = useQueryClient();
+  const [walks, setWalks] = useState([]);
+  const [walksLoading, setWalksLoading] = useState(true);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -55,40 +55,71 @@ export default function Admin() {
     checkAuth();
   }, []);
 
-  const { data: walks = [], isLoading: walksLoading } = useQuery({
-    queryKey: ['walks'],
-    queryFn: () => base44.entities.Walk.list('-created_date'),
-    enabled: !!user,
-  });
+  // The walks list is driven entirely by the server: one initial fetch to populate it, then a
+  // live subscription that applies every create/update/delete the moment the server confirms it
+  // actually happened. Nothing here is guessed or assumed locally — if it's on screen, the server
+  // said so.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+
+    base44.entities.Walk.list('-created_date').then((initial) => {
+      if (!cancelled) {
+        setWalks(initial || []);
+        setWalksLoading(false);
+      }
+    }).catch((err) => {
+      console.error('Failed to load walks:', err);
+      if (!cancelled) setWalksLoading(false);
+    });
+
+    const unsubscribe = base44.entities.Walk.subscribe((event) => {
+      setWalks((prev) => {
+        if (event.type === 'delete') {
+          return prev.filter(w => w.id !== event.id);
+        }
+        if (event.type === 'create') {
+          if (prev.some(w => w.id === event.id)) return prev; // already have it, avoid a duplicate
+          return [event.data, ...prev];
+        }
+        if (event.type === 'update') {
+          return prev.map(w => w.id === event.id ? { ...w, ...event.data } : w);
+        }
+        return prev;
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [user]);
 
   const handleSave = async (walkData) => {
     let saved;
     if (walkData.id) {
       saved = await base44.entities.Walk.update(walkData.id, walkData);
-      queryClient.setQueryData(['walks'], (old) => (old || []).map(w => w.id === walkData.id ? { ...w, ...walkData, ...saved } : w));
     } else {
       saved = await base44.entities.Walk.create(walkData);
-      queryClient.setQueryData(['walks'], (old) => [{ ...walkData, ...saved }, ...(old || [])]);
     }
-    // No immediate invalidateQueries here on purpose: an instant re-fetch can land before the
-    // server has caught up internally on its own write, silently overwriting the correct result
-    // above with stale data. The list is fully rebuilt from a real fetch next time this page loads.
+    // No manual list update here — the subscription above applies it the moment the server
+    // confirms the write, so what's on screen always matches what the server actually did.
     // Deliberately does NOT close the editor or reset focus here — Save persists changes and keeps
     // the admin/narrator working; only clicking Back actually leaves the editing screen.
     return saved;
   };
 
   const handleDelete = async (walkId) => {
-    await base44.entities.Walk.delete(walkId);
-    // Same reasoning as handleSave — update the list directly, don't immediately re-fetch and risk
-    // a stale response overwriting the correct result.
-    queryClient.setQueryData(['walks'], (old) => (old || []).filter(w => w.id !== walkId));
+    const result = await base44.entities.Walk.delete(walkId);
+    if (result && result.success === false) {
+      throw new Error('The server did not confirm this delete.');
+    }
+    // No manual list update here either — same reasoning as handleSave.
   };
 
   const handleMarkChecked = async (walkId) => {
     const checkedAt = new Date().toISOString();
     await base44.entities.Walk.update(walkId, { announced_at: checkedAt });
-    queryClient.setQueryData(['walks'], (old) => (old || []).map(w => w.id === walkId ? { ...w, announced_at: checkedAt } : w));
   };
 
   if (isLoading) {
