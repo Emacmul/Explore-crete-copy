@@ -992,7 +992,14 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
             ) : (
               <WaypointEditor
                 waypoints={form.waypoints}
-                onChange={wps => set('waypoints', wps)}
+                onChange={wps => {
+                  set('waypoints', wps);
+                  // The trail line and the key points come from the same eTrex recording for a
+                  // plain walk/hike, so keep the route line in sync whenever waypoints change —
+                  // otherwise a deleted/added/reordered waypoint stops matching what's drawn on
+                  // the map, even though the waypoints list itself looks correct.
+                  set('trail_path', wps.map(wp => ({ lat: wp.lat, lng: wp.lng })));
+                }}
                 onSave={handleSave}
                 saving={saving}
                 code={form.code}

@@ -23,11 +23,18 @@ export default function Admin() {
 
   useEffect(() => {
     const checkAuth = async () => {
+      console.log('[Admin] checkAuth starting — this confirms the current code is actually running.');
       try {
         const isAuth = await base44.auth.isAuthenticated();
-        if (!isAuth) { base44.auth.redirectToLogin(window.location.href); return; }
+        console.log('[Admin] base44.auth.isAuthenticated() returned:', isAuth);
+        if (!isAuth) {
+          console.log('[Admin] Not authenticated via Base44 native auth — redirecting to Base44 login.');
+          base44.auth.redirectToLogin(window.location.href);
+          return;
+        }
 
         const userData = await base44.auth.me();
+        console.log('[Admin] base44.auth.me() returned:', userData);
 
         let role = null;
         if (userData.role === 'admin') {
@@ -40,6 +47,7 @@ export default function Admin() {
         }
 
         if (!role) {
+          console.log('[Admin] No admin/narrator role found for this login — sending to Home.', { isAuth, userData });
           window.location.href = createPageUrl('Home');
           return;
         }
