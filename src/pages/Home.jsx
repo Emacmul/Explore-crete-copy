@@ -18,7 +18,6 @@ import SplashScreen from '../components/onboarding/SplashScreen';
 import RegistrationForm from '../components/onboarding/RegistrationForm';
 import TourCategoryPicker from '../components/walks/TourCategoryPicker';
 import { getTourCategory } from '../lib/tourCategories';
-import NewWalkAnnouncementModal, { getUnseenAnnouncement } from '../components/walks/NewWalkAnnouncementModal';
 
 export default function Home() {
   const { user, logout } = useAuth();
@@ -30,7 +29,6 @@ export default function Home() {
   const [updatingWalkName, setUpdatingWalkName] = useState(null);
   const [showSplash, setShowSplash] = useState(() => !sessionStorage.getItem('splash_seen'));
   const [registrationComplete, setRegistrationComplete] = useState(false);
-  const [newWalkAnnouncement, setNewWalkAnnouncement] = useState(null);
   const [selectedTourCategory, setSelectedTourCategory] = useState(() => sessionStorage.getItem('tour_category'));
 
   const { getAllOfflineWalks } = useOfflineWalks();
@@ -60,16 +58,6 @@ export default function Home() {
     queryFn: () => base44.entities.Walk.list(),
     enabled: !!user,
   });
-
-  useEffect(() => {
-    if (!walks.length || !registrationComplete) return;
-
-    const unseen = getUnseenAnnouncement(walks);
-
-    if (unseen) {
-      setNewWalkAnnouncement(unseen);
-    }
-  }, [walks, registrationComplete]);
 
   useEffect(() => {
     if (!walks.length || updatingRef.current) return;
@@ -184,13 +172,6 @@ export default function Home() {
             sessionStorage.setItem('splash_seen', '1');
             setShowSplash(false);
           }}
-        />
-      )}
-
-      {newWalkAnnouncement && !showSplash && (
-        <NewWalkAnnouncementModal
-          walk={newWalkAnnouncement}
-          onDismiss={() => setNewWalkAnnouncement(null)}
         />
       )}
 

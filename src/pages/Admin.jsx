@@ -85,6 +85,12 @@ export default function Admin() {
     queryClient.setQueryData(['walks'], (old) => (old || []).filter(w => w.id !== walkId));
   };
 
+  const handleMarkChecked = async (walkId) => {
+    const checkedAt = new Date().toISOString();
+    await base44.entities.Walk.update(walkId, { announced_at: checkedAt });
+    queryClient.setQueryData(['walks'], (old) => (old || []).map(w => w.id === walkId ? { ...w, announced_at: checkedAt } : w));
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center">
@@ -155,6 +161,7 @@ export default function Admin() {
             userRole={userRole}
             onEdit={(walk) => setEditingWalk(walk)}
             onDelete={handleDelete}
+            onMarkChecked={handleMarkChecked}
           />
         ) : (
           <AdminStartScreen

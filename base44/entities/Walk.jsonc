@@ -286,7 +286,7 @@
     "announced_at": {
       "type": "string",
       "format": "date-time",
-      "description": "When members were notified"
+      "description": "When an admin/narrator last confirmed this route is still accurate on the ground (the 'new walk' customer announcement feature that originally used this field has been retired)"
     }
   },
   "required": [

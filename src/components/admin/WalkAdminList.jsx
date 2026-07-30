@@ -1,7 +1,7 @@
 import React from 'react';
 import { Badge } from '@/components/ui/badge';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Trash2, Mountain, Loader2, MapPin, Pencil } from 'lucide-react';
+import { Trash2, Mountain, Loader2, MapPin, Pencil, CalendarCheck, AlertTriangle } from 'lucide-react';
 import { toast } from '@/components/ui/use-toast';
 
 const difficultyColors = {
@@ -11,9 +11,28 @@ const difficultyColors = {
   difficult: 'bg-red-900 text-red-300',
 };
 
-export default function WalkAdminList({ walks, isLoading, onEdit, onDelete, userRole = 'admin' }) {
+const CHECK_INTERVAL_DAYS = 365;
+
+const formatDate = (isoString) => {
+  if (!isoString) return null;
+  try {
+    return new Date(isoString).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  } catch {
+    return null;
+  }
+};
+
+const daysSince = (isoString) => {
+  if (!isoString) return null;
+  const then = new Date(isoString).getTime();
+  if (isNaN(then)) return null;
+  return Math.floor((Date.now() - then) / (1000 * 60 * 60 * 24));
+};
+
+export default function WalkAdminList({ walks, isLoading, onEdit, onDelete, onMarkChecked, userRole = 'admin' }) {
   const [confirmDelete, setConfirmDelete] = React.useState(null); // holds the walk object
   const [isDeleting, setIsDeleting] = React.useState(false);
+  const [markingChecked, setMarkingChecked] = React.useState(null); // walk id currently being marked
   const isAdmin = userRole === 'admin';
 
   const handleDelete = (walk) => {
@@ -38,6 +57,22 @@ export default function WalkAdminList({ walks, isLoading, onEdit, onDelete, user
     setIsDeleting(false);
   };
 
+  const handleMarkChecked = async (e, walkId) => {
+    e.stopPropagation();
+    setMarkingChecked(walkId);
+    try {
+      await onMarkChecked(walkId);
+    } catch (err) {
+      console.error('Mark checked failed:', err);
+      toast({
+        variant: 'destructive',
+        title: 'Could not save the check',
+        description: err?.message || 'An unexpected error occurred. Please try again.',
+      });
+    }
+    setMarkingChecked(null);
+  };
+
   return (
     <div>
       <div className="mb-6 mt-2">
@@ -57,8 +92,20 @@ export default function WalkAdminList({ walks, isLoading, onEdit, onDelete, user
         </div>
       ) : (
         <div className="space-y-3">
-          {walks.map(walk => (
-            <div key={walk.id} className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden flex items-center">
+          {walks.map(walk => {
+            const importDate = formatDate(walk.created_date);
+            const lastCheckedDate = walk.announced_at || walk.created_date;
+            const daysOverdue = daysSince(lastCheckedDate);
+            const needsCheck = daysOverdue !== null && daysOverdue > CHECK_INTERVAL_DAYS;
+            return (
+            <div key={walk.id} className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
+              {needsCheck && (
+                <div className="flex items-center gap-2 bg-red-900/30 border-b border-red-700/50 px-4 py-1.5 text-xs text-red-300">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  Not checked for accuracy in over a year{walk.announced_at ? ` (last checked ${formatDate(walk.announced_at)})` : ' (never checked since import)'} — please verify on the ground
+                </div>
+              )}
+              <div className="flex items-center">
               {/* Main content — click anywhere here to edit */}
               <button
                 onClick={() => onEdit(walk)}
@@ -89,8 +136,20 @@ export default function WalkAdminList({ walks, isLoading, onEdit, onDelete, user
                       <MapPin className="w-3 h-3" />
                       {(walk.waypoints || []).length} key points
                     </span>
+                    {importDate && <span className="text-xs text-slate-500">Imported {importDate}</span>}
+                    {walk.announced_at && <span className="text-xs text-slate-500">· Checked {formatDate(walk.announced_at)}</span>}
                   </div>
                 </div>
+              </button>
+
+              {/* Was Checked — confirms the route is still accurate on the ground, resets the 1-year clock */}
+              <button
+                onClick={(e) => handleMarkChecked(e, walk.id)}
+                disabled={markingChecked === walk.id}
+                title="Mark as checked for accuracy today"
+                className={`shrink-0 p-4 transition-colors ${needsCheck ? 'text-red-400 hover:text-green-400' : 'text-slate-500 hover:text-green-400'}`}
+              >
+                {markingChecked === walk.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <CalendarCheck className="w-4 h-4" />}
               </button>
 
               {/* Delete — admin only, replaces the old edit-pencil spot */}
@@ -103,8 +162,10 @@ export default function WalkAdminList({ walks, isLoading, onEdit, onDelete, user
                   <Trash2 className="w-4 h-4" />
                 </button>
               )}
+              </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
