@@ -484,6 +484,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   };
 
   const handleSave = async () => {
+    if (saving) return; // guard against a double-click or double-invocation firing two saves at once
     if (!canSave) {
       toast({
         variant: 'destructive',
@@ -1005,7 +1006,6 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 }} segmentScripts={form.segment_scripts || []} onSegmentScriptsChange={(scripts) => set('segment_scripts', scripts)} />
               </>
             )}
-            <SaveButton onSave={handleSave} saving={saving} canSave={canSave} />
           </div>
         )}
       </div>
