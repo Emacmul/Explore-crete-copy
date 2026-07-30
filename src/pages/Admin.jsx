@@ -62,19 +62,24 @@ export default function Admin() {
   });
 
   const handleSave = async (walkData) => {
+    let saved;
     if (walkData.id) {
-      await base44.entities.Walk.update(walkData.id, walkData);
+      saved = await base44.entities.Walk.update(walkData.id, walkData);
+      queryClient.setQueryData(['walks'], (old) => (old || []).map(w => w.id === walkData.id ? { ...w, ...walkData, ...saved } : w));
     } else {
-      await base44.entities.Walk.create(walkData);
+      saved = await base44.entities.Walk.create(walkData);
+      queryClient.setQueryData(['walks'], (old) => [{ ...walkData, ...saved }, ...(old || [])]);
     }
-    await queryClient.invalidateQueries({ queryKey: ['walks'] });
+    queryClient.invalidateQueries({ queryKey: ['walks'] });
     setEditingWalk(null);
     setFocusWaypointIndex(null);
   };
 
   const handleDelete = async (walkId) => {
     await base44.entities.Walk.delete(walkId);
-    await queryClient.invalidateQueries({ queryKey: ['walks'] });
+    // Update the list immediately rather than waiting on a refetch, which can lag
+    queryClient.setQueryData(['walks'], (old) => (old || []).filter(w => w.id !== walkId));
+    queryClient.invalidateQueries({ queryKey: ['walks'] });
   };
 
   if (isLoading) {
