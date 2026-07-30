@@ -162,10 +162,6 @@
             "type": "string",
             "description": "Admin/narrator-entered descriptive label shown alongside the code, e.g. 'Rocky descent'"
           },
-          "code": {
-            "type": "string",
-            "description": "Auto-numbered walk/hike waypoint code (e.g. MXR14) — kept in sync automatically with list position, separate from the descriptive name"
-          },
           "description": {
             "type": "string"
           },
@@ -183,7 +179,7 @@
           },
           "segment_id": {
             "type": "string",
-            "description": "Driving tour segment ID e.g. BOR03"
+            "description": "Segment/waypoint code — e.g. BOR03 for driving/WalkAbout tour segments, or MXR14 for a plain walk/hike waypoint"
           },
           "segment_title": {
             "type": "string",

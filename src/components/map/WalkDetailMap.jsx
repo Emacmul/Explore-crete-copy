@@ -116,7 +116,7 @@ export default function WalkDetailMap({ walk, followGps = false }) {
         const wpColor = iconConfig.color;
         const wpName = isDrivingTour
           ? (wp.segment_title || wp.name)
-          : (wp.code && wp.name ? `${wp.code} — ${wp.name}` : (wp.code || wp.name));
+          : (wp.segment_id && wp.name ? `${wp.segment_id} — ${wp.name}` : (wp.segment_id || wp.name));
 
         return (
         <Marker

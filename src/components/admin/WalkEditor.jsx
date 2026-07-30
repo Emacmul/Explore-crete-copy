@@ -301,7 +301,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
         return {
           lat: parseFloat(wpt.getAttribute('lat')),
           lng: parseFloat(wpt.getAttribute('lon')),
-          code: nameTxt,
+          segment_id: nameTxt,
           name: '',
           description: descTxt,
           type: 'landmark',

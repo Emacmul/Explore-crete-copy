@@ -51,7 +51,7 @@ const compressImage = (file) => new Promise((resolve) => {
 // structural IDs tied to scripts (unlike WalkAbout/Driving tours, which never use this component).
 function renumberWaypoints(list, code) {
   if (!code) return list;
-  return list.map((wp, i) => ({ ...wp, code: `${code}${i + 1}` }));
+  return list.map((wp, i) => ({ ...wp, segment_id: `${code}${i + 1}` }));
 }
 
 export default function WaypointEditor({ waypoints, onChange, onSave, saving, code }) {
@@ -279,8 +279,8 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving, co
                   <span className="text-xs text-slate-600 font-mono w-5 text-center">{index + 1}</span>
                   <span className="text-sm">{typeInfo?.label.split(' ')[0]}</span>
                   <div className="flex-1 min-w-0">
-                    {wp.code && (
-                      <span className="font-mono text-xs bg-slate-600 text-amber-300 px-1.5 py-0.5 rounded font-bold mr-2">{wp.code}</span>
+                    {wp.segment_id && (
+                      <span className="font-mono text-xs bg-slate-600 text-amber-300 px-1.5 py-0.5 rounded font-bold mr-2">{wp.segment_id}</span>
                     )}
                     <span className={wp.name ? "text-white font-medium" : "text-slate-500 italic"}>
                       {wp.name || 'No description yet'}
@@ -325,10 +325,10 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving, co
                         />
                       </div>
                     </div>
-                    {wp.code && (
+                    {wp.segment_id && (
                       <div>
                         <Label className="text-slate-400 text-xs mb-1 block">Code (auto-managed)</Label>
-                        <div className="bg-slate-800 border border-slate-600 rounded h-8 flex items-center px-3 font-mono text-amber-300 text-sm">{wp.code}</div>
+                        <div className="bg-slate-800 border border-slate-600 rounded h-8 flex items-center px-3 font-mono text-amber-300 text-sm">{wp.segment_id}</div>
                       </div>
                     )}
                     <div>
