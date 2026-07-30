@@ -2,6 +2,7 @@ import React from 'react';
 import { Badge } from '@/components/ui/badge';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Trash2, Mountain, Loader2, MapPin, Pencil } from 'lucide-react';
+import { toast } from '@/components/ui/use-toast';
 
 const difficultyColors = {
   easy: 'bg-green-900 text-green-300',
@@ -25,11 +26,16 @@ export default function WalkAdminList({ walks, isLoading, onEdit, onDelete, user
     setIsDeleting(true);
     try {
       await onDelete(id);
+      setConfirmDelete(null);
     } catch (e) {
       console.error('Delete failed:', e);
+      toast({
+        variant: 'destructive',
+        title: 'Delete failed — nothing was removed',
+        description: e?.message || 'An unexpected error occurred while deleting. Please try again.',
+      });
     }
     setIsDeleting(false);
-    setConfirmDelete(null);
   };
 
   return (
