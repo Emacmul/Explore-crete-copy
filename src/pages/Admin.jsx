@@ -55,14 +55,13 @@ export default function Admin() {
     checkAuth();
   }, []);
 
-  // The walks list is driven entirely by the server: one initial fetch to populate it, then a
-  // live subscription that applies every create/update/delete the moment the server confirms it
-  // actually happened. Nothing here is guessed or assumed locally — if it's on screen, the server
-  // said so.
+  // Load the walks list once. Every action below (save, delete, mark-checked) updates this local
+  // state directly and only in response to that specific action's own confirmed result — nothing
+  // reacts to background events from elsewhere, which removes any risk of a delayed or unrelated
+  // event changing what's on screen.
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
-
     base44.entities.Walk.list('-created_date').then((initial) => {
       if (!cancelled) {
         setWalks(initial || []);
@@ -72,38 +71,18 @@ export default function Admin() {
       console.error('Failed to load walks:', err);
       if (!cancelled) setWalksLoading(false);
     });
-
-    const unsubscribe = base44.entities.Walk.subscribe((event) => {
-      setWalks((prev) => {
-        if (event.type === 'delete') {
-          return prev.filter(w => w.id !== event.id);
-        }
-        if (event.type === 'create') {
-          if (prev.some(w => w.id === event.id)) return prev; // already have it, avoid a duplicate
-          return [event.data, ...prev];
-        }
-        if (event.type === 'update') {
-          return prev.map(w => w.id === event.id ? { ...w, ...event.data } : w);
-        }
-        return prev;
-      });
-    });
-
-    return () => {
-      cancelled = true;
-      unsubscribe();
-    };
+    return () => { cancelled = true; };
   }, [user]);
 
   const handleSave = async (walkData) => {
     let saved;
     if (walkData.id) {
       saved = await base44.entities.Walk.update(walkData.id, walkData);
+      setWalks((prev) => prev.map(w => w.id === walkData.id ? { ...w, ...walkData, ...saved } : w));
     } else {
       saved = await base44.entities.Walk.create(walkData);
+      setWalks((prev) => [{ ...walkData, ...saved }, ...prev]);
     }
-    // No manual list update here — the subscription above applies it the moment the server
-    // confirms the write, so what's on screen always matches what the server actually did.
     // Deliberately does NOT close the editor or reset focus here — Save persists changes and keeps
     // the admin/narrator working; only clicking Back actually leaves the editing screen.
     return saved;
@@ -114,12 +93,13 @@ export default function Admin() {
     if (result && result.success === false) {
       throw new Error('The server did not confirm this delete.');
     }
-    // No manual list update here either — same reasoning as handleSave.
+    setWalks((prev) => prev.filter(w => w.id !== walkId));
   };
 
   const handleMarkChecked = async (walkId) => {
     const checkedAt = new Date().toISOString();
     await base44.entities.Walk.update(walkId, { announced_at: checkedAt });
+    setWalks((prev) => prev.map(w => w.id === walkId ? { ...w, announced_at: checkedAt } : w));
   };
 
   if (isLoading) {
