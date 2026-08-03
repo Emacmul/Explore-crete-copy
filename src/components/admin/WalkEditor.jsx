@@ -298,14 +298,22 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
           };
         }
 
+        // Optional extension tags — present when a GPX was exported by this app (Save and
+        // Download GPX) or hand-annotated from notes before import. A plain Garmin Explore
+        // export has none of these, so every field falls back to its old default and import
+        // behaves exactly as it did before.
+        const typeTxt = wpt.getElementsByTagName('mc:type')[0]?.textContent?.trim();
+        const labelTxt = wpt.getElementsByTagName('mc:label')[0]?.textContent?.trim();
+        const imageUrlTxt = wpt.getElementsByTagName('mc:imageUrl')[0]?.textContent?.trim();
+
         return {
           lat: parseFloat(wpt.getAttribute('lat')),
           lng: parseFloat(wpt.getAttribute('lon')),
           segment_id: nameTxt,
-          name: '',
+          name: labelTxt || '',
           description: descTxt,
-          type: 'landmark',
-          image_url: '',
+          type: typeTxt || 'landmark',
+          image_url: imageUrlTxt || '',
           ...(ele !== null && !isNaN(ele) ? { elevation: Math.round(ele) } : {}),
         };
       }).filter(p => !isNaN(p.lat) && !isNaN(p.lng));

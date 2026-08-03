@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  WAYPOINT NOTES TEMPLATE — for Walk/Hike tours only
+
+  HOW TO USE:
+  1. Export the plain GPX from Garmin Explore as usual (just <wpt> points,
+     no names/descriptions filled in).
+  2. For each <wpt> in that file, copy the block below and fill it in from
+     your notes: name, description, and type. Leave out <ele> — Explore
+     Crete fills that in automatically on import, same as it does now.
+  3. Delete these instructions and the two example waypoints before you
+     import the real file.
+  4. Import the finished file on the General tab as normal. Every waypoint
+     will already have its name, description and type — no need to open
+     each one individually afterwards, unless you want to add a photo or
+     make a change.
+
+  RULES:
+  - <name> must be the waypoint code (e.g. MXR1, MXR2...) — this is what
+    Explore Crete uses to keep waypoints in the right order. Keep them
+    numbered in order along the route.
+  - <desc> is the walker-facing description — same text you'd type into
+    the Description box in the app.
+  - <mc:label> is optional — a short admin-only note. In the app this is
+    the "Name (optional description)" field. Fine to leave out.
+  - <mc:type> must be one of exactly these words:
+      start, end, turnoff, danger, viewpoint, water, rest_area,
+      landmark, kafeneon, wildlife_spot, church, ruins,
+      archaeological_site, abandoned_settlement
+  - Photos can't be added from notes — add those in the app afterwards if
+    needed.
+-->
+<gpx version="1.1" creator="Magical Crete Route Editor"
+  xmlns="http://www.topografix.com/GPX/1/1"
+  xmlns:mc="https://magicalcrete.com/gpx/extensions">
+
+  <!-- EXAMPLE 1 — delete before importing -->
+  <wpt lat="35.218264" lon="24.504056">
+    <name>MXR1</name>
+    <desc>A narrow street next to the bakery. About 50m in, ignore the rising left hand fork, keep to the right.</desc>
+    <extensions>
+      <mc:type>landmark</mc:type>
+      <mc:label>Turnoff for car park</mc:label>
+    </extensions>
+  </wpt>
+
+  <!-- EXAMPLE 2 — delete before importing -->
+  <wpt lat="35.217321" lon="24.504118">
+    <name>MXR2</name>
+    <desc>Steep loose gravel underfoot for the next 100m — take care in wet weather.</desc>
+    <extensions>
+      <mc:type>danger</mc:type>
+    </extensions>
+  </wpt>
+
+</gpx>
