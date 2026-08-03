@@ -76,6 +76,41 @@ changes.
 
 ---
 
+## 2026-08-03 — PWA install icon swapped, splash screen checked
+Scope: `public/manifest.json`, `public/icon-192.png` and
+`public/icon-512.png` (new files).
+
+- The PWA install icon (what shows on someone's home screen after
+  they install the app) was pointing at an old generic image hosted
+  on Base44's media server. Generated proper square versions of the
+  real logo (192×192 and 512×512, logo centred on a transparent
+  square canvas so it isn't stretched — the source logo isn't square)
+  and pointed `manifest.json` at those local files instead.
+- Checked the splash screen (`SplashScreen.jsx`) — it turned out not
+  to contain the small logo icon at all. It's a full-screen background
+  photo (a different, unrelated image), so there was nothing there to
+  swap. Left as-is.
+
+**Verified:** `npx vite build` completes with no errors. Confirmed
+`manifest.json` is still valid JSON after the edit.
+
+---
+
+## 2026-08-03 — Real logo in the header
+Scope: `src/pages/Home.jsx`, `public/explore-crete-logo.png` (new file).
+
+The small icon next to "Explore Crete" was a generic map-pin icon, not
+the actual logo. Added the real logo image to `public/` and swapped
+it in.
+
+**Not done:** the same generic icon/logo may still appear elsewhere
+(splash screen, PWA home-screen icon in `manifest.json`) — only the
+main header was reported and fixed this time.
+
+**Verified:** `npx vite build` completes with no errors.
+
+---
+
 ## 2026-08-03 — Walks list heading, Free/Paid toggle
 Scope: `src/components/walks/WalkList.jsx` (front end),
 `src/pages/Admin.jsx` + `src/components/admin/WalkAdminList.jsx`
