@@ -76,6 +76,73 @@ changes.
 
 ---
 
+## 2026-08-03 — Elevation Gain also now recalculates on every Save
+Scope: `src/components/admin/WalkEditor.jsx` (Walk/Hike tours only).
+Follows directly from the Distance fix above.
+
+Enda decided Elevation Gain needs the same automatic fix as Distance,
+since walkers with health/physical conditions rely on it to judge
+whether a route is safe for them — leaving it stale after an edit
+isn't acceptable the way it might be for other fields.
+
+**What changed:** `handleSave` now refetches real elevation heights
+for the current trail line (same Open Topo Data service used at
+import) and recalculates Elevation Gain fresh, every time Save is
+clicked. Unlike Distance, this needs a network call — heights aren't
+stored anywhere between saves. If that call fails, the save still goes
+through with the previous figure (doesn't block the admin's work), but
+they get a clear warning afterwards: "Saved, but Elevation Gain could
+not be re-checked... please check it manually before this route goes
+live." On-screen Elevation Gain field updates to match after a
+successful recalculation, same as Distance.
+
+**Trade-off, accepted deliberately:** Save is now slightly slower on
+Walk/Hike tours (one extra network round-trip). Judged worth it given
+the safety reasoning above.
+
+**Verified:** `npx vite build` completes with no errors.
+
+---
+
+## 2026-08-03 — Distance now recalculates automatically on every Save
+Scope: `src/components/admin/WalkEditor.jsx` (Walk/Hike tours only).
+
+**The bug:** Plakias Koules Walk showed 46.6 km because of a rogue
+waypoint in the GPX. Enda removed that waypoint — the GPX export and
+the map preview both updated correctly, but the Distance number stayed
+wrong. Root cause: Distance was only ever calculated once, at the
+moment a GPX file gets imported. Any edit after that (adding/removing
+a waypoint, fixing a bad point, re-routing) changes the route but
+never re-runs that calculation, so whatever number was set at import
+just sits there, right or wrong, forever.
+
+**Fix:** `handleSave` now recalculates Distance fresh from the current
+trail line every time Save is clicked (Walk/Hike tours only — driving
+tours untouched). Pure distance math from the waypoints' coordinates,
+no network call, so it's fast and can't fail. The on-screen Distance
+field also updates to match right after a successful save, not just
+what gets sent to the server.
+
+**Verified:** `npx vite build` completes with no errors.
+
+**Flagged, not fixed — needs a decision:**
+Elevation Gain has the exact same staleness risk (also only ever
+calculated once, at import) but I did **not** make it auto-recalculate
+too, because doing so isn't free the way distance is: unlike distance,
+Elevation Gain needs a height value for every point on the trail, and
+those heights aren't stored anywhere in the route data — they only
+ever existed briefly during import, fetched from an external elevation
+service (Open Topo Data), then discarded. Recalculating it on every
+save would mean firing that same network request to Open Topo Data
+every single time Save is clicked, which would make Save noticeably
+slower, and would leave the elevation figure blank or wrong if that
+external service is ever briefly down. Wanted to flag that trade-off
+rather than decide it for him. If Enda wants Elevation Gain kept in
+sync the same way, this is the natural next step: /areas/explore-
+crete-app.md and this changelog both need updating once decided.
+
+---
+
 ## 2026-08-03 — Full sweep for old app name / generic logo
 Enda asked that from now on, any text or logo change request means
 checking for and fixing every occurrence, not just the one spot shown.

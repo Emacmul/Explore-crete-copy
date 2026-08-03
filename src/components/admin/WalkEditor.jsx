@@ -504,11 +504,48 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
     }
 
     setSaving(true);
+
+    // Walk/Hike tours: always recompute Distance from the current trail line at save time,
+    // rather than trusting whatever number was calculated at the original GPX import. This is
+    // what was wrong with Plakias Koules Walk — a rogue waypoint had inflated the distance to
+    // 46.6km at import time, and removing that waypoint later never re-ran the calculation, so
+    // the old wrong number just sat there. Recalculating on every save closes that gap for any
+    // future edit (adding/removing waypoints, fixing a bad point, re-routing).
+    let recalculatedDistanceKm = form.distance_km ? Number(form.distance_km) : undefined;
+    if (!isDrivingAudioTour && form.trail_path && form.trail_path.length > 1) {
+      const { distanceKm } = computeStats(form.trail_path, []);
+      if (distanceKm > 0) {
+        recalculatedDistanceKm = Math.round(distanceKm * 10) / 10;
+      }
+    }
+
+    // Elevation Gain has the same staleness problem as Distance did — and getting it right
+    // matters even more, since walkers with heart, joint, or other physical conditions rely on
+    // it to judge whether a route is safe for them. Refetch real elevation heights for the
+    // current trail line and recompute it fresh on every save, same as Distance. This needs a
+    // network call (heights aren't stored anywhere between saves), so if that call fails for any
+    // reason, saving still goes ahead with the old figure rather than blocking the admin's work —
+    // but they're warned afterwards so they know to double-check it.
+    let recalculatedElevationGainM = form.elevation_gain_m ? Number(form.elevation_gain_m) : undefined;
+    let elevationRecalcFailed = false;
+    if (!isDrivingAudioTour && form.trail_path && form.trail_path.length > 1) {
+      try {
+        const elevations = await fetchElevations(form.trail_path);
+        const { elevGain } = computeStats(form.trail_path, elevations);
+        if (elevGain > 0) {
+          recalculatedElevationGainM = Math.round(elevGain);
+        }
+      } catch (err) {
+        console.warn('Elevation recalculation failed, keeping previous value:', err);
+        elevationRecalcFailed = true;
+      }
+    }
+
     const data = {
       ...form,
-      distance_km: form.distance_km ? Number(form.distance_km) : undefined,
+      distance_km: recalculatedDistanceKm,
       duration_hours: form.duration_hours ? Number(form.duration_hours) : undefined,
-      elevation_gain_m: form.elevation_gain_m ? Number(form.elevation_gain_m) : undefined,
+      elevation_gain_m: recalculatedElevationGainM,
       default_driving_speed_kmh: form.default_driving_speed_kmh ? Number(form.default_driving_speed_kmh) : undefined,
       start_lat: Number(form.start_lat),
       start_lng: Number(form.start_lng),
@@ -521,6 +558,19 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
       // updates this same record instead of accidentally creating a second one.
       if (saved?.id && saved.id !== form.id) {
         setForm(prev => ({ ...prev, id: saved.id }));
+      }
+      if (recalculatedDistanceKm !== form.distance_km) {
+        setForm(prev => ({ ...prev, distance_km: recalculatedDistanceKm }));
+      }
+      if (recalculatedElevationGainM !== form.elevation_gain_m) {
+        setForm(prev => ({ ...prev, elevation_gain_m: recalculatedElevationGainM }));
+      }
+      if (elevationRecalcFailed) {
+        toast({
+          variant: 'destructive',
+          title: 'Saved, but Elevation Gain could not be re-checked',
+          description: 'Could not reach the elevation service, so the previous Elevation Gain figure was kept as-is. Please check it manually before this route goes live.',
+        });
       }
       if (wasNewTour) {
         // First save after import — the tour now exists, so jump straight to describing waypoints
