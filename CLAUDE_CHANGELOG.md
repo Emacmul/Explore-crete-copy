@@ -76,6 +76,52 @@ changes.
 
 ---
 
+## 2026-08-03 — Tours list: stop trusting the browser's guess, add Refresh
+Scope: Admin Panel → Tours list (`src/pages/Admin.jsx`,
+`src/components/admin/WalkAdminList.jsx`).
+
+**The problem Enda hit:** he deleted a walk, the list updated to show
+one fewer. He then imported a new tour. The old page reappeared with
+3 tours — including the one he'd just deleted. Going back showed 2
+again.
+
+**Cause:** the walk list was only ever fetched from the server once,
+right when the Admin page first loads. After that, every action
+(delete, save) just edited what was already sitting in the browser —
+it never checked back with the server to confirm. If the server took
+even a moment to actually finish a delete, the browser's local guess
+and the server's real state could disagree, and reloading the page
+would show whichever one happened to be true at that instant.
+
+**What changed:**
+- `handleDelete` in `Admin.jsx` now re-fetches the real list from the
+  server straight after a delete, instead of just removing that one
+  item from the browser's copy.
+- Added a `refreshWalks()` function and wired a **Refresh** button
+  onto the Tours list (top right, next to "Tours"). Clicking it
+  re-fetches the list from the server on demand, so at any point Enda
+  can check what's actually saved rather than relying on the state of
+  a tab that's been open a while.
+
+**Why:** gives an honest, checkable answer to "is this actually saved"
+instead of the app silently trusting its own memory of what it did.
+
+**Verified:** `npx vite build` completes with no errors.
+
+**Not done / worth knowing for next time:**
+- Not tested live — same caveat as prior entries, needs a real check
+  in the Base44 app. Worth deleting a tour, immediately hitting
+  Refresh, and confirming it's actually gone.
+- This doesn't fix any underlying delay on Base44's side (if there is
+  one) — it just makes sure the app always shows the truth instead of
+  a guess, and gives Enda a way to check on demand.
+- Same pattern (local-only state, no re-fetch) exists for `handleSave`
+  and `handleMarkChecked` in `Admin.jsx` — not touched this session
+  since they weren't reported as a problem, but worth keeping in mind
+  if similar confusion turns up around saving or marking tours checked.
+
+---
+
 ## 2026-08-03 — Import now reads back name/type/label from an annotated GPX
 Scope: Walk/Hike tours only, GPX import (`handleGpxImport` in
 `WalkEditor.jsx`).

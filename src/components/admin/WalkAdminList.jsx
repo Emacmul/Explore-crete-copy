@@ -1,7 +1,7 @@
 import React from 'react';
 import { Badge } from '@/components/ui/badge';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Trash2, Mountain, Loader2, MapPin, Pencil, CalendarCheck, AlertTriangle } from 'lucide-react';
+import { Trash2, Mountain, Loader2, MapPin, Pencil, CalendarCheck, AlertTriangle, RefreshCw } from 'lucide-react';
 import { toast } from '@/components/ui/use-toast';
 
 const difficultyColors = {
@@ -29,7 +29,7 @@ const daysSince = (isoString) => {
   return Math.floor((Date.now() - then) / (1000 * 60 * 60 * 24));
 };
 
-export default function WalkAdminList({ walks, isLoading, onEdit, onDelete, onMarkChecked, userRole = 'admin' }) {
+export default function WalkAdminList({ walks, isLoading, onEdit, onDelete, onMarkChecked, onRefresh, userRole = 'admin' }) {
   const [confirmDelete, setConfirmDelete] = React.useState(null); // holds the walk object
   const [isDeleting, setIsDeleting] = React.useState(false);
   const [markingChecked, setMarkingChecked] = React.useState(null); // walk id currently being marked
@@ -75,9 +75,22 @@ export default function WalkAdminList({ walks, isLoading, onEdit, onDelete, onMa
 
   return (
     <div>
-      <div className="mb-6 mt-2">
-        <h2 className="text-xl font-bold text-white">Tours</h2>
-        <p className="text-slate-400 text-sm">{walks.length} tours in database</p>
+      <div className="mb-6 mt-2 flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-white">Tours</h2>
+          <p className="text-slate-400 text-sm">{walks.length} tours in database</p>
+        </div>
+        {onRefresh && (
+          <button
+            onClick={onRefresh}
+            disabled={isLoading}
+            title="Reload the list from the server, to check what's actually saved"
+            className="flex items-center gap-2 text-sm text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg px-3 py-1.5 transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        )}
       </div>
 
       {isLoading ? (

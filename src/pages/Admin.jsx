@@ -82,6 +82,17 @@ export default function Admin() {
     return () => { cancelled = true; };
   }, [user]);
 
+  const refreshWalks = async () => {
+    setWalksLoading(true);
+    try {
+      const fresh = await base44.entities.Walk.list('-created_date');
+      setWalks(fresh || []);
+    } catch (err) {
+      console.error('Failed to refresh walks:', err);
+    }
+    setWalksLoading(false);
+  };
+
   const handleSave = async (walkData) => {
     let saved;
     if (walkData.id) {
@@ -101,7 +112,11 @@ export default function Admin() {
     if (result && result.success === false) {
       throw new Error('The server did not confirm this delete.');
     }
-    setWalks((prev) => prev.filter(w => w.id !== walkId));
+    // Re-fetch the real list from the server rather than just removing this walk from what's
+    // on screen — that way what the admin sees right after deleting is what the server actually
+    // has, not a guess that could be wrong if the delete takes a moment to fully land.
+    const fresh = await base44.entities.Walk.list('-created_date');
+    setWalks(fresh || []);
   };
 
   const handleMarkChecked = async (walkId) => {
@@ -181,6 +196,7 @@ export default function Admin() {
             onEdit={(walk) => setEditingWalk(walk)}
             onDelete={handleDelete}
             onMarkChecked={handleMarkChecked}
+            onRefresh={refreshWalks}
           />
         ) : (
           <AdminStartScreen
