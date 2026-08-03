@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Trash2, ChevronDown, ChevronUp, Info, ImagePlus, Loader2, X, GripVertical, Save } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, ChevronUp, Info, ImagePlus, Loader2, X, GripVertical, Save, Download } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { base44 } from '@/api/base44Client';
 
@@ -164,7 +164,7 @@ function AddWaypointForm({ newWp, setNewWp, addError, onSave, onCancel, onImageU
   );
 }
 
-export default function WaypointEditor({ waypoints, onChange, onSave, saving, code }) {
+export default function WaypointEditor({ waypoints, onChange, onSave, saving, code, onSaveAndDownload, downloadingGpx }) {
   const [expanded, setExpanded] = useState(null);
   const [newWp, setNewWp] = useState(EMPTY_WAYPOINT);
   const [addingBeforeIndex, setAddingBeforeIndex] = useState(null); // null = not adding; number = inserting before this position
@@ -416,15 +416,26 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving, co
                       )}
                     </div>
                     {onSave && (
-                      <div className="pt-2 border-t border-slate-600">
+                      <div className="pt-2 border-t border-slate-600 space-y-2">
                         <Button
                           onClick={onSave}
                           disabled={saving}
                           className="w-full bg-amber-500 hover:bg-amber-600 gap-2"
                         >
                           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                          Save Walk
+                          Save Waypoint
                         </Button>
+                        {onSaveAndDownload && (
+                          <Button
+                            onClick={onSaveAndDownload}
+                            disabled={saving || downloadingGpx}
+                            variant="outline"
+                            className="w-full bg-slate-700 border-slate-500 text-slate-200 hover:bg-slate-600 hover:text-white gap-2"
+                          >
+                            {downloadingGpx ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                            Save and Download GPX
+                          </Button>
+                        )}
                       </div>
                     )}
                   </div>

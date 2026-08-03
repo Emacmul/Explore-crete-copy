@@ -13,7 +13,7 @@ import DrivingTourExportPanel from './DrivingTourExportPanel';
 import TourSimulator from './TourSimulator';
 import TrailPathEditor from './TrailPathEditor';
 import AdminPreviewMap from './AdminPreviewMap';
-import { validateDrivingTour, generateGpx, generateKml, downloadTextFile, buildSegmentId, getRoleColour } from '@/lib/routeExport';
+import { validateDrivingTour, generateGpx, generateWalkGpx, generateKml, downloadTextFile, buildSegmentId, getRoleColour } from '@/lib/routeExport';
 import { getRouteTypeForCategory } from '@/lib/tourCategories';
 import { toast } from '@/components/ui/use-toast';
 
@@ -484,7 +484,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   };
 
   const handleSave = async () => {
-    if (saving) return; // guard against a double-click or double-invocation firing two saves at once
+    if (saving) return false; // guard against a double-click or double-invocation firing two saves at once
     if (!canSave) {
       toast({
         variant: 'destructive',
@@ -492,7 +492,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
         description: 'Please fill in Route Type, Code, Name, Region, Difficulty (where shown), and the Starting Point coordinates before saving.',
       });
       setActiveTab('details');
-      return;
+      return false;
     }
 
     setSaving(true);
@@ -520,6 +520,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
         setActiveTab('waypoints');
         toast({ title: 'Tour saved', description: 'Now add descriptions for the imported waypoints below.' });
       }
+      return true;
     } catch (err) {
       console.error('Save failed:', err);
       toast({
@@ -527,8 +528,32 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
         title: 'Save failed — nothing was saved',
         description: err?.message || 'An unexpected error occurred while saving. Please try again.',
       });
+      return false;
     } finally {
       setSaving(false);
+    }
+  };
+
+  const [downloadingGpx, setDownloadingGpx] = useState(false);
+
+  // Saves the whole tour first (same as the regular Save), then — only if that save
+  // actually succeeded — builds a GPX file from the just-saved data and downloads it
+  // to the user's Downloads folder. Walk/Hike only; driving tours have their own
+  // export panel already.
+  const handleSaveAndDownloadGpx = async () => {
+    if (downloadingGpx || saving) return;
+    setDownloadingGpx(true);
+    try {
+      const success = await handleSave();
+      if (!success) return;
+
+      const gpxContent = generateWalkGpx(form);
+      const safeName = (form.name || 'Route').trim().replace(/[\\/:*?"<>|]+/g, '-') || 'Route';
+      const dateStr = new Date().toISOString().slice(0, 10);
+      downloadTextFile(gpxContent, `${safeName}-updated-${dateStr}.gpx`, 'application/gpx+xml');
+      toast({ title: 'GPX downloaded', description: 'The updated route was saved and a GPX backup was sent to your Downloads folder.' });
+    } finally {
+      setDownloadingGpx(false);
     }
   };
 
@@ -1003,6 +1028,8 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 onSave={handleSave}
                 saving={saving}
                 code={form.code}
+                onSaveAndDownload={handleSaveAndDownloadGpx}
+                downloadingGpx={downloadingGpx}
               />
             )}
             <SaveButton onSave={handleSave} saving={saving} canSave={canSave} />
