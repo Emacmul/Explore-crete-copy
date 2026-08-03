@@ -3,7 +3,7 @@ import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Loader2, MapPin, Mail, CheckCircle2, Eye, EyeOff } from 'lucide-react';
+import { Loader2, Mail, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export default function RegistrationForm({ user, onComplete }) {
@@ -106,9 +106,9 @@ export default function RegistrationForm({ user, onComplete }) {
         {/* Header */}
         <div className="text-center mb-8">
           <div className="w-16 h-16 bg-white/15 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-white/20">
-            <MapPin className="w-8 h-8 text-amber-400" />
+            <img src="/explore-crete-logo.png" alt="Explore Crete" className="w-10 h-10 object-contain" />
           </div>
-          <h1 className="text-2xl font-bold text-white mb-1">Welcome to Crete Walking Trails</h1>
+          <h1 className="text-2xl font-bold text-white mb-1">Welcome to Explore Crete</h1>
           <p className="text-blue-300 text-sm">Create your account to get started</p>
         </div>
 

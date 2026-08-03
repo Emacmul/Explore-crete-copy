@@ -76,6 +76,28 @@ changes.
 
 ---
 
+## 2026-08-03 — Full sweep for old app name / generic logo
+Enda asked that from now on, any text or logo change request means
+checking for and fixing every occurrence, not just the one spot shown.
+Did a full search of the codebase for the old name and the generic
+icon-box pattern and found two more spots that hadn't been caught:
+
+- `src/components/onboarding/RegistrationForm.jsx` — still said
+  "Welcome to Crete Walking Trails" (old app name), and had the same
+  generic MapPin-in-a-box brand icon. Both fixed: text now "Welcome to
+  Explore Crete", icon now the real logo.
+- `src/components/walks/TourCategoryPicker.jsx` — the "Choose Your
+  Tour Type" screen had the same generic MapPin brand-icon box above
+  its heading. Fixed to the real logo. Left the *other* MapPin/
+  Footprints/Car icons on this screen alone — those are functional,
+  one per tour category (Walk/Hike, WalkAbout, Driving), not branding.
+- Confirmed `index.html` and `manifest.json`'s `name`/`short_name`
+  already said "Explore Crete" — no change needed there.
+
+**Verified:** `npx vite build` completes with no errors.
+
+---
+
 ## 2026-08-03 — "All Walks" heading + real logo on the walks panel
 Scope: `src/components/walks/WalkList.jsx`.
 
