@@ -53,7 +53,7 @@ export default function Home() {
     if (user) checkRegistration();
   }, [user]);
 
-  const { data: walks = [], isLoading: walksLoading } = useQuery({
+  const { data: walks = [], isLoading: walksLoading, refetch: refetchWalks, isFetching: walksRefreshing } = useQuery({
     queryKey: ['walks'],
     queryFn: () => base44.entities.Walk.list(),
     enabled: !!user,
@@ -185,7 +185,7 @@ export default function Home() {
             </div>
 
             <div>
-              <h1 className="font-bold text-gray-900">Crete Walking Trails</h1>
+              <h1 className="font-bold text-gray-900">Explore Crete</h1>
               <p className="text-xs text-gray-500">Discover the island's beauty</p>
             </div>
           </div>
@@ -250,6 +250,8 @@ export default function Home() {
               onWalkSelect={handleWalkSelect}
               searchQuery={searchQuery}
               onSearchChange={setSearchQuery}
+              onRefresh={refetchWalks}
+              refreshing={walksRefreshing}
             />
           </div>
 

@@ -29,10 +29,11 @@ const daysSince = (isoString) => {
   return Math.floor((Date.now() - then) / (1000 * 60 * 60 * 24));
 };
 
-export default function WalkAdminList({ walks, isLoading, onEdit, onDelete, onMarkChecked, onRefresh, userRole = 'admin' }) {
+export default function WalkAdminList({ walks, isLoading, onEdit, onDelete, onMarkChecked, onToggleFree, onRefresh, userRole = 'admin' }) {
   const [confirmDelete, setConfirmDelete] = React.useState(null); // holds the walk object
   const [isDeleting, setIsDeleting] = React.useState(false);
   const [markingChecked, setMarkingChecked] = React.useState(null); // walk id currently being marked
+  const [togglingFree, setTogglingFree] = React.useState(null); // walk id currently being toggled
   const isAdmin = userRole === 'admin';
 
   const handleDelete = (walk) => {
@@ -55,6 +56,22 @@ export default function WalkAdminList({ walks, isLoading, onEdit, onDelete, onMa
       });
     }
     setIsDeleting(false);
+  };
+
+  const handleToggleFree = async (e, walk) => {
+    e.stopPropagation();
+    setTogglingFree(walk.id);
+    try {
+      await onToggleFree(walk.id, !walk.is_sample_walk);
+    } catch (err) {
+      console.error('Toggle Free/Paid failed:', err);
+      toast({
+        variant: 'destructive',
+        title: 'Could not change Free/Paid',
+        description: err?.message || 'An unexpected error occurred. Please try again.',
+      });
+    }
+    setTogglingFree(null);
   };
 
   const handleMarkChecked = async (e, walkId) => {
@@ -85,7 +102,7 @@ export default function WalkAdminList({ walks, isLoading, onEdit, onDelete, onMa
             onClick={onRefresh}
             disabled={isLoading}
             title="Reload the list from the server, to check what's actually saved"
-            className="flex items-center gap-2 text-sm text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg px-3 py-1.5 transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 text-sm text-white font-semibold bg-blue-600 hover:bg-blue-500 border border-blue-400 rounded-lg px-3 py-1.5 transition-colors disabled:opacity-50"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
             Refresh
@@ -154,6 +171,21 @@ export default function WalkAdminList({ walks, isLoading, onEdit, onDelete, onMa
                   </div>
                 </div>
               </button>
+
+              {/* Free/Paid — admin only. Marks the walk as a free sample available to everyone
+                  (e.g. a free walk given away over Christmas) vs. its normal paid status. */}
+              {isAdmin && (
+                <button
+                  onClick={(e) => handleToggleFree(e, walk)}
+                  disabled={togglingFree === walk.id}
+                  title={walk.is_sample_walk ? 'Free for everyone — click to make it Paid again' : 'Paid — click to make it Free for everyone'}
+                  className={`shrink-0 px-2.5 py-1.5 mr-1 rounded-full text-xs font-semibold transition-colors ${
+                    walk.is_sample_walk ? 'bg-emerald-600 text-white hover:bg-emerald-500' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                  }`}
+                >
+                  {togglingFree === walk.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : (walk.is_sample_walk ? 'Free' : 'Paid')}
+                </button>
+              )}
 
               {/* Was Checked — confirms the route is still accurate on the ground, resets the 1-year clock */}
               <button

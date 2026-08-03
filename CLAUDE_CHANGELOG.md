@@ -76,6 +76,73 @@ changes.
 
 ---
 
+## 2026-08-03 — Walks list heading, Free/Paid toggle
+Scope: `src/components/walks/WalkList.jsx` (front end),
+`src/pages/Admin.jsx` + `src/components/admin/WalkAdminList.jsx`
+(admin).
+
+- Front end: "Crete Walks" renamed to "Walks list", small subtitle
+  "Purchase to add to your library" added underneath the trail count.
+- Scrolling: the list already had a proper scrolling panel
+  (`ScrollArea`) — no change needed, it will kick in on its own once
+  the list is taller than the panel (already true once there are more
+  than ~4-5 walks). Did not add pagination — scrolling was already
+  built and working, just not yet visible with only 2 walks on screen.
+- Admin Tours list: added a **Free / Paid** toggle button on each row
+  (admin only). Flips the walk's `is_sample_walk` flag directly via
+  `Walk.update`, no need to open the full editor. "Free" makes the
+  walk free to every user (not just members) — matches the "free
+  Christmas walk" use case Enda described. `is_member_included` (free
+  only to paying annual members) is a separate flag, unchanged, still
+  only editable inside the full editor's General tab if ever needed.
+
+**Verified:** `npx vite build` completes with no errors.
+
+**Not done — flagged, not fixed:**
+- Enda spotted "Plakias Koules Walk" showing 46.6 km when it's
+  actually about 5 km. Checked the display code — it just shows
+  `walk.distance_km` exactly as stored, no conversion or calculation
+  bug in the display. This means the wrong number is sitting in that
+  walk's own data, not a code bug. 46.6 vs the real ~5 km looks a lot
+  like a decimal point in the wrong place (4.66 vs 46.6) — worth
+  checking whether that's what happened. Fix: open that walk in the
+  Admin Panel → Edit → General tab → correct the Distance field →
+  Save. No code change involved; I don't have direct access to the
+  live database to fix the value myself.
+
+---
+
+## 2026-08-03 — Front end: Refresh button, renamed heading
+Scope: `src/pages/Home.jsx`, `src/components/walks/WalkList.jsx`.
+
+- Renamed the front-end header from "Crete Walking Trails" to
+  "Explore Crete".
+- Added a bright blue "Refresh" button next to "Filters" in the
+  "Crete Walks" panel — reloads the walk list from the server on
+  demand, same purpose as the Admin Panel Refresh button added
+  earlier today. Wired to react-query's `refetch`, which this page
+  already had available (`useQuery` on `['walks']`) — no new fetching
+  logic needed, just exposed the existing refetch/isFetching to the
+  UI.
+
+**Verified:** `npx vite build` completes with no errors.
+
+---
+
+## 2026-08-03 — Bright blue styling for three buttons
+Scope: `src/components/admin/WaypointEditor.jsx`,
+`src/components/admin/WalkAdminList.jsx`.
+
+Enda said the three buttons added earlier today were too hard to spot.
+Changed all three to solid bright blue (`bg-blue-600`, white text):
+- "Add waypoint before..." (waypoint editor)
+- "Save and Download GPX" (waypoint editor)
+- "Refresh" (Tours list)
+
+**Verified:** `npx vite build` completes with no errors.
+
+---
+
 ## 2026-08-03 — Tours list: stop trusting the browser's guess, add Refresh
 Scope: Admin Panel → Tours list (`src/pages/Admin.jsx`,
 `src/components/admin/WalkAdminList.jsx`).

@@ -317,7 +317,7 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving, co
                       <button
                         type="button"
                         onClick={() => setAddingBeforeIndex(index)}
-                        className="flex items-center gap-2 w-full justify-center bg-slate-700 hover:bg-slate-600 border border-dashed border-slate-500 hover:border-amber-500/60 rounded-lg py-2 text-sm text-slate-300 hover:text-amber-300 transition-colors"
+                        className="flex items-center gap-2 w-full justify-center bg-blue-600 hover:bg-blue-500 border border-blue-400 rounded-lg py-2 text-sm text-white font-semibold transition-colors"
                       >
                         <Plus className="w-4 h-4" /> Add waypoint before {wp.segment_id || `this one`}
                       </button>
@@ -429,8 +429,7 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving, co
                           <Button
                             onClick={onSaveAndDownload}
                             disabled={saving || downloadingGpx}
-                            variant="outline"
-                            className="w-full bg-slate-700 border-slate-500 text-slate-200 hover:bg-slate-600 hover:text-white gap-2"
+                            className="w-full bg-blue-600 hover:bg-blue-500 border-blue-400 text-white font-semibold gap-2"
                           >
                             {downloadingGpx ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
                             Save and Download GPX

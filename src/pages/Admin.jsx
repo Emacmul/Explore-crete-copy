@@ -119,6 +119,11 @@ export default function Admin() {
     setWalks(fresh || []);
   };
 
+  const handleToggleFree = async (walkId, nextValue) => {
+    await base44.entities.Walk.update(walkId, { is_sample_walk: nextValue });
+    setWalks((prev) => prev.map(w => w.id === walkId ? { ...w, is_sample_walk: nextValue } : w));
+  };
+
   const handleMarkChecked = async (walkId) => {
     const checkedAt = new Date().toISOString();
     await base44.entities.Walk.update(walkId, { announced_at: checkedAt });
@@ -196,6 +201,7 @@ export default function Admin() {
             onEdit={(walk) => setEditingWalk(walk)}
             onDelete={handleDelete}
             onMarkChecked={handleMarkChecked}
+            onToggleFree={handleToggleFree}
             onRefresh={refreshWalks}
           />
         ) : (

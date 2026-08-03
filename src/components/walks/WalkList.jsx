@@ -3,14 +3,14 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Search, Mountain, SlidersHorizontal, X } from 'lucide-react';
+import { Search, Mountain, SlidersHorizontal, X, RefreshCw } from 'lucide-react';
 import WalkCard from './WalkCard';
 import OfflineWalksBanner from '../offline/OfflineWalksBanner';
 
 const REGIONS = ['Chania', 'Rethymno', 'Heraklion', 'Lasithi'];
 const DIFFICULTIES = ['easy', 'moderate', 'challenging', 'difficult'];
 
-export default function WalkList({ walks, selectedWalk, onWalkSelect, searchQuery, onSearchChange }) {
+export default function WalkList({ walks, selectedWalk, onWalkSelect, searchQuery, onSearchChange, onRefresh, refreshing }) {
   const [showFilters, setShowFilters] = useState(false);
   const [region, setRegion] = useState('all');
   const [difficulty, setDifficulty] = useState('all');
@@ -63,24 +63,38 @@ export default function WalkList({ walks, selectedWalk, onWalkSelect, searchQuer
               <Mountain className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h2 className="font-bold text-white">Crete Walks</h2>
+              <h2 className="font-bold text-white">Walks list</h2>
               <p className="text-xs text-slate-400">{filteredWalks.length} of {walks.length} trails</p>
+              <p className="text-[10px] text-slate-500 italic">Purchase to add to your library</p>
             </div>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowFilters(f => !f)}
-            className={`relative gap-1.5 text-xs ${showFilters ? 'text-amber-400 bg-slate-700' : 'text-slate-400 hover:text-white'}`}
-          >
-            <SlidersHorizontal className="w-4 h-4" />
-            Filters
-            {activeFilterCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-500 text-white text-[10px] rounded-full flex items-center justify-center font-bold">
-                {activeFilterCount}
-              </span>
+          <div className="flex items-center gap-1.5">
+            {onRefresh && (
+              <button
+                onClick={onRefresh}
+                disabled={refreshing}
+                title="Reload the walk list from the server"
+                className="flex items-center gap-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-500 border border-blue-400 rounded-md px-2.5 py-1.5 transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
             )}
-          </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowFilters(f => !f)}
+              className={`relative gap-1.5 text-xs ${showFilters ? 'text-amber-400 bg-slate-700' : 'text-slate-400 hover:text-white'}`}
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+              Filters
+              {activeFilterCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-500 text-white text-[10px] rounded-full flex items-center justify-center font-bold">
+                  {activeFilterCount}
+                </span>
+              )}
+            </Button>
+          </div>
         </div>
 
         {/* Search */}
