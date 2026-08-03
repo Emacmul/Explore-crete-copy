@@ -76,6 +76,19 @@ changes.
 
 ---
 
+## 2026-08-03 — "All Walks" heading + real logo on the walks panel
+Scope: `src/components/walks/WalkList.jsx`.
+
+- Heading changed from "Walks list" to "All Walks" (Anoushka's
+  feedback — "Walks list" read wrong).
+- The amber mountain-icon box next to that heading was replaced with
+  the real Explore Crete logo (same file already added to `public/`
+  for the main header).
+
+**Verified:** `npx vite build` completes with no errors.
+
+---
+
 ## 2026-08-03 — PWA install icon swapped, splash screen checked
 Scope: `public/manifest.json`, `public/icon-192.png` and
 `public/icon-512.png` (new files).

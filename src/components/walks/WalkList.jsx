@@ -59,11 +59,9 @@ export default function WalkList({ walks, selectedWalk, onWalkSelect, searchQuer
       <div className="p-4 border-b bg-gradient-to-r from-slate-800 to-slate-900">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-amber-500 rounded-lg">
-              <Mountain className="w-5 h-5 text-white" />
-            </div>
+            <img src="/explore-crete-logo.png" alt="Explore Crete" className="w-9 h-9 rounded-lg object-contain" />
             <div>
-              <h2 className="font-bold text-white">Walks list</h2>
+              <h2 className="font-bold text-white">All Walks</h2>
               <p className="text-xs text-slate-400">{filteredWalks.length} of {walks.length} trails</p>
               <p className="text-[10px] text-slate-500 italic">Purchase to add to your library</p>
             </div>
