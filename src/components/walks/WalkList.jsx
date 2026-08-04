@@ -6,11 +6,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Search, Mountain, SlidersHorizontal, X, RefreshCw } from 'lucide-react';
 import WalkCard from './WalkCard';
 import OfflineWalksBanner from '../offline/OfflineWalksBanner';
+import { getTourCategory } from '../../lib/tourCategories';
 
 const REGIONS = ['Chania', 'Rethymno', 'Heraklion', 'Lasithi'];
 const DIFFICULTIES = ['easy', 'moderate', 'challenging', 'difficult'];
 
-export default function WalkList({ walks, selectedWalk, onWalkSelect, searchQuery, onSearchChange, onRefresh, refreshing }) {
+export default function WalkList({ walks, selectedWalk, onWalkSelect, searchQuery, onSearchChange, onRefresh, refreshing, tourCategoryCode }) {
+  const pluralLabel = getTourCategory(tourCategoryCode).pluralLabel;
   const [showFilters, setShowFilters] = useState(false);
   const [region, setRegion] = useState('all');
   const [difficulty, setDifficulty] = useState('all');
@@ -61,8 +63,8 @@ export default function WalkList({ walks, selectedWalk, onWalkSelect, searchQuer
           <div className="flex items-center gap-3">
             <img src="/explore-crete-logo.png" alt="Explore Crete" className="w-9 h-9 rounded-lg object-contain" />
             <div>
-              <h2 className="font-bold text-white">All Walks</h2>
-              <p className="text-xs text-slate-400">{filteredWalks.length} of {walks.length} trails</p>
+              <h2 className="font-bold text-white">All {pluralLabel}</h2>
+              <p className="text-xs text-slate-400">{filteredWalks.length} of {walks.length} {pluralLabel}</p>
               <p className="text-[10px] text-slate-500 italic">Purchase to add to your library</p>
             </div>
           </div>

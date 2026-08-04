@@ -76,6 +76,26 @@ changes.
 
 ---
 
+## 2026-08-04 — Walks panel heading now matches the selected tour type
+Scope: `src/lib/tourCategories.js`, `src/components/walks/WalkList.jsx`,
+`src/pages/Home.jsx`.
+
+Heading always said "All Walks" / "X of Y trails" regardless of
+which tour type was selected via "Change tour type" — showed the
+same wording for WalkAbouts and Driving Tours too.
+
+**Fix:** added a `pluralLabel` per category in `tourCategories.js`
+("Walks" / "WalkAbouts" — capital A intentional, per Enda — /
+"Tours"). `Home.jsx` now passes the selected category code down to
+`WalkList`, which builds the heading and count from it: "All Walks" /
+"X of Y Walks", "All WalkAbouts" / "X of Y WalkAbouts", "All Tours" /
+"X of Y Tours" — the count itself already reflected the real number
+in the system, only the wording was static.
+
+**Verified:** `npx vite build` completes with no errors.
+
+---
+
 ## 2026-08-04 — Reached-waypoint ticks now clear themselves between separate walks
 Scope: `src/components/walks/WalkDetail.jsx`. Follows on from the
 reached-waypoint tracking feature above.

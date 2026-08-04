@@ -260,6 +260,7 @@ export default function Home() {
               onSearchChange={setSearchQuery}
               onRefresh={refetchWalks}
               refreshing={walksRefreshing}
+              tourCategoryCode={selectedTourCategory}
             />
           </div>
 
