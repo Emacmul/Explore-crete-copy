@@ -76,6 +76,27 @@ changes.
 
 ---
 
+## 2026-08-04 — "Admin" button hidden from regular users
+Scope: `src/pages/Home.jsx`.
+
+The Admin button in the front-end header was showing to every logged-
+in user, not just staff — Enda pointed out it would confuse regular
+walkers, none of whom have any reason to see it.
+
+**Fix:** added the same admin/narrator check `Admin.jsx` itself
+already uses to decide who's allowed in (Base44's own `role ===
+'admin'`, or an `AppUser` record with `role` of `admin`/`narrator`).
+The button now only renders for staff. Reused the `AppUser` lookup
+Home.jsx was already doing for registration status, rather than adding
+a second network call.
+
+Enda, Anoushka, and any narrator accounts still see the button as
+normal — this only hides it from ordinary walker accounts.
+
+**Verified:** `npx vite build` completes with no errors.
+
+---
+
 ## 2026-08-04 — Route line was being destroyed on every waypoint edit
 Scope: `src/components/admin/WalkEditor.jsx` (Walk/Hike only).
 

@@ -30,6 +30,7 @@ export default function Home() {
   const [showSplash, setShowSplash] = useState(() => !sessionStorage.getItem('splash_seen'));
   const [registrationComplete, setRegistrationComplete] = useState(false);
   const [selectedTourCategory, setSelectedTourCategory] = useState(() => sessionStorage.getItem('tour_category'));
+  const [isStaff, setIsStaff] = useState(false); // admin or narrator — controls whether the Admin link shows at all
 
   const { getAllOfflineWalks } = useOfflineWalks();
   const offlineCount = getAllOfflineWalks().length;
@@ -42,6 +43,12 @@ export default function Home() {
 
         if (appUsers.length > 0 && appUsers[0].registration_complete) {
           setRegistrationComplete(true);
+        }
+
+        // Same admin/narrator check Admin.jsx itself uses to decide who's allowed in — regular
+        // walkers should never even see the Admin button, only staff who could actually use it.
+        if (user.role === 'admin' || (appUsers.length > 0 && (appUsers[0].role === 'admin' || appUsers[0].role === 'narrator'))) {
+          setIsStaff(true);
         }
       } catch (error) {
         console.error('Registration check error:', error);
@@ -219,12 +226,14 @@ export default function Home() {
               </Button>
             </Link>
 
-            <Link to={createPageUrl('Admin')}>
-              <Button variant="outline" size="sm" className="gap-2 border-amber-300 text-amber-600 hover:bg-amber-50">
-                <ShieldCheck className="w-4 h-4" />
-                <span className="hidden sm:inline">Admin</span>
-              </Button>
-            </Link>
+            {isStaff && (
+              <Link to={createPageUrl('Admin')}>
+                <Button variant="outline" size="sm" className="gap-2 border-amber-300 text-amber-600 hover:bg-amber-50">
+                  <ShieldCheck className="w-4 h-4" />
+                  <span className="hidden sm:inline">Admin</span>
+                </Button>
+              </Link>
+            )}
 
             <Button
               variant="outline"
