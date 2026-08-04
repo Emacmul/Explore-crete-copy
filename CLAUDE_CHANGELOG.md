@@ -76,6 +76,33 @@ changes.
 
 ---
 
+## 2026-08-04 — Admin button gating, re-applied correctly
+Scope: `src/pages/Home.jsx`.
+
+Re-applies the previous entry's intent, this time only using what's
+actually confirmed to work:
+- Enda found his `AppUser` record had no `role` set at all — that's
+  why the first attempt failed for him too. He's since set it to
+  `admin` himself in Base44's Data section, and confirmed the button
+  now needs the `AppUser` lookup to work at all — verified indirectly:
+  the front end already correctly skips his registration screen (which
+  depends on that same `AppUser.filter({ user_id: user.id })` lookup
+  succeeding), so the lookup mechanism itself is sound.
+- The check now ONLY reads `appUsers[0].role` — the broken
+  `user.role === 'admin'` check (which assumed Base44-native auth
+  fields that don't exist under the WordPress login) has been dropped
+  entirely, not just bypassed.
+
+**⚠️ Before trusting this:** Anoushka and any narrator accounts also
+need an `AppUser` record with `role` set to `admin` or `narrator` —
+otherwise they'll lose the Admin button the same way Enda did. Worth
+Enda checking each staff account's `AppUser.role` field is actually
+set before this goes live to anyone but him.
+
+**Verified:** `npx vite build` completes with no errors.
+
+---
+
 ## 2026-08-04 — REVERTED: Admin button gating locked Enda out
 Scope: `src/pages/Home.jsx`. Undoes the previous entry below.
 
