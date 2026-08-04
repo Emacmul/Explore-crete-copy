@@ -67,7 +67,7 @@ const STATUS_STYLES = {
   neutral: { bg: 'bg-slate-800/50', border: 'border-slate-600', text: 'text-slate-400', icon: Clock },
 };
 
-export default function ScriptTimingPanel({ trailPath, waypoints }) {
+export default function ScriptTimingPanel({ trailPath, waypoints, tourCategory }) {
   const [narrators, setNarrators] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedLanguage, setSelectedLanguage] = useState(LANGUAGES[0]);
@@ -143,7 +143,7 @@ export default function ScriptTimingPanel({ trailPath, waypoints }) {
       const pathEndIdx = nearestPathIndex(trailPath, endWp.lat, endWp.lng);
       const distance = pathDistanceBetween(trailPath, pathStartIdx, pathEndIdx);
 
-      const speed = Number(startWp.avg_segment_speed_kmh) || 50;
+      const speed = Number(startWp.avg_segment_speed_kmh) || (tourCategory === 'WBT' ? 3.5 : 50);
       const travelSeconds = speed > 0 ? (distance / 1000) / speed * 3600 : 0;
 
       const script = startWp.narration_script || '';
@@ -160,7 +160,7 @@ export default function ScriptTimingPanel({ trailPath, waypoints }) {
         timing, hasScript: script.trim().length > 0,
       };
     });
-  }, [waypoints, trailPath, effectiveWpm]);
+  }, [waypoints, trailPath, effectiveWpm, tourCategory]);
 
   const totalDistance = segments.reduce((sum, s) => sum + s.distance, 0);
   const totalTravel = segments.reduce((sum, s) => sum + s.travelSeconds, 0);

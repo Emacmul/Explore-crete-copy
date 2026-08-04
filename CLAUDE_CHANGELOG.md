@@ -76,6 +76,79 @@ changes.
 
 ---
 
+## 2026-08-04 — WalkAbout module audit: fixed 5 real bugs, added the missing "jump to location" capability
+Scope: `src/components/admin/DrivingTourWaypointEditor.jsx`,
+`TourSimulator.jsx`, `ScriptTimingPanel.jsx`, `SegmentScriptManager.jsx`,
+`NarrationTtsEditor.jsx`. Full audit against Enda's detailed
+description of the intended WalkAbout narrator/admin workflow.
+
+**What was already there and working correctly (confirmed, not
+touched):**
+- Build & Play button for iterative script/audio creation
+  (`NarrationTtsEditor.jsx`) — already exists.
+- The simulator already shows a walking-man icon (not a car) for
+  WalkAbouts, only shows a car for Driving Tours
+  (`TourSimulatorMap.jsx`'s `moverIcon`).
+- Per-location timing comparison (travel time vs narration time,
+  comfortable/close/overrun status, visual bar) already exists in
+  `ScriptTimingPanel.jsx`.
+- The finalize → accept → export script + audio to admin → admin
+  uploads the ElevenLabs/FishAudio MP3 workflow already exists and
+  matches what Enda described, in `SegmentScriptEditor.jsx`.
+
+**Bugs found and fixed:**
+1. **Walking speed defaulted to 3 km/h, not the specified 3.5 km/h** —
+   found in three places that all needed the same fix:
+   `DrivingTourWaypointEditor.jsx` (new waypoint / GPX import default),
+   `TourSimulator.jsx` (simulator's starting speed), and
+   `ScriptTimingPanel.jsx` (silently fell back to 50 km/h — a driving
+   speed — for any WalkAbout waypoint without an explicit speed set,
+   because it never even knew which tour category it was looking at;
+   it now receives that and defaults to 3.5 km/h for WBT).
+2. **Speed control always said "Driving Speed" with 30/50/80 presets**,
+   even on a WalkAbout — meaningless for someone on foot. Now shows
+   "Walking Speed (km/h)" with 3/3.5/4 presets for WBT, unchanged for
+   driving tours.
+3. **Simulator description text always said "Drive a virtual marker"**
+   — now says "Walk" for WalkAbouts.
+4. **Combined segment scripts inserted 1-second breaks between
+   waypoints, not the specified 0.5s standard** (`SegmentScriptManager.jsx`).
+5. **The audio-building tool's saved audio disappeared from view**
+   once segments were parsed, and there were no on-screen instructions
+   for how to go back and amend it — the exact confusion Enda reported.
+   The "Current saved audio" player now stays visible at all times once
+   something's been built, with plain instructions: edit the script,
+   Parse & Generate, Build & Play again — no need to leave the screen.
+
+**New capability added — not a bug fix, a real gap:** Enda was explicit
+that testing one location's audio must not require playing through the
+whole WalkAbout first. That capability didn't exist at all — the
+simulator always started from the very beginning of the trail with no
+way to skip ahead. Added a "Jump to location" control right above the
+playback buttons: pick any location from a dropdown (built from the
+same primary-start waypoints `ScriptTimingPanel` already uses), click
+Jump, and the simulated walker starts right there — every waypoint
+before it is marked as already-triggered so earlier audio doesn't
+fire again, then Play tests just that location.
+
+**Verified:** `npx vite build` completes with no errors after every
+change. Logic for the jump feature was reasoned through carefully
+(cumulative distance via nearest trail_path point, matching the same
+approach `ScriptTimingPanel` already uses) but not tested against a
+real WalkAbout's data — worth Enda trying it on his test walk.
+
+**Flagged, not changed — needs Enda's judgement, not a default I
+should silently pick:** every audio trigger's geofence radius
+(`trigger_radius_m`) defaults to 30m regardless of tour type. Enda
+specifically noted narrow streets and high buildings make Crete's GPS
+worse for WalkAbouts. Whether 30m is too large (risk of an adjacent
+street's audio triggering early) or too small (risk of GPS drift in
+narrow streets missing the trigger entirely) is a real-world judgement
+call I can't make from here — flagging it rather than guessing a
+"fixed" number.
+
+---
+
 ## 2026-08-04 — Walks panel heading now matches the selected tour type
 Scope: `src/lib/tourCategories.js`, `src/components/walks/WalkList.jsx`,
 `src/pages/Home.jsx`.

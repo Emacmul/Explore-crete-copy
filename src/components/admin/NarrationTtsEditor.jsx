@@ -254,6 +254,11 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
       {/* Insert break tags at cursor */}
       <div className="flex items-center gap-1">
         <span className="text-xs text-slate-500">Insert pause:</span>
+        <Button type="button" size="sm" variant="ghost"
+          onClick={() => insertBreakTag('<break time="0.5s"/>')}
+          className="text-slate-400 hover:text-slate-200 h-7 px-2 text-xs gap-1">
+          <Pause className="w-3 h-3" /> 0.5s (default)
+        </Button>
         {[1, 2, 3].map((s) => (
           <Button key={s} type="button" size="sm" variant="ghost"
             onClick={() => insertBreakTag(`<break time="${s}s"/>`)}
@@ -395,14 +400,23 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
         </div>
       )}
 
-      {/* Current saved audio (shown when not in segment mode) */}
-      {audioUrl && !segments && (
+      {/* Current saved audio — always visible once something's been built, with clear
+          instructions for how to change it, since it wasn't obvious before how to go back
+          and amend a previously-created audio. */}
+      {audioUrl && (
         <div className="bg-green-900/20 border border-green-700/40 rounded-lg p-2.5 space-y-2">
           <div className="flex items-center gap-2">
             <FileText className="w-4 h-4 text-green-400 shrink-0" />
-            <span className="text-green-300 text-sm font-medium">Current audio</span>
+            <span className="text-green-300 text-sm font-medium">
+              {segments ? 'Last saved audio (a version below may be newer, unsaved)' : 'Current saved audio'}
+            </span>
           </div>
           <AudioPlayer src={audioUrl} className="w-full" />
+          <p className="text-xs text-slate-500">
+            To change this: edit the script above, click <strong>Parse &amp; Generate</strong>, listen
+            to the segments, then click <strong>Build &amp; Play</strong> again to save a new version —
+            no need to leave this screen.
+          </p>
         </div>
       )}
     </div>
