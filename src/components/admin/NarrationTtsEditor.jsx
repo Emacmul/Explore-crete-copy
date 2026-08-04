@@ -11,6 +11,7 @@ import TranslationPanel from './TranslationPanel';
 import AudioPlayer from '@/components/ui/AudioPlayer';
 import { Loader2, Sparkles, Pause, Play, Download, Braces, FileText, Square } from 'lucide-react';
 import { downloadScriptAsDocx } from '@/lib/docxExporter';
+import { useNarratorApiKeys } from '@/lib/useNarratorApiKeys';
 
 const VOICES = [
   { value: 'NEUTRAL', label: 'Default voice (auto)' },
@@ -28,6 +29,7 @@ const LANG_TO_CODE = {
 const MAX_CHARS = 5000;
 
 export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, onAudioChange }) {
+  const { keys: apiKeys } = useNarratorApiKeys();
   const [selectedVoice, setSelectedVoice] = useState('NEUTRAL');
   const [selectedLanguage, setSelectedLanguage] = useState('English');
   const [error, setError] = useState('');
@@ -82,6 +84,10 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
       setError(`Script exceeds the ${MAX_CHARS} character limit.`);
       return;
     }
+    if (!apiKeys.google_tts_api_key) {
+      setError('No Google TTS API key found for your account yet. Add your own key via "API Keys" in the header.');
+      return;
+    }
 
     setError('');
     setDebugLog([]);
@@ -103,6 +109,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
           text: seg.content,
           gender: selectedVoice,
           language_code: languageCode,
+          apiKey: apiKeys.google_tts_api_key,
         });
         if (response.data?.url) {
           audios[seg.id] = response.data.url;
@@ -185,6 +192,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
         text: script,
         gender: selectedVoice,
         language_code: LANG_TO_CODE[selectedLanguage] || 'en-US',
+        apiKey: apiKeys.google_tts_api_key,
       });
       if (response.data?.url) {
         onAudioChange(response.data.url);

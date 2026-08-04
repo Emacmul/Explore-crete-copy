@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
-import { Loader2, LogOut, ShieldCheck, ArrowLeft, Mic } from 'lucide-react';
+import { Loader2, LogOut, ShieldCheck, ArrowLeft, Mic, KeyRound } from 'lucide-react';
 import { createPageUrl } from '@/utils';
 import { Link } from 'react-router-dom';
 import WalkEditor from '../components/admin/WalkEditor';
@@ -9,6 +9,7 @@ import WalkAdminList from '../components/admin/WalkAdminList';
 import WalksDashboard from '../components/admin/WalksDashboard';
 import AdminStartScreen from '../components/admin/AdminStartScreen';
 import UsersManager from '../components/admin/UsersManager';
+import ApiKeysDialog from '../components/admin/ApiKeysDialog';
 import { getRouteTypeForCategory } from '@/lib/tourCategories';
 
 export default function Admin() {
@@ -18,6 +19,7 @@ export default function Admin() {
   const [editingWalk, setEditingWalk] = useState(null);
   const [view, setView] = useState('start');
   const [focusWaypointIndex, setFocusWaypointIndex] = useState(null);
+  const [showApiKeysDialog, setShowApiKeysDialog] = useState(false);
   const [walks, setWalks] = useState([]);
   const [walksLoading, setWalksLoading] = useState(true);
 
@@ -168,6 +170,14 @@ export default function Admin() {
                 <ArrowLeft className="w-4 h-4" /> Start
               </Button>
             )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowApiKeysDialog(true)}
+              className="text-slate-300 hover:text-white gap-2"
+            >
+              <KeyRound className="w-4 h-4" /> API Keys
+            </Button>
             <Link to={createPageUrl('Home')}>
               <Button variant="ghost" size="sm" className="text-slate-300 hover:text-white gap-2">
                 Front End
@@ -179,6 +189,8 @@ export default function Admin() {
           </div>
         </div>
       </header>
+
+      <ApiKeysDialog open={showApiKeysDialog} onOpenChange={setShowApiKeysDialog} />
 
       <main className="max-w-6xl mx-auto p-4">
         {editingWalk !== null ? (

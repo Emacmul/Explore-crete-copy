@@ -76,6 +76,91 @@ changes.
 
 ---
 
+## 2026-08-04 — API keys corrected: browser-local storage, not the database
+Scope: `src/lib/useNarratorApiKeys.js`,
+`src/components/admin/ApiKeysDialog.jsx`,
+`base44/entities/AppUser.jsonc`. Corrects the previous entry below.
+
+Enda showed screenshots of his existing VoiceScript and TTS Studio
+tools — each stores its API key only in that browser's localStorage
+("Stored only in this browser"), never on a server. He wants Explore
+Crete's key handling to match that exactly. The version built in the
+previous entry stored keys on each narrator's `AppUser` database
+record instead — same "each narrator's own key" outcome, but the
+wrong storage location.
+
+**Fix:**
+- `useNarratorApiKeys.js` rewritten to read/write
+  `localStorage` directly (two keys:
+  `explore_crete_google_tts_api_key`, `explore_crete_groq_api_key`).
+  No network call, no database record, synchronous.
+- `ApiKeysDialog.jsx` simplified to match — instant save, "No key
+  saved yet" status text mirroring the reference apps' wording.
+- Removed the `google_tts_api_key`/`groq_api_key` fields from the
+  `AppUser` entity added in the previous entry — no longer used, keys
+  never touch the database at all now.
+- The backend functions (`generateTts`, `translateScript`) are
+  unchanged from the previous entry — they already just accept
+  whatever `apiKey` the browser sends per request and were never
+  storing anything themselves, so no further change was needed there.
+
+**Trade-off worth knowing:** because the key lives only in that one
+browser, a narrator who switches computers or clears their browser
+data will need to re-enter it — same behaviour as VoiceScript/TTS
+Studio already have, not a new limitation introduced here.
+
+**Verified:** `npx vite build` completes with no errors. Confirmed
+`AppUser.jsonc` is still valid JSON after removing the two fields.
+
+---
+
+## 2026-08-04 — Per-narrator API keys for TTS/translation (was actually shared, now isn't)
+Scope: `base44/entities/AppUser.jsonc`,
+`base44/functions/generateTts/entry.ts`,
+`base44/functions/translateScript/entry.ts`, new
+`src/lib/useNarratorApiKeys.js`, new
+`src/components/admin/ApiKeysDialog.jsx`, `src/pages/Admin.jsx`,
+`NarrationTtsEditor.jsx`, `TranslationPanel.jsx`.
+
+Enda explained his intended design: each narrator uses their own
+Google TTS and Groq API keys (he's already provisioned them), so
+quota and any overage cost stays personal to each narrator rather
+than being pooled onto one shared key that he'd have to bankroll.
+
+**Checked the actual code — it didn't match.** Both
+`generateTts` and `translateScript` were reading one single key each
+from a server-side environment variable (`GOOGLE_TTS_API_KEY`,
+`GROQ_API_KEY`), shared by every narrator, every time. That's exactly
+the pooled-quota situation Enda said he specifically wanted to avoid.
+
+**Fix:**
+- Added `google_tts_api_key` and `groq_api_key` fields to the
+  `AppUser` entity — each narrator's own keys, stored on their own
+  account.
+- New **"API Keys"** button in the Admin Panel header (visible to
+  admin and narrator roles alike) opens a small dialog where each
+  person pastes in their own two keys, saved to their own account only.
+- Both backend functions now *require* a key passed in from the
+  caller — no shared fallback key at all, matching "everyone has their
+  own key, no exceptions." A missing key returns a clear, specific
+  error ("No Google TTS API key found for your account. Add your own
+  key under 'API Keys'...") instead of a generic failure.
+- `NarrationTtsEditor.jsx` and `TranslationPanel.jsx` both fetch the
+  logged-in narrator's own keys once (cached for the session via
+  `useNarratorApiKeys`) and pass them into every call. Both also check
+  up front and show the same clear message before even attempting a
+  request if the narrator hasn't set their key yet, rather than
+  failing partway through.
+
+**Verified:** `npx vite build` completes with no errors.
+
+**Not done:** haven't tested this against a real Google/Groq key end
+to end — only confirmed the wiring compiles and the logic is
+consistent (key required, no fallback, clear error when missing).
+Worth a narrator trying it with their real keys once this is live.
+
+---
+
 ## 2026-08-04 — GPX Builder: WalkAbout/Driving Tour role labeling, plus two real app import bugs found and fixed
 Scope: `waypoint-gpx-builder.html`,
 `src/components/admin/DrivingTourWaypointEditor.jsx`.
