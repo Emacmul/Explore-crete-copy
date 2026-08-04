@@ -201,8 +201,8 @@ export default function Home() {
                 onClick={handleChangeCategory}
                 className="gap-2 border-blue-300 text-blue-700 hover:bg-blue-50"
               >
-                <span className="font-mono text-xs font-bold">{selectedTourCategory}</span>
-                <span className="hidden sm:inline">Change</span>
+                <span className="sm:hidden">Change</span>
+                <span className="hidden sm:inline">Change tour type</span>
               </Button>
             )}
 

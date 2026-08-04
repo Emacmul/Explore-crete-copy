@@ -76,6 +76,54 @@ changes.
 
 ---
 
+## 2026-08-04 — "WHT Change" renamed to "Change tour type"
+Scope: `src/pages/Home.jsx`.
+
+The 3-letter tour category code (e.g. "WHT") plus "Change" was too
+cryptic — Enda said even he had to click it to remember what it did.
+Replaced with a plain "Change tour type" label (shortened to "Change"
+on small phone screens, full text on larger ones). Code no longer
+shown on the button at all.
+
+**Verified:** `npx vite build` completes with no errors.
+
+---
+
+## 2026-08-04 — Payment/purchase gating: architecture clarified, on hold
+No code changed this entry — flagging a decision for future sessions.
+
+Following on from the "My Library has no purchase check" finding above:
+Enda clarified the intended architecture. He's choosing between Paddle
+and Creamie as Merchant of Record this week (meetings with both). Key
+point either way: **the app itself should not build its own purchase/
+entitlement system.** The MoR handles sales and pricing entirely on
+their end — the app's job is just to link out to whichever MoR's
+checkout for that product. No internal "purchases" table/flag to
+maintain, no in-app pricing logic to keep in sync.
+
+This also fits what's already in `/areas/payment-processor.md`
+(persistent memory, not this repo): 15-minute expiring download links,
+no persistent "owns this" state, voucher system being scrapped.
+Suggests the eventual flow is closer to: user clicks Buy → sent to
+Paddle/Creamie checkout → on success, some kind of redirect or webhook
+back → app hands over a short-lived download link — rather than a
+login-gated permanent library entry.
+
+**Do not build a purchase/entitlement system in this codebase** until
+Enda has picked Paddle or Creamie — the exact mechanics (checkout
+links, webhook format, how success gets communicated back to the app)
+are provider-specific and unknown until then. `membership.js`'s
+current pricing rules (€15/walk, €75/year, 5 free samples, 6
+free/year for members) are also known to be **outdated** — he'd
+already decided on a different pricing model in an earlier session
+(app free with 5 included, €24.99/product except €12.50 for plain
+walking tours, €75/year membership with 25% discount, no voucher
+codes) which was never implemented in code. Don't treat
+`membership.js` as current truth for pricing without checking with
+him first.
+
+---
+
 ## 2026-08-03 — "My Library" was empty because the real Download button was never placed anywhere
 Scope: `src/components/walks/WalkDetail.jsx`,
 `src/components/walks/DownloadButton.jsx`, `src/pages/MyWalks.jsx`.
