@@ -7,9 +7,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   Plus, Trash2, ChevronDown, ChevronUp, Info, Loader2,
   Upload, FileCheck, Save, Flag, Square, Circle, GripVertical, Play, Compass,
+  ImagePlus, X,
 } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { getRoleColour, getRoleLabel, buildSegmentId } from '@/lib/routeExport';
+import { compressImage, MAX_WAYPOINT_IMAGES, getWaypointImages } from '@/lib/waypointImages';
+import { base44 } from '@/api/base44Client';
 import AudioTriggerFields from './AudioTriggerFields';
 import NarrationTtsEditor from './NarrationTtsEditor';
 import TourSimulator from './TourSimulator';
@@ -39,6 +42,7 @@ const EMPTY_WP = {
   use_bearing: false,
   bearing_direction: 0,
   bearing_tolerance: 30,
+  image_urls: [],
 };
 
 function autoColour(role) {
@@ -83,16 +87,26 @@ function sliceTrailForLocation(trailPath, locationWaypoints) {
   return slice.length > 1 ? slice : locationWaypoints.map(p => ({ lat: p.lat, lng: p.lng }));
 }
 
+const VALID_ROLES = ['primary_start', 'primary_stop', 'secondary'];
+
 function parseGpxCoords(xmlText) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xmlText, 'application/xml');
   const wpts = Array.from(doc.querySelectorAll('wpt'));
-  return wpts.map(wpt => ({
-    lat: parseFloat(wpt.getAttribute('lat')),
-    lng: parseFloat(wpt.getAttribute('lon')),
-    elevation: wpt.querySelector('ele') ? parseFloat(wpt.querySelector('ele').textContent) : null,
-    name: wpt.querySelector('name')?.textContent?.trim() || '',
-  })).filter(wp => !isNaN(wp.lat) && !isNaN(wp.lng));
+  return wpts.map(wpt => {
+    const roleTxt = wpt.getElementsByTagName('mc:role')[0]?.textContent?.trim();
+    return {
+      lat: parseFloat(wpt.getAttribute('lat')),
+      lng: parseFloat(wpt.getAttribute('lon')),
+      elevation: wpt.querySelector('ele') ? parseFloat(wpt.querySelector('ele').textContent) : null,
+      name: wpt.querySelector('name')?.textContent?.trim() || '',
+      // Optional extras — present when the file was pre-annotated with the Waypoint GPX Builder
+      // tool. A plain Garmin Explore export has neither, so both fall back to their old
+      // behaviour: description stays blank, role is inferred from the naming convention.
+      description: wpt.querySelector('desc')?.textContent?.trim() || '',
+      role: VALID_ROLES.includes(roleTxt) ? roleTxt : null,
+    };
+  }).filter(wp => !isNaN(wp.lat) && !isNaN(wp.lng));
 }
 
 /**
@@ -340,6 +354,24 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
     onChange(updated);
   };
 
+  const [uploadingImageIndex, setUploadingImageIndex] = useState(null);
+
+  const handleImageUpload = async (file, index) => {
+    setUploadingImageIndex(index);
+    const compressed = await compressImage(file);
+    const { file_url } = await base44.integrations.Core.UploadFile({ file: compressed });
+    const current = getWaypointImages(waypoints[index]);
+    if (current.length < MAX_WAYPOINT_IMAGES) {
+      updateWaypoint(index, 'image_urls', [...current, file_url]);
+    }
+    setUploadingImageIndex(null);
+  };
+
+  const removeImage = (index, imgIndex) => {
+    const current = getWaypointImages(waypoints[index]);
+    updateWaypoint(index, 'image_urls', current.filter((_, i) => i !== imgIndex));
+  };
+
   const onDragEnd = (result) => {
     if (!result.destination || result.destination.index === result.source.index) return;
     const updated = [...waypoints];
@@ -384,7 +416,9 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
           ? String(key.segment).padStart(2, '0').slice(-2)
           : '01';
         const segId = buildSegmentId(tourCode, segNum) || '';
-        const role = isPS ? 'primary_start' : 'secondary';
+        // An explicit role from the file (set via the Waypoint GPX Builder tool) always wins —
+        // it's unambiguous. Otherwise fall back to the naming-convention guess, same as before.
+        const role = pt.role || (isPS ? 'primary_start' : 'secondary');
         return {
           lat: pt.lat,
           lng: pt.lng,
@@ -394,7 +428,7 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
           segment_id: segId,
           segment_title: pt.name || `Segment ${segNum}`,
           avg_segment_speed_kmh: defaultSpeed,
-          description: '',
+          description: pt.description || '',
           narration_script: '',
           trigger_audio: false,
           audio_clip_url: '',
@@ -406,6 +440,7 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
           waypoint_colour: autoColour(role),
           name: pt.name || (segId ? `${segId} — Segment ${segNum}` : `Segment ${segNum}`),
           type: role,
+          image_urls: [],
         };
       });
       onChange(imported);
@@ -697,6 +732,18 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                             <Input value={wp.description} readOnly className="bg-slate-800 border-slate-600 text-slate-300 h-8 text-sm" />
                           </div>
                         )}
+                        {getWaypointImages(wp).length > 0 && (
+                          <div>
+                            <Label className="text-slate-400 text-xs mb-1 block">Photos</Label>
+                            <div className="flex flex-wrap gap-2">
+                              {getWaypointImages(wp).map((url, i) => (
+                                <div key={i} className="w-16 h-16 rounded-lg overflow-hidden border border-slate-600 shrink-0">
+                                  <img src={url} alt="waypoint" className="w-full h-full object-cover" />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
 
                         {/* Editable: Narration Script & TTS */}
                         <NarrationTtsEditor
@@ -794,6 +841,29 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                             onChange={e => updateWaypoint(index, 'description', e.target.value)}
                             className="bg-slate-700 border-slate-500 text-white h-8 text-sm"
                           />
+                        </div>
+                        <div>
+                          <Label className="text-slate-400 text-xs mb-1 block">Photos ({getWaypointImages(wp).length}/{MAX_WAYPOINT_IMAGES})</Label>
+                          <div className="flex flex-wrap gap-2">
+                            {getWaypointImages(wp).map((url, i) => (
+                              <div key={i} className="relative w-20 h-20 rounded-lg overflow-hidden border border-slate-600 shrink-0">
+                                <img src={url} alt="waypoint" className="w-full h-full object-cover" />
+                                <button
+                                  onClick={() => removeImage(index, i)}
+                                  className="absolute top-0.5 right-0.5 bg-black/60 rounded-full p-0.5 text-white hover:bg-black/80"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </div>
+                            ))}
+                            {getWaypointImages(wp).length < MAX_WAYPOINT_IMAGES && (
+                              <label className="flex flex-col items-center justify-center gap-1 cursor-pointer bg-slate-700 border border-dashed border-slate-500 rounded-lg w-20 h-20 shrink-0 text-slate-400 hover:text-white hover:border-slate-400 transition-colors text-xs text-center">
+                                {uploadingImageIndex === index ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
+                                {uploadingImageIndex !== index && 'Add'}
+                                <input type="file" accept="image/*" className="hidden" onChange={e => e.target.files[0] && handleImageUpload(e.target.files[0], index)} disabled={uploadingImageIndex !== null} />
+                              </label>
+                            )}
+                          </div>
                         </div>
 
                         {/* Narration Script & TTS generation */}

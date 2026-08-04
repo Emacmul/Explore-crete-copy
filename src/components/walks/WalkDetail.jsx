@@ -15,6 +15,7 @@ import DownloadButton from './DownloadButton';
 import WalkProgressBar from './WalkProgressBar';
 import DrivingModeNotice from './DrivingModeNotice';
 import DrivingTourPlayer from './DrivingTourPlayer';
+import { getWaypointImages } from '@/lib/waypointImages';
 
 const difficultyColors = {
   easy: 'bg-green-100 text-green-700',
@@ -417,12 +418,17 @@ export default function WalkDetail({ walk, onClose }) {
                             </p>
                           )}
 
-                          {waypoint.image_url && (
-                            <img
-                              src={waypoint.image_url}
-                              alt={displayName}
-                              className="mt-2 w-full max-w-xs h-32 object-cover rounded-lg border"
-                            />
+                          {getWaypointImages(waypoint).length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {getWaypointImages(waypoint).map((url, i) => (
+                                <img
+                                  key={i}
+                                  src={url}
+                                  alt={displayName}
+                                  className="w-24 h-24 object-cover rounded-lg border"
+                                />
+                              ))}
+                            </div>
                           )}
                         </div>
                       </motion.div>

@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Waypoint GPX Builder — Explore Crete</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --blue: #2563eb;
+    --blue-dark: #1d4ed8;
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --panel-light: #293548;
+    --border: #334155;
+    --text: #e2e8f0;
+    --text-dim: #94a3b8;
+    --green: #059669;
+    --amber: #d97706;
+    --red: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 24px 16px 80px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .subtitle { color: var(--text-dim); font-size: 14px; margin: 0 0 24px; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px;
+    margin-bottom: 18px;
+  }
+  .panel h2 { font-size: 15px; margin: 0 0 10px; color: #f1f5f9; }
+  .help { color: var(--text-dim); font-size: 13px; margin: 0 0 14px; }
+  label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
+  input[type=text], select, textarea {
+    width: 100%;
+    background: var(--panel-light);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: 8px 10px;
+    font-size: 14px;
+    font-family: inherit;
+  }
+  textarea { resize: vertical; min-height: 52px; }
+  input[type=file] { color: var(--text-dim); font-size: 13px; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .row > div { flex: 1; min-width: 160px; }
+  button {
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    padding: 10px 16px;
+    cursor: pointer;
+  }
+  .btn-blue { background: var(--blue); color: #fff; }
+  .btn-blue:hover { background: var(--blue-dark); }
+  .btn-ghost { background: var(--panel-light); color: var(--text); border-color: var(--border); }
+  .btn-ghost:hover { background: var(--border); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .progress-bar {
+    height: 8px;
+    border-radius: 4px;
+    background: var(--panel-light);
+    overflow: hidden;
+    margin: 8px 0 4px;
+  }
+  .progress-fill { height: 100%; background: var(--green); transition: width .2s; }
+  .progress-label { font-size: 12px; color: var(--text-dim); }
+  .wp-card {
+    background: var(--panel-light);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    margin-bottom: 10px;
+  }
+  .wp-card.done { border-color: var(--green); }
+  .wp-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+  .wp-code {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    background: var(--border);
+    color: #fbbf24;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 5px;
+    font-size: 13px;
+  }
+  .wp-coords { font-size: 11px; color: var(--text-dim); font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .wp-fields { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; }
+  .wp-fields .full { grid-column: 1 / -1; }
+  @media (max-width: 560px) { .wp-fields { grid-template-columns: 1fr; } }
+  .empty-state { text-align: center; color: var(--text-dim); padding: 40px 20px; }
+  .banner {
+    font-size: 13px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    margin-bottom: 14px;
+  }
+  .banner-amber { background: rgba(217,119,6,.15); border: 1px solid rgba(217,119,6,.4); color: #fbbf24; }
+  .banner-green { background: rgba(5,150,105,.15); border: 1px solid rgba(5,150,105,.4); color: #6ee7b7; }
+  .footer-actions {
+    position: sticky;
+    bottom: 0;
+    background: linear-gradient(to top, var(--bg) 70%, transparent);
+    padding: 16px 0 4px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .toast {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--green);
+    color: #fff;
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    box-shadow: 0 4px 16px rgba(0,0,0,.4);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s;
+  }
+  .toast.show { opacity: 1; }
+  details summary { cursor: pointer; color: var(--text-dim); font-size: 13px; }
+  code { background: var(--panel-light); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Waypoint GPX Builder</h1>
+  <p class="subtitle">Turn a plain Garmin Explore GPX export into a fully-described GPX file, ready to import into Explore Crete — no repeated clicking in the app.</p>
+
+  <div class="panel" id="loadPanel">
+    <h2>Step 1 — Load your GPX file</h2>
+    <p class="help">This is the plain file you already export from Garmin Explore (just the raw points, no descriptions yet). You can also re-load a file this tool made earlier if you want to keep editing it.</p>
+    <input type="file" id="fileInput" accept=".gpx,application/gpx+xml">
+    <details style="margin-top:10px;">
+      <summary>Or paste the GPX text instead</summary>
+      <textarea id="pasteInput" style="margin-top:8px; min-height:120px;" placeholder="Paste the contents of your .gpx file here"></textarea>
+      <button class="btn-ghost" id="pasteLoadBtn" style="margin-top:8px;">Load pasted text</button>
+    </details>
+    <div id="loadMsg"></div>
+  </div>
+
+  <div id="mainPanel" style="display:none;">
+
+    <div class="panel">
+      <h2>Step 2 — Tour details</h2>
+      <div class="row">
+        <div>
+          <label for="tourName">Route name (used for the file name and the GPX title)</label>
+          <input type="text" id="tourName" placeholder="e.g. Mixirrouma Walk">
+        </div>
+        <div>
+          <label for="tourMode">Tour type</label>
+          <select id="tourMode">
+            <option value="walk">Walk / Hike</option>
+            <option value="driving">WalkAbout / Driving Tour</option>
+          </select>
+        </div>
+      </div>
+      <p class="help" style="margin-top:10px; margin-bottom:0;">Your progress is saved automatically in this browser as you type, under this route name — so you can close the tab and come back later without losing anything.</p>
+    </div>
+
+    <div class="panel">
+      <h2>Step 3 — Describe each waypoint</h2>
+      <p class="help" id="step3HelpWalk">
+        <strong>Type</strong> must be one of the app's fixed categories — pick from the list, don't type your own.
+        <strong>Label</strong> is optional (an admin-only note, not shown to walkers).
+        Elevation isn't needed here — Explore Crete fills that in automatically when you import.
+      </p>
+      <p class="help" id="step3HelpDriving" style="display:none;">
+        <strong>Primary-Start</strong> is where a new commentary location begins — this is the only kind of point walkers actually see in the app.
+        <strong>Primary-Stop</strong> marks where that location ends (admin/narrator only — used to work out how much audio time is available, never shown to walkers).
+        <strong>Secondary</strong> is any other trigger point along the way (admin/narrator only, but its audio still plays for walkers when they pass it).
+        Elevation isn't needed here — Explore Crete fills that in automatically when you import.
+      </p>
+      <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+      <div class="progress-label" id="progressLabel">0 of 0 waypoints described</div>
+    </div>
+
+    <div id="wpList"></div>
+
+    <div class="footer-actions panel">
+      <button class="btn-blue" id="downloadBtn">Download finished GPX</button>
+      <button class="btn-ghost" id="clearBtn">Clear this route &amp; start over</button>
+      <span class="progress-label" id="footerCount"></span>
+    </div>
+
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  // Keep this list identical to WAYPOINT_TYPES in src/components/admin/WaypointEditor.jsx —
+  // if that list ever changes in the app, update it here too so the dropdown always matches
+  // what the app actually accepts.
+  var WAYPOINT_TYPES = [
+    { value: "start", label: "🚩 Start Point" },
+    { value: "end", label: "🏁 End Point" },
+    { value: "turnoff", label: "↪️ Turnoff / Junction" },
+    { value: "danger", label: "⚠️ Danger Spot" },
+    { value: "viewpoint", label: "👁️ Viewpoint" },
+    { value: "water", label: "💧 Water Source" },
+    { value: "rest_area", label: "🪑 Rest Area" },
+    { value: "landmark", label: "📍 Landmark" },
+    { value: "kafeneon", label: "☕ Kafeneon" },
+    { value: "wildlife_spot", label: "🦋 Wildlife Spot" },
+    { value: "church", label: "⛪ Byzantine Church" },
+    { value: "ruins", label: "🏛️ Ancient Ruins" },
+    { value: "archaeological_site", label: "🏺 Archaeological Site" },
+    { value: "abandoned_settlement", label: "🏚️ Abandoned Settlement" }
+  ];
+
+  // Same three roles the app itself uses for WalkAbout/Driving Tour waypoints.
+  var WAYPOINT_ROLES = [
+    { value: "primary_start", label: "Primary-Start (walkers see this)" },
+    { value: "primary_stop", label: "Primary-Stop (admin/narrator only)" },
+    { value: "secondary", label: "Secondary (admin/narrator only)" }
+  ];
+
+  var tourModeSelect = document.getElementById("tourMode");
+  var step3HelpWalk = document.getElementById("step3HelpWalk");
+  var step3HelpDriving = document.getElementById("step3HelpDriving");
+
+  function getTourMode() {
+    return tourModeSelect.value === "driving" ? "driving" : "walk";
+  }
+
+  function applyTourModeUI() {
+    var isDriving = getTourMode() === "driving";
+    step3HelpWalk.style.display = isDriving ? "none" : "";
+    step3HelpDriving.style.display = isDriving ? "" : "none";
+  }
+  tourModeSelect.addEventListener("change", function () {
+    applyTourModeUI();
+    render();
+    scheduleAutosave();
+  });
+
+  var waypoints = []; // { code, lat, lon, ele, desc, type, label }
+  var autosaveKey = null;
+  var autosaveTimer = null;
+
+  var loadMsg = document.getElementById("loadMsg");
+  var mainPanel = document.getElementById("mainPanel");
+  var wpList = document.getElementById("wpList");
+  var tourNameInput = document.getElementById("tourName");
+  var toast = document.getElementById("toast");
+
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add("show");
+    setTimeout(function () { toast.classList.remove("show"); }, 1800);
+  }
+
+  function xmlEscape(str) {
+    if (str == null) return "";
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&apos;");
+  }
+
+  // Same ordering rule the Explore Crete app itself uses on import, so what you see here
+  // matches the order waypoints will end up in inside the app.
+  function sortWaypoints(list) {
+    list.sort(function (a, b) {
+      var ka = String(a.code || "").match(/^\D*(\d+)([a-z]?)/i);
+      var kb = String(b.code || "").match(/^\D*(\d+)([a-z]?)/i);
+      if (ka && kb) {
+        var sa = parseInt(ka[1], 10), sb = parseInt(kb[1], 10);
+        if (sa !== sb) return sa - sb;
+        return (ka[2] || "").localeCompare(kb[2] || "");
+      }
+      if (ka) return -1;
+      if (kb) return 1;
+      return 0;
+    });
+    return list;
+  }
+
+  function parseGpx(text) {
+    var doc = new DOMParser().parseFromString(text, "application/xml");
+    var parserError = doc.querySelector("parsererror");
+    if (parserError) {
+      throw new Error("That file doesn't look like valid GPX/XML.");
+    }
+    var wpts = Array.prototype.slice.call(doc.getElementsByTagName("wpt"));
+    if (wpts.length === 0) {
+      throw new Error("No waypoints (<wpt> points) found in that file.");
+    }
+
+    // Only treat this as an existing route name if it's genuinely inside <metadata> — this file
+    // is only ever written there by this tool or by the app's own GPX export. A plain waypoint's
+    // own <name> tag (e.g. "MXR1") must never be mistaken for the route name.
+    var metaEl = doc.getElementsByTagName("metadata")[0];
+    var metaNameEl = metaEl ? metaEl.getElementsByTagName("name")[0] : null;
+    var existingTourName = (metaNameEl && metaNameEl.textContent) ? metaNameEl.textContent.trim() : "";
+
+    var list = wpts.map(function (wpt) {
+      var nameEl = wpt.getElementsByTagName("name")[0];
+      var descEl = wpt.getElementsByTagName("desc")[0];
+      var eleEl = wpt.getElementsByTagName("ele")[0];
+      var typeEl = wpt.getElementsByTagName("mc:type")[0];
+      var labelEl = wpt.getElementsByTagName("mc:label")[0];
+      var roleEl = wpt.getElementsByTagName("mc:role")[0];
+
+      return {
+        code: nameEl ? nameEl.textContent.trim() : "",
+        lat: wpt.getAttribute("lat") || "",
+        lon: wpt.getAttribute("lon") || "",
+        ele: eleEl ? eleEl.textContent.trim() : "",
+        desc: descEl ? descEl.textContent.trim() : "",
+        type: (typeEl && typeEl.textContent.trim()) || "landmark",
+        label: labelEl ? labelEl.textContent.trim() : "",
+        role: (roleEl && roleEl.textContent.trim()) || "secondary"
+      };
+    });
+
+    // If any point already has a role tag, this file was built (or re-loaded) in
+    // WalkAbout/Driving Tour mode — switch the tool to match automatically.
+    var hasRoles = wpts.some(function (wpt) { return wpt.getElementsByTagName("mc:role").length > 0; });
+
+    return { waypoints: sortWaypoints(list), existingTourName: existingTourName, detectedMode: hasRoles ? "driving" : null };
+  }
+
+  function buildGpx(tourName, list) {
+    var lines = [];
+    lines.push('<?xml version="1.0" encoding="UTF-8"?>');
+    lines.push('<gpx version="1.1" creator="Magical Crete Waypoint GPX Builder"');
+    lines.push('  xmlns="http://www.topografix.com/GPX/1/1"');
+    lines.push('  xmlns:mc="https://magicalcrete.com/gpx/extensions">');
+    lines.push("  <metadata>");
+    lines.push("    <name>" + xmlEscape(tourName || "Walk / Hike") + "</name>");
+    lines.push("  </metadata>");
+
+    var isDriving = getTourMode() === "driving";
+
+    list.forEach(function (wp) {
+      var eleTag = wp.ele ? ("\n    <ele>" + xmlEscape(wp.ele) + "</ele>") : "";
+      lines.push('  <wpt lat="' + xmlEscape(wp.lat) + '" lon="' + xmlEscape(wp.lon) + '">' + eleTag);
+      lines.push("    <name>" + xmlEscape(wp.code) + "</name>");
+      if (wp.desc) lines.push("    <desc>" + xmlEscape(wp.desc) + "</desc>");
+      lines.push("    <extensions>");
+      if (isDriving) {
+        lines.push("      <mc:role>" + xmlEscape(wp.role || "secondary") + "</mc:role>");
+      } else {
+        lines.push("      <mc:type>" + xmlEscape(wp.type || "landmark") + "</mc:type>");
+        if (wp.label) lines.push("      <mc:label>" + xmlEscape(wp.label) + "</mc:label>");
+      }
+      lines.push("    </extensions>");
+      lines.push("  </wpt>");
+    });
+
+    lines.push("</gpx>");
+    return lines.join("\n");
+  }
+
+  function safeFileName(name) {
+    var base = (name || "route").trim().replace(/[\\/:*?"<>|]+/g, "-") || "route";
+    var d = new Date();
+    var date = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    return base + "-annotated-" + date + ".gpx";
+  }
+
+  function updateProgress() {
+    var total = waypoints.length;
+    var done = waypoints.filter(function (wp) { return wp.desc && wp.desc.trim(); }).length;
+    var pct = total ? Math.round((done / total) * 100) : 0;
+    document.getElementById("progressFill").style.width = pct + "%";
+    document.getElementById("progressLabel").textContent = done + " of " + total + " waypoints described";
+    document.getElementById("footerCount").textContent = done + " of " + total + " described";
+  }
+
+  function typeOptionsHtml(selected) {
+    return WAYPOINT_TYPES.map(function (t) {
+      return '<option value="' + t.value + '"' + (t.value === selected ? " selected" : "") + ">" + t.label + "</option>";
+    }).join("");
+  }
+
+  function roleOptionsHtml(selected) {
+    return WAYPOINT_ROLES.map(function (r) {
+      return '<option value="' + r.value + '"' + (r.value === selected ? " selected" : "") + ">" + r.label + "</option>";
+    }).join("");
+  }
+
+  function render() {
+    wpList.innerHTML = "";
+    var isDriving = getTourMode() === "driving";
+    waypoints.forEach(function (wp, i) {
+      var card = document.createElement("div");
+      card.className = "wp-card" + (wp.desc && wp.desc.trim() ? " done" : "");
+      var fieldsHtml = isDriving
+        ? (
+            "<div>" +
+              "<label>Role</label>" +
+              '<select data-i="' + i + '" data-f="role">' + roleOptionsHtml(wp.role || "secondary") + "</select>" +
+            "</div>"
+          )
+        : (
+            "<div>" +
+              "<label>Type</label>" +
+              '<select data-i="' + i + '" data-f="type">' + typeOptionsHtml(wp.type) + "</select>" +
+            "</div>" +
+            "<div>" +
+              "<label>Label (optional, admin only)</label>" +
+              '<input type="text" data-i="' + i + '" data-f="label" value="' + xmlEscape(wp.label) + '">' +
+            "</div>"
+          );
+      card.innerHTML =
+        '<div class="wp-head">' +
+          '<span class="wp-code">' + xmlEscape(wp.code || "(no code)") + "</span>" +
+          '<span class="wp-coords">' + xmlEscape(wp.lat) + ", " + xmlEscape(wp.lon) + "</span>" +
+        "</div>" +
+        '<div class="wp-fields">' +
+          '<div class="full">' +
+            "<label>Description (what the walker sees)</label>" +
+            '<textarea data-i="' + i + '" data-f="desc" placeholder="What should the walker know about this point?">' + xmlEscape(wp.desc) + "</textarea>" +
+          "</div>" +
+          fieldsHtml +
+        "</div>";
+      wpList.appendChild(card);
+    });
+    updateProgress();
+  }
+
+  wpList.addEventListener("input", function (e) {
+    var t = e.target;
+    var i = t.getAttribute("data-i");
+    var f = t.getAttribute("data-f");
+    if (i == null || !f) return;
+    waypoints[i][f] = t.value;
+    if (f === "desc") {
+      t.closest(".wp-card").classList.toggle("done", !!t.value.trim());
+      updateProgress();
+    }
+    scheduleAutosave();
+  });
+  wpList.addEventListener("change", function (e) {
+    var t = e.target;
+    var i = t.getAttribute("data-i");
+    var f = t.getAttribute("data-f");
+    if (i == null || !f) return;
+    waypoints[i][f] = t.value;
+    scheduleAutosave();
+  });
+
+  function scheduleAutosave() {
+    if (!autosaveKey) return;
+    clearTimeout(autosaveTimer);
+    autosaveTimer = setTimeout(function () {
+      try {
+        localStorage.setItem(autosaveKey, JSON.stringify({ tourName: tourNameInput.value, tourMode: getTourMode(), waypoints: waypoints }));
+      } catch (err) {
+        // Storage full or unavailable — not fatal, just skip autosave silently.
+      }
+    }, 400);
+  }
+
+  function autosaveKeyFor(name) {
+    return "wp_gpx_builder__" + (name || "untitled").trim().toLowerCase().replace(/\s+/g, "-");
+  }
+
+  function loadWaypoints(list, existingTourName, detectedMode) {
+    var typedName = tourNameInput.value.trim();
+    var nameToUse = typedName || existingTourName || "";
+    tourNameInput.value = nameToUse;
+    autosaveKey = autosaveKeyFor(nameToUse);
+
+    // If there's a saved session under this exact route name, offer to resume it instead of
+    // starting fresh from the freshly loaded file.
+    var saved = null;
+    try {
+      var raw = localStorage.getItem(autosaveKey);
+      if (raw) saved = JSON.parse(raw);
+    } catch (err) { /* ignore */ }
+
+    if (saved && saved.waypoints && saved.waypoints.length === list.length &&
+        confirm('Found saved progress for "' + nameToUse + '" from earlier. Load that instead of starting fresh from this file?')) {
+      waypoints = saved.waypoints;
+      if (saved.tourMode) tourModeSelect.value = saved.tourMode;
+    } else {
+      waypoints = list;
+      if (detectedMode) tourModeSelect.value = detectedMode;
+    }
+    applyTourModeUI();
+
+    mainPanel.style.display = "";
+    loadMsg.innerHTML = '<div class="banner banner-green">Loaded ' + waypoints.length + " waypoints.</div>";
+    render();
+  }
+
+  function handleFileText(text) {
+    try {
+      var result = parseGpx(text);
+      loadWaypoints(result.waypoints, result.existingTourName, result.detectedMode);
+    } catch (err) {
+      loadMsg.innerHTML = '<div class="banner banner-amber">' + xmlEscape(err.message) + "</div>";
+    }
+  }
+
+  document.getElementById("fileInput").addEventListener("change", function (e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function (ev) { handleFileText(ev.target.result); };
+    reader.readAsText(file);
+  });
+
+  document.getElementById("pasteLoadBtn").addEventListener("click", function () {
+    var text = document.getElementById("pasteInput").value;
+    if (!text.trim()) return;
+    handleFileText(text);
+  });
+
+  tourNameInput.addEventListener("change", function () {
+    // Route name changed after waypoints were already loaded — move the autosave slot to match,
+    // and update the doc title so a resumed session is easy to recognise later.
+    if (waypoints.length > 0) {
+      autosaveKey = autosaveKeyFor(tourNameInput.value.trim());
+      scheduleAutosave();
+    }
+  });
+
+  document.getElementById("downloadBtn").addEventListener("click", function () {
+    var name = tourNameInput.value.trim();
+    if (!name) {
+      alert("Please enter a route name first (Step 2) — it's used for the file name.");
+      return;
+    }
+    var gpx = buildGpx(name, waypoints);
+    var blob = new Blob([gpx], { type: "application/gpx+xml" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = safeFileName(name);
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast("GPX downloaded — ready to import into Explore Crete.");
+  });
+
+  document.getElementById("clearBtn").addEventListener("click", function () {
+    if (!confirm("Clear all waypoints and saved progress for this route, and start over?")) return;
+    if (autosaveKey) {
+      try { localStorage.removeItem(autosaveKey); } catch (err) { /* ignore */ }
+    }
+    waypoints = [];
+    mainPanel.style.display = "none";
+    loadMsg.innerHTML = "";
+    document.getElementById("fileInput").value = "";
+    document.getElementById("pasteInput").value = "";
+    tourNameInput.value = "";
+    tourModeSelect.value = "walk";
+  });
+
+  window.addEventListener("beforeunload", function (e) {
+    var hasUnfinished = waypoints.some(function (wp) { return !wp.desc || !wp.desc.trim(); });
+    if (waypoints.length > 0 && hasUnfinished) {
+      e.preventDefault();
+      e.returnValue = "";
+    }
+  });
+})();
+</script>
+</body>
+</html>

@@ -6,6 +6,8 @@
  * edits the route twice.
  */
 
+import { getWaypointImages } from './waypointImages';
+
 export const WAYPOINT_ROLE_COLOURS = {
   primary_start: '#22c55e',
   primary_stop: '#ef4444',
@@ -353,8 +355,8 @@ export function generateWalkGpx(walk) {
     if (wp.name) {
       lines.push(`      <mc:label>${xmlEscape(wp.name)}</mc:label>`);
     }
-    if (wp.image_url) {
-      lines.push(`      <mc:imageUrl>${xmlEscape(wp.image_url)}</mc:imageUrl>`);
+    for (const url of getWaypointImages(wp)) {
+      lines.push(`      <mc:imageUrl>${xmlEscape(url)}</mc:imageUrl>`);
     }
     lines.push('    </extensions>');
 

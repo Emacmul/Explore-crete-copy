@@ -76,6 +76,95 @@ changes.
 
 ---
 
+## 2026-08-04 — GPX Builder: WalkAbout/Driving Tour role labeling, plus two real app import bugs found and fixed
+Scope: `waypoint-gpx-builder.html`,
+`src/components/admin/DrivingTourWaypointEditor.jsx`.
+
+Enda is using the standalone builder tool for an upcoming WalkAbout
+test and asked for the ability to label a point Primary or Secondary.
+
+**Builder tool changes:**
+- Added a "Tour type" selector (Step 2): Walk/Hike (unchanged, default)
+  or WalkAbout/Driving Tour (new). Switches what Step 3 shows per
+  waypoint: Walk/Hike keeps Type+Label; WalkAbout/Driving Tour instead
+  shows a **Role** dropdown — Primary-Start / Primary-Stop / Secondary
+  — using the exact same three roles and terminology as the app's own
+  admin editor, with help text explaining what each one means (mirrors
+  what Enda described: Primary-Start is the only one walkers ever see;
+  Primary-Stop and Secondary are admin/narrator-only, but Secondary's
+  audio still plays for walkers).
+- Re-loading a file that already has role tags (e.g. one saved earlier
+  in this tool) auto-switches the tool to WalkAbout/Driving Tour mode.
+  Tour mode is saved as part of the autosaved progress too.
+- Output: WalkAbout/Driving Tour mode writes `<mc:role>` instead of
+  `<mc:type>`/`<mc:label>` per waypoint; `<desc>` is written the same
+  way in both modes.
+
+**Two real bugs found in the app itself while wiring this up, both
+fixed — not just tool-side:**
+1. `DrivingTourWaypointEditor.jsx`'s GPX import never read `<desc>`
+   at all — every imported waypoint's description was hardcoded blank,
+   silently discarding any description text in the file regardless of
+   source. This would have made the builder tool's description field
+   pointless for WalkAbouts even before today's role changes.
+2. The importer had no way to receive an explicit role — it could only
+   guess primary_start vs secondary from the waypoint's `<name>`
+   matching a specific pattern (`XXX##a` or a `-PS` suffix), with
+   every non-matching point forced to secondary and primary_stop only
+   ever settable by hand afterward. Added support for an explicit
+   `<mc:role>` tag that, when present, is trusted directly over the
+   name-guessing — this is what the builder tool's new Role dropdown
+   now relies on. Plain Garmin Explore exports (no such tag) behave
+   exactly as before.
+
+**Verified:** `npx vite build` completes with no errors. Extracted the
+app's own import-parsing logic and tested it in Node directly against
+a file built the same way the tool now generates one — description
+and all three roles (primary_start, secondary, primary_stop) came
+back correctly for every point.
+
+---
+
+## 2026-08-04 — Multi-photo waypoints (up to 5), added to WalkAbout/Driving Tours, extended for Walk/Hike
+Scope: new `src/lib/waypointImages.js`; changes to
+`WaypointEditor.jsx`, `DrivingTourWaypointEditor.jsx`,
+`WalkDetail.jsx`, `routeExport.js`, `WalkEditor.jsx`.
+
+**What changed:**
+- Added a shared helper file (`waypointImages.js`) used by every
+  waypoint editor and the front end, so photo handling behaves
+  identically everywhere instead of being reimplemented three times:
+  `compressImage` (same 1200px/JPEG-85% compression as before, just no
+  longer duplicated), `MAX_WAYPOINT_IMAGES = 5`, and
+  `getWaypointImages(waypoint)` — reads photos as an array whether a
+  waypoint was saved under the new `image_urls` array field or the old
+  single `image_url` field, so nothing already saved breaks.
+- **Walk/Hike waypoints** (`WaypointEditor.jsx`): went from 1 photo to
+  up to 5, with a proper thumbnail gallery (add/remove individually)
+  in both the "add new key point" form and existing waypoints.
+- **WalkAbout/Driving Tour waypoints** (`DrivingTourWaypointEditor.jsx`):
+  had **no photo support at all** before this — added the same 5-photo
+  gallery to the full admin editing view, and a read-only photo
+  display (no upload controls) to the simplified narrator view.
+- **Front end** (`WalkDetail.jsx`): the "Key Points"/"Tour Stops" list
+  now shows a gallery of every photo a waypoint has, not just one —
+  works for both tour types.
+- **GPX round-trip for Walk/Hike** (`routeExport.js`,
+  `WalkEditor.jsx`): "Save and Download GPX" now writes one
+  `<mc:imageUrl>` tag per photo instead of just one, and re-importing
+  such a file reads all of them back (capped at 5) — same round-trip
+  capability as before, just no longer limited to a single photo.
+  WalkAbout/Driving Tour photos are admin-upload-only, same as before
+  this change — they were never part of the GPX import/export for
+  those tour types and still aren't.
+
+**Verified:** `npx vite build` completes with no errors. Tested the
+full multi-image GPX export → re-import round trip directly in Node
+(3 images survive intact), and confirmed `getWaypointImages` correctly
+reads both old single-photo waypoints and new multi-photo ones.
+
+---
+
 ## 2026-08-04 — WalkAbout/Driving Tour route line now follows real roads, not straight lines
 Scope: `src/components/admin/DrivingTourWaypointEditor.jsx`,
 `src/components/admin/WalkEditor.jsx`.

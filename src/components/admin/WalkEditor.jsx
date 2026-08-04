@@ -15,6 +15,7 @@ import TrailPathEditor from './TrailPathEditor';
 import AdminPreviewMap from './AdminPreviewMap';
 import { validateDrivingTour, generateGpx, generateWalkGpx, generateKml, downloadTextFile, buildSegmentId, getRoleColour } from '@/lib/routeExport';
 import { getRouteTypeForCategory } from '@/lib/tourCategories';
+import { MAX_WAYPOINT_IMAGES } from '@/lib/waypointImages';
 import { toast } from '@/components/ui/use-toast';
 
 const DEFAULT_INTERESTS = ['Wild Flowers', 'History', 'Mythology', 'Archaeology', 'Photography', 'Routes of Faith'];
@@ -304,7 +305,10 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
         // behaves exactly as it did before.
         const typeTxt = wpt.getElementsByTagName('mc:type')[0]?.textContent?.trim();
         const labelTxt = wpt.getElementsByTagName('mc:label')[0]?.textContent?.trim();
-        const imageUrlTxt = wpt.getElementsByTagName('mc:imageUrl')[0]?.textContent?.trim();
+        const imageUrls = Array.from(wpt.getElementsByTagName('mc:imageUrl'))
+          .map(el => el.textContent?.trim())
+          .filter(Boolean)
+          .slice(0, MAX_WAYPOINT_IMAGES);
 
         return {
           lat: parseFloat(wpt.getAttribute('lat')),
@@ -313,7 +317,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
           name: labelTxt || '',
           description: descTxt,
           type: typeTxt || 'landmark',
-          image_url: imageUrlTxt || '',
+          image_urls: imageUrls,
           ...(ele !== null && !isNaN(ele) ? { elevation: Math.round(ele) } : {}),
         };
       }).filter(p => !isNaN(p.lat) && !isNaN(p.lng));
@@ -456,7 +460,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
             name: cpName,
             description: cpDesc,
             type: 'landmark',
-            image_url: '',
+            image_urls: [],
           };
         }).filter(p => p.lat != null && p.lng != null);
 

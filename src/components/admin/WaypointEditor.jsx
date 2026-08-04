@@ -25,26 +25,9 @@ const WAYPOINT_TYPES = [
   { value: 'abandoned_settlement', label: '🏚️ Abandoned Settlement', color: 'text-slate-300' },
 ];
 
-const EMPTY_WAYPOINT = { lat: '', lng: '', type: 'landmark', name: '', description: '', image_url: '' };
+const EMPTY_WAYPOINT = { lat: '', lng: '', type: 'landmark', name: '', description: '', image_urls: [] };
 
-// Compress image to max 1200px wide, JPEG 85% quality
-const compressImage = (file) => new Promise((resolve) => {
-  const MAX = 1200;
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    const img = new Image();
-    img.onload = () => {
-      const scale = Math.min(1, MAX / Math.max(img.width, img.height));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round(img.width * scale);
-      canvas.height = Math.round(img.height * scale);
-      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob((blob) => resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' })), 'image/jpeg', 0.85);
-    };
-    img.src = e.target.result;
-  };
-  reader.readAsDataURL(file);
-});
+import { compressImage, MAX_WAYPOINT_IMAGES, getWaypointImages } from '@/lib/waypointImages';
 
 // Renumbers waypoints sequentially (MXR1, MXR2, MXR3...) based on the tour's code and their current
 // list position — used for plain Walk/Hike tours only, where names are just a running count, not
@@ -127,23 +110,29 @@ function AddWaypointForm({ newWp, setNewWp, addError, onSave, onCancel, onImageU
       </div>
 
       <div>
-        <Label className="text-slate-400 text-xs mb-1 block">Photo (optional)</Label>
-        {newWp.image_url ? (
-          <div className="relative w-full h-32 rounded-lg overflow-hidden border border-slate-600">
-            <img src={newWp.image_url} alt="waypoint" className="w-full h-full object-cover" />
-            <button
-              onClick={() => setNewWp(p => ({ ...p, image_url: '' }))}
-              className="absolute top-1 right-1 bg-black/60 rounded-full p-0.5 text-white hover:bg-black/80"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        ) : (
-          <label className="flex items-center gap-2 cursor-pointer bg-slate-700 border border-dashed border-slate-500 rounded-lg px-3 py-2 text-slate-400 hover:text-white hover:border-slate-400 transition-colors text-sm w-full">
-            {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
-            {uploading ? 'Uploading…' : 'Upload photo'}
-            <input type="file" accept="image/*" className="hidden" onChange={e => e.target.files[0] && onImageUpload(e.target.files[0])} disabled={uploading} />
-          </label>
+        <Label className="text-slate-400 text-xs mb-1 block">Photos (optional, up to {MAX_WAYPOINT_IMAGES})</Label>
+        <div className="flex flex-wrap gap-2">
+          {(newWp.image_urls || []).map((url, i) => (
+            <div key={i} className="relative w-20 h-20 rounded-lg overflow-hidden border border-slate-600 shrink-0">
+              <img src={url} alt="waypoint" className="w-full h-full object-cover" />
+              <button
+                onClick={() => setNewWp(p => ({ ...p, image_urls: p.image_urls.filter((_, idx) => idx !== i) }))}
+                className="absolute top-0.5 right-0.5 bg-black/60 rounded-full p-0.5 text-white hover:bg-black/80"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+          {(newWp.image_urls || []).length < MAX_WAYPOINT_IMAGES && (
+            <label className="flex flex-col items-center justify-center gap-1 cursor-pointer bg-slate-700 border border-dashed border-slate-500 rounded-lg w-20 h-20 shrink-0 text-slate-400 hover:text-white hover:border-slate-400 transition-colors text-xs text-center">
+              {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
+              {!uploading && 'Add'}
+              <input type="file" accept="image/*" className="hidden" onChange={e => e.target.files[0] && onImageUpload(e.target.files[0])} disabled={uploading} />
+            </label>
+          )}
+        </div>
+        {(newWp.image_urls || []).length > 0 && (
+          <p className="text-xs text-slate-500 mt-1">{newWp.image_urls.length}/{MAX_WAYPOINT_IMAGES} photos</p>
         )}
       </div>
 
@@ -221,9 +210,15 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving, co
     const compressed = await compressImage(file);
     const { file_url } = await base44.integrations.Core.UploadFile({ file: compressed });
     if (index === undefined) {
-      setNewWp(p => ({ ...p, image_url: file_url }));
+      setNewWp(p => {
+        const current = p.image_urls || [];
+        return current.length >= MAX_WAYPOINT_IMAGES ? p : { ...p, image_urls: [...current, file_url] };
+      });
     } else {
-      updateWaypoint(index, 'image_url', file_url);
+      const current = getWaypointImages(waypoints[index]);
+      if (current.length < MAX_WAYPOINT_IMAGES) {
+        updateWaypoint(index, 'image_urls', [...current, file_url]);
+      }
     }
     setUploadingIndex(null);
   };
@@ -396,24 +391,27 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving, co
                       </Select>
                     </div>
                     <div>
-                      <Label className="text-slate-400 text-xs mb-1 block">Photo</Label>
-                      {wp.image_url ? (
-                        <div className="relative w-full h-32 rounded-lg overflow-hidden border border-slate-600">
-                          <img src={wp.image_url} alt="waypoint" className="w-full h-full object-cover" />
-                          <button
-                            onClick={() => updateWaypoint(index, 'image_url', '')}
-                            className="absolute top-1 right-1 bg-black/60 rounded-full p-0.5 text-white hover:bg-black/80"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      ) : (
-                        <label className="flex items-center gap-2 cursor-pointer bg-slate-700 border border-dashed border-slate-500 rounded-lg px-3 py-2 text-slate-400 hover:text-white hover:border-slate-400 transition-colors text-sm w-full">
-                          {uploadingIndex === index ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
-                          {uploadingIndex === index ? 'Uploading\u2026' : 'Upload photo'}
-                          <input type="file" accept="image/*" className="hidden" onChange={e => e.target.files[0] && handleImageUpload(e.target.files[0], index)} disabled={uploadingIndex !== null} />
-                        </label>
-                      )}
+                      <Label className="text-slate-400 text-xs mb-1 block">Photos ({getWaypointImages(wp).length}/{MAX_WAYPOINT_IMAGES})</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {getWaypointImages(wp).map((url, i) => (
+                          <div key={i} className="relative w-20 h-20 rounded-lg overflow-hidden border border-slate-600 shrink-0">
+                            <img src={url} alt="waypoint" className="w-full h-full object-cover" />
+                            <button
+                              onClick={() => updateWaypoint(index, 'image_urls', getWaypointImages(wp).filter((_, idx) => idx !== i))}
+                              className="absolute top-0.5 right-0.5 bg-black/60 rounded-full p-0.5 text-white hover:bg-black/80"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                        {getWaypointImages(wp).length < MAX_WAYPOINT_IMAGES && (
+                          <label className="flex flex-col items-center justify-center gap-1 cursor-pointer bg-slate-700 border border-dashed border-slate-500 rounded-lg w-20 h-20 shrink-0 text-slate-400 hover:text-white hover:border-slate-400 transition-colors text-xs text-center">
+                            {uploadingIndex === index ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
+                            {uploadingIndex !== index && 'Add'}
+                            <input type="file" accept="image/*" className="hidden" onChange={e => e.target.files[0] && handleImageUpload(e.target.files[0], index)} disabled={uploadingIndex !== null} />
+                          </label>
+                        )}
+                      </div>
                     </div>
                     {onSave && (
                       <div className="pt-2 border-t border-slate-600 space-y-2">
