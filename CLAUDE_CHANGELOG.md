@@ -76,6 +76,63 @@ changes.
 
 ---
 
+## 2026-08-04 — WalkAbout/Driving Tour route line now follows real roads, not straight lines
+Scope: `src/components/admin/DrivingTourWaypointEditor.jsx`,
+`src/components/admin/WalkEditor.jsx`.
+
+**The bug:** Enda's Garmin Explore GPX exports can include a real
+road-following route (a `<trk>` or `<rte>`), but the importer for
+WalkAbouts/Driving Tours only ever read the sparse named `<wpt>`
+points — the actual track was silently discarded every time, even
+when present. So the map line always just connected waypoints with
+straight lines, regardless of what streets existed between them. This
+is the same category of problem as the Walk/Hike straight-line bug
+fixed earlier, but a different root cause: that one was route data
+getting overwritten after import; this one never imported the route
+data in the first place.
+
+**Fix:**
+- Added `parseGpxTrail()` — reads the file's `<trkpt>`/`<rtept>`
+  points (falling back to `<wpt>` only if the file truly has no track
+  at all), same fallback order the Walk/Hike importer already uses.
+- `handleGpxImport` now imports the road-following line into
+  `trail_path` in addition to the named waypoints into `waypoints` —
+  two separate things, wired through a new `onTrailPathChange` prop
+  threaded from `WalkEditor.jsx`.
+- The import result message now tells the admin which happened: "route
+  line follows the recorded track" vs a warning that no track was
+  found and the line is a straight-line fallback, with a pointer to
+  the manual Trail tab if they need to trace it by hand.
+
+**Second instance of the same bug, also fixed:** found an existing
+"Test Location X in Simulator" button (a per-location testing dialog
+I'd missed in the first audit pass) that built its own straight line
+directly between a location's waypoints, ignoring the tour's real
+trail line entirely — meaning even after the import fix above, this
+dialog would still show a straight line. Added
+`sliceTrailForLocation()`, which cuts out just that location's real
+stretch of the trail (nearest-point matching against `trail_path`,
+same approach as the "Jump to location" feature added earlier), and
+wired the tour's `trail_path` into this component so it has something
+to slice from. Falls back to the old straight-line behaviour only if
+there's genuinely no trail data (e.g. an older tour not yet
+re-imported).
+
+**Not retroactive:** existing WalkAbouts/Driving Tours already in the
+system won't get a road-following line automatically — this only
+takes effect on the next GPX import for each tour. Older tours will
+need re-importing (with an annotated file, same caution as the
+Walk/Hike version of this issue — a plain re-import wipes descriptions
+unless the file already has them).
+
+**Verified:** `npx vite build` completes with no errors. Tested
+`parseGpxTrail` and `sliceTrailForLocation` directly in Node against
+constructed sample data — correctly picks up a real track when
+present, falls back correctly when absent, and slices the right
+stretch of a longer trail for two adjacent locations.
+
+---
+
 ## 2026-08-04 — Primary/secondary waypoint visibility, audited end to end
 Scope: `src/components/walks/DrivingTourPlayer.jsx` (one small fix);
 everything else in this entry was checked and confirmed already

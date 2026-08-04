@@ -45,6 +45,44 @@ function autoColour(role) {
   return getRoleColour(role);
 }
 
+const R_EARTH_M = 6371000;
+function haversineM(lat1, lng1, lat2, lng2) {
+  const toRad = d => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R_EARTH_M * Math.asin(Math.sqrt(a));
+}
+
+/**
+ * Cut out just the stretch of the tour's real (road-following) trail line that covers one
+ * location, instead of drawing straight lines directly between that location's own waypoints.
+ * Falls back to the old straight-line behaviour only if there's no usable trail line at all
+ * (e.g. an older tour that hasn't been re-imported since the trail-line import fix).
+ */
+function sliceTrailForLocation(trailPath, locationWaypoints) {
+  if (!trailPath || trailPath.length < 2 || locationWaypoints.length === 0) {
+    return locationWaypoints.map(p => ({ lat: p.lat, lng: p.lng }));
+  }
+  const nearestIndex = (lat, lng) => {
+    let bestIdx = 0, bestD = Infinity;
+    trailPath.forEach((pt, i) => {
+      const d = haversineM(lat, lng, pt.lat, pt.lng);
+      if (d < bestD) { bestD = d; bestIdx = i; }
+    });
+    return bestIdx;
+  };
+  const first = locationWaypoints[0];
+  const last = locationWaypoints[locationWaypoints.length - 1];
+  const startIdx = nearestIndex(first.lat, first.lng);
+  const endIdx = nearestIndex(last.lat, last.lng);
+  const lo = Math.min(startIdx, endIdx);
+  const hi = Math.max(startIdx, endIdx);
+  const slice = trailPath.slice(lo, hi + 1);
+  return slice.length > 1 ? slice : locationWaypoints.map(p => ({ lat: p.lat, lng: p.lng }));
+}
+
 function parseGpxCoords(xmlText) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xmlText, 'application/xml');
@@ -55,6 +93,31 @@ function parseGpxCoords(xmlText) {
     elevation: wpt.querySelector('ele') ? parseFloat(wpt.querySelector('ele').textContent) : null,
     name: wpt.querySelector('name')?.textContent?.trim() || '',
   })).filter(wp => !isNaN(wp.lat) && !isNaN(wp.lng));
+}
+
+/**
+ * Extract the actual route LINE from a GPX file — the dense trkpt/rtept sequence that follows
+ * real roads/streets — completely separate from the sparse named <wpt> points parsed above.
+ * Garmin Explore writes a proper road-following <trk> or <rte> when a route is drawn along
+ * streets, but that was previously being discarded entirely: only the named waypoint pins were
+ * ever read, so the map line just cut straight between them regardless of what roads existed
+ * between two points. Falls back to the waypoints themselves only if the file truly has no
+ * track/route data at all (matches the same trkpt → rtept → wpt fallback order used for
+ * Walk/Hike GPX import in WalkEditor.jsx).
+ */
+function parseGpxTrail(xmlText) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xmlText, 'application/xml');
+  const toPoints = (els) => Array.from(els).map(el => ({
+    lat: parseFloat(el.getAttribute('lat')),
+    lng: parseFloat(el.getAttribute('lon')),
+  })).filter(pt => !isNaN(pt.lat) && !isNaN(pt.lng));
+
+  const trkpts = toPoints(doc.querySelectorAll('trkpt'));
+  if (trkpts.length > 1) return trkpts;
+  const rtepts = toPoints(doc.querySelectorAll('rtept'));
+  if (rtepts.length > 1) return rtepts;
+  return toPoints(doc.querySelectorAll('wpt'));
 }
 
 /**
@@ -105,7 +168,7 @@ function parseLocationPrefix(wp) {
   return m ? `${m[1]}${parseInt(m[2], 10)}` : null;
 }
 
-export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCode, tourCategory, onSave, saving, userRole = 'admin', focusWaypointIndex, segmentScripts, onSegmentScriptsChange }) {
+export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCode, tourCategory, onSave, saving, userRole = 'admin', focusWaypointIndex, segmentScripts, onSegmentScriptsChange, onTrailPathChange, trailPath }) {
   const isNarrator = userRole === 'narrator';
   const defaultSpeed = tourCategory === 'WBT' ? 3.5 : 50;
   const [expanded, setExpanded] = useState(focusWaypointIndex != null ? focusWaypointIndex : null);
@@ -346,7 +409,24 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
         };
       });
       onChange(imported);
-      setGpxImportResult({ count: imported.length });
+
+      // Import the actual road-following route line too, separately from the sparse named
+      // waypoints above — this is what was missing, causing the map to draw straight lines
+      // between waypoints instead of following real streets.
+      let trailPointCount = 0;
+      let trailIsRealTrack = false;
+      if (onTrailPathChange) {
+        const trail = parseGpxTrail(ev.target.result);
+        if (trail.length > 1) {
+          onTrailPathChange(trail);
+          trailPointCount = trail.length;
+          // A real track/route has far more points than there are named waypoints — a sparse
+          // fallback (waypoints-as-trail) will have roughly the same count as `imported`.
+          trailIsRealTrack = trail.length > imported.length * 1.5;
+        }
+      }
+
+      setGpxImportResult({ count: imported.length, trailPointCount, trailIsRealTrack });
       setTimeout(() => setGpxImportResult(null), 4000);
     };
     reader.readAsText(file);
@@ -378,7 +458,16 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
           {gpxImportResult && (
             gpxImportResult.error
               ? <span className="text-red-400 text-sm">{gpxImportResult.error}</span>
-              : <span className="flex items-center gap-1 text-green-400 text-sm"><FileCheck className="w-4 h-4" /> {gpxImportResult.count} waypoint{gpxImportResult.count !== 1 ? 's' : ''} imported</span>
+              : (
+                <span className="flex items-center gap-1 text-green-400 text-sm">
+                  <FileCheck className="w-4 h-4" /> {gpxImportResult.count} waypoint{gpxImportResult.count !== 1 ? 's' : ''} imported
+                  {gpxImportResult.trailIsRealTrack ? (
+                    <span className="text-slate-400 ml-1">— route line follows the recorded track ({gpxImportResult.trailPointCount} points)</span>
+                  ) : gpxImportResult.trailPointCount > 0 ? (
+                    <span className="text-amber-400 ml-1">— ⚠ no track/route found in this file, route line just connects the waypoints in a straight line. Use the Trail tab to trace the real streets if needed.</span>
+                  ) : null}
+                </span>
+              )
           )}
         </div>
       )}
@@ -793,7 +882,7 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                     onClick={() => setTestSegment({
                        startIndex: locGroup.startIndex,
                        title: locGroup.location || `Location ${wp.segment_number}`,
-                       trailPath: locGroup.waypoints.map(p => ({ lat: p.lat, lng: p.lng })),
+                       trailPath: sliceTrailForLocation(trailPath, locGroup.waypoints),
                        waypoints: locGroup.waypoints.map(p => ({ ...p, trigger_audio: true })),
                      })}
                     title={isLocationTestable(locGroup)
