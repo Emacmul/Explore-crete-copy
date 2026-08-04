@@ -76,6 +76,110 @@ changes.
 
 ---
 
+## 2026-08-03 — "My Library" was empty because the real Download button was never placed anywhere
+Scope: `src/components/walks/WalkDetail.jsx`,
+`src/components/walks/DownloadButton.jsx`, `src/pages/MyWalks.jsx`.
+
+**Enda's report:** "My Library" shows "No walks downloaded yet — tap
+Download on any walk" but no such button exists anywhere he can find.
+
+**Cause:** two entirely separate components both dealt with
+"downloading" a walk:
+- `DownloadWalkButton` (in `offline/`) — downloads the raw GPX file
+  to the visitor's computer. This one WAS on screen (in `WalkDetail`),
+  and has nothing to do with "My Library".
+- `DownloadButton` (in `walks/`) — the one that actually calls
+  `useOfflineWalks().downloadWalk()` to save a walk into "My Library"
+  for offline use. Fully built and working, but never imported or
+  rendered anywhere in the app — dead code with no way for any user,
+  not just Enda, to ever reach it. This is why "My Library" could
+  never contain anything.
+
+**Fix:**
+- `WalkDetail.jsx` now renders both buttons side by side — save to
+  My Library, and separately download the raw GPX file.
+- Renamed the My-Library button's label from the ambiguous "Download"
+  to "Save for Offline" (and its saved-state label from "Downloaded"
+  to "Saved Offline"), so it reads clearly next to "Download GPX".
+- Updated the "My Library" empty-state text to match the real button
+  wording ("tap 'Save for Offline'...").
+
+**Verified:** `npx vite build` completes with no errors.
+
+**Not done:** haven't tested the actual save/remove/offline-viewing
+flow live — only confirmed the button is now present and wired to the
+existing `downloadWalk`/`removeWalk`/`isDownloaded` functions, which
+were already implemented and presumably already tested when they were
+first written (just never reachable). Worth Enda trying a full
+save → close app → reopen offline cycle once live.
+
+---
+
+## 2026-08-03 — GPX Builder: fixed wrong route name auto-fill
+Scope: `waypoint-gpx-builder.html`.
+
+**Bug:** loading a plain Garmin Explore export auto-filled the Route
+Name box with "MRX25" — a waypoint's own code, not a route name.
+Cause: the "pick up an existing route name" check searched the whole
+document for any `<name>` tag and grabbed the first one it found,
+which on a plain export is just whichever waypoint happens to come
+first in the file — not a real route name at all.
+
+**Fix:** now only looks for a route name inside a proper `<metadata>`
+block, which is where this tool (and the app's own GPX export) always
+puts it. A plain Garmin export has no `<metadata>` block, so the
+Route Name box now correctly starts blank, ready for Enda to type the
+real name — only auto-fills when re-loading a file that was already
+named by this tool or the app.
+
+**Verified:** tested both cases directly in Node — a plain export
+(no metadata) → blank; a re-loaded file with a real `<metadata><name>`
+→ correctly picked up.
+
+---
+
+## 2026-08-03 — Standalone Waypoint GPX Builder tool
+New file: `waypoint-gpx-builder.html` (project root). Not part of the
+app itself — a separate, self-contained tool Enda runs on his own
+computer by just double-clicking it (opens in any browser, no
+install, no internet needed, works completely offline).
+
+**Why:** replaces the manual `waypoint-notes-template.gpx` approach
+from earlier (hand-editing raw XML tags) — Enda wanted something that
+does the merging for him instead of him having to get the tags right
+by hand every time, since that's slow and easy to get wrong at volume
+(he mentioned ~8 walks already waiting to be imported).
+
+**How it works:**
+1. Enda loads the plain GPX he already exports from Garmin Explore
+   (just raw points, no descriptions).
+2. The tool shows one card per waypoint, in the same order the app
+   itself would sort them into, with plain form fields: Description,
+   Type (dropdown — same fixed list as `WAYPOINT_TYPES` in
+   `WaypointEditor.jsx`, kept in sync by hand, noted in a comment),
+   and an optional Label.
+3. "Download finished GPX" produces a file in exactly the format the
+   app's importer expects — same `<name>`/`<desc>`/`<mc:type>`/
+   `<mc:label>` tags as `generateWalkGpx` in `routeExport.js` and the
+   updated `handleGpxImport`. That file imports straight into Explore
+   Crete, fully described, elevation still auto-filled by the app on
+   import as always.
+- Progress autosaves in the browser as he types (keyed by the route
+  name he enters), so closing the tab mid-way doesn't lose work. Also
+  supports re-loading a file it made earlier (or one exported by the
+  app itself) to keep editing it.
+- Warns before closing the tab if there are still blank descriptions.
+
+**Verified:** extracted the core parse/build logic and round-trip
+tested it in Node against a sample matching Enda's real Garmin export
+(including the "MRX25" vs "MXR..." naming inconsistency already
+present in his data) — parses, sorts, fills in notes, generates GPX,
+and re-parses correctly, matching what the app's own importer expects.
+Not tested inside an actual browser or against the live app import —
+worth Enda trying one small file through the full round trip first.
+
+---
+
 ## 2026-08-03 — Elevation Gain also now recalculates on every Save
 Scope: `src/components/admin/WalkEditor.jsx` (Walk/Hike tours only).
 Follows directly from the Distance fix above.

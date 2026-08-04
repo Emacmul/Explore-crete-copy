@@ -10,6 +10,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import WalkDetailMap from '../map/WalkDetailMap';
 import DownloadWalkButton from '../offline/DownloadWalkButton';
+import DownloadButton from './DownloadButton';
 import WalkProgressBar from './WalkProgressBar';
 import DrivingModeNotice from './DrivingModeNotice';
 import DrivingTourPlayer from './DrivingTourPlayer';
@@ -134,8 +135,11 @@ export default function WalkDetail({ walk, onClose }) {
               <DrivingTourPlayer walk={walk} />
             )}
 
-            <div className="flex items-center justify-between">
-              <DownloadWalkButton walk={walk} />
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                <DownloadButton walk={walk} />
+                <DownloadWalkButton walk={walk} />
+              </div>
 
               {followGps && (
                 <span className="text-xs text-blue-600 font-medium flex items-center gap-1">

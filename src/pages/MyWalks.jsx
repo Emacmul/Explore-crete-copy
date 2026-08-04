@@ -43,7 +43,7 @@ export default function MyWalks() {
                 <div className="text-center py-20 text-gray-500">
                   <WifiOff className="w-16 h-16 mx-auto mb-4 opacity-20" />
                   <p className="text-xl font-semibold mb-2">No walks downloaded yet</p>
-                  <p className="text-sm mb-6">Go back and tap "Download" on any walk to save it for offline use.</p>
+                  <p className="text-sm mb-6">Go back and tap "Save for Offline" on any walk to add it here.</p>
                   <Link to={createPageUrl('Home')}>
                     <Button>Browse Walks</Button>
                   </Link>
