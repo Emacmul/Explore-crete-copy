@@ -1076,12 +1076,16 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
               <WaypointEditor
                 waypoints={form.waypoints}
                 onChange={wps => {
+                  // Only update the waypoint markers here. The route LINE (trail_path) is the
+                  // actual GPS track recorded on the ground — a separate, denser set of points
+                  // than the named waypoints. It must not be rebuilt from the sparse waypoint
+                  // list: doing that replaces the real curved trail with straight lines jumping
+                  // point-to-point (this was happening on every waypoint add/delete/edit, and is
+                  // why edited routes started cutting straight across bends instead of following
+                  // the road/path). To actually change the route line itself, use the dedicated
+                  // trail-path map editor above (the `trailPath`/`onChange` pair a few lines
+                  // below), not the waypoint list.
                   set('waypoints', wps);
-                  // The trail line and the key points come from the same eTrex recording for a
-                  // plain walk/hike, so keep the route line in sync whenever waypoints change —
-                  // otherwise a deleted/added/reordered waypoint stops matching what's drawn on
-                  // the map, even though the waypoints list itself looks correct.
-                  set('trail_path', wps.map(wp => ({ lat: wp.lat, lng: wp.lng })));
                 }}
                 onSave={handleSave}
                 saving={saving}

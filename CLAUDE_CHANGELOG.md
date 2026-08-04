@@ -76,6 +76,93 @@ changes.
 
 ---
 
+## 2026-08-04 — Route line was being destroyed on every waypoint edit
+Scope: `src/components/admin/WalkEditor.jsx` (Walk/Hike only).
+
+**Enda's report:** the preview map draws a straight line between two
+points instead of following the actual track/road.
+
+**Cause — real bug, not a display setting:** the route line on the
+map comes from `trail_path`, a dense set of GPS points recorded on
+the ground (from the eTrex), separate from the sparse named
+`waypoints`. But every time waypoints were edited (add, delete, rename,
+add a description — anything), the code was overwriting `trail_path`
+with just straight lines between the current waypoints, throwing away
+the real recorded curve. This wasn't something I introduced this
+session — it was already in the code, just never surfaced until a
+walk with waypoints far enough apart to make the straight-line cutting
+visible.
+
+**Fix:** waypoint edits now only update the waypoint markers.
+`trail_path` (the line itself) is left alone — it's only ever set at
+GPX import, or by the dedicated trail-path map editor tool elsewhere
+in the same screen. Editing the waypoint list can no longer touch it.
+
+**⚠️ Already-affected walks — need Enda's attention, not something I
+can fix in code:** this bug has been live the whole time, so **any
+walk that's already had a waypoint added/deleted/edited may have
+already lost its real track line**, replaced with straight segments.
+The only way to restore it is to re-import that walk's GPX — but
+re-importing replaces the whole waypoint list wholesale, which would
+also wipe out any descriptions typed in since the last import, unless
+the file being re-imported already has those descriptions baked in via
+the `<mc:type>`/`<mc:label>`/`<desc>` tags (i.e. a file from "Save and
+Download GPX", or one built with `waypoint-gpx-builder.html` — not a
+plain fresh Garmin export). Enda needs to check each walk himself and
+decide the safest source file to re-import per walk; this isn't
+something to fix by re-running an import blindly.
+
+**Verified:** `npx vite build` completes with no errors.
+
+---
+
+## 2026-08-04 — Reached-waypoint tracking, for getting lost on long routes
+Scope: `src/components/walks/WalkDetail.jsx` (Walk/Hike only, not
+driving tours).
+
+Anoushka's QA feedback: some routes have 50-60 waypoints, and a walker
+who loses the trail in unfamiliar mountain terrain has no way to tell
+which point they last recognised. Enda suggested two options —
+auto-highlight the last point reached, or a tick-box that greys out
+passed points. Implemented both together, since Crete's mountain GPS
+is known to be unreliable (per Enda's own earlier notes on why this
+app is Crete-specific) — manual ticking works with zero signal,
+automatic detection is a convenience layered on top when GPS does
+work.
+
+**What changed:**
+- Each waypoint in the "Key Points" list now has a tappable circle.
+  Tapping it marks that point "reached" — greys it out, strikes
+  through its name, shows a checkmark.
+- Whichever reached waypoint is furthest along the route gets a
+  distinct blue highlight and a "You were last here" badge — this is
+  the point a lost walker should be able to find their way back to.
+- If the device has GPS, any waypoint the walker's actual location
+  comes within ~60m of gets ticked automatically. This only ever adds
+  ticks, never removes one — a manual tap always wins over GPS, so an
+  inaccurate GPS reading can't undo a walker's own correction.
+- Progress is saved to the device (not the server) per walk, so it
+  survives closing and reopening the app mid-walk. A small "Reset
+  progress" link appears once anything's been ticked.
+- Driving tours are untouched — they navigate by audio, this feature
+  only applies to Walk/Hike.
+
+**Bug caught and fixed before shipping:** my first pass put the new
+`useState`/`useEffect` hooks after the existing `if (!walk) return
+null;` early-return line. That breaks React's rule that hooks must run
+in the same order on every render — moved the early return to after
+all hooks are declared instead.
+
+**Verified:** `npx vite build` completes with no errors.
+
+**Not done:** not tested on an actual phone with real GPS movement —
+only confirmed it builds and the logic reads correctly. Worth Enda
+walking a short real route with it once live to confirm the ~60m
+proximity feels right (too tight and it won't trigger on a winding
+mountain path; too loose and adjacent waypoints could tick together).
+
+---
+
 ## 2026-08-04 — "WHT Change" renamed to "Change tour type"
 Scope: `src/pages/Home.jsx`.
 
