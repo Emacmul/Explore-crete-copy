@@ -76,6 +76,57 @@ changes.
 
 ---
 
+## 2026-08-04 — REVERTED: Admin button gating locked Enda out
+Scope: `src/pages/Home.jsx`. Undoes the previous entry below.
+
+**What happened:** the previous change (gating the Admin button behind
+an admin/narrator check) broke immediately — Enda logged in as an
+actual admin and the button was gone for him too, even after logging
+out and back in.
+
+**Root cause — my mistake:** I copied `Admin.jsx`'s role-check logic
+into `Home.jsx` without checking that the two pages use **two
+completely different login systems**:
+- `Admin.jsx` checks `base44.auth.me()` — Base44's own native login.
+- `Home.jsx` uses `useAuth()` from `AuthContext.jsx` — a WordPress-
+  based JWT login (`wpLogin`), added as part of migrating away from
+  Base44's native auth. The user object this produces is just
+  `{ id, email, full_name, display_name, username }` — **it has no
+  `role` field at all.**
+
+So `user.role === 'admin'` was checking a field that doesn't exist on
+this login path, and just silently evaluated false for everyone,
+including real admins. It fell back to checking an `AppUser` record's
+`role` field, which may not be set up the same way under the WordPress
+login — not something I verified before shipping it. Classic case of
+assuming two similar-looking pieces of code shared a data shape they
+didn't.
+
+**Fix applied:** reverted `Home.jsx` back to always showing the Admin
+button, exactly as it was before that change — nobody is locked out.
+The original problem (regular walkers seeing an Admin button they
+have no use for) is back too, but that's a cosmetic annoyance, not a
+lockout — far better to have that than risk this again.
+
+**Properly fixing the original cosmetic issue needs answers first,
+not another guess:**
+1. Does Enda's account actually have an `AppUser` record, and does its
+   `role` field say "admin"? (This can only be checked by looking at
+   the actual Base44 data — not something visible from this repo.)
+2. Is the WordPress JWT `user.id` used to look up that `AppUser`
+   record (`user_id: user.id`) reliably the same value the `AppUser`
+   record itself is keyed on? If the two authentication systems don't
+   share user IDs consistently, this lookup could silently fail even
+   with a correctly-configured `AppUser` record.
+
+Do not re-attempt gating this button by guessing again — confirm both
+of those with Enda (or by inspecting the live Base44 data) first.
+
+**Verified:** `npx vite build` completes with no errors after the
+revert.
+
+---
+
 ## 2026-08-04 — "Admin" button hidden from regular users
 Scope: `src/pages/Home.jsx`.
 
