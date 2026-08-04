@@ -64,6 +64,13 @@ function waypointKey(waypoint, index) {
   return waypoint.segment_id || `idx-${index}`;
 }
 
+// If a walker's last tick on this walk was longer ago than this, treat it as a new attempt and
+// start with a clean slate rather than resuming old progress — many walkers (flower enthusiasts
+// especially, per Anoushka) repeat the same walk several times a month and each time is a fresh
+// go, not a continuation. Set generously long (18h) so a single long day-hike, or briefly
+// backgrounding the app for a phone call, never gets mistaken for "a different day".
+const REACHED_STALE_MS = 18 * 60 * 60 * 1000;
+
 export default function WalkDetail({ walk, onClose }) {
   const [followGps, setFollowGps] = React.useState(false);
 
@@ -86,7 +93,20 @@ export default function WalkDetail({ walk, onClose }) {
     if (!walk?.id) return new Set();
     try {
       const raw = localStorage.getItem(reachedStorageKey(walk.id));
-      return raw ? new Set(JSON.parse(raw)) : new Set();
+      if (!raw) return new Set();
+      const saved = JSON.parse(raw);
+      // Old format was a plain array with no timestamp — treat that as fresh rather than
+      // discarding it, since we can't tell its age.
+      if (Array.isArray(saved)) return new Set(saved);
+      if (saved && Array.isArray(saved.ids)) {
+        const age = Date.now() - (saved.updatedAt || 0);
+        if (age > REACHED_STALE_MS) {
+          localStorage.removeItem(reachedStorageKey(walk.id));
+          return new Set();
+        }
+        return new Set(saved.ids);
+      }
+      return new Set();
     } catch (err) {
       return new Set();
     }
@@ -95,7 +115,10 @@ export default function WalkDetail({ walk, onClose }) {
   const persistReached = React.useCallback((nextSet) => {
     if (!walk?.id) return;
     try {
-      localStorage.setItem(reachedStorageKey(walk.id), JSON.stringify(Array.from(nextSet)));
+      localStorage.setItem(
+        reachedStorageKey(walk.id),
+        JSON.stringify({ ids: Array.from(nextSet), updatedAt: Date.now() })
+      );
     } catch (err) {
       // Storage full or unavailable — not fatal, the walker just loses the saved tick-marks
       // if they close the app, ticking still works for the rest of this session.

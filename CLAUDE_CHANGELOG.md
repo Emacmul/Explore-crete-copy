@@ -76,6 +76,34 @@ changes.
 
 ---
 
+## 2026-08-04 — Reached-waypoint ticks now clear themselves between separate walks
+Scope: `src/components/walks/WalkDetail.jsx`. Follows on from the
+reached-waypoint tracking feature above.
+
+Anoushka's QA feedback: repeat walkers (flower enthusiasts especially,
+who might do the same walk 3-4 times a month) need a clean slate each
+time — the ticked/greyed waypoints from a previous walk shouldn't
+carry over.
+
+**Considered and rejected:** clearing on app close. Rejected because
+a phone call or app-switch mid-hike also "closes" the app briefly, and
+that would wipe a walker's progress while they're still mid-route —
+the opposite of what this feature is for.
+
+**What was built instead:** the saved progress now carries a
+timestamp. If a walk is reopened more than 18 hours after the last
+tick, it's treated as a new attempt and starts empty — old data is
+discarded automatically. 18 hours is generous enough to cover even a
+very long single day-hike without accidentally clearing mid-walk, but
+guarantees anyone repeating the walk another day gets a genuinely
+clean start. The manual "Reset progress" link from the original
+feature is still there too, for anyone who wants to clear it
+immediately rather than wait.
+
+**Verified:** `npx vite build` completes with no errors.
+
+---
+
 ## 2026-08-04 — Admin button gating, re-applied correctly
 Scope: `src/pages/Home.jsx`.
 
