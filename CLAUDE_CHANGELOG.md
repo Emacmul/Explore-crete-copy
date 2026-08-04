@@ -76,6 +76,69 @@ changes.
 
 ---
 
+## 2026-08-04 — Primary/secondary waypoint visibility, audited end to end
+Scope: `src/components/walks/DrivingTourPlayer.jsx` (one small fix);
+everything else in this entry was checked and confirmed already
+correct, not changed.
+
+Traced the full chain for WalkAbout and Driving Tours (both share the
+same waypoint role system: primary_start / primary_stop / secondary)
+against Enda's rule: secondary and primary-end points must be visible
+to narrators/admins, must still trigger their audio for real users,
+but must never be visible to a real user.
+
+**Confirmed already correct, no changes:**
+- Admin/narrator waypoint editor (`DrivingTourWaypointEditor.jsx`)
+  shows every waypoint regardless of role — correct, they need to see
+  everything.
+- User-facing "Key Points" list (`WalkDetail.jsx`) and the user-facing
+  map markers (`WalkDetailMap.jsx`) both already filter to
+  `primary_start` only — secondary and primary_stop points are already
+  invisible to real users on both surfaces.
+- The live, real-world audio-trigger engine
+  (`DrivingTourPlayer.jsx`'s `evaluateTriggers`) checks every waypoint
+  with `trigger_audio` enabled, with no role filter at all — so a
+  secondary waypoint's audio already does fire correctly for a real
+  user entering its geofence, exactly as required.
+- `ScriptTimingPanel.jsx`'s per-location duration calculation already
+  uses a `primary_stop` (or the next `primary_start`) as the segment's
+  end boundary — matches "the primary end point is needed to determine
+  the length of the audio."
+
+**One small leak found and fixed:** the "triggered waypoints" progress
+bar on the real user's live tour screen (`DrivingTourPlayer.jsx`) had
+a hover tooltip (`title` attribute) showing each waypoint's internal
+`segment_id`/name — including secondary and primary-stop ones that are
+supposed to stay invisible. Removed the tooltip; the progress bar
+itself (a row of small dots/bars showing how many of the tour's audio
+points have fired) stays, just without exposing internal naming.
+
+**Verified:** `npx vite build` completes with no errors.
+
+---
+
+## 2026-08-04 — Confirmed already correct: car icon, per-tour jump, trigger radius
+No code changes — checking these off the audit above after Enda asked
+about them directly.
+
+- **Red car icon for driving tours**: already correct.
+  `TourSimulator.jsx`'s `isWalkingTour = form.tour_category !== 'DDV'`
+  already distinguishes on `tour_category` (WBT vs DDV), not the
+  shared backend `route_type` both use — so `TourSimulatorMap.jsx`'s
+  `moverIcon` already renders `RED_CAR_SVG` (red) for DDV tours.
+- **"Jump to location" for driving tours**: the feature added earlier
+  today isn't restricted to WalkAbouts — `TourSimulator.jsx` is shared
+  by both WBT and DDV, so it already works for driving tours too, no
+  change needed.
+- **Editable audio trigger radius**: already exists —
+  `AudioTriggerFields.jsx` has a "Trigger Radius (m)" number input per
+  waypoint (10–2000m, default 30m), and it's also drag-adjustable
+  directly on the simulator map (`TourSimulatorMap.jsx`). Relevant to
+  Enda's note about GPS trouble in Rethymno's old town — admins can
+  already widen the radius on individual problem waypoints there.
+
+---
+
 ## 2026-08-04 — WalkAbout module audit: fixed 5 real bugs, added the missing "jump to location" capability
 Scope: `src/components/admin/DrivingTourWaypointEditor.jsx`,
 `TourSimulator.jsx`, `ScriptTimingPanel.jsx`, `SegmentScriptManager.jsx`,
