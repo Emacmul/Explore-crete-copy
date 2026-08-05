@@ -1,18 +1,15 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { base44 } from '@/api/base44Client';
 
 const SPLASH_IMAGE = 'https://media.base44.com/images/public/69a7d073cd7cd9b51cfe0fd0/40f0351cc_Walkingappsplashacreen.jpg';
 
 export default function SplashScreen({ onDone }) {
   const [visible, setVisible] = useState(true);
 
-  const handleEnter = async () => {
-    const isAuth = await base44.auth.isAuthenticated();
-    if (!isAuth) {
-      base44.auth.redirectToLogin();
-      return;
-    }
+  // This splash only renders after the custom WordPress login (App.jsx already gates
+  // unauthenticated users to the Login screen), so the user is always authenticated
+  // here. Just dismiss — never redirect to the Base44 platform login.
+  const handleEnter = () => {
     setVisible(false);
     setTimeout(() => {
       onDone();
