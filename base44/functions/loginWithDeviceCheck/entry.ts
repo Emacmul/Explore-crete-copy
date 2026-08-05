@@ -29,10 +29,10 @@ export default async function (req: Request): Promise<Response> {
       return Response.json({ error: wpData?.error || "Invalid email or password" }, { status: 401 });
     }
 
-    // Admin bypass: admins manage the app and may sign in on any of their own
-    // devices without the device challenge or concurrent-session lock.
-    const adminRecords = await svc.entities.AppUser.filter({ email });
-    if (adminRecords.length > 0 && adminRecords[0].role === "admin") {
+    // Staff bypass: admins and narrators always work from desktop/laptop and are
+    // exempt from the device challenge and concurrent-session lock.
+    const staffRecords = await svc.entities.AppUser.filter({ email });
+    if (staffRecords.length > 0 && (staffRecords[0].role === "admin" || staffRecords[0].role === "narrator")) {
       const existing = await findDevice(svc, email, device_id);
       if (existing) {
         await svc.entities.Device.update(existing.id, { last_used: isoNow(), device_label: device_label || existing.device_label });
