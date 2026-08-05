@@ -17,7 +17,7 @@ Deno.serve(async (req) => {
   // OpenTopoData's free endpoint also rate-limits (429) and occasionally times out,
   // so retry with backoff before giving up so a transient blip doesn't force the
   // admin to keep the stale figure.
-  const MAX_ATTEMPTS = 3;
+  const MAX_ATTEMPTS = 5;
   let lastError = "unknown error";
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
@@ -34,8 +34,10 @@ Deno.serve(async (req) => {
           { status: 502 },
         );
       }
-      if (res.status === 429) {
-        lastError = "rate-limited (429)";
+      if (res.status === 429 || res.status >= 500) {
+        // Rate-limited or server error — transient on OpenTopoData's free shared
+        // endpoint, so retry after backoff.
+        lastError = `OpenTopoData ${res.status}`;
       } else {
         // Other 4xx are not retryable.
         return Response.json(
@@ -47,7 +49,9 @@ Deno.serve(async (req) => {
       lastError = err?.message || "network error";
     }
     if (attempt < MAX_ATTEMPTS) {
-      await new Promise((r) => setTimeout(r, 800 * attempt)); // 0.8s, then 1.6s
+      // 1s, 2s, 4s, 8s — the free shared endpoint throttles at ~1 req/s and
+      // intermittently 503s under load; longer backoff gives it room to recover.
+      await new Promise((r) => setTimeout(r, 1000 * (2 ** (attempt - 1))));
     }
   }
 

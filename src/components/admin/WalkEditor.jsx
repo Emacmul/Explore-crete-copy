@@ -115,8 +115,9 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
       distanceKm += R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     }
     let elevGain = 0;
-    for (let i = 1; i < elevations.length; i++) {
-      if (elevations[i] > elevations[i-1]) elevGain += elevations[i] - elevations[i-1];
+    const elev = Array.isArray(elevations) ? elevations : [];
+    for (let i = 1; i < elev.length; i++) {
+      if (elev[i] > elev[i-1]) elevGain += elev[i] - elev[i-1];
     }
     return { distanceKm, elevGain };
   };
@@ -219,6 +220,9 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
 
   const fetchElevations = async (points) => {
     const res = await base44.functions.invoke('fetchElevations', { points });
+    if (!res?.data?.elevations) {
+      throw new Error(res?.data?.error || 'Elevation service returned no data');
+    }
     return res.data.elevations;
   };
 
@@ -330,17 +334,23 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
       // Check which waypoints are missing elevation (null or 0 = Garmin placeholder)
       const waypointsMissingEle = waypoints.filter(wp => wp.elevation == null || wp.elevation === 0);
 
-      if ((!hasRealElevation && trailPath.length > 0) || waypointsMissingEle.length > 0) {
+      const needsTrailEle = !hasRealElevation && trailPath.length > 0;
+      const needsWaypointEle = waypointsMissingEle.length > 0;
+      if (needsTrailEle || needsWaypointEle) {
         setGpxImporting(false);
         setElevFetching(true);
         try {
-          // Fetch trail elevations if needed
-          if (!hasRealElevation && trailPath.length > 0) {
-            elevations = await fetchElevations(trailPath);
+          // Combine trail + waypoint points into ONE OpenTopoData request. The free
+          // shared endpoint throttles at ~1 req/s, so two back-to-back calls (trail
+          // then waypoints) reliably 429'd the second one — a single call avoids that.
+          const trailSlice = needsTrailEle ? trailPath : [];
+          const wpSlice = needsWaypointEle ? waypointsMissingEle : [];
+          const allElevs = await fetchElevations([...trailSlice, ...wpSlice]);
+          if (needsTrailEle) {
+            elevations = allElevs.slice(0, trailSlice.length);
           }
-          // Fetch waypoint elevations if any are missing
-          if (waypointsMissingEle.length > 0) {
-            const wpElevs = await fetchElevations(waypointsMissingEle);
+          if (needsWaypointEle) {
+            const wpElevs = allElevs.slice(trailSlice.length);
             waypointsMissingEle.forEach((wp, i) => {
               if (wpElevs[i] != null && wpElevs[i] !== 0) wp.elevation = Math.round(wpElevs[i]);
             });
