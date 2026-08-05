@@ -159,8 +159,7 @@
             "type": "string"
           },
           "name": {
-            "type": "string",
-            "description": "Admin/narrator-entered descriptive label shown alongside the code, e.g. 'Rocky descent'"
+            "type": "string"
           },
           "description": {
             "type": "string"
@@ -179,7 +178,7 @@
           },
           "segment_id": {
             "type": "string",
-            "description": "Segment/waypoint code — e.g. BOR03 for driving/WalkAbout tour segments, or MXR14 for a plain walk/hike waypoint"
+            "description": "Driving tour segment ID e.g. BOR03"
           },
           "segment_title": {
             "type": "string",
@@ -286,15 +285,13 @@
     "announced_at": {
       "type": "string",
       "format": "date-time",
-      "description": "When an admin/narrator last confirmed this route is still accurate on the ground (the 'new walk' customer announcement feature that originally used this field has been retired)"
+      "description": "When members were notified"
     }
   },
   "required": [
     "code",
     "name",
     "start_lat",
-    "start_lng",
-    "region",
-    "tour_category"
+    "start_lng"
   ]
 }

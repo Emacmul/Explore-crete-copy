@@ -1,0 +1,32 @@
+{
+  "name": "Device",
+  "type": "object",
+  "properties": {
+    "user_email": {
+      "type": "string",
+      "description": "Email of the account this device is registered to"
+    },
+    "device_id": {
+      "type": "string",
+      "description": "Unique device identifier generated on the client install"
+    },
+    "device_label": {
+      "type": "string",
+      "description": "Optional friendly label (browser/OS hint) for admin display"
+    },
+    "first_seen": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this device was first verified"
+    },
+    "last_used": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this device last completed a login"
+    }
+  },
+  "required": [
+    "user_email",
+    "device_id"
+  ]
+}

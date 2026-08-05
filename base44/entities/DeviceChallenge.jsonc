@@ -1,0 +1,50 @@
+{
+  "name": "DeviceChallenge",
+  "type": "object",
+  "properties": {
+    "user_email": {
+      "type": "string",
+      "description": "Email of the account attempting to log in"
+    },
+    "device_id": {
+      "type": "string",
+      "description": "Device ID attempting the new-device login"
+    },
+    "code": {
+      "type": "string",
+      "description": "6-digit verification code emailed to the user"
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this code expires (10 minutes after issue)"
+    },
+    "attempts": {
+      "type": "number",
+      "default": 0,
+      "description": "Number of failed verification attempts"
+    },
+    "locked_until": {
+      "type": "string",
+      "format": "date-time",
+      "description": "If set, further attempts blocked until this time (15 min after 5 failed tries)"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "verified",
+        "expired",
+        "locked"
+      ],
+      "default": "pending",
+      "description": "Current state of this challenge"
+    }
+  },
+  "required": [
+    "user_email",
+    "device_id",
+    "code",
+    "expires_at"
+  ]
+}

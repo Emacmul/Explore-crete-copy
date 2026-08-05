@@ -1,0 +1,28 @@
+{
+  "name": "ActiveSession",
+  "type": "object",
+  "properties": {
+    "user_email": {
+      "type": "string",
+      "description": "Email of the account holding this session"
+    },
+    "device_id": {
+      "type": "string",
+      "description": "Device ID this session is bound to"
+    },
+    "heartbeat_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Last heartbeat timestamp; a session older than the timeout is considered inactive"
+    },
+    "active": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether this session is considered active"
+    }
+  },
+  "required": [
+    "user_email",
+    "device_id"
+  ]
+}
