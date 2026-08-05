@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { motion } from 'framer-motion';
 import {
   Footprints, MapPin, Car, ChevronRight, ShieldCheck, Mic,
-  LayoutDashboard, List, Users, Plus, AlertCircle, Volume2, Smartphone,
+  LayoutDashboard, List, Users, Plus, AlertCircle, Volume2,
 } from 'lucide-react';
 import { TOUR_CATEGORIES, getTourCategory } from '@/lib/tourCategories';
 
@@ -115,7 +115,7 @@ function MissingAudioTourCard({ walk, onJumpToWaypoint }) {
   );
 }
 
-export default function AdminStartScreen({ userRole, walks, onNewTour, onContinueTour, onManageUsers, onDashboard, onManageWalks, onManageDevices }) {
+export default function AdminStartScreen({ userRole, walks, onNewTour, onContinueTour, onManageUsers, onDashboard, onManageWalks }) {
   const isNarrator = userRole === 'narrator';
 
   const unfinishedWalks = walks
@@ -192,7 +192,7 @@ export default function AdminStartScreen({ userRole, walks, onNewTour, onContinu
       {!isNarrator && (
         <div>
           <h2 className="text-lg font-bold text-white mb-3">Admin Tools</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Button variant="outline" onClick={onDashboard} className="bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 gap-2 h-auto py-3 justify-start">
               <LayoutDashboard className="w-5 h-5 text-amber-400" />
               <div className="text-left">
@@ -212,13 +212,6 @@ export default function AdminStartScreen({ userRole, walks, onNewTour, onContinu
               <div className="text-left">
                 <p className="font-medium">Manage Users</p>
                 <p className="text-xs text-slate-400">Narrators & admins</p>
-              </div>
-            </Button>
-            <Button variant="outline" onClick={onManageDevices} className="bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 gap-2 h-auto py-3 justify-start">
-              <Smartphone className="w-5 h-5 text-emerald-400" />
-              <div className="text-left">
-                <p className="font-medium">Devices</p>
-                <p className="text-xs text-slate-400">Device logins & sessions</p>
               </div>
             </Button>
           </div>

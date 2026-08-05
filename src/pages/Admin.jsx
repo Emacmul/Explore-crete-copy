@@ -10,7 +10,6 @@ import WalksDashboard from '../components/admin/WalksDashboard';
 import AdminStartScreen from '../components/admin/AdminStartScreen';
 import UsersManager from '../components/admin/UsersManager';
 import ApiKeysDialog from '../components/admin/ApiKeysDialog';
-import DeviceManager from '../components/admin/DeviceManager';
 import { getRouteTypeForCategory } from '@/lib/tourCategories';
 
 export default function Admin() {
@@ -202,8 +201,6 @@ export default function Admin() {
             userRole={userRole}
             focusWaypointIndex={focusWaypointIndex}
           />
-        ) : view === 'devices' ? (
-          <DeviceManager />
         ) : view === 'users' ? (
           <UsersManager />
         ) : view === 'dashboard' ? (
@@ -228,7 +225,6 @@ export default function Admin() {
             onManageUsers={() => setView('users')}
             onDashboard={() => setView('dashboard')}
             onManageWalks={() => setView('walks')}
-            onManageDevices={() => setView('devices')}
           />
         )}
       </main>

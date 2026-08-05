@@ -15,6 +15,40 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-05 — Removed two dead components from an old membership system
+Scope: deleted `src/components/membership/WandererUpsellSplash.jsx` and
+`src/components/membership/MembershipCodeEntry.jsx` (folder is now
+gone too, since it was the only thing in it).
+
+Both were leftovers from an earlier voucher/tier-based membership
+approach (WandererUpsellSplash referenced old "Explorer/Pathfinder/
+Wayfinder" tiers; MembershipCodeEntry was for entering a voucher
+code) — neither was imported or rendered anywhere in the live app, so
+no user could ever have reached either screen. Confirmed via search
+before deleting each one. Fits with the account/membership system
+being rebuilt from scratch on WordPress now, rather than the old
+code/voucher approach.
+
+**Verified:** `npx vite build` completes with no errors after both
+removals — confirms nothing else depended on either file.
+
+---
+
+## 2026-08-05 — Real logo on the login screen, plus one more sweep
+Scope: `src/pages/Login.jsx`, `src/components/membership/WandererUpsellSplash.jsx`.
+
+- The sign-in screen had the same generic Mountain icon placeholder as
+  the other spots fixed earlier — swapped for the real logo.
+- Per the standing instruction to check every occurrence: also found
+  and fixed the same pattern on the membership upsell splash screen
+  ("Unlock More of Crete").
+- Registration screen was already fixed in an earlier entry — nothing
+  further needed there.
+
+**Verified:** `npx vite build` completes with no errors.
+
+---
+
 ## 2026-08-03 — Walk/Hike waypoint editor: "Save and Download GPX" button
 Scope: Walk/Hike tours only (route_type = 'walk'). Driving tours and
 WalkAbout tours are untouched — they already have their own export panel.
@@ -73,6 +107,38 @@ changes.
   Base44 dev server available here) — only confirmed it builds
   cleanly. Enda should test the button in the live app before relying
   on it.
+
+---
+
+## 2026-08-04 — GPX Builder: mode toggle buttons were completely non-functional
+Scope: `waypoint-gpx-builder.html`.
+
+Enda reported he couldn't find the Primary/Secondary role option at
+all after downloading the tool. Real bug, not user error — a "Step 1
+— What are you building?" section with two toggle buttons (Walk/Hike
+vs WalkAbout/Driving Tour) existed in the HTML, but:
+1. **No click handler was ever wired up on either button** — clicking
+   "WalkAbout / Driving Tour" did nothing at all, so the tool silently
+   stayed in Walk/Hike mode no matter what was clicked.
+2. **No CSS existed for the buttons either** — they'd have rendered as
+   two plain, unstyled default browser buttons with no visual
+   indication anything was selectable or selected, easy to miss
+   entirely.
+
+**Fix:**
+- Added real click handlers on both buttons, routed through a single
+  `setTourMode()` function so every place that can change mode (button
+  click, loading a file, resuming an autosaved session, clearing) stays
+  visually in sync with each other.
+- Added proper styling — a clear two-option toggle card layout with an
+  obvious highlighted/bordered "active" state, matching the tool's
+  existing visual style.
+
+**Verified:** confirmed via `node --check` the script is syntactically
+valid, and traced every place the mode gets set to confirm each one
+now goes through the same function that also updates the button
+styling — no path left where the stored mode and the visible buttons
+could disagree.
 
 ---
 
