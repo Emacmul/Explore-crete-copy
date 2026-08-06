@@ -15,6 +15,44 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-05 — Fixed the real "double registration" bug — app no longer asks twice
+Scope: `src/pages/Home.jsx`.
+
+**The actual bug, finally identified:** Enda kept landing on the app's
+own "Welcome to Explore Crete — Create your account to get started"
+screen after registering through the new WordPress form. I initially
+(wrongly) explained this away as "your own pre-existing account
+still being logged in somewhere" — that was incorrect. The real cause:
+`Home.jsx` has always shown that screen (`RegistrationForm.jsx`) after
+*any* first login where the person's `AppUser` record doesn't have
+`registration_complete: true` — brand new account or not. Switching
+which WordPress plugin collects registration info (tonight's whole
+saga) never touched this separate app-side gate, so every new
+customer would always hit it regardless — a genuine, real duplication
+that was never actually fixed until now, only worked around by
+changing where the WordPress-side form lived.
+
+**Fix:** since WordPress registration (Ultimate Member) now properly
+collects name, date of birth, gender, and privacy consent, this
+second in-app step is redundant. `checkRegistration` in `Home.jsx` now
+auto-creates (or auto-updates) the person's `AppUser` record as
+already complete on their first login, instead of asking them to fill
+in a form again. No visible screen, no re-entering anything — login
+via WordPress is now the one and only registration step a customer
+ever sees.
+
+`RegistrationForm.jsx` itself is left in place, unused in the normal
+flow, only as a fallback if the automatic `AppUser` creation ever
+fails (e.g. a network error) — better than leaving someone stuck with
+nothing at all in that edge case.
+
+**Verified:** `npx vite build` completes with no errors. Traced the
+loading-state logic to confirm the old form can never flash on screen
+even briefly during a normal successful login — `isLoading` stays
+true until the auto-completion finishes.
+
+---
+
 ## 2026-08-05 — App's "Create Account" link now points at the new Ultimate Member registration page
 Scope: `src/pages/Login.jsx`.
 

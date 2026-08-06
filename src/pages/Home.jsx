@@ -43,6 +43,23 @@ export default function Home() {
 
         if (appUsers.length > 0 && appUsers[0].registration_complete) {
           setRegistrationComplete(true);
+        } else if (appUsers.length > 0) {
+          // AppUser record exists but was never marked complete (e.g. created before this fix) —
+          // WordPress registration already collected everything needed, so just mark it complete
+          // now instead of showing the old in-app form again.
+          await base44.entities.AppUser.update(appUsers[0].id, { registration_complete: true });
+          setRegistrationComplete(true);
+        } else {
+          // No AppUser record at all — this is genuinely this person's first login after
+          // registering through WordPress. Create the record straight away, already complete,
+          // instead of asking them to re-enter information WordPress's registration form
+          // already collected a moment ago.
+          await base44.entities.AppUser.create({
+            user_id: user.id,
+            email: user.email,
+            registration_complete: true,
+          });
+          setRegistrationComplete(true);
         }
 
         // This login is WordPress-based (see AuthContext.jsx) and carries no role field of its
