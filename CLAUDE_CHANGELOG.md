@@ -15,6 +15,76 @@ Pulled: 2026-08-03
 
 ---
 
+---
+
+## 2026-08-05 — Full audit: every trigger for the old registration form found and fixed
+Scope: `src/pages/Home.jsx`.
+
+Enda asked for a full check that nothing else could still trigger the
+old in-app registration form. Searched every reference to
+`RegistrationForm`, `registration_complete`, and `registrationComplete`
+across the whole codebase, plus every page touching the `AppUser`
+entity at all.
+
+**Found and fixed a second real bug in the process, not just
+confirmed the first fix:** `UsersManager.jsx` (Enda's "invite a new
+admin/narrator" tool) creates that person's `AppUser` record ahead of
+time, with their role already set — but with no `user_id`, since they
+haven't logged in yet. The previous entry's fix only looked up records
+by `user_id`, so a newly invited admin/narrator's first login would
+never find that pre-made record, and would create a second, separate
+one with no role at all — silently locking them out of the Admin
+Panel with no visible error explaining why.
+
+**Fix:** `checkRegistration` now also checks by email (lower-cased, to
+avoid a case mismatch between the invite and however WordPress
+returns the address) for an existing record with no `user_id` yet,
+before assuming someone is a genuinely new person. If found, it links
+the two up (sets the `user_id`, marks complete) instead of creating a
+duplicate — preserving whatever role Enda originally assigned.
+
+**Confirmed clean, no changes needed:**
+- `RegistrationForm.jsx` itself is only ever imported by `Home.jsx` —
+  no other page can trigger it.
+- `Admin.jsx` also reads from `AppUser`, but only for a simple
+  read-only role check — no gating, no form, unrelated to this bug.
+- No other file in the app touches the `AppUser` entity at all.
+
+**Verified:** `npx vite build` completes with no errors.
+
+---
+
+## 2026-08-05 — Real fix for the double-registration bug — previous fix silently failed
+Scope: `src/pages/Home.jsx`, `base44/entities/AppUser.jsonc`.
+
+The previous entry's fix (auto-completing registration instead of
+showing the old in-app form) looked correct but didn't actually work —
+Enda still saw the old form. Root cause: the `AppUser` database entity
+required `first_name` and `last_name` to be present on every record,
+but the auto-create code never provided them (the app doesn't collect
+those anymore — WordPress does). Every auto-create attempt was
+silently failing validation and falling into the `catch` block, which
+only logged to the browser console — invisible during normal use, so
+the fallback (the old form) kept reappearing with no visible error to
+explain why.
+
+**Fix, two parts:**
+1. `AppUser.jsonc` — removed `first_name`/`last_name` from the
+   entity's required fields. The app no longer collects them itself,
+   so requiring them at the database level was actively breaking the
+   auto-completion this entity change was supposed to enable.
+2. `Home.jsx` — the auto-create now also best-effort fills in a name
+   from whatever WordPress's login response provides
+   (`full_name`/`display_name`, split on the first space), but never
+   requires it — if nothing's available, it just creates the record
+   with blank name fields rather than failing.
+
+**Verified:** `npx vite build` completes with no errors. Confirmed
+`AppUser.jsonc` is still valid JSON after removing the required
+fields.
+
+---
+
 ## 2026-08-05 — Fixed the real "double registration" bug — app no longer asks twice
 Scope: `src/pages/Home.jsx`.
 

@@ -40,32 +40,57 @@ export default function Home() {
     const checkRegistration = async () => {
       try {
         const appUsers = await base44.entities.AppUser.filter({ user_id: user.id });
+        let finalAppUser = appUsers[0] || null;
 
-        if (appUsers.length > 0 && appUsers[0].registration_complete) {
+        if (finalAppUser && finalAppUser.registration_complete) {
           setRegistrationComplete(true);
-        } else if (appUsers.length > 0) {
-          // AppUser record exists but was never marked complete (e.g. created before this fix) —
-          // WordPress registration already collected everything needed, so just mark it complete
-          // now instead of showing the old in-app form again.
-          await base44.entities.AppUser.update(appUsers[0].id, { registration_complete: true });
+        } else if (finalAppUser) {
+          // AppUser record exists (matched by user_id) but was never marked complete (e.g.
+          // created before this fix) — WordPress registration already collected everything
+          // needed, so just mark it complete now instead of showing the old in-app form again.
+          await base44.entities.AppUser.update(finalAppUser.id, { registration_complete: true });
+          finalAppUser = { ...finalAppUser, registration_complete: true };
           setRegistrationComplete(true);
         } else {
-          // No AppUser record at all — this is genuinely this person's first login after
-          // registering through WordPress. Create the record straight away, already complete,
-          // instead of asking them to re-enter information WordPress's registration form
-          // already collected a moment ago.
-          await base44.entities.AppUser.create({
-            user_id: user.id,
-            email: user.email,
-            registration_complete: true,
-          });
+          // No record matched by user_id — but Enda may have already invited this person as an
+          // admin/narrator via the Users Manager, which creates their AppUser record ahead of
+          // time (with their role already set) but with no user_id yet, since they hadn't
+          // logged in. Check by email before assuming this is a brand new person — otherwise
+          // this would create a second, separate record with no role at all, silently locking
+          // a newly invited admin/narrator out of the Admin Panel.
+          const byEmail = await base44.entities.AppUser.filter({ email: (user.email || '').toLowerCase() });
+          const invited = byEmail.find(u => !u.user_id);
+
+          if (invited) {
+            await base44.entities.AppUser.update(invited.id, {
+              user_id: user.id,
+              registration_complete: true,
+            });
+            finalAppUser = { ...invited, user_id: user.id, registration_complete: true };
+          } else {
+            // Genuinely this person's first login after registering through WordPress. Create
+            // the record straight away, already complete, instead of asking them to re-enter
+            // information WordPress's registration form already collected a moment ago. Name is
+            // filled in on a best-effort basis from whatever WordPress provides
+            // (full_name/display_name) — never required, since the app itself doesn't collect
+            // it anymore.
+            const nameParts = (user.full_name || user.display_name || '').trim().split(/\s+/);
+            const created = await base44.entities.AppUser.create({
+              user_id: user.id,
+              email: user.email,
+              first_name: nameParts[0] || '',
+              last_name: nameParts.slice(1).join(' ') || '',
+              registration_complete: true,
+            });
+            finalAppUser = created;
+          }
           setRegistrationComplete(true);
         }
 
         // This login is WordPress-based (see AuthContext.jsx) and carries no role field of its
         // own — unlike Admin.jsx, which checks Base44's separate native login. The AppUser
         // record's own `role` field is the only real source of truth here.
-        if (appUsers.length > 0 && (appUsers[0].role === 'admin' || appUsers[0].role === 'narrator')) {
+        if (finalAppUser && (finalAppUser.role === 'admin' || finalAppUser.role === 'narrator')) {
           setIsStaff(true);
         }
       } catch (error) {
