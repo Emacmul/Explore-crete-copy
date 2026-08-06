@@ -1,18 +1,16 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { base44 } from '@/api/base44Client';
 
 const SPLASH_IMAGE = 'https://media.base44.com/images/public/69a7d073cd7cd9b51cfe0fd0/40f0351cc_Walkingappsplashacreen.jpg';
 
 export default function SplashScreen({ onDone }) {
   const [visible, setVisible] = useState(true);
 
-  const handleEnter = async () => {
-    const isAuth = await base44.auth.isAuthenticated();
-    if (!isAuth) {
-      base44.auth.redirectToLogin();
-      return;
-    }
+  const handleEnter = () => {
+    // The app's auth gate (App.jsx → AuthContext) already guarantees the user is
+    // WordPress-authenticated before Home — and therefore this splash — can render.
+    // Re-checking Base44's *separate* platform session here redirected WordPress
+    // users to the Base44 login page, so it must not happen.
     setVisible(false);
     setTimeout(() => {
       onDone();
