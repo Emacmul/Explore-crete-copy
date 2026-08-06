@@ -7,13 +7,9 @@ import { Link } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import WalkRecorder from '@/components/recorded/WalkRecorder';
 import RecordedWalkCard from '@/components/recorded/RecordedWalkCard';
-import { useAuth } from '@/lib/AuthContext';
 
 export default function MyRecordedWalks() {
-  // Reachable only after the custom WordPress login (App.jsx gates unauthenticated
-  // users), so `user` from useAuth is the WordPress session — never redirect to the
-  // Base44 platform login.
-  const { user } = useAuth();
+  const [user, setUser] = useState(null);
   const [appUser, setAppUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showRecorder, setShowRecorder] = useState(false);
@@ -21,19 +17,25 @@ export default function MyRecordedWalks() {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    if (!user) { setIsLoading(false); return; }
     const init = async () => {
-      try {
-        const appUsers = await base44.entities.AppUser.filter({ user_id: user.id });
-        setAppUser(appUsers[0] || null);
-      } catch (err) {
-        console.error('AppUser lookup error:', err);
-      } finally {
-        setIsLoading(false);
+      const isAuth = await base44.auth.isAuthenticated();
+
+      if (!isAuth) {
+        base44.auth.redirectToLogin();
+        return;
       }
+
+      const u = await base44.auth.me();
+      setUser(u);
+
+      const appUsers = await base44.entities.AppUser.filter({ user_id: u.id });
+      setAppUser(appUsers[0] || null);
+
+      setIsLoading(false);
     };
+
     init();
-  }, [user]);
+  }, []);
 
   const canRecord = appUser?.is_member === true;
 

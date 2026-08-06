@@ -33,7 +33,7 @@ export default function Login() {
             <img src="/explore-crete-logo.png" alt="Explore Crete" className="w-11 h-11 object-contain" />
           </div>
           <h1 className="text-2xl font-bold text-white">Explore Crete</h1>
-          <p className="text-teal-200 text-sm mt-1">Walking tours &amp; driving audio guides</p>
+          <p className="text-teal-200 text-sm mt-1">Walking, Hiking, WalkAbout, Driving</p>
         </div>
 
         <div className="bg-white rounded-2xl shadow-xl p-6 space-y-4">

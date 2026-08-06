@@ -1,7 +1,7 @@
 {
   "name": "Explore Crete",
   "short_name": "Explore Crete",
-  "description": "Walking tours, hiking routes, and driving audio tours in Crete",
+  "description": "Walking, hiking, WalkAbout, and driving tours in Crete",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

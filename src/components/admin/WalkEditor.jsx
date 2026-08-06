@@ -115,9 +115,8 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
       distanceKm += R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     }
     let elevGain = 0;
-    const elev = Array.isArray(elevations) ? elevations : [];
-    for (let i = 1; i < elev.length; i++) {
-      if (elev[i] > elev[i-1]) elevGain += elev[i] - elev[i-1];
+    for (let i = 1; i < elevations.length; i++) {
+      if (elevations[i] > elevations[i-1]) elevGain += elevations[i] - elevations[i-1];
     }
     return { distanceKm, elevGain };
   };
@@ -199,28 +198,10 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
     return wps;
   };
 
-  const applyImportedData = async (trailPath, waypoints, elevations) => {
+  const applyImportedData = (trailPath, waypoints, elevations) => {
     const startPt = trailPath[0] || waypoints[0];
     const { distanceKm, elevGain } = computeStats(trailPath, elevations);
-    let finalWaypoints = waypoints.length > 0 ? waypoints : generateIntermediateWaypoints(trailPath);
-
-    // Safety net: any key point still missing a height — auto-generated points whose
-    // GPX had no named waypoints, or FIT course points without <ele> — gets one now.
-    // Height at each waypoint is vital for walkers judging whether a route is safe.
-    const wpsMissingEle = finalWaypoints.filter(wp => wp.elevation == null || wp.elevation === 0);
-    if (wpsMissingEle.length > 0) {
-      setElevFetching(true);
-      try {
-        const wpElevs = await fetchElevations(wpsMissingEle);
-        wpsMissingEle.forEach((wp, i) => {
-          if (wpElevs[i] != null && wpElevs[i] !== 0) wp.elevation = Math.round(wpElevs[i]);
-        });
-      } catch (err) {
-        console.warn('Waypoint elevation fetch failed:', err);
-      }
-      setElevFetching(false);
-    }
-
+    const finalWaypoints = waypoints.length > 0 ? waypoints : generateIntermediateWaypoints(trailPath);
     setForm(prev => ({
       ...prev,
       trail_path: trailPath,
@@ -238,9 +219,6 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
 
   const fetchElevations = async (points) => {
     const res = await base44.functions.invoke('fetchElevations', { points });
-    if (!res?.data?.elevations) {
-      throw new Error(res?.data?.error || 'Elevation service returned no data');
-    }
     return res.data.elevations;
   };
 
@@ -349,33 +327,20 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
       // Treat all-zero elevations (Garmin Explore placeholder) as missing
       const hasRealElevation = elevations.length >= 2 && elevations.some(e => e > 1);
 
-      // Resolve the final waypoint list NOW — before the elevation fetch — so that
-      // auto-generated intermediate waypoints (created when the GPX has track points
-      // but no named waypoints) are included in the same OpenTopoData request. Without
-      // this, those auto-generated key points had no height at all, which matters for
-      // walker safety.
-      const finalWaypoints = waypoints.length > 0 ? waypoints : generateIntermediateWaypoints(trailPath);
-
       // Check which waypoints are missing elevation (null or 0 = Garmin placeholder)
-      const waypointsMissingEle = finalWaypoints.filter(wp => wp.elevation == null || wp.elevation === 0);
+      const waypointsMissingEle = waypoints.filter(wp => wp.elevation == null || wp.elevation === 0);
 
-      const needsTrailEle = !hasRealElevation && trailPath.length > 0;
-      const needsWaypointEle = waypointsMissingEle.length > 0;
-      if (needsTrailEle || needsWaypointEle) {
+      if ((!hasRealElevation && trailPath.length > 0) || waypointsMissingEle.length > 0) {
         setGpxImporting(false);
         setElevFetching(true);
         try {
-          // Combine trail + waypoint points into ONE OpenTopoData request. The free
-          // shared endpoint throttles at ~1 req/s, so two back-to-back calls (trail
-          // then waypoints) reliably 429'd the second one — a single call avoids that.
-          const trailSlice = needsTrailEle ? trailPath : [];
-          const wpSlice = needsWaypointEle ? waypointsMissingEle : [];
-          const allElevs = await fetchElevations([...trailSlice, ...wpSlice]);
-          if (needsTrailEle) {
-            elevations = allElevs.slice(0, trailSlice.length);
+          // Fetch trail elevations if needed
+          if (!hasRealElevation && trailPath.length > 0) {
+            elevations = await fetchElevations(trailPath);
           }
-          if (needsWaypointEle) {
-            const wpElevs = allElevs.slice(trailSlice.length);
+          // Fetch waypoint elevations if any are missing
+          if (waypointsMissingEle.length > 0) {
+            const wpElevs = await fetchElevations(waypointsMissingEle);
             waypointsMissingEle.forEach((wp, i) => {
               if (wpElevs[i] != null && wpElevs[i] !== 0) wp.elevation = Math.round(wpElevs[i]);
             });
@@ -386,7 +351,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
         setElevFetching(false);
       }
 
-      await applyImportedData(trailPath, finalWaypoints, elevations);
+      applyImportedData(trailPath, waypoints, elevations);
     };
     reader.readAsText(file);
     e.target.value = '';
@@ -413,7 +378,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
         console.log('FitParser:', FitParser);
         const fitParser = new FitParser({ force: true, speedUnit: 'km/h', lengthUnit: 'km', elapsedRecordField: true });
         console.log('Parser created, about to parse...');
-        fitParser.parse(arrayBuffer, async (error, data) => {
+        fitParser.parse(arrayBuffer, (error, data) => {
           console.log('Parse callback fired!');
           if (error) { 
             console.error('FIT parse error:', error);
@@ -499,7 +464,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
           };
         }).filter(p => p.lat != null && p.lng != null);
 
-        await applyImportedData(trailPath, waypoints, elevations);
+        applyImportedData(trailPath, waypoints, elevations);
         });
       } catch (err) {
         console.error('FIT import exception:', err);

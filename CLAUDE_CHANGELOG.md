@@ -15,6 +15,20 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-05 — Login strapline changed
+Scope: `src/pages/Login.jsx`, `public/manifest.json`.
+
+"Walking tours & driving audio guides" → "Walking, Hiking, WalkAbout,
+Driving" on the login screen. Also aligned the PWA description text
+in `manifest.json` (same wording, different context — a full sentence
+used in browser install prompts, not a UI strapline) to match the
+same four categories.
+
+**Verified:** `npx vite build` completes with no errors;
+`manifest.json` confirmed still valid JSON.
+
+---
+
 ## 2026-08-05 — Removed two dead components from an old membership system
 Scope: deleted `src/components/membership/WandererUpsellSplash.jsx` and
 `src/components/membership/MembershipCodeEntry.jsx` (folder is now

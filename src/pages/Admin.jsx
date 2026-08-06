@@ -11,11 +11,8 @@ import AdminStartScreen from '../components/admin/AdminStartScreen';
 import UsersManager from '../components/admin/UsersManager';
 import ApiKeysDialog from '../components/admin/ApiKeysDialog';
 import { getRouteTypeForCategory } from '@/lib/tourCategories';
-import { useAuth } from '@/lib/AuthContext';
-import Login from './Login';
 
 export default function Admin() {
-  const { user: authUser, isAuthenticated, isLoadingAuth, logout } = useAuth();
   const [user, setUser] = useState(null);
   const [userRole, setUserRole] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -27,31 +24,46 @@ export default function Admin() {
   const [walksLoading, setWalksLoading] = useState(true);
 
   useEffect(() => {
-    const resolveRole = async () => {
-      // Staff (admins/narrators) sign in through the same custom WordPress login
-      // the rest of the app uses — NOT Base44 platform auth. Gate on the WordPress
-      // session from AuthContext, then look up the staff role by email.
-      if (isLoadingAuth) return;
-      if (!isAuthenticated || !authUser?.email) {
-        setIsLoading(false); // not signed in → render the custom Login below
-        return;
-      }
+    const checkAuth = async () => {
+      console.log('[Admin] checkAuth starting — this confirms the current code is actually running.');
       try {
-        const appUsers = await base44.entities.AppUser.filter({ email: authUser.email });
-        if (appUsers.length > 0 && (appUsers[0].role === 'admin' || appUsers[0].role === 'narrator')) {
-          setUser(authUser);
-          setUserRole(appUsers[0].role);
-          setIsLoading(false);
+        const isAuth = await base44.auth.isAuthenticated();
+        console.log('[Admin] base44.auth.isAuthenticated() returned:', isAuth);
+        if (!isAuth) {
+          console.log('[Admin] Not authenticated via Base44 native auth — redirecting to Base44 login.');
+          base44.auth.redirectToLogin(window.location.href);
           return;
         }
-      } catch (err) {
-        console.error('Staff role lookup error:', err);
+
+        const userData = await base44.auth.me();
+        console.log('[Admin] base44.auth.me() returned:', userData);
+
+        let role = null;
+        if (userData.role === 'admin') {
+          role = 'admin';
+        } else {
+          const appUsers = await base44.entities.AppUser.filter({ user_id: userData.id });
+          if (appUsers.length > 0 && (appUsers[0].role === 'narrator' || appUsers[0].role === 'admin')) {
+            role = appUsers[0].role;
+          }
+        }
+
+        if (!role) {
+          console.log('[Admin] No admin/narrator role found for this login — sending to Home.', { isAuth, userData });
+          window.location.href = createPageUrl('Home');
+          return;
+        }
+
+        setUser(userData);
+        setUserRole(role);
+      } catch (error) {
+        console.error('Auth check error:', error);
+      } finally {
+        setIsLoading(false);
       }
-      // Authenticated WordPress user without a staff role → send to the front end.
-      window.location.href = createPageUrl('Home');
     };
-    resolveRole();
-  }, [isLoadingAuth, isAuthenticated, authUser]);
+    checkAuth();
+  }, []);
 
   // Load the walks list once. Every action below (save, delete, mark-checked) updates this local
   // state directly and only in response to that specific action's own confirmed result — nothing
@@ -120,19 +132,7 @@ export default function Admin() {
     setWalks((prev) => prev.map(w => w.id === walkId ? { ...w, announced_at: checkedAt } : w));
   };
 
-  if (isLoadingAuth) {
-    return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-        <Loader2 className="w-10 h-10 animate-spin text-amber-400" />
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return <Login />;
-  }
-
-  if (isLoading || !user || !userRole) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center">
         <Loader2 className="w-10 h-10 animate-spin text-amber-400" />
@@ -183,7 +183,7 @@ export default function Admin() {
                 Front End
               </Button>
             </Link>
-            <Button variant="ghost" size="sm" onClick={() => logout()} className="text-slate-300 hover:text-white gap-2">
+            <Button variant="ghost" size="sm" onClick={() => base44.auth.logout()} className="text-slate-300 hover:text-white gap-2">
               <LogOut className="w-4 h-4" /> Logout
             </Button>
           </div>
