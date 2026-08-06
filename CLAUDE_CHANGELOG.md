@@ -15,6 +15,110 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-05 — Removed the dead "Membership Code" field and its backend
+Scope: `src/components/onboarding/RegistrationForm.jsx`; deleted
+`base44/functions/verifyMembershipKey/`.
+
+The in-app "Complete Registration" form had an optional "Membership
+Code" field referencing "your WooCommerce order" — checked against a
+`verifyMembershipKey` backend function tied to the old Key
+Manager/voucher plugin, which is being deactivated as part of the
+move to the new WordPress-based system. Enda confirmed this field is
+now meaningless — removed the field from the UI, the verification
+step in the submit handler, and the now-unused `verifyMembershipKey`
+backend function entirely (confirmed nothing else called it first).
+
+Also flagged, not touched: this form still submits a plaintext
+`password` field into the `AppUser` database record — likely a
+leftover from before WordPress became the actual source of truth for
+login credentials. Not removed in this pass since Enda didn't ask
+about it and nothing currently reads it elsewhere, but worth a look
+before this goes properly live.
+
+**Longer-term plan discussed, not yet built:** Enda wants the
+remaining fields on this form (first/last name, date of birth, gender)
+collected during WordPress registration instead, so new users only
+fill in one form, not two. That's a WordPress-side change (a plugin
+to add custom fields to the registration page) — recommended "User
+Registration for Elementor Forms" given he's already on Elementor Pro,
+since it visually builds registration forms and maps fields (including
+custom ones) to WordPress user data. Once that's live and actually
+collecting this info, this whole in-app `RegistrationForm.jsx` step
+can likely be removed entirely — flagging that as the natural next
+step for a future session once the WordPress side is built.
+
+**Verified:** `npx vite build` completes with no errors.
+
+---
+
+## 2026-08-05 — Splash screen was silently sending real customers to Base44's own login
+Scope: `src/components/onboarding/SplashScreen.jsx`.
+
+Enda asked how many login/registration screens exist and why users
+seemed to hit an extra unexpected one (the earlier "(Copy)" Base44
+branded screen with "Continue with Google", previously suspected to be
+a Base44 domain-routing problem).
+
+**Real cause, found by checking the code:** the splash screen's
+"Enter" button called `base44.auth.isAuthenticated()` /
+`base44.auth.redirectToLogin()` — Base44's own separate native login
+system. That's a leftover from before the WordPress-based login
+replaced it; nothing else in the customer-facing app (`Home.jsx`,
+`App.jsx`) touches `base44.auth` at all anymore. By the time this
+screen can even render, `App.jsx` has already confirmed the user is
+logged in via WordPress — this check was redundant at best, and since
+customers never actually have a Base44-native session, it was always
+false, silently redirecting real logged-in customers to Base44's own
+generic hosted login page. This is almost certainly what the earlier
+"(Copy)" screen actually was — not a Base44-side domain
+misconfiguration as first suspected.
+
+**Fix:** removed the check entirely — the button now just dismisses
+the splash screen and continues, no auth check needed since one
+already happened upstream.
+
+**Full screen inventory given to Enda, for reference:**
+1. WordPress's own registration page — creates login credentials
+   (email/password). The one real account-creation step.
+2. The app's own Login screen — signs in with those credentials.
+3. The splash "Enter" screen — not meant to be a login step, just an
+   intro image+button; the bug above made it act like one.
+4. `RegistrationForm.jsx` ("Complete Registration") — not a second
+   account; collects profile info (name, DOB, gender, optional
+   membership code) that WordPress's registration doesn't ask for,
+   needed for the app's own `AppUser` record.
+
+Enda's fair pushback: even though it's technically "create login" then
+"add profile info" rather than two accounts, it still feels like
+registering twice. Flagged as an open decision — folding those fields
+into the WordPress registration page instead (removing this second
+form) is possible but touches both systems, and needs Enda's call
+rather than a guess.
+
+**Verified:** `npx vite build` completes with no errors.
+
+---
+
+## 2026-08-05 — "My Recorded Walks" confirmed disabled, dead files removed
+Scope: deleted `src/pages/MyRecordedWalks.jsx`,
+`src/components/recorded/WalkRecorder.jsx`,
+`src/components/recorded/RecordedWalkCard.jsx` (folder now gone too).
+
+Enda asked whether this feature (letting users record and submit
+their own walks — he'd decided to scrap it entirely, too messy) was
+actually disabled. Checked `src/pages.config.js`, which lists every
+page the app actually registers as a route: only `Admin`, `Home`,
+`MyWalks`. `MyRecordedWalks` isn't in that list at all — there's no
+URL that reaches it, and nothing links to it from anywhere else in
+the app. It was already fully disabled, not just hidden.
+
+The three files themselves were still sitting in the codebase unused
+though — removed them, same as the membership cleanup earlier.
+
+**Verified:** `npx vite build` completes with no errors.
+
+---
+
 ## 2026-08-05 — Login strapline changed
 Scope: `src/pages/Login.jsx`, `public/manifest.json`.
 
