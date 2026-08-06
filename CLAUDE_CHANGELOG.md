@@ -15,6 +15,82 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-05 — App's "Create Account" link now points at the new Ultimate Member registration page
+Scope: `src/pages/Login.jsx`.
+
+Following the switch from "User Registration & Membership" to
+Ultimate Member (previous entries): the "Create your Free Magical
+Crete Account" link, temporarily pointed at the plain native
+`wp-login.php?action=register` fallback, now points at
+`https://magicalcrete.com/register/` — the new Ultimate Member
+registration page, built and tested tonight (3x clean logout/login
+cycles, Confirm Password field fixed to use the actual predefined
+field type, Privacy Policy toggle enabled, reCAPTCHA v2 added).
+
+**Verified:** `npx vite build` completes with no errors.
+
+**Not verified by me:** Enda still needs to do one full real test
+registration through this new page end-to-end (fill in every field,
+tick privacy policy, pass the captcha, submit, confirm the account is
+created and can log in) before fully trusting it — that hadn't been
+confirmed as of this entry.
+
+---
+
+## 2026-08-05 — "User Registration & Membership" plugin abandoned, reverted to native WP registration
+Scope: `src/pages/Login.jsx`.
+
+After an extensive troubleshooting session (Loginizer captcha
+conflicts, a plugin-created duplicate "My Account" page, and finally
+a persistent "already logged in" phantom-session bug that survived
+even fully disabling the caching plugin), Enda decided to remove
+the "User Registration & Membership" plugin entirely rather than
+keep chasing it.
+
+**App-side change:** the "Create your Free Magical Crete Account"
+link, which had been updated to point at the plugin's custom
+`/create-account/` page, is reverted back to WordPress's own native
+`wp-login.php?action=register` — the same fallback used right at the
+very start of this whole saga, proven reliable throughout tonight
+(no captcha issues, no session bugs) even though it's visually plain.
+
+**Not done — needs a decision on a fresh day, not tonight:**
+- The custom fields work (First Name, Last Name, Date of Birth,
+  Gender with three options, linked Privacy Policy checkbox) built
+  inside that plugin is now moot since the plugin is being removed.
+  If Enda wants those fields collected at registration again (e.g.
+  for the quarterly birthday raffle idea), that needs a different
+  plugin or approach — not attempted again tonight given how this one
+  went.
+- The root cause of the phantom "already logged in" bug was never
+  actually identified — it survived a full SpeedyCache deactivation,
+  so it likely wasn't caching after all. Could be a cookie
+  domain/path mismatch, a conflict with another active plugin, or a
+  bug specific to that plugin's session handling. Worth a fresh
+  investigation only if Enda revisits building this out, not urgent
+  now that the plugin itself is gone.
+- Login itself (`wp-login.php`, no custom plugin) remains fully
+  functional throughout all of this — never actually broken.
+
+**Verified:** `npx vite build` completes with no errors.
+
+---
+
+## 2026-08-05 — App's "Create Account" link updated to the new dedicated page
+Scope: `src/pages/Login.jsx`.
+
+Following the WordPress registration-form work: `/my-account` is now
+going to hold the Login form only. The app's own login screen's
+"Create your Free Magical Crete Account" link previously pointed at
+`/my-account` (which made sense when that page had the registration
+form) — updated to point at the new dedicated
+`https://magicalcrete.com/create-account/` page instead, which now
+holds the actual registration form.
+
+**Verified:** `npx vite build` completes with no errors.
+
+---
+
 ## 2026-08-05 — Removed the dead "Membership Code" field and its backend
 Scope: `src/components/onboarding/RegistrationForm.jsx`; deleted
 `base44/functions/verifyMembershipKey/`.
