@@ -18,6 +18,7 @@ import SplashScreen from '../components/onboarding/SplashScreen';
 import RegistrationForm from '../components/onboarding/RegistrationForm';
 import TourCategoryPicker from '../components/walks/TourCategoryPicker';
 import { getTourCategory } from '../lib/tourCategories';
+import InstallPrompt from '../components/InstallPrompt';
 
 export default function Home() {
   const { user, logout } = useAuth();
@@ -226,6 +227,7 @@ export default function Home() {
       )}
 
       <UpdateInProgressModal walkName={updatingWalkName} />
+      <InstallPrompt />
 
       <header className="bg-white/80 backdrop-blur-md border-b sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">

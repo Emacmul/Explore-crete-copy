@@ -15,6 +15,42 @@ Pulled: 2026-08-03
 
 ---
 
+---
+
+## 2026-08-06 — Added real "install to home screen" guidance — nothing did this before
+Scope: new `src/components/InstallPrompt.jsx`, `src/pages/Home.jsx`.
+
+Enda's first real test customer logged in successfully on Android but
+never got a home-screen icon. Not a bug and not the phone — no
+browser on any platform ever creates a home-screen icon automatically
+just from someone opening and using a site; it's a deliberate
+security protection everywhere, always requires an explicit tap. The
+app had never told anyone this option even existed.
+
+**Added:** a small dismissible banner, shown on the main app screen
+(after login, splash, and any onboarding steps are done), that
+actually helps:
+- **Android/Chrome:** captures the browser's own native install
+  prompt and shows a proper "Add to Home Screen" button — tapping it
+  triggers the real install dialog directly, no hunting through menus.
+- **iOS Safari:** Apple provides no equivalent way to trigger this
+  from code at all, so shows plain instructions instead ("Tap Share,
+  then Add to Home Screen").
+- Hides itself entirely once the app is already running installed
+  (detected via `display-mode: standalone`), and stays dismissed
+  (saved to this device) once someone closes it.
+
+**Verified:** `npx vite build` completes with no errors.
+
+**Not tested:** haven't been able to confirm the actual install
+prompt fires correctly on a real Android device or that the iOS
+instructions render correctly on real Safari — only confirmed the
+logic and conditions compile correctly. Worth Enda checking both on
+his next round of testing, iOS especially since that's specifically
+on his list for the next test.
+
+---
+
 ## 2026-08-06 — Admin Panel Logout button did nothing visible
 Scope: `src/pages/Admin.jsx`.
 
