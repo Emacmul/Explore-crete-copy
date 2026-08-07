@@ -183,7 +183,15 @@ export default function Admin() {
                 Front End
               </Button>
             </Link>
-            <Button variant="ghost" size="sm" onClick={() => base44.auth.logout()} className="text-slate-300 hover:text-white gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={async () => {
+                await base44.auth.logout();
+                window.location.href = createPageUrl('Home');
+              }}
+              className="text-slate-300 hover:text-white gap-2"
+            >
               <LogOut className="w-4 h-4" /> Logout
             </Button>
           </div>

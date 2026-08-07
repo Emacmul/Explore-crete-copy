@@ -15,6 +15,31 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-06 — Admin Panel Logout button did nothing visible
+Scope: `src/pages/Admin.jsx`.
+
+Enda reported clicking Logout in the Admin Panel appeared to just not
+work. Real bug: the button called `base44.auth.logout()` but never
+did anything after — no redirect, no page reload — so even if the
+session was actually being cleared, the screen stayed showing the
+exact same Admin Panel with no visible change, indistinguishable from
+the button simply failing.
+
+**Fix:** logout now redirects to the front end (`Home`) afterward, so
+there's a visible, confirmable result.
+
+**Important caveat for Enda specifically, not a further bug:** because
+he's also logged into the Base44 dashboard itself (as project owner),
+that session is separate from this Admin Panel's own login check —
+logging out here won't clear it, so clicking back into Admin
+immediately afterward may still let him straight in with no login
+screen. That's expected given his persistent dashboard session, not a
+sign the fix didn't work. Testing logout properly requires an
+incognito window, which never had that dashboard session to begin
+with.
+
+**Verified:** `npx vite build` completes with no errors.
+
 ---
 
 ## 2026-08-05 — Full audit: every trigger for the old registration form found and fixed
