@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { base44 } from '@/api/base44Client';
 import { useOfflineWalks } from '@/components/offline/useOfflineWalks';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, WifiOff } from 'lucide-react';
+import { ArrowLeft, WifiOff, Loader2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -10,9 +11,29 @@ import WalkDetail from '../components/walks/WalkDetail';
 import OfflineBadge from '../components/walks/OfflineBadge';
 
 export default function MyWalks() {
+  const [user, setUser] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [selectedWalk, setSelectedWalk] = useState(null);
   const { getAllOfflineWalks } = useOfflineWalks();
   const offlineWalks = getAllOfflineWalks();
+
+  useEffect(() => {
+    const init = async () => {
+      const isAuth = await base44.auth.isAuthenticated();
+      if (!isAuth) { base44.auth.redirectToLogin(); return; }
+      setUser(await base44.auth.me());
+      setIsLoading(false);
+    };
+    init();
+  }, []);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-amber-50 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-amber-50">
@@ -43,7 +64,7 @@ export default function MyWalks() {
                 <div className="text-center py-20 text-gray-500">
                   <WifiOff className="w-16 h-16 mx-auto mb-4 opacity-20" />
                   <p className="text-xl font-semibold mb-2">No walks downloaded yet</p>
-                  <p className="text-sm mb-6">Go back and tap "Save for Offline" on any walk to add it here.</p>
+                  <p className="text-sm mb-6">Go back and tap "Download" on any walk to save it for offline use.</p>
                   <Link to={createPageUrl('Home')}>
                     <Button>Browse Walks</Button>
                   </Link>

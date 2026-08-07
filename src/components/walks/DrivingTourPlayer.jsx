@@ -227,6 +227,7 @@ export default function DrivingTourPlayer({ walk }) {
                   className={`h-1.5 flex-1 rounded-full ${
                     isTriggered ? 'bg-green-500' : 'bg-slate-600'
                   }`}
+                  title={wp.segment_id || wp.name}
                 />
               );
             })}

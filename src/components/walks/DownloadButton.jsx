@@ -43,7 +43,7 @@ export default function DownloadButton({ walk, size = 'sm', showLabel = true }) 
         <Trash2 className="w-3.5 h-3.5 hidden group-hover:block" />
         {showLabel && (
           <>
-            <span className="group-hover:hidden">Saved Offline</span>
+            <span className="group-hover:hidden">Downloaded</span>
             <span className="hidden group-hover:block">Remove</span>
           </>
         )}
@@ -59,7 +59,7 @@ export default function DownloadButton({ walk, size = 'sm', showLabel = true }) 
       className="gap-2 border-blue-300 text-blue-700 hover:bg-blue-50"
     >
       <Download className="w-3.5 h-3.5" />
-      {showLabel && <span>Save for Offline</span>}
+      {showLabel && <span>Download</span>}
     </Button>
   );
 }

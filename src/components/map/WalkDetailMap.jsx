@@ -114,13 +114,11 @@ export default function WalkDetailMap({ walk, followGps = false }) {
         });
         const wpLabel = roleConfig ? roleConfig.label : (waypointConfig[wp.type]?.label || wp.type);
         const wpColor = iconConfig.color;
-        const wpName = isDrivingTour
-          ? (wp.segment_title || wp.name)
-          : (wp.segment_id && wp.name ? `${wp.segment_id} — ${wp.name}` : (wp.segment_id || wp.name));
+        const wpName = isDrivingTour ? (wp.segment_title || wp.name) : wp.name;
 
         return (
         <Marker
-          key={wp.segment_id || `${wp.lat},${wp.lng},${i}`}
+          key={i}
           position={[wp.lat, wp.lng]}
           icon={wpIcon}
         >

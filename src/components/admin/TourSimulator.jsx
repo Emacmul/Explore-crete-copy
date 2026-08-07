@@ -60,7 +60,7 @@ export default function TourSimulator({ form, onWaypointUpdate, segmentScripts, 
   const waypoints = (form.waypoints || []).filter(wp => wp.lat && wp.lng);
   const isWalkingTour = form.tour_category !== 'DDV';
 
-  const [speed, setSpeed] = useState(form.tour_category === 'WBT' ? 3.5 : 50);
+  const [speed, setSpeed] = useState(form.tour_category === 'WBT' ? 3 : 50);
   const [simMult, setSimMult] = useState(5);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentPos, setCurrentPos] = useState(trailPath[0] || null);
@@ -108,30 +108,6 @@ export default function TourSimulator({ form, onWaypointUpdate, segmentScripts, 
       .filter(({ wp }) => wp.waypoint_role === 'primary_start' && Number(wp.avg_segment_speed_kmh) > 0);
   }, [waypoints]);
 
-  // Every primary_start location, with how far along the trail it sits — lets the narrator jump
-  // the simulation straight to their own location instead of always having to play through
-  // every location before it first. Cumulative distance is found via the nearest trail_path
-  // point to each waypoint (same approach ScriptTimingPanel uses for its per-segment stats).
-  const locationTargets = useMemo(() => {
-    if (trailPath.length < 2) return [];
-    return waypoints
-      .map((wp, index) => ({ wp, index }))
-      .filter(({ wp }) => wp.waypoint_role === 'primary_start')
-      .map(({ wp, index }) => {
-        let nearestIdx = 0, minD = Infinity;
-        trailPath.forEach((pt, i) => {
-          const d = haversine(wp.lat, wp.lng, pt.lat, pt.lng);
-          if (d < minD) { minD = d; nearestIdx = i; }
-        });
-        let cumDist = 0;
-        for (let i = 1; i <= nearestIdx; i++) {
-          cumDist += haversine(trailPath[i - 1].lat, trailPath[i - 1].lng, trailPath[i].lat, trailPath[i].lng);
-        }
-        return { wp, index, cumDist, label: wp.segment_id || wp.segment_title || wp.name || `Location ${index + 1}` };
-      });
-  }, [waypoints, trailPath]);
-  const [jumpTargetIndex, setJumpTargetIndex] = useState('');
-
   useEffect(() => { speedRef.current = speed; }, [speed]);
   useEffect(() => { multRef.current = simMult; }, [simMult]);
   useEffect(() => {
@@ -163,29 +139,6 @@ export default function TourSimulator({ form, onWaypointUpdate, segmentScripts, 
     if (audioRef.current) audioRef.current.pause();
     const startPos = trailPath[0];
     if (startPos) { setCurrentPos(startPos); prevPosRef.current = startPos; }
-  };
-
-  // Jump the simulation straight to a chosen location, marking every waypoint before it as
-  // already-triggered (so earlier locations' audio doesn't fire again) — the narrator can press
-  // Play immediately afterwards to test just this one location, without touching the whole tour.
-  const jumpToLocation = (targetIndex) => {
-    const target = locationTargets.find(t => t.index === targetIndex);
-    if (!target) return;
-    pauseSim();
-    const newPos = posAtDistance(pathData.segments, pathData.total, target.cumDist);
-    distRef.current = target.cumDist;
-    simTimeRef.current = 0;
-    triggeredRef.current = {};
-    waypoints.forEach((wp, i) => { if (i < target.index) triggeredRef.current[i] = true; });
-    passedSegmentsRef.current = new Set();
-    audioQueueRef.current = [];
-    if (audioRef.current) audioRef.current.pause();
-    setDistTraveled(target.cumDist);
-    setSimTime(0);
-    setTriggered({ ...triggeredRef.current });
-    setTriggerLog([]);
-    setTourComplete(false);
-    if (newPos) { setCurrentPos(newPos); prevPosRef.current = newPos; }
   };
 
   // Reset when trail path changes
@@ -231,7 +184,11 @@ export default function TourSimulator({ form, onWaypointUpdate, segmentScripts, 
       if (wp.trigger_once !== false && triggeredRef.current[i]) return;
 
       const d = haversine(newPos.lat, newPos.lng, wp.lat, wp.lng);
-      const radius = Number(wp.trigger_radius_m) || 30;
+      // Fallback matches the live DrivingTourPlayer and the Walk entity's schema
+      // default (150m) — this must stay in sync with that fallback, or a
+      // waypoint with no explicit radius will test differently in the
+      // simulator than it behaves on a real tour.
+      const radius = Number(wp.trigger_radius_m) || 150;
       if (d > radius) return;
 
       if (wp.use_bearing && prevPosRef.current) {
@@ -341,6 +298,30 @@ export default function TourSimulator({ form, onWaypointUpdate, segmentScripts, 
     );
   }
 
+  const handleSegmentScriptsChange = (updatedScripts) => {
+    // The ElevenLabs "finished audio" uploaded in the Segment Script Editor is
+    // stored on segment_scripts, but the live tour player and this simulator
+    // only ever read waypoints[].audio_clip_url / trigger_audio to decide what
+    // to actually play. Without this sync, uploading the finished MP3 here had
+    // no effect on the tour at all — it just sat unused on the segment record.
+    // Propagate it onto that segment's Primary-Start waypoint whenever it changes.
+    if (onWaypointUpdate) {
+      updatedScripts.forEach((seg) => {
+        const prevSeg = (segmentScripts || []).find(s => s.segment_number === seg.segment_number);
+        if (seg.finished_audio_url !== prevSeg?.finished_audio_url) {
+          const wpIndex = (form.waypoints || []).findIndex(
+            wp => wp.segment_number === seg.segment_number && wp.waypoint_role === 'primary_start'
+          );
+          if (wpIndex >= 0) {
+            onWaypointUpdate(wpIndex, 'audio_clip_url', seg.finished_audio_url || '');
+            onWaypointUpdate(wpIndex, 'trigger_audio', !!seg.finished_audio_url);
+          }
+        }
+      });
+    }
+    onSegmentScriptsChange(updatedScripts);
+  };
+
   return (
     <div className="bg-slate-700/50 rounded-xl border border-purple-600/40 p-4 space-y-4">
       <div className="flex items-center gap-2">
@@ -353,7 +334,7 @@ export default function TourSimulator({ form, onWaypointUpdate, segmentScripts, 
         )}
       </div>
       <p className="text-slate-400 text-sm">
-        {isWalkingTour ? 'Walk' : 'Drive'} a virtual marker along the route. Audio triggers fire exactly as they would
+        Drive a virtual marker along the route. Audio triggers fire exactly as they would
         on a real tour. Enable auto-speed to use each segment's average speed automatically.
       </p>
 
@@ -375,11 +356,9 @@ export default function TourSimulator({ form, onWaypointUpdate, segmentScripts, 
       {/* Controls */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <Label className="text-slate-400 text-xs mb-1.5 block">
-            {form.tour_category === 'WBT' ? 'Walking Speed (km/h)' : 'Driving Speed (km/h)'}{autoSpeed ? ' — auto from segments' : ''}
-          </Label>
+          <Label className="text-slate-400 text-xs mb-1.5 block">Driving Speed (km/h){autoSpeed ? ' — auto from segments' : ''}</Label>
           <div className={`flex gap-2 items-center ${autoSpeed ? 'opacity-50 pointer-events-none' : ''}`}>
-            {(form.tour_category === 'WBT' ? [3, 3.5, 4] : [30, 50, 80]).map(s => (
+            {[30, 50, 80].map(s => (
               <Button
                 key={s}
                 size="sm"
@@ -392,9 +371,8 @@ export default function TourSimulator({ form, onWaypointUpdate, segmentScripts, 
             ))}
             <input
               type="number"
-              step="0.1"
               value={speed}
-              onChange={e => setSpeed(Math.max(0.1, Number(e.target.value) || 0))}
+              onChange={e => setSpeed(Math.max(1, Number(e.target.value) || 0))}
               className="w-16 bg-slate-800 border border-slate-600 text-white rounded px-2 text-sm h-8 text-center"
             />
           </div>
@@ -457,32 +435,6 @@ export default function TourSimulator({ form, onWaypointUpdate, segmentScripts, 
         </div>
       </div>
 
-      {/* Jump to Location — test one location's audio without playing through everything before it */}
-      {locationTargets.length > 0 && (
-        <div className="flex items-center gap-2 bg-slate-800/60 rounded-lg border border-slate-600 px-3 py-2.5">
-          <MapPin className="w-4 h-4 text-blue-400 shrink-0" />
-          <Label className="text-slate-300 text-xs shrink-0">Jump to location</Label>
-          <select
-            value={jumpTargetIndex}
-            onChange={(e) => setJumpTargetIndex(e.target.value === '' ? '' : Number(e.target.value))}
-            className="flex-1 bg-slate-700 border border-slate-500 text-white text-sm rounded px-2 h-8 min-w-0"
-          >
-            <option value="">Select a location…</option>
-            {locationTargets.map(t => (
-              <option key={t.index} value={t.index}>{t.label}</option>
-            ))}
-          </select>
-          <Button
-            size="sm"
-            onClick={() => jumpToLocation(jumpTargetIndex)}
-            disabled={jumpTargetIndex === ''}
-            className="bg-blue-600 hover:bg-blue-500 text-white shrink-0"
-          >
-            Jump
-          </Button>
-        </div>
-      )}
-
       {/* Playback controls */}
       <div className="flex items-center gap-2">
         {!isPlaying ? (
@@ -505,13 +457,14 @@ export default function TourSimulator({ form, onWaypointUpdate, segmentScripts, 
       </div>
 
       {/* Script Timing */}
-      <ScriptTimingPanel trailPath={trailPath} waypoints={waypoints} tourCategory={form.tour_category} />
+      <ScriptTimingPanel trailPath={trailPath} waypoints={waypoints} />
 
       {/* Map */}
       <div className="h-80 rounded-xl overflow-hidden border border-slate-600">
         <TourSimulatorMap
           trailPath={trailPath}
           waypoints={waypoints}
+          allWaypoints={form.waypoints || []}
           triggered={triggered}
           currentPos={currentPos}
           currentBearing={currentBearing}
@@ -578,7 +531,7 @@ export default function TourSimulator({ form, onWaypointUpdate, segmentScripts, 
       {/* Segment Script Editor — edit combined segment scripts with break-tag timing */}
       <SegmentScriptEditor
         segmentScripts={segmentScripts || []}
-        onSegmentScriptsChange={onSegmentScriptsChange}
+        onSegmentScriptsChange={handleSegmentScriptsChange}
         tourCode={form.code}
       />
 

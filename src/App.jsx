@@ -18,12 +18,7 @@ const LayoutWrapper = ({ children, currentPageName }) => Layout ?
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isAuthenticated } = useAuth();
 
-  // /Admin deliberately uses its own, separate Base44 staff login (checked inside the Admin page
-  // itself) rather than the customer WordPress login this gate covers — so it must be allowed
-  // through here regardless of customer auth state, or staff can never reach it at all.
-  const isAdminPath = window.location.pathname.toLowerCase().startsWith('/admin');
-
-  if (isLoadingAuth && !isAdminPath) {
+  if (isLoadingAuth) {
     return (
       <div className="fixed inset-0 flex items-center justify-center">
         <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin"></div>
@@ -31,7 +26,7 @@ const AuthenticatedApp = () => {
     );
   }
 
-  if (!isAuthenticated && !isAdminPath) {
+  if (!isAuthenticated) {
     return <Login />;
   }
 

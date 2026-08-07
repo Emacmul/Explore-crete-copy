@@ -48,6 +48,9 @@ export async function release() {
     // ignore
   }
   currentLock = null;
+  // Keep this in sync with the documented contract above and with the
+  // browser-initiated release path in acquire() — both must notify listeners.
+  notifyReleased();
 }
 
 /**

@@ -11,7 +11,6 @@ import TranslationPanel from './TranslationPanel';
 import AudioPlayer from '@/components/ui/AudioPlayer';
 import { Loader2, Sparkles, Pause, Play, Download, Braces, FileText, Square } from 'lucide-react';
 import { downloadScriptAsDocx } from '@/lib/docxExporter';
-import { useNarratorApiKeys } from '@/lib/useNarratorApiKeys';
 
 const VOICES = [
   { value: 'NEUTRAL', label: 'Default voice (auto)' },
@@ -29,7 +28,6 @@ const LANG_TO_CODE = {
 const MAX_CHARS = 5000;
 
 export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, onAudioChange }) {
-  const { keys: apiKeys } = useNarratorApiKeys();
   const [selectedVoice, setSelectedVoice] = useState('NEUTRAL');
   const [selectedLanguage, setSelectedLanguage] = useState('English');
   const [error, setError] = useState('');
@@ -84,8 +82,8 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
       setError(`Script exceeds the ${MAX_CHARS} character limit.`);
       return;
     }
-    if (!apiKeys.google_tts_api_key) {
-      setError('No Google TTS API key found for your account yet. Add your own key via "API Keys" in the header.');
+    if (!LANG_TO_CODE[selectedLanguage]) {
+      setError(`"${selectedLanguage}" is not one of the languages this tool knows how to generate speech for, so audio would silently come out in English. Choose one of the listed languages, or ask an admin to add "${selectedLanguage}" to the TTS language list first.`);
       return;
     }
 
@@ -95,7 +93,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     setSegments(parsed);
     setSegmentAudios({});
 
-    const languageCode = LANG_TO_CODE[selectedLanguage] || 'en-US';
+    const languageCode = LANG_TO_CODE[selectedLanguage];
     const audios = {};
 
     for (const seg of parsed) {
@@ -109,7 +107,6 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
           text: seg.content,
           gender: selectedVoice,
           language_code: languageCode,
-          apiKey: apiKeys.google_tts_api_key,
         });
         if (response.data?.url) {
           audios[seg.id] = response.data.url;
@@ -191,8 +188,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
       const response = await base44.functions.invoke('generateTts', {
         text: script,
         gender: selectedVoice,
-        language_code: LANG_TO_CODE[selectedLanguage] || 'en-US',
-        apiKey: apiKeys.google_tts_api_key,
+        language_code: LANG_TO_CODE[selectedLanguage] || LANG_TO_CODE.English,
       });
       if (response.data?.url) {
         onAudioChange(response.data.url);
@@ -262,11 +258,6 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
       {/* Insert break tags at cursor */}
       <div className="flex items-center gap-1">
         <span className="text-xs text-slate-500">Insert pause:</span>
-        <Button type="button" size="sm" variant="ghost"
-          onClick={() => insertBreakTag('<break time="0.5s"/>')}
-          className="text-slate-400 hover:text-slate-200 h-7 px-2 text-xs gap-1">
-          <Pause className="w-3 h-3" /> 0.5s (default)
-        </Button>
         {[1, 2, 3].map((s) => (
           <Button key={s} type="button" size="sm" variant="ghost"
             onClick={() => insertBreakTag(`<break time="${s}s"/>`)}
@@ -408,23 +399,14 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
         </div>
       )}
 
-      {/* Current saved audio — always visible once something's been built, with clear
-          instructions for how to change it, since it wasn't obvious before how to go back
-          and amend a previously-created audio. */}
-      {audioUrl && (
+      {/* Current saved audio (shown when not in segment mode) */}
+      {audioUrl && !segments && (
         <div className="bg-green-900/20 border border-green-700/40 rounded-lg p-2.5 space-y-2">
           <div className="flex items-center gap-2">
             <FileText className="w-4 h-4 text-green-400 shrink-0" />
-            <span className="text-green-300 text-sm font-medium">
-              {segments ? 'Last saved audio (a version below may be newer, unsaved)' : 'Current saved audio'}
-            </span>
+            <span className="text-green-300 text-sm font-medium">Current audio</span>
           </div>
           <AudioPlayer src={audioUrl} className="w-full" />
-          <p className="text-xs text-slate-500">
-            To change this: edit the script above, click <strong>Parse &amp; Generate</strong>, listen
-            to the segments, then click <strong>Build &amp; Play</strong> again to save a new version —
-            no need to leave this screen.
-          </p>
         </div>
       )}
     </div>

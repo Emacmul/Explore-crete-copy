@@ -95,8 +95,8 @@ export default function AudioTriggerFields({ wp, onChange }) {
               <Label className="text-slate-400 text-xs mb-1 block">Trigger Radius (m)</Label>
               <Input
                 type="number" min="10" max="2000" step="10"
-                value={wp.trigger_radius_m ?? 30}
-                onChange={e => onChange('trigger_radius_m', e.target.value === '' ? 30 : Number(e.target.value))}
+                value={wp.trigger_radius_m ?? 150}
+                onChange={e => onChange('trigger_radius_m', e.target.value === '' ? 150 : Number(e.target.value))}
                 className="bg-slate-700 border-slate-500 text-white h-8 text-sm"
               />
             </div>

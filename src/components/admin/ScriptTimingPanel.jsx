@@ -67,7 +67,7 @@ const STATUS_STYLES = {
   neutral: { bg: 'bg-slate-800/50', border: 'border-slate-600', text: 'text-slate-400', icon: Clock },
 };
 
-export default function ScriptTimingPanel({ trailPath, waypoints, tourCategory }) {
+export default function ScriptTimingPanel({ trailPath, waypoints }) {
   const [narrators, setNarrators] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedLanguage, setSelectedLanguage] = useState(LANGUAGES[0]);
@@ -143,7 +143,7 @@ export default function ScriptTimingPanel({ trailPath, waypoints, tourCategory }
       const pathEndIdx = nearestPathIndex(trailPath, endWp.lat, endWp.lng);
       const distance = pathDistanceBetween(trailPath, pathStartIdx, pathEndIdx);
 
-      const speed = Number(startWp.avg_segment_speed_kmh) || (tourCategory === 'WBT' ? 3.5 : 50);
+      const speed = Number(startWp.avg_segment_speed_kmh) || 50;
       const travelSeconds = speed > 0 ? (distance / 1000) / speed * 3600 : 0;
 
       const script = startWp.narration_script || '';
@@ -160,7 +160,7 @@ export default function ScriptTimingPanel({ trailPath, waypoints, tourCategory }
         timing, hasScript: script.trim().length > 0,
       };
     });
-  }, [waypoints, trailPath, effectiveWpm, tourCategory]);
+  }, [waypoints, trailPath, effectiveWpm]);
 
   const totalDistance = segments.reduce((sum, s) => sum + s.distance, 0);
   const totalTravel = segments.reduce((sum, s) => sum + s.travelSeconds, 0);
@@ -242,12 +242,15 @@ export default function ScriptTimingPanel({ trailPath, waypoints, tourCategory }
         <div>
           <Label className="text-slate-400 text-xs mb-1.5 block">Narrator (optional)</Label>
           {filteredNarrators.length > 0 ? (
-            <Select value={selectedNarratorId} onValueChange={setSelectedNarratorId}>
+            <Select
+              value={selectedNarratorId || '__default__'}
+              onValueChange={v => setSelectedNarratorId(v === '__default__' ? '' : v)}
+            >
               <SelectTrigger className="bg-slate-800 border-slate-600 text-white">
                 <SelectValue placeholder="Use default rate..." />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={null}>— Use default rate —</SelectItem>
+                <SelectItem value="__default__">— Use default rate —</SelectItem>
                 {filteredNarrators.map(n => (
                   <SelectItem key={n.id} value={n.id}>
                     {n.name} ({n.words_per_minute} WPM)
@@ -319,7 +322,10 @@ export default function ScriptTimingPanel({ trailPath, waypoints, tourCategory }
             </Button>
           </div>
           <p className="text-xs text-slate-500">
-            Type a new language name to add one not in the default list — it will appear in all dropdowns going forward.
+            Type a new language name to add one not in the default list — it will appear in the Language list
+            above from now on. Note: the Narration Script &amp; TTS tool only generates audio for the languages
+            built into it (see the Language dropdown there) — a brand-new language typed here will need to be
+            added to that list separately before TTS audio can be generated for it.
           </p>
         </div>
       )}

@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Trash2, ChevronDown, ChevronUp, Info, ImagePlus, Loader2, X, GripVertical, Save, Download } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, ChevronUp, Info, ImagePlus, Loader2, X, GripVertical, Upload, FileCheck, Save } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { base44 } from '@/api/base44Client';
 
@@ -25,147 +25,57 @@ const WAYPOINT_TYPES = [
   { value: 'abandoned_settlement', label: '🏚️ Abandoned Settlement', color: 'text-slate-300' },
 ];
 
-const EMPTY_WAYPOINT = { lat: '', lng: '', type: 'landmark', name: '', description: '', image_urls: [] };
+const EMPTY_WAYPOINT = { lat: '', lng: '', type: 'landmark', name: '', description: '', image_url: '' };
 
-import { compressImage, MAX_WAYPOINT_IMAGES, getWaypointImages } from '@/lib/waypointImages';
-
-// Renumbers waypoints sequentially (MXR1, MXR2, MXR3...) based on the tour's code and their current
-// list position — used for plain Walk/Hike tours only, where names are just a running count, not
-// structural IDs tied to scripts (unlike WalkAbout/Driving tours, which never use this component).
-function renumberWaypoints(list, code) {
-  if (!code) return list;
-  return list.map((wp, i) => ({ ...wp, segment_id: `${code}${i + 1}` }));
-}
-
-function AddWaypointForm({ newWp, setNewWp, addError, onSave, onCancel, onImageUpload, uploading }) {
-  const handlePaste = (e) => {
-    const text = e.clipboardData.getData('text');
-    const match = text.match(/(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)/);
-    if (match) {
-      e.preventDefault();
-      setNewWp(prev => ({ ...prev, lat: match[1], lng: match[2] }));
-    }
+// Compress image to max 1200px wide, JPEG 85% quality
+const compressImage = (file) => new Promise((resolve) => {
+  const MAX = 1200;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob((blob) => resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' })), 'image/jpeg', 0.85);
+    };
+    img.src = e.target.result;
   };
+  reader.readAsDataURL(file);
+});
 
-  return (
-    <div className="bg-slate-700/50 rounded-lg border border-amber-600/50 p-4 space-y-4">
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <Label className="text-slate-400 text-xs mb-1 block">Latitude *</Label>
-          <Input
-            type="number" step="0.000001"
-            value={newWp.lat}
-            onChange={e => setNewWp(p => ({ ...p, lat: e.target.value }))}
-            onPaste={handlePaste}
-            placeholder="35.301900"
-            className="bg-slate-700 border-slate-500 text-white font-mono"
-          />
-        </div>
-        <div>
-          <Label className="text-slate-400 text-xs mb-1 block">Longitude *</Label>
-          <Input
-            type="number" step="0.000001"
-            value={newWp.lng}
-            onChange={e => setNewWp(p => ({ ...p, lng: e.target.value }))}
-            placeholder="23.963300"
-            className="bg-slate-700 border-slate-500 text-white font-mono"
-          />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <Label className="text-slate-400 text-xs mb-1 block">Type *</Label>
-          <Select value={newWp.type} onValueChange={v => setNewWp(p => ({ ...p, type: v }))}>
-            <SelectTrigger className="bg-slate-700 border-slate-500 text-white">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {WAYPOINT_TYPES.map(t => (
-                <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label className="text-slate-400 text-xs mb-1 block">Name (optional)</Label>
-          <Input
-            value={newWp.name}
-            onChange={e => setNewWp(p => ({ ...p, name: e.target.value }))}
-            placeholder="e.g. Rocky descent — the code is assigned automatically"
-            className="bg-slate-700 border-slate-500 text-white"
-          />
-        </div>
-      </div>
-
-      <div>
-        <Label className="text-slate-400 text-xs mb-1 block">Description</Label>
-        <Textarea
-          value={newWp.description}
-          onChange={e => setNewWp(p => ({ ...p, description: e.target.value }))}
-          placeholder="What should the walker know about this point?"
-          rows={2}
-          className="bg-slate-700 border-slate-500 text-white resize-none"
-        />
-      </div>
-
-      <div>
-        <Label className="text-slate-400 text-xs mb-1 block">Photos (optional, up to {MAX_WAYPOINT_IMAGES})</Label>
-        <div className="flex flex-wrap gap-2">
-          {(newWp.image_urls || []).map((url, i) => (
-            <div key={i} className="relative w-20 h-20 rounded-lg overflow-hidden border border-slate-600 shrink-0">
-              <img src={url} alt="waypoint" className="w-full h-full object-cover" />
-              <button
-                onClick={() => setNewWp(p => ({ ...p, image_urls: p.image_urls.filter((_, idx) => idx !== i) }))}
-                className="absolute top-0.5 right-0.5 bg-black/60 rounded-full p-0.5 text-white hover:bg-black/80"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-          ))}
-          {(newWp.image_urls || []).length < MAX_WAYPOINT_IMAGES && (
-            <label className="flex flex-col items-center justify-center gap-1 cursor-pointer bg-slate-700 border border-dashed border-slate-500 rounded-lg w-20 h-20 shrink-0 text-slate-400 hover:text-white hover:border-slate-400 transition-colors text-xs text-center">
-              {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
-              {!uploading && 'Add'}
-              <input type="file" accept="image/*" className="hidden" onChange={e => e.target.files[0] && onImageUpload(e.target.files[0])} disabled={uploading} />
-            </label>
-          )}
-        </div>
-        {(newWp.image_urls || []).length > 0 && (
-          <p className="text-xs text-slate-500 mt-1">{newWp.image_urls.length}/{MAX_WAYPOINT_IMAGES} photos</p>
-        )}
-      </div>
-
-      {addError && (
-        <div className="text-red-400 text-sm bg-red-900/30 border border-red-700/50 rounded-lg px-3 py-2">
-          {addError}
-        </div>
-      )}
-      <div className="flex gap-2">
-        <Button onClick={onSave} className="bg-green-600 hover:bg-green-700 gap-2 flex-1 text-white font-semibold">
-          <Plus className="w-4 h-4" /> Save Key Point
-        </Button>
-        <Button onClick={onCancel} variant="outline" className="bg-slate-700 border-slate-500 text-slate-300 hover:text-white hover:bg-slate-600">
-          Cancel
-        </Button>
-      </div>
-    </div>
-  );
+function parseGpxWaypoints(xmlText) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xmlText, 'application/xml');
+  const wpts = Array.from(doc.querySelectorAll('wpt'));
+  return wpts.map(wpt => ({
+    lat: parseFloat(wpt.getAttribute('lat')),
+    lng: parseFloat(wpt.getAttribute('lon')),
+    elevation: wpt.querySelector('ele') ? parseFloat(wpt.querySelector('ele').textContent) : null,
+    name: wpt.querySelector('name')?.textContent?.trim() || 'Unnamed',
+    type: 'landmark',
+    description: '',
+    image_url: '',
+  })).filter(wp => !isNaN(wp.lat) && !isNaN(wp.lng));
 }
 
-export default function WaypointEditor({ waypoints, onChange, onSave, saving, code, onSaveAndDownload, downloadingGpx }) {
+export default function WaypointEditor({ waypoints, onChange, onSave, saving }) {
   const [expanded, setExpanded] = useState(null);
   const [newWp, setNewWp] = useState(EMPTY_WAYPOINT);
-  const [addingBeforeIndex, setAddingBeforeIndex] = useState(null); // null = not adding; number = inserting before this position
+  const [showAddForm, setShowAddForm] = useState(true);
   const [addError, setAddError] = useState('');
+  const [gpxImportResult, setGpxImportResult] = useState(null);
 
-  // Inserts a new waypoint immediately before `beforeIndex`, then renumbers every
-  // following waypoint so the sequence stays gap-free and in order (e.g. inserting
-  // before MXR12 makes the new point MXR12 and shifts everything after it up by one).
-  const addWaypointBefore = (beforeIndex) => {
+  const addWaypoint = () => {
     setAddError('');
     const lat = parseFloat(String(newWp.lat).replace(',', '.'));
     const lng = parseFloat(String(newWp.lng).replace(',', '.'));
+    if (!newWp.name.trim()) {
+      setAddError('Please enter a name for this key point.');
+      return;
+    }
     if (isNaN(lat) || String(newWp.lat).trim() === '') {
       setAddError('Please enter a valid latitude (e.g. 35.3019).');
       return;
@@ -174,19 +84,15 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving, co
       setAddError('Please enter a valid longitude (e.g. 23.9633).');
       return;
     }
-    const updated = [
-      ...waypoints.slice(0, beforeIndex),
-      { ...newWp, lat, lng },
-      ...waypoints.slice(beforeIndex),
-    ];
-    onChange(renumberWaypoints(updated, code));
+    const updated = [...waypoints, { ...newWp, lat, lng }];
+    onChange(updated);
     setNewWp(EMPTY_WAYPOINT);
-    setAddingBeforeIndex(null);
+    setShowAddForm(false);
     setExpanded(null);
   };
 
   const removeWaypoint = (index) => {
-    onChange(renumberWaypoints(waypoints.filter((_, i) => i !== index), code));
+    onChange(waypoints.filter((_, i) => i !== index));
     if (expanded === index) setExpanded(null);
   };
 
@@ -200,7 +106,7 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving, co
     const updated = [...waypoints];
     const [moved] = updated.splice(result.source.index, 1);
     updated.splice(result.destination.index, 0, moved);
-    onChange(renumberWaypoints(updated, code));
+    onChange(updated);
   };
 
   const [uploadingIndex, setUploadingIndex] = useState(null); // null = new form, number = existing index
@@ -210,17 +116,39 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving, co
     const compressed = await compressImage(file);
     const { file_url } = await base44.integrations.Core.UploadFile({ file: compressed });
     if (index === undefined) {
-      setNewWp(p => {
-        const current = p.image_urls || [];
-        return current.length >= MAX_WAYPOINT_IMAGES ? p : { ...p, image_urls: [...current, file_url] };
-      });
+      setNewWp(p => ({ ...p, image_url: file_url }));
     } else {
-      const current = getWaypointImages(waypoints[index]);
-      if (current.length < MAX_WAYPOINT_IMAGES) {
-        updateWaypoint(index, 'image_urls', [...current, file_url]);
-      }
+      updateWaypoint(index, 'image_url', file_url);
     }
     setUploadingIndex(null);
+  };
+
+  const handlePaste = (e, field) => {
+    if (field !== 'lat') return;
+    const text = e.clipboardData.getData('text');
+    const match = text.match(/(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)/);
+    if (match) {
+      e.preventDefault();
+      setNewWp(prev => ({ ...prev, lat: match[1], lng: match[2] }));
+    }
+  };
+
+  const handleGpxImport = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const parsed = parseGpxWaypoints(ev.target.result);
+      if (parsed.length === 0) {
+        setGpxImportResult({ error: 'No waypoints found in this GPX file.' });
+        return;
+      }
+      onChange([...waypoints, ...parsed]);
+      setGpxImportResult({ count: parsed.length });
+      setTimeout(() => setGpxImportResult(null), 4000);
+    };
+    reader.readAsText(file);
+    e.target.value = '';
   };
 
   return (
@@ -231,16 +159,138 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving, co
           <Info className="w-4 h-4 mt-0.5 shrink-0" />
           <span>
             Add important places: turnoffs, danger spots, viewpoints, water sources etc.
-            Each point appears as a labelled marker on the walk's detail map. To import a full set of
-            waypoints from a GPX/FIT file, use Import on the General tab.
+            Each point appears as a labelled marker on the walk's detail map.
           </span>
         </div>
+      </div>
+
+      {/* GPX Import */}
+      <div className="flex items-center gap-3">
+        <label className="flex items-center gap-2 cursor-pointer bg-blue-700/30 hover:bg-blue-700/50 border border-blue-600/50 rounded-lg px-4 py-2 text-blue-300 hover:text-blue-100 transition-colors text-sm font-medium">
+          <Upload className="w-4 h-4" />
+          Import GPX Waypoints
+          <input type="file" accept=".gpx,application/gpx+xml" className="hidden" onChange={handleGpxImport} />
+        </label>
+        {gpxImportResult && (
+          gpxImportResult.error
+            ? <span className="text-red-400 text-sm">{gpxImportResult.error}</span>
+            : <span className="flex items-center gap-1 text-green-400 text-sm"><FileCheck className="w-4 h-4" /> {gpxImportResult.count} waypoint{gpxImportResult.count !== 1 ? 's' : ''} imported</span>
+        )}
+      </div>
+
+      {/* Add new waypoint form */}
+      <div className="bg-slate-700/50 rounded-lg border border-slate-600 overflow-hidden">
+        {/* Header / toggle */}
+        <button
+          type="button"
+          onClick={() => setShowAddForm(v => !v)}
+          className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-700/60 transition-colors"
+        >
+          <span className="flex items-center gap-2">
+            <Plus className="w-4 h-4 text-amber-400" />
+            Add New Key Point
+          </span>
+          {showAddForm ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+        </button>
+
+        {showAddForm && <div className="px-4 pb-4 pt-1 border-t border-slate-600 space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label className="text-slate-400 text-xs mb-1 block">Latitude *</Label>
+            <Input
+              type="number" step="0.000001"
+              value={newWp.lat}
+              onChange={e => setNewWp(p => ({ ...p, lat: e.target.value }))}
+              onPaste={e => handlePaste(e, 'lat')}
+              placeholder="35.301900"
+              className="bg-slate-700 border-slate-500 text-white font-mono"
+            />
+          </div>
+          <div>
+            <Label className="text-slate-400 text-xs mb-1 block">Longitude *</Label>
+            <Input
+              type="number" step="0.000001"
+              value={newWp.lng}
+              onChange={e => setNewWp(p => ({ ...p, lng: e.target.value }))}
+              placeholder="23.963300"
+              className="bg-slate-700 border-slate-500 text-white font-mono"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label className="text-slate-400 text-xs mb-1 block">Type *</Label>
+            <Select value={newWp.type} onValueChange={v => setNewWp(p => ({ ...p, type: v }))}>
+              <SelectTrigger className="bg-slate-700 border-slate-500 text-white">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {WAYPOINT_TYPES.map(t => (
+                  <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-slate-400 text-xs mb-1 block">Name *</Label>
+            <Input
+              value={newWp.name}
+              onChange={e => setNewWp(p => ({ ...p, name: e.target.value }))}
+              placeholder="e.g. Rocky descent"
+              className="bg-slate-700 border-slate-500 text-white"
+            />
+          </div>
+        </div>
+
+        <div>
+          <Label className="text-slate-400 text-xs mb-1 block">Description</Label>
+          <Textarea
+            value={newWp.description}
+            onChange={e => setNewWp(p => ({ ...p, description: e.target.value }))}
+            placeholder="What should the walker know about this point?"
+            rows={2}
+            className="bg-slate-700 border-slate-500 text-white resize-none"
+          />
+        </div>
+
+        {/* Image upload for new waypoint */}
+        <div>
+          <Label className="text-slate-400 text-xs mb-1 block">Photo (optional)</Label>
+          {newWp.image_url ? (
+            <div className="relative w-full h-32 rounded-lg overflow-hidden border border-slate-600">
+              <img src={newWp.image_url} alt="waypoint" className="w-full h-full object-cover" />
+              <button
+                onClick={() => setNewWp(p => ({ ...p, image_url: '' }))}
+                className="absolute top-1 right-1 bg-black/60 rounded-full p-0.5 text-white hover:bg-black/80"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <label className="flex items-center gap-2 cursor-pointer bg-slate-700 border border-dashed border-slate-500 rounded-lg px-3 py-2 text-slate-400 hover:text-white hover:border-slate-400 transition-colors text-sm w-full">
+              {uploadingIndex === 'new' ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
+              {uploadingIndex === 'new' ? 'Uploading…' : 'Upload photo'}
+              <input type="file" accept="image/*" className="hidden" onChange={e => e.target.files[0] && handleImageUpload(e.target.files[0])} disabled={uploadingIndex !== null} />
+            </label>
+          )}
+        </div>
+
+        {addError && (
+          <div className="text-red-400 text-sm bg-red-900/30 border border-red-700/50 rounded-lg px-3 py-2">
+            {addError}
+          </div>
+        )}
+        <Button onClick={addWaypoint} className="bg-green-600 hover:bg-green-700 gap-2 w-full text-white font-semibold">
+          <Plus className="w-4 h-4" /> Save Key Point
+        </Button>
+        </div>}
       </div>
 
       {/* Existing waypoints */}
       {waypoints.length === 0 ? (
         <div className="text-center py-8 text-slate-500 border border-dashed border-slate-600 rounded-lg">
-          No key points yet. Import a GPX/FIT file on the General tab to bring in waypoints.
+          No key points yet. Add important places above.
         </div>
       ) : (
         <DragDropContext onDragEnd={onDragEnd}>
@@ -272,12 +322,7 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving, co
                   <span className="text-xs text-slate-600 font-mono w-5 text-center">{index + 1}</span>
                   <span className="text-sm">{typeInfo?.label.split(' ')[0]}</span>
                   <div className="flex-1 min-w-0">
-                    {wp.segment_id && (
-                      <span className="font-mono text-xs bg-slate-600 text-amber-300 px-1.5 py-0.5 rounded font-bold mr-2">{wp.segment_id}</span>
-                    )}
-                    <span className={wp.name ? "text-white font-medium" : "text-slate-500 italic"}>
-                      {wp.name || 'No description yet'}
-                    </span>
+                    <span className="text-white font-medium">{wp.name}</span>
                     <span className={`ml-2 text-xs ${typeInfo?.color}`}>
                       {typeInfo?.label.split(' ').slice(1).join(' ')}
                     </span>
@@ -298,25 +343,6 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving, co
 
                 {expanded === index && (
                   <div className="px-4 pb-4 border-t border-slate-600 pt-4 space-y-3">
-                    {addingBeforeIndex === index ? (
-                      <AddWaypointForm
-                        newWp={newWp}
-                        setNewWp={setNewWp}
-                        addError={addError}
-                        onSave={() => addWaypointBefore(index)}
-                        onCancel={() => { setAddingBeforeIndex(null); setNewWp(EMPTY_WAYPOINT); setAddError(''); }}
-                        onImageUpload={(file) => handleImageUpload(file)}
-                        uploading={uploadingIndex === 'new'}
-                      />
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setAddingBeforeIndex(index)}
-                        className="flex items-center gap-2 w-full justify-center bg-blue-600 hover:bg-blue-500 border border-blue-400 rounded-lg py-2 text-sm text-white font-semibold transition-colors"
-                      >
-                        <Plus className="w-4 h-4" /> Add waypoint before {wp.segment_id || `this one`}
-                      </button>
-                    )}
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <Label className="text-slate-400 text-xs mb-1 block">Latitude</Label>
@@ -337,18 +363,11 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving, co
                         />
                       </div>
                     </div>
-                    {wp.segment_id && (
-                      <div>
-                        <Label className="text-slate-400 text-xs mb-1 block">Code (auto-managed)</Label>
-                        <div className="bg-slate-800 border border-slate-600 rounded h-8 flex items-center px-3 font-mono text-amber-300 text-sm">{wp.segment_id}</div>
-                      </div>
-                    )}
                     <div>
-                      <Label className="text-slate-400 text-xs mb-1 block">Name (optional description)</Label>
+                      <Label className="text-slate-400 text-xs mb-1 block">Name</Label>
                       <Input
                         value={wp.name}
                         onChange={e => updateWaypoint(index, 'name', e.target.value)}
-                        placeholder="e.g. Rocky descent"
                         className="bg-slate-700 border-slate-500 text-white h-8 text-sm"
                       />
                     </div>
@@ -391,48 +410,35 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving, co
                       </Select>
                     </div>
                     <div>
-                      <Label className="text-slate-400 text-xs mb-1 block">Photos ({getWaypointImages(wp).length}/{MAX_WAYPOINT_IMAGES})</Label>
-                      <div className="flex flex-wrap gap-2">
-                        {getWaypointImages(wp).map((url, i) => (
-                          <div key={i} className="relative w-20 h-20 rounded-lg overflow-hidden border border-slate-600 shrink-0">
-                            <img src={url} alt="waypoint" className="w-full h-full object-cover" />
-                            <button
-                              onClick={() => updateWaypoint(index, 'image_urls', getWaypointImages(wp).filter((_, idx) => idx !== i))}
-                              className="absolute top-0.5 right-0.5 bg-black/60 rounded-full p-0.5 text-white hover:bg-black/80"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          </div>
-                        ))}
-                        {getWaypointImages(wp).length < MAX_WAYPOINT_IMAGES && (
-                          <label className="flex flex-col items-center justify-center gap-1 cursor-pointer bg-slate-700 border border-dashed border-slate-500 rounded-lg w-20 h-20 shrink-0 text-slate-400 hover:text-white hover:border-slate-400 transition-colors text-xs text-center">
-                            {uploadingIndex === index ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
-                            {uploadingIndex !== index && 'Add'}
-                            <input type="file" accept="image/*" className="hidden" onChange={e => e.target.files[0] && handleImageUpload(e.target.files[0], index)} disabled={uploadingIndex !== null} />
-                          </label>
-                        )}
-                      </div>
+                      <Label className="text-slate-400 text-xs mb-1 block">Photo</Label>
+                      {wp.image_url ? (
+                        <div className="relative w-full h-32 rounded-lg overflow-hidden border border-slate-600">
+                          <img src={wp.image_url} alt="waypoint" className="w-full h-full object-cover" />
+                          <button
+                            onClick={() => updateWaypoint(index, 'image_url', '')}
+                            className="absolute top-1 right-1 bg-black/60 rounded-full p-0.5 text-white hover:bg-black/80"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <label className="flex items-center gap-2 cursor-pointer bg-slate-700 border border-dashed border-slate-500 rounded-lg px-3 py-2 text-slate-400 hover:text-white hover:border-slate-400 transition-colors text-sm w-full">
+                          {uploadingIndex === index ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
+                          {uploadingIndex === index ? 'Uploading\u2026' : 'Upload photo'}
+                          <input type="file" accept="image/*" className="hidden" onChange={e => e.target.files[0] && handleImageUpload(e.target.files[0], index)} disabled={uploadingIndex !== null} />
+                        </label>
+                      )}
                     </div>
                     {onSave && (
-                      <div className="pt-2 border-t border-slate-600 space-y-2">
+                      <div className="pt-2 border-t border-slate-600">
                         <Button
                           onClick={onSave}
                           disabled={saving}
                           className="w-full bg-amber-500 hover:bg-amber-600 gap-2"
                         >
                           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                          Save Waypoint
+                          Save Walk
                         </Button>
-                        {onSaveAndDownload && (
-                          <Button
-                            onClick={onSaveAndDownload}
-                            disabled={saving || downloadingGpx}
-                            className="w-full bg-blue-600 hover:bg-blue-500 border-blue-400 text-white font-semibold gap-2"
-                          >
-                            {downloadingGpx ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                            Save and Download GPX
-                          </Button>
-                        )}
                       </div>
                     )}
                   </div>
