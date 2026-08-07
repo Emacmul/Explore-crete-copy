@@ -15,6 +15,66 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-06 — First real piece of payment integration: Creem webhook receiver
+Scope: new `base44/functions/creemWebhook/entry.ts`,
+`base44/entities/Walk.jsonc` (+`creem_product_id`),
+`base44/entities/AppUser.jsonc` (+`purchased_walk_ids`).
+
+Enda started setting up a Creem (Merchant of Record) account and hit
+their "New Webhook" dialog asking for an Endpoint URL — this didn't
+exist yet, so built it now rather than leave him stuck.
+
+**What this function does:** receives Creem's notification the moment
+a payment succeeds, verifies it's genuinely from Creem (not spoofed),
+works out which walk was bought and who bought it, and records that
+purchase — the actual mechanism that makes "buy a tour → it appears in
+your library" work, discussed several times earlier but never built
+until now.
+
+**Signature verification — the security-critical part, actually
+tested, not assumed:** Creem signs every webhook with HMAC-SHA256 over
+the raw request body, sent in a `creem-signature` header — confirmed
+directly from Creem's own documentation
+(docs.creem.io/learn/webhooks/verify-webhook-requests). Extracted the
+verification logic and ran it in Node against Creem's own published
+reference implementation with a fixed test payload — produced an
+identical signature. This is the piece that stops anyone else from
+being able to fake a "payment succeeded" event and unlock a walk for
+free, so it mattered to actually prove this rather than assume it.
+
+**What's genuinely uncertain and flagged as such:** the exact field
+names for reading the customer's email and product ID out of the
+webhook body (`checkout.customer.email`, `checkout.product.id`, etc.)
+are a best-effort reading of Creem's general webhook shape — I could
+not find a full real example payload to confirm against. Worth
+checking against an actual test webhook from Creem's dashboard once
+one's been sent, and adjusting field names if they don't match.
+
+**What Enda needs to do, none of which I can do for him:**
+1. Add a `creem_product_id` to each Walk that should be purchasable,
+   matching the product ID Creem assigns when he creates that product
+   in their dashboard.
+2. Find this function's actual public URL in Base44's own interface
+   (I don't have certainty of Base44's exact URL format for an
+   externally-callable function — needs finding there, not guessed
+   here) and paste it into Creem's "Endpoint URL" field.
+3. Set a `CREEM_WEBHOOK_SECRET` environment variable in Base44,
+   copying the webhook secret Creem shows after the webhook is
+   created.
+
+**Still not built at all — a separate, later task:** the actual "Buy"
+button / WooCommerce catalog pointing at Creem checkout links, and the
+front-end access-gating logic that would actually check
+`purchased_walk_ids` before letting someone download a paid walk. This
+entry only covers the receiving/recording half of the pipeline.
+
+**Verified:** the entity schema changes build cleanly
+(`npx vite build`, both `.jsonc` files confirmed valid JSON). The
+function's logic (everything except Deno-specific globals, which a
+plain TypeScript checker can't know about) type-checked with zero
+errors. The signature verification was tested directly, as described
+above — not just compiled, actually run and confirmed correct.
+
 ---
 
 ## 2026-08-06 — Added real "install to home screen" guidance — nothing did this before
