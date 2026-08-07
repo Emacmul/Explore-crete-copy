@@ -91,7 +91,7 @@ export default function Login() {
           <div className="text-center pt-2 border-t">
             <p className="text-sm text-muted-foreground mb-1">Don't have an account?</p>
             <a
-              href="https://magicalcrete.com/register/"
+              href="https://magicalcrete.com/wp-login.php?action=register"
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm text-teal-700 font-medium hover:underline"
