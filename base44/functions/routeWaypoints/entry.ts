@@ -1,5 +1,3 @@
-import { createClientFromRequest } from 'npm:@base44/sdk@0.8.23';
-
 // Road-following routing between ordered waypoints, used when a GPX import has no
 // recorded track/route line (a bare waypoint collection from a GPS device). Calls the
 // public OSRM driving router and returns a dense {lat,lng} polyline that follows real
@@ -30,10 +28,9 @@ async function routeChunk(coords, profile, attempt = 0) {
 }
 
 Deno.serve(async (req) => {
-  const base44 = createClientFromRequest(req);
-  const user = await base44.auth.me();
-  if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
-
+  // Unauthenticated: routing is a read-only call to the public OSRM router and holds no
+  // sensitive data. Admin/narrator users sign in via WordPress (not Base44), so an auth
+  // check here would 401 them and silently drop the road line back to straight waypoints.
   const { points, profile } = await req.json();
   if (!points || points.length < 2) return Response.json({ trail: [] });
 

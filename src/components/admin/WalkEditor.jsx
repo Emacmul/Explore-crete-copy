@@ -335,9 +335,14 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
         try {
           const ordered = waypoints.map(wp => ({ lat: wp.lat, lng: wp.lng }));
           const routed = await routeWaypoints(ordered);
-          if (routed && routed.length > 1) trailPath = routed;
+          if (routed && routed.length > 1) {
+            trailPath = routed;
+          } else {
+            toast({ variant: 'destructive', title: 'Road routing returned no path', description: 'Falling back to straight lines between waypoints. Check that the waypoints are on or near drivable roads.' });
+          }
         } catch (err) {
           console.warn('Road routing failed:', err);
+          toast({ variant: 'destructive', title: 'Road routing failed', description: err?.message || 'Could not reach the routing service. Falling back to straight lines between waypoints.' });
         }
         setRouteFetching(false);
       }
