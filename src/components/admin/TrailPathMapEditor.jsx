@@ -28,40 +28,90 @@ function DragController({ mode }) {
 // Drag-to-box delete: in Delete mode, mousedown on the map starts a rectangle;
 // on mouseup every trail point inside the rectangle is removed. A click (no drag)
 // deletes nothing — use a marker click for single-point removal.
+// Re-index cut (break) positions when the trail path gains or loses points, so a cut
+// stays glued to the same physical segment instead of drifting onto a neighbouring one
+// (which was making cut lines reappear in the wrong place, or vanish when a delete
+// shrank the path past the stored index).
+function reindexAfterInsert(breaks, idx) {
+  return (breaks || [])
+    .map(b => b >= idx ? b + 1 : b)
+    .filter(b => Number.isInteger(b) && b >= 0);
+}
+function reindexAfterDeleteOne(breaks, deletedIdx) {
+  return (breaks || [])
+    .filter(b => b !== deletedIdx - 1 && b !== deletedIdx)   // the two segments touching the deleted point collapse
+    .map(b => b > deletedIdx ? b - 1 : b)
+    .filter(b => Number.isInteger(b) && b >= 0);
+}
+function reindexAfterDeleteMany(breaks, deletedSet) {
+  return (breaks || [])
+    .filter(b => !deletedSet.has(b) && !deletedSet.has(b + 1)) // segment gone if either endpoint was deleted
+    .map(b => {
+      let shift = 0;
+      deletedSet.forEach(d => { if (d < b) shift++; });
+      return b - shift;
+    })
+    .filter(b => Number.isInteger(b) && b >= 0);
+}
+
+// Drag-to-box delete. Uses DOM-level listeners on the map container + window so the box
+// always releases — even if the cursor leaves the map or passes over a marker mid-drag
+// (the old map-only mouseup sometimes never fired, leaving the red box stuck on screen).
 function BoxDelete({ active, trailPath, onDelete, trailBreaks, onBreaksChange }) {
+  const map = useMap();
   const startRef = React.useRef(null);
   const pathRef = React.useRef(trailPath);
   pathRef.current = trailPath;
+  const breaksRef = React.useRef(trailBreaks);
+  breaksRef.current = trailBreaks;
   const [box, setBox] = useState(null);
 
-  useMapEvents({
-    mousedown: (e) => {
-      if (!active) return;
-      startRef.current = e.latlng;
-      setBox({ start: e.latlng, end: e.latlng });
-    },
-    mousemove: (e) => {
-      if (!active || !startRef.current) return;
-      setBox({ start: startRef.current, end: e.latlng });
-    },
-    mouseup: (e) => {
-      if (!active || !startRef.current) return;
-      const start = startRef.current, end = e.latlng;
+  React.useEffect(() => {
+    if (!active) { startRef.current = null; setBox(null); return; }
+    const container = map.getContainer();
+
+    const onDown = (e) => {
+      if (e.button !== 0) return;
+      const ll = map.mouseEventToLatLng(e);
+      startRef.current = ll;
+      setBox({ start: ll, end: ll });
+    };
+    const onMove = (e) => {
+      if (!startRef.current) return;
+      setBox({ start: startRef.current, end: map.mouseEventToLatLng(e) });
+    };
+    const onUp = (e) => {
+      if (!startRef.current) return;
+      const start = startRef.current;
+      const end = map.mouseEventToLatLng(e);
       startRef.current = null;
       setBox(null);
       const minLat = Math.min(start.lat, end.lat), maxLat = Math.max(start.lat, end.lat);
       const minLng = Math.min(start.lng, end.lng), maxLng = Math.max(start.lng, end.lng);
-      // Ignore a bare click (no real drag) — single-point deletes happen via marker clicks.
+      // Bare click (no real drag) — single-point deletes happen via marker clicks.
       if (Math.abs(start.lat - end.lat) < 1e-7 && Math.abs(start.lng - end.lng) < 1e-7) return;
-      const next = pathRef.current.filter(
-        p => !(p.lat >= minLat && p.lat <= maxLat && p.lng >= minLng && p.lng <= maxLng)
-      );
-      onDelete(next);
-      onBreaksChange?.((trailBreaks || []).filter(b => Number.isInteger(b) && b >= 0 && b < next.length - 1));
-    },
-  });
-  // silence unused-var lint when no breaks prop is passed
-  void trailBreaks; void onBreaksChange;
+      const deletedSet = new Set();
+      pathRef.current.forEach((p, i) => {
+        if (p.lat >= minLat && p.lat <= maxLat && p.lng >= minLng && p.lng <= maxLng) deletedSet.add(i);
+      });
+      const next = pathRef.current.filter((_, i) => !deletedSet.has(i));
+      if (deletedSet.size > 0) {
+        onDelete(next);
+        onBreaksChange?.(reindexAfterDeleteMany(breaksRef.current, deletedSet));
+      }
+    };
+
+    container.addEventListener('mousedown', onDown);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      container.removeEventListener('mousedown', onDown);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      startRef.current = null;
+      setBox(null);
+    };
+  }, [active, map, onDelete, onBreaksChange]);
 
   if (!box) return null;
   const bounds = [
@@ -134,12 +184,6 @@ const trailDot = (mode) => L.divIcon({
 export default function TrailPathMapEditor({ trailPath, onChange, trailBreaks = [], onBreaksChange, waypoints = [] }) {
   const [mode, setMode] = useState('add'); // 'add' | 'delete' | 'cut'
 
-  // Keep break indices valid whenever the trail path changes length.
-  const clampBreaks = (len) => {
-    const next = (trailBreaks || []).filter(b => Number.isInteger(b) && b >= 0 && b < len - 1);
-    onBreaksChange?.(next);
-  };
-
   // Toggle a cut at the segment between point idx and point idx+1.
   const toggleBreak = (idx) => {
     if (idx < 0 || idx >= trailPath.length - 1) return;
@@ -153,7 +197,7 @@ export default function TrailPathMapEditor({ trailPath, onChange, trailBreaks = 
     const next = [...trailPath];
     next.splice(idx, 0, { lat: latlng.lat, lng: latlng.lng });
     onChange(next);
-    clampBreaks(next.length);
+    onBreaksChange?.(reindexAfterInsert(trailBreaks, idx));
   };
 
   const movePoint = (index, latlng) => {
@@ -165,7 +209,7 @@ export default function TrailPathMapEditor({ trailPath, onChange, trailBreaks = 
   const removePoint = (index) => {
     const next = trailPath.filter((_, i) => i !== index);
     onChange(next);
-    clampBreaks(next.length);
+    onBreaksChange?.(reindexAfterDeleteOne(trailBreaks, index));
   };
 
   const rebuildFromWaypoints = () => {

@@ -1080,6 +1080,8 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
               />
             </div>
 
+            <SaveButton onSave={handleSave} saving={saving} canSave={canSave} />
+
             <TrailPathEditor
               trailPath={form.trail_path}
               onChange={path => set('trail_path', path)}
