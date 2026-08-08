@@ -12,6 +12,7 @@ import DrivingTourWaypointEditor from './DrivingTourWaypointEditor';
 import DrivingTourExportPanel from './DrivingTourExportPanel';
 import TourSimulator from './TourSimulator';
 import TrailPathEditor from './TrailPathEditor';
+import TrailPathMapEditor from './TrailPathMapEditor';
 import AdminPreviewMap from './AdminPreviewMap';
 import { validateDrivingTour, generateGpx, generateWalkGpx, generateKml, downloadTextFile, buildSegmentId, getRoleColour } from '@/lib/routeExport';
 import { getRouteTypeForCategory } from '@/lib/tourCategories';
@@ -1058,6 +1059,19 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
 
         {activeTab === 'trail' && (
           <div className="space-y-4">
+            <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+              <h3 className="text-white font-semibold mb-1">Draw the route on the map</h3>
+              <p className="text-slate-400 text-sm mb-3">
+                Click the trail on the map to trace the real path, drag points to fix them, or use
+                <span className="text-slate-300 font-medium"> From waypoints</span> to connect your Garmin Explore points with straight segments as a starting skeleton.
+              </p>
+              <TrailPathMapEditor
+                trailPath={form.trail_path}
+                onChange={path => set('trail_path', path)}
+                waypoints={form.waypoints || []}
+              />
+            </div>
+
             <TrailPathEditor
               trailPath={form.trail_path}
               onChange={path => set('trail_path', path)}

@@ -2,11 +2,40 @@ import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Plus, Trash2, GripVertical, Info } from 'lucide-react';
+import { Plus, Trash2, GripVertical, Info, Pencil, Check, X } from 'lucide-react';
 
 export default function TrailPathEditor({ trailPath, onChange }) {
   const [newLat, setNewLat] = useState('');
   const [newLng, setNewLng] = useState('');
+  const [editIndex, setEditIndex] = useState(null);
+  const [editLat, setEditLat] = useState('');
+  const [editLng, setEditLng] = useState('');
+
+  const startEdit = (index) => {
+    setEditIndex(index);
+    setEditLat(String(trailPath[index].lat));
+    setEditLng(String(trailPath[index].lng));
+  };
+
+  const cancelEdit = () => {
+    setEditIndex(null);
+    setEditLat('');
+    setEditLng('');
+  };
+
+  const saveEdit = () => {
+    const lat = parseFloat(editLat);
+    const lng = parseFloat(editLng);
+    if (isNaN(lat) || isNaN(lng)) { cancelEdit(); return; }
+    if (lat < 34 || lat > 36 || lng < 23 || lng > 27) {
+      alert('Coordinates appear to be outside Crete. Latitude ~35, longitude ~24–26.');
+      return;
+    }
+    const next = [...trailPath];
+    next[editIndex] = { lat, lng };
+    onChange(next);
+    cancelEdit();
+  };
 
   const addPoint = () => {
     const lat = parseFloat(newLat);
@@ -97,20 +126,47 @@ export default function TrailPathEditor({ trailPath, onChange }) {
             <div key={index} className="flex items-center gap-3 bg-slate-700/50 rounded-lg px-3 py-2 border border-slate-600">
               <GripVertical className="w-4 h-4 text-slate-500 shrink-0" />
               <span className="text-slate-400 text-xs w-6 text-right">{index + 1}</span>
-              <span className="font-mono text-sm text-green-300 flex-1">
-                {point.lat.toFixed(6)}, {point.lng.toFixed(6)}
-              </span>
-              {index === 0 && <span className="text-xs bg-green-800 text-green-300 px-2 py-0.5 rounded">Start</span>}
-              {index === trailPath.length - 1 && trailPath.length > 1 && (
-                <span className="text-xs bg-red-900 text-red-300 px-2 py-0.5 rounded">End</span>
+              {editIndex === index ? (
+                <div className="flex items-center gap-2 flex-1">
+                  <Input type="number" step="0.000001" value={editLat}
+                    onChange={e => setEditLat(e.target.value)}
+                    className="bg-slate-800 border-slate-500 text-green-300 font-mono h-7 text-xs px-2 w-28" />
+                  <Input type="number" step="0.000001" value={editLng}
+                    onChange={e => setEditLng(e.target.value)}
+                    className="bg-slate-800 border-slate-500 text-green-300 font-mono h-7 text-xs px-2 w-28" />
+                  <Button variant="ghost" size="icon" onClick={saveEdit} className="text-green-400 hover:text-green-300 w-7 h-7">
+                    <Check className="w-3.5 h-3.5" />
+                  </Button>
+                  <Button variant="ghost" size="icon" onClick={cancelEdit} className="text-slate-500 hover:text-slate-300 w-7 h-7">
+                    <X className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  <span className="font-mono text-sm text-green-300 flex-1">
+                    {point.lat.toFixed(6)}, {point.lng.toFixed(6)}
+                  </span>
+                  {index === 0 && <span className="text-xs bg-green-800 text-green-300 px-2 py-0.5 rounded">Start</span>}
+                  {index === trailPath.length - 1 && trailPath.length > 1 && (
+                    <span className="text-xs bg-red-900 text-red-300 px-2 py-0.5 rounded">End</span>
+                  )}
+                  <Button
+                    variant="ghost" size="icon"
+                    onClick={() => startEdit(index)}
+                    className="text-slate-500 hover:text-amber-400 w-7 h-7"
+                    title="Edit coordinates"
+                  >
+                    <Pencil className="w-3 h-3" />
+                  </Button>
+                  <Button
+                    variant="ghost" size="icon"
+                    onClick={() => removePoint(index)}
+                    className="text-slate-500 hover:text-red-400 w-7 h-7"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
+                </>
               )}
-              <Button
-                variant="ghost" size="icon"
-                onClick={() => removePoint(index)}
-                className="text-slate-500 hover:text-red-400 w-7 h-7"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </Button>
             </div>
           ))}
         </div>
