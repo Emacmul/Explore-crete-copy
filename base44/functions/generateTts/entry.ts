@@ -5,16 +5,15 @@ Deno.serve(async (req) => {
     const base44 = createClientFromRequest(req);
 
     const body = await req.json();
-    const { text, gender, language_code, apiKey } = body;
+    const { text, gender, language_code } = body;
 
     if (!text || !text.trim()) {
       return Response.json({ error: 'Missing script text' }, { status: 400 });
     }
 
-    // Each narrator uses their own Google TTS key (set on their own account) rather than one
-    // key shared across everyone — keeps quota and any overage cost personal to them.
-    if (!apiKey || !apiKey.trim()) {
-      return Response.json({ error: 'No Google TTS API key found for your account. Add your own key under "API Keys" in the Admin Panel header.' }, { status: 400 });
+    const apiKey = Deno.env.get('GOOGLE_TTS_API_KEY');
+    if (!apiKey) {
+      return Response.json({ error: 'Google TTS API key not configured' }, { status: 500 });
     }
 
     // Ensure SSML is wrapped in <speak> tags

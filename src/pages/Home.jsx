@@ -2,9 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
-import { Loader2, LogOut, MapPin, User, ShieldCheck, WifiOff, Footprints } from 'lucide-react';
+import { Loader2, LogOut, MapPin, User, ShieldCheck, WifiOff, Footprints, Mic } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
+import { useAuth } from '@/lib/AuthContext';
 import { useOfflineWalks } from '../components/offline/useOfflineWalks';
 import { motion, AnimatePresence } from 'framer-motion';
 import CreteMap from '../components/map/CreteMap';
@@ -14,59 +15,30 @@ import WalkDetail from '../components/walks/WalkDetail';
 import UpdateInProgressModal from '../components/offline/UpdateInProgressModal';
 import { isWalkOutdated, saveWalkOffline, preCacheWalkTiles } from '../components/offline/offlineStorage';
 import SplashScreen from '../components/onboarding/SplashScreen';
-import RegistrationForm from '../components/onboarding/RegistrationForm';
 import TourCategoryPicker from '../components/walks/TourCategoryPicker';
 import { getTourCategory } from '../lib/tourCategories';
 import NewWalkAnnouncementModal, { getUnseenAnnouncement } from '../components/walks/NewWalkAnnouncementModal';
 
 export default function Home() {
-  const [user, setUser] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+  // Auth is already handled once, app-wide, by AuthProvider/AuthContext (the
+  // WordPress login) — App.jsx only ever renders this page once that login
+  // has succeeded. Home used to also run its own separate, older login check
+  // here (base44.auth.*), which is what was silently bouncing WordPress users
+  // into the old, unrelated registration screen. That old check — and the
+  // registration screen it triggered — has been removed.
+  const { user, logout, isAdmin, isNarrator } = useAuth();
   const [selectedWalk, setSelectedWalk] = useState(null);
   const [showDetail, setShowDetail] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [tapLocation, setTapLocation] = useState(null);
   const [updatingWalkName, setUpdatingWalkName] = useState(null);
   const [showSplash, setShowSplash] = useState(() => !sessionStorage.getItem('splash_seen'));
-  const [registrationComplete, setRegistrationComplete] = useState(false);
   const [newWalkAnnouncement, setNewWalkAnnouncement] = useState(null);
   const [selectedTourCategory, setSelectedTourCategory] = useState(() => sessionStorage.getItem('tour_category'));
 
   const { getAllOfflineWalks } = useOfflineWalks();
   const offlineCount = getAllOfflineWalks().length;
   const updatingRef = useRef(false);
-
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const isAuth = await base44.auth.isAuthenticated();
-
-        if (!isAuth) {
-          base44.auth.redirectToLogin();
-          return;
-        }
-
-        const userData = await base44.auth.me();
-        setUser(userData);
-
-        const appUsers = await base44.entities.AppUser.filter({ user_id: userData.id });
-
-        if (appUsers.length > 0 && appUsers[0].registration_complete) {
-          setRegistrationComplete(true);
-        }
-      } catch (error) {
-        console.error('Auth check error:', error);
-
-        if (error?.status === 401 || error?.status === 403) {
-          base44.auth.redirectToLogin();
-        }
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    checkAuth();
-  }, []);
 
   const { data: walks = [], isLoading: walksLoading } = useQuery({
     queryKey: ['walks'],
@@ -75,14 +47,14 @@ export default function Home() {
   });
 
   useEffect(() => {
-    if (!walks.length || !registrationComplete) return;
+    if (!walks.length) return;
 
     const unseen = getUnseenAnnouncement(walks);
 
     if (unseen) {
       setNewWalkAnnouncement(unseen);
     }
-  }, [walks, registrationComplete]);
+  }, [walks]);
 
   useEffect(() => {
     if (!walks.length || updatingRef.current) return;
@@ -141,7 +113,7 @@ export default function Home() {
   };
 
   const handleLogout = () => {
-    base44.auth.logout();
+    logout();
   };
 
   const handleCategorySelect = (code) => {
@@ -163,27 +135,7 @@ export default function Home() {
     ? accessibleWalks.filter(w => w.tour_category === selectedTourCategory)
     : accessibleWalks;
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-amber-50 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="w-10 h-10 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-gray-600">Loading...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!registrationComplete && !showSplash) {
-    return (
-      <RegistrationForm
-        user={user}
-        onComplete={() => setRegistrationComplete(true)}
-      />
-    );
-  }
-
-  if (registrationComplete && !showSplash && !selectedTourCategory) {
+  if (!showSplash && !selectedTourCategory) {
     return (
       <TourCategoryPicker onSelect={handleCategorySelect} />
     );
@@ -260,12 +212,23 @@ export default function Home() {
               </Button>
             </Link>
 
-            <Link to={createPageUrl('Admin')}>
-              <Button variant="outline" size="sm" className="gap-2 border-amber-300 text-amber-600 hover:bg-amber-50">
-                <ShieldCheck className="w-4 h-4" />
-                <span className="hidden sm:inline">Admin</span>
-              </Button>
-            </Link>
+            {isAdmin && (
+              <Link to={createPageUrl('Admin')}>
+                <Button variant="outline" size="sm" className="gap-2 border-amber-300 text-amber-600 hover:bg-amber-50">
+                  <ShieldCheck className="w-4 h-4" />
+                  <span className="hidden sm:inline">Admin</span>
+                </Button>
+              </Link>
+            )}
+
+            {isNarrator && (
+              <Link to={createPageUrl('Admin')}>
+                <Button variant="outline" size="sm" className="gap-2 border-purple-300 text-purple-700 hover:bg-purple-50">
+                  <Mic className="w-4 h-4" />
+                  <span className="hidden sm:inline">Narrator</span>
+                </Button>
+              </Link>
+            )}
 
             <Button
               variant="outline"

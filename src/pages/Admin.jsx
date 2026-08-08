@@ -14,6 +14,14 @@ import UsersManager from '../components/admin/UsersManager';
 import { getRouteTypeForCategory } from '@/lib/tourCategories';
 
 export default function Admin() {
+  // This is deliberately a SECOND, separate login from the teal WordPress
+  // one — Base44's own native login. The WordPress login (checked once,
+  // app-wide, in AuthContext) only establishes who's using the front end;
+  // it says nothing about backend access. Anyone who reaches this page
+  // (because Home.jsx showed them an Admin or Narrator button) still has to
+  // sign in again here with their actual Base44 account before the backend
+  // opens — base44.auth.isAuthenticated()/redirectToLogin() is exactly that
+  // second gate, and must stay separate from the WordPress one.
   const [user, setUser] = useState(null);
   const [userRole, setUserRole] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -31,15 +39,13 @@ export default function Admin() {
 
         const userData = await base44.auth.me();
 
-        let role = null;
-        if (userData.role === 'admin') {
-          role = 'admin';
-        } else {
-          const appUsers = await base44.entities.AppUser.filter({ user_id: userData.id });
-          if (appUsers.length > 0 && (appUsers[0].role === 'narrator' || appUsers[0].role === 'admin')) {
-            role = appUsers[0].role;
-          }
-        }
+        // Role lives on the Base44 "User" record itself (Users panel in the
+        // Base44 dashboard) — admin, narrator, or plain user. Not admin or
+        // narrator means this Base44 account isn't authorized for the
+        // backend, even though it did successfully log in.
+        const role = (userData.role === 'admin' || userData.role === 'narrator')
+          ? userData.role
+          : null;
 
         if (!role) {
           window.location.href = createPageUrl('Home');
@@ -50,6 +56,9 @@ export default function Admin() {
         setUserRole(role);
       } catch (error) {
         console.error('Auth check error:', error);
+        if (error?.status === 401 || error?.status === 403) {
+          base44.auth.redirectToLogin(window.location.href);
+        }
       } finally {
         setIsLoading(false);
       }

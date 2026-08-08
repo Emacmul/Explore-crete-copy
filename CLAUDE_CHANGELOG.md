@@ -5,6 +5,137 @@ pick up where the last one left off. Newest entries at the top.
 
 ---
 
+## 2026-08-07 (correction, same day) — Restored the real second login; found a conflicting tool
+
+I got the architecture wrong in the entry just below this one — worth being
+upfront about that rather than burying it. Here's what was actually right
+and what I've now fixed.
+
+### What I had wrong
+There are supposed to be **two separate logins**, not one:
+1. The teal WordPress login — everyone uses this, front end only.
+2. A **second, separate Base44-native login** ("Continue with Google" /
+   email+password) that only triggers for people whose button leads to the
+   backend — using entirely different credentials from WordPress.
+
+My previous fix replaced that second login with a simple "does this email
+match an admin/narrator record" check and let people straight into the
+backend on that alone — no second sign-in at all. That's not what you
+described, and it's a real access-control weakening from the original
+design, not just a smaller version of it.
+
+### Fixed
+`src/pages/Admin.jsx` now does what the original code did — requires a real
+Base44-native sign-in (`base44.auth.isAuthenticated()` /
+`base44.auth.redirectToLogin()`) before anything else, then checks that
+account's own `role` field (now admin **or narrator**, since narrator was
+added to the User entity earlier today) before opening the backend. The
+`getUserRole` lookup from earlier today still does its job on the Home page
+— deciding whether to *show* the Admin/Narrator button at all — but no
+longer substitutes for the real second login.
+
+### Found, not yet fixed — needs your call
+`src/components/admin/UsersManager.jsx` (the "Users Database" tool inside
+the admin panel, "Add Narrator" button) writes to a **different, older**
+table (`AppUser`) than the one that actually controls backend access now
+(Base44's native `User.role`, the panel in your screenshot). Used as-is,
+inviting someone through that in-app tool would send them an invite but
+their real Base44 account would still default to role `user` — they'd
+never get past the second login. Since you said role changes happen
+directly in Base44's own dashboard, not inside the app, my guess is this
+in-app tool is leftover from before that decision and should probably be
+removed rather than fixed — but that's a call for you, not something to
+guess at.
+
+---
+
+
+
+Follow-on from the audit below, triggered by Enda spotting the old "Welcome
+to Crete Walking Trails" registration screen still appearing after logging
+in through the new teal WordPress login.
+
+### What was actually wrong
+Two completely separate, disconnected login systems existed in the app at
+once:
+- The new one you spent two days building: `Login.jsx` + `AuthContext.jsx` +
+  the `wpLogin` backend function — checks WordPress credentials, correctly
+  gates the whole app in `App.jsx`.
+- An old, leftover one: `Home.jsx` ran its **own second, separate** login
+  check straight after (`base44.auth.isAuthenticated()`), which has nothing
+  to do with WordPress. Since a WordPress-only visitor fails that old check,
+  it silently redirected them into the old native registration screen
+  (`RegistrationForm.jsx`) — every time, for everybody.
+- On top of that, the "Admin" button was showing for **every** logged-in
+  user with no check at all, and the Admin page itself had the identical old
+  disconnected login check, so even hiding the button wouldn't have made the
+  backend safe.
+- Logout only signed people out of the old system, not WordPress — the
+  WordPress login token stayed saved on the device.
+
+### How roles work now (confirmed with Enda, not guessed)
+Everyone registers in WordPress as a plain "subscriber" — WordPress has no
+concept of admin/narrator for this app. Elevated roles are assigned by hand,
+per person, inside **Base44's own "Users" panel** (Base44's built-in
+platform feature, edited directly in the Base44 dashboard — not a screen
+inside this app, and not the same as the separate WordPress registration).
+
+Since regular visitors never get a Base44-native login session (they only
+ever log in through WordPress), the app had no way to ask "does this email
+have a role in Base44's Users table?" — that table isn't public and can't be
+queried from the browser for someone who isn't Base44-signed-in. Fixed by
+adding a small backend function, `getUserRole`, that runs with elevated
+Base44 permissions (`asServiceRole`) and returns *only* the role for a given
+email — nothing else about the user record is ever exposed to the browser.
+
+### Changes made
+1. **`base44/entities/User.jsonc`** — added `narrator` to the role dropdown
+   (it only had `admin`/`user` before). This is the exact panel in Enda's
+   screenshot; a third role now appears there to assign.
+2. **`base44/functions/getUserRole/entry.ts`** (new) — looks up a Base44
+   User record by email with elevated permissions, returns `{ role }` only.
+3. **`src/lib/AuthContext.jsx`** — after a successful WordPress login (and
+   again on every app reload, so a role change takes effect without needing
+   to log in again), calls `getUserRole` and exposes `role`, `isAdmin`,
+   `isNarrator` alongside the existing `user`/`login`/`logout`.
+4. **`src/pages/Home.jsx`** — removed the old, second login check entirely
+   and the registration screen it triggered; the app now trusts the one
+   WordPress-based login at the top level, as it should. Logout now actually
+   clears the WordPress session too. The single "Admin" button is now two
+   separate, role-gated buttons: "Admin" only for `isAdmin`, "Narrator" only
+   for `isNarrator` — nothing shows for an ordinary customer.
+5. **`src/pages/Admin.jsx`** — removed its own copy of the old disconnected
+   login check; it now reads the role AuthContext already resolved. If
+   someone reaches `/Admin` directly without a role, they're bounced to the
+   Home page rather than into the old system.
+
+### Confirmed already correct, no change needed
+- Narrators already can't see the "New Tour" import section (`AdminStartScreen.jsx`
+  already hides it for narrators) — matches "importing a tour is admin-only."
+- Narrators already can't reach the Preview tab in the tour editor — the tab
+  that holds the Simulator, Export, and the "upload finished ElevenLabs
+  audio" step — so the actual final production step was already admin-only
+  by construction, before any of today's changes.
+
+### Not built yet — needs a product decision, not a guess
+Enda described a full narrator → admin review workflow: narrators bring a
+tour to a "ready for review" point, then an admin verifies it before it's
+purchasable. **This doesn't exist in the code at all yet** — there's no
+status field for "awaiting review," no narrator-facing "mark as ready"
+action, and no admin-facing review queue. This needs a short design
+conversation (e.g. does an unapproved tour stay hidden from customers even
+if all its content is otherwise complete? one shared status per tour, or
+per segment?) before building it — flagging rather than inventing the
+mechanics.
+
+⚠️ **Also still outstanding from the audit below:** any driving tour where
+finished ElevenLabs audio was already uploaded before today's fix needs that
+segment re-touched (re-open, re-save) so the new sync onto the waypoint
+actually happens — offered to write a one-off backfill script for this,
+still waiting on which tours to target.
+
+---
+
 ## 2026-08-07 — Full audit of WalkAbout + Driving Tours modules
 
 **No prior changelog existed in this repo** (`Emacmul/ExploreCrete`, pulled

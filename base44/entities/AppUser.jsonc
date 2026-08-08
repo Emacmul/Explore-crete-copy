@@ -81,17 +81,11 @@
     "included_walks_year": {
       "type": "string",
       "description": "Membership year this included-walk allowance belongs to"
-    },
-    "purchased_walk_ids": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      },
-      "default": [],
-      "description": "IDs of walks this person has purchased — set automatically when Creem confirms a payment, never edited by hand"
     }
   },
   "required": [
-    "email"
+    "email",
+    "first_name",
+    "last_name"
   ]
 }
