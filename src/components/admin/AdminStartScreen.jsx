@@ -70,23 +70,33 @@ function CloneableTourRow({ walk, onClone }) {
   );
 }
 
-function MyCloneRow({ walk, onContinue }) {
+function MyCloneRow({ walk, onContinue, onPublish, unrestricted }) {
   return (
-    <button onClick={() => onContinue(walk)} className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 flex items-center gap-3 hover:bg-slate-700/60 transition-colors text-left group">
-      <span className="font-mono text-xs bg-slate-700 text-purple-300 px-2 py-1 rounded font-bold shrink-0">{walk.code}</span>
-      <Badge className="text-xs bg-purple-900 text-purple-300 border-purple-700 shrink-0">{walk.target_language}</Badge>
-      <div className="flex-1 min-w-0">
-        <p className="font-medium text-white truncate">{walk.name}</p>
-      </div>
-      {walk.finished ? (
-        <span className="flex items-center gap-1 text-xs text-emerald-300 bg-emerald-900/40 border border-emerald-700/50 px-2 py-1 rounded shrink-0">
-          <CheckCircle2 className="w-3.5 h-3.5" /> Sent for review
-        </span>
-      ) : (
-        <span className="text-xs text-amber-300 shrink-0">In progress</span>
+    <div className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 flex items-center gap-3">
+      <button onClick={() => onContinue(walk)} className="flex items-center gap-3 flex-1 min-w-0 text-left group">
+        <span className="font-mono text-xs bg-slate-700 text-purple-300 px-2 py-1 rounded font-bold shrink-0">{walk.code}</span>
+        <Badge className="text-xs bg-purple-900 text-purple-300 border-purple-700 shrink-0">{walk.target_language}</Badge>
+        <div className="flex-1 min-w-0">
+          <p className="font-medium text-white truncate">{walk.name}</p>
+          {unrestricted && walk.assigned_narrator_email && (
+            <p className="text-xs text-slate-500 truncate">By {walk.assigned_narrator_email}</p>
+          )}
+        </div>
+        {walk.finished ? (
+          <span className="flex items-center gap-1 text-xs text-emerald-300 bg-emerald-900/40 border border-emerald-700/50 px-2 py-1 rounded shrink-0">
+            <CheckCircle2 className="w-3.5 h-3.5" /> Sent for review
+          </span>
+        ) : (
+          <span className="text-xs text-amber-300 shrink-0">In progress</span>
+        )}
+        <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-purple-400 transition-colors shrink-0" />
+      </button>
+      {unrestricted && !walk.approved && onPublish && (
+        <Button size="sm" onClick={() => onPublish(walk.id)} className="bg-emerald-600 hover:bg-emerald-700 gap-2 shrink-0">
+          <Send className="w-4 h-4" /> Publish
+        </Button>
       )}
-      <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-purple-400 transition-colors shrink-0" />
-    </button>
+    </div>
   );
 }
 
@@ -112,6 +122,7 @@ function ReviewCloneRow({ walk, onReview, onPublish }) {
 export default function AdminStartScreen({
   userRole, user, works, onNewTour, onContinueTour, onManageUsers, onDashboard, onManageWalks,
   onCloneTour, onPublishClone, cloneableTours = [], myClones = [], reviewClones = [],
+  unrestricted = false,
 }) {
   const isNarrator = userRole === 'narrator';
   const [cloneTarget, setCloneTarget] = useState(null);
@@ -148,7 +159,7 @@ export default function AdminStartScreen({
         </div>
 
         <div>
-          <h2 className="text-lg font-bold text-white mb-3">My translation clones</h2>
+          <h2 className="text-lg font-bold text-white mb-3">{unrestricted ? 'All translation clones' : 'My translation clones'}</h2>
           {myClones.length === 0 ? (
             <div className="text-center py-8 text-slate-500 border border-dashed border-slate-700 rounded-xl">
               <Mic className="w-10 h-10 mx-auto mb-2 opacity-30" />
@@ -156,7 +167,7 @@ export default function AdminStartScreen({
               <p className="text-sm">Clone a tour above to start a translation.</p>
             </div>
           ) : (
-            <div className="space-y-2">{myClones.map(walk => <MyCloneRow key={walk.id} walk={walk} onContinue={onContinueTour} />)}</div>
+            <div className="space-y-2">{myClones.map(walk => <MyCloneRow key={walk.id} walk={walk} onContinue={onContinueTour} onPublish={onPublishClone} unrestricted={unrestricted} />)}</div>
           )}
         </div>
       </div>

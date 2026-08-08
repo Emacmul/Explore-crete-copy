@@ -20,7 +20,7 @@ import { toast } from '@/components/ui/use-toast';
  * save/delete, clone workflow) is identical so narrators get the full editing
  * toolset; the role just gates which start-screen sections and tools appear.
  */
-export default function BackendShell({ user, userRole, authMode, onLogout }) {
+export default function BackendShell({ user, userRole, authMode, unrestricted, onLogout }) {
   const [editingWalk, setEditingWalk] = useState(null);
   const [view, setView] = useState('start');
   const [focusWaypointIndex, setFocusWaypointIndex] = useState(null);
@@ -131,7 +131,11 @@ export default function BackendShell({ user, userRole, authMode, onLogout }) {
   };
 
   const cloneableTours = walks.filter(w => w.approved && !w.clone_of);
-  const myClones = walks.filter(w => w.clone_of && (w.assigned_narrator_email || '').toLowerCase() === (user.email || '').toLowerCase());
+  // An unrestricted (admin-wearing-Narr-hat) user sees every translation clone, not just
+  // their own — and can publish any of them directly (see AdminStartScreen).
+  const myClones = unrestricted
+    ? walks.filter(w => w.clone_of)
+    : walks.filter(w => w.clone_of && (w.assigned_narrator_email || '').toLowerCase() === (user.email || '').toLowerCase());
   const reviewClones = walks.filter(w => w.clone_of && w.finished && !w.approved);
 
   const isAdmin = userRole === 'admin';
@@ -147,7 +151,7 @@ export default function BackendShell({ user, userRole, authMode, onLogout }) {
             </div>
             <div>
               <h1 className="font-bold text-white">{isAdmin ? 'Admin Panel' : 'Narr Studio'}</h1>
-              <p className="text-xs text-slate-400">{user?.full_name || user?.email} · {isAdmin ? 'admin' : 'Narr'}</p>
+              <p className="text-xs text-slate-400">{user?.full_name || user?.email} · {isAdmin ? 'admin' : 'Narr'}{unrestricted ? ' · Admin access' : ''}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -201,6 +205,7 @@ export default function BackendShell({ user, userRole, authMode, onLogout }) {
         ) : (
           <AdminStartScreen
             userRole={userRole}
+            unrestricted={unrestricted}
             user={user}
             works={walks}
             onNewTour={(categoryCode) => setEditingWalk({ tour_category: categoryCode, route_type: getRouteTypeForCategory(categoryCode) })}

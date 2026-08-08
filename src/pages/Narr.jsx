@@ -45,7 +45,7 @@ export default function Narr() {
     try {
       const res = await base44.functions.invoke('narrLogin', { email: user.email, password });
       if (res?.data?.ok) {
-        const sess = { email: user.email, full_name: res.data.name || user.full_name, role: 'narrator' };
+        const sess = { email: user.email, full_name: res.data.name || user.full_name, role: 'narrator', isAdmin: !!res.data.isAdmin };
         sessionStorage.setItem(SESSION_KEY, JSON.stringify(sess));
         setSession(sess);
       } else {
@@ -64,7 +64,7 @@ export default function Narr() {
   };
 
   if (session) {
-    return <BackendShell user={session} userRole="narrator" authMode="narr" onLogout={handleLogout} />;
+    return <BackendShell user={session} userRole="narrator" authMode="narr" unrestricted={!!session.isAdmin} onLogout={handleLogout} />;
   }
 
   return (

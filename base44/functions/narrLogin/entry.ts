@@ -31,7 +31,10 @@ Deno.serve(async (req) => {
     if (!match) {
       return Response.json({ ok: false, error: 'No account found for this email.' });
     }
-    if (match.role !== 'narrator') {
+    // An admin may also enter through the "Narr" button to wear the Narr hat; they
+    // get the narrator workflow but without the narrator-only limits (see Narr.jsx +
+    // BackendShell `unrestricted`). Their existing backend password is reused.
+    if (match.role !== 'narrator' && match.role !== 'admin') {
       return Response.json({ ok: false, error: 'This account is not a Narr.' });
     }
     if (!match.password || String(match.password) !== String(password)) {
@@ -39,7 +42,8 @@ Deno.serve(async (req) => {
     }
 
     const name = `${match.first_name || ''} ${match.last_name || ''}`.trim();
-    return Response.json({ ok: true, email: match.email, role: 'narrator', name });
+    const isAdmin = match.role === 'admin';
+    return Response.json({ ok: true, email: match.email, role: 'narrator', name, isAdmin });
   } catch (error) {
     return Response.json({ ok: false, error: error.message }, { status: 200 });
   }

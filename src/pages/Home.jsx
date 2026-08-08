@@ -278,7 +278,7 @@ export default function Home() {
                 </Button>
               </Link>
             )}
-            {userRole === 'narrator' && (
+            {(userRole === 'admin' || userRole === 'narrator') && (
               <Link to={createPageUrl('Narr')}>
                 <Button variant="outline" size="sm" className="gap-2 border-purple-300 text-purple-600 hover:bg-purple-50">
                   <Mic className="w-4 h-4" />
