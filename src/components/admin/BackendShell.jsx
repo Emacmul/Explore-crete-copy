@@ -44,7 +44,11 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
     try {
       const fresh = await base44.entities.Walk.list('-created_date');
       setWalks(fresh || []);
-    } catch (err) { console.error('Failed to refresh walks:', err); }
+      toast({ title: 'Tours reloaded', description: `${(fresh || []).length} tours fetched fresh from the server.` });
+    } catch (err) {
+      console.error('Failed to refresh walks:', err);
+      toast({ variant: 'destructive', title: 'Refresh failed', description: err?.message || 'Could not reload the tour list.' });
+    }
     setWalksLoading(false);
   };
 
