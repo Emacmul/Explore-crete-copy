@@ -6,6 +6,7 @@ import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import Login from './pages/Login';
+import Narr from './pages/Narr';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -22,8 +23,9 @@ const AuthenticatedApp = () => {
   // itself) rather than the customer WordPress login this gate covers — so it must be allowed
   // through here regardless of customer auth state, or staff can never reach it at all.
   const isAdminPath = window.location.pathname.toLowerCase().startsWith('/admin');
+  const isNarrPath = window.location.pathname.toLowerCase().startsWith('/narr');
 
-  if (isLoadingAuth && !isAdminPath) {
+  if (isLoadingAuth && !isAdminPath && !isNarrPath) {
     return (
       <div className="fixed inset-0 flex items-center justify-center">
         <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin"></div>
@@ -31,7 +33,7 @@ const AuthenticatedApp = () => {
     );
   }
 
-  if (!isAuthenticated && !isAdminPath) {
+  if (!isAuthenticated && !isAdminPath && !isNarrPath) {
     return <Login />;
   }
 
@@ -53,6 +55,7 @@ const AuthenticatedApp = () => {
           }
         />
       ))}
+      <Route path="/Narr" element={<Narr />} />
       <Route path="/Login" element={<Login />} />
       <Route path="*" element={<PageNotFound />} />
     </Routes>

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
-import { Loader2, LogOut, User, ShieldCheck, WifiOff } from 'lucide-react';
+import { Loader2, LogOut, User, ShieldCheck, Mic, WifiOff } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { useAuth } from '@/lib/AuthContext';
@@ -31,7 +31,7 @@ export default function Home() {
   const [showSplash, setShowSplash] = useState(() => !sessionStorage.getItem('splash_seen'));
   const [registrationComplete, setRegistrationComplete] = useState(false);
   const [selectedTourCategory, setSelectedTourCategory] = useState(() => sessionStorage.getItem('tour_category'));
-  const [isStaff, setIsStaff] = useState(false); // admin or narrator — controls whether the Admin link shows at all
+  const [userRole, setUserRole] = useState(null); // 'admin' | 'narrator' | null — which back-end button (Admin or Narr) to show
 
   const { getAllOfflineWalks } = useOfflineWalks();
   const offlineCount = getAllOfflineWalks().length;
@@ -92,7 +92,7 @@ export default function Home() {
         // own — unlike Admin.jsx, which checks Base44's separate native login. The AppUser
         // record's own `role` field is the only real source of truth here.
         if (finalAppUser && (finalAppUser.role === 'admin' || finalAppUser.role === 'narrator')) {
-          setIsStaff(true);
+          setUserRole(finalAppUser.role);
         }
       } catch (error) {
         console.error('Registration check error:', error);
@@ -271,11 +271,19 @@ export default function Home() {
               </Button>
             </Link>
 
-            {isStaff && (
+            {userRole === 'admin' && (
               <Link to={createPageUrl('Admin')}>
                 <Button variant="outline" size="sm" className="gap-2 border-amber-300 text-amber-600 hover:bg-amber-50">
                   <ShieldCheck className="w-4 h-4" />
                   <span className="hidden sm:inline">Admin</span>
+                </Button>
+              </Link>
+            )}
+            {userRole === 'narrator' && (
+              <Link to={createPageUrl('Narr')}>
+                <Button variant="outline" size="sm" className="gap-2 border-purple-300 text-purple-600 hover:bg-purple-50">
+                  <Mic className="w-4 h-4" />
+                  <span className="hidden sm:inline">Narr</span>
                 </Button>
               </Link>
             )}

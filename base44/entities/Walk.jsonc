@@ -101,7 +101,7 @@
     },
     "creem_product_id": {
       "type": "string",
-      "description": "The matching product's ID in Creem — used to identify which walk was purchased when a payment webhook arrives"
+      "description": "The matching product's ID in Creem \u2014 used to identify which walk was purchased when a payment webhook arrives"
     },
     "contributor_name": {
       "type": "string",
@@ -183,7 +183,7 @@
           },
           "segment_id": {
             "type": "string",
-            "description": "Segment/waypoint code — e.g. BOR03 for driving/WalkAbout tour segments, or MXR14 for a plain walk/hike waypoint"
+            "description": "Segment/waypoint code \u2014 e.g. BOR03 for driving/WalkAbout tour segments, or MXR14 for a plain walk/hike waypoint"
           },
           "segment_title": {
             "type": "string",
@@ -291,6 +291,23 @@
       "type": "string",
       "format": "date-time",
       "description": "When an admin/narrator last confirmed this route is still accurate on the ground (the 'new walk' customer announcement feature that originally used this field has been retired)"
+    },
+    "clone_of": {
+      "type": "string",
+      "description": "ID of the original tour this record is a translation clone of. Unset on original/published tours."
+    },
+    "target_language": {
+      "type": "string",
+      "description": "Target language for a translation clone (e.g. German)."
+    },
+    "assigned_narrator_email": {
+      "type": "string",
+      "description": "Email of the Narr who owns this translation clone. While finished is false, only this Narr can see the clone."
+    },
+    "finished": {
+      "type": "boolean",
+      "default": false,
+      "description": "Narr has marked this translation clone complete \u2014 it now becomes visible to admins for review/publish."
     }
   },
   "required": [

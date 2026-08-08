@@ -21,10 +21,12 @@
     "role": {
       "type": "string",
       "enum": [
-        "admin",
-        "narrator"
+        "user",
+        "narrator",
+        "admin"
       ],
-      "description": "Admin panel role: admin=full access, narrator=narration-only access. Leave unset for regular app users."
+      "default": "user",
+      "description": "user = front-end only (default for everyone on first login); narrator (Narr) = translates cloned tours via the Narr button + Narr password; admin = full backend via the Admin button + Base44 sign-in."
     },
     "date_of_birth": {
       "type": "string",
@@ -42,7 +44,7 @@
     },
     "password": {
       "type": "string",
-      "description": "User-chosen password"
+      "description": "Narr backend password \u2014 set by an admin in EditAppUser, used only to log into the Narr Studio via the Narr button. Separate from the WordPress password used for the front end; ignored for admin accounts (admins sign in via Base44)."
     },
     "newsletter_opted_in": {
       "type": "boolean",
@@ -88,7 +90,7 @@
         "type": "string"
       },
       "default": [],
-      "description": "IDs of walks this person has purchased — set automatically when Creem confirms a payment, never edited by hand"
+      "description": "IDs of walks this person has purchased \u2014 set automatically when Creem confirms a payment, never edited by hand"
     }
   },
   "required": [

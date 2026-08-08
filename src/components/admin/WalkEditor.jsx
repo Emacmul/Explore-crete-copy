@@ -57,7 +57,7 @@ function SaveButton({ onSave, saving, canSave }) {
   );
 }
 
-export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin', focusWaypointIndex }) {
+export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin', focusWaypointIndex, onToggleFinished }) {
   const isNarrator = userRole === 'narrator';
   console.log('WalkEditor mounted/rendering');
   const [form, setForm] = useState({ ...EMPTY_WALK, ...walk });
@@ -92,17 +92,15 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   const gpxInputRef = useRef(null);
   const canImportGpx = !!(form.code?.trim() && form.name?.trim() && form.tour_category);
   const isDrivingAudioTourForGate = form.route_type === 'driving_audio_tour';
-  const canSave = isNarrator
-    ? true // narrators only ever edit waypoints; General-tab requirements are the admin's responsibility and narrators have no way to fix them
-    : !!(
-      form.code?.trim() &&
-      form.name?.trim() &&
-      form.tour_category &&
-      form.start_lat !== '' && form.start_lat != null && !isNaN(Number(form.start_lat)) &&
-      form.start_lng !== '' && form.start_lng != null && !isNaN(Number(form.start_lng)) &&
-      form.region?.trim() &&
-      (isDrivingAudioTourForGate || !!form.difficulty)
-    );
+  const canSave = !!(
+    form.code?.trim() &&
+    form.name?.trim() &&
+    form.tour_category &&
+    form.start_lat !== '' && form.start_lat != null && !isNaN(Number(form.start_lat)) &&
+    form.start_lng !== '' && form.start_lng != null && !isNaN(Number(form.start_lng)) &&
+    form.region?.trim() &&
+    (isDrivingAudioTourForGate || !!form.difficulty)
+  );
 
   // Shared helper: compute distance + elevation from a trailPath array + elevations array
   const computeStats = (trailPath, elevations) => {
@@ -619,14 +617,15 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
     }
   };
 
-  const tabs = isNarrator
-    ? [{ id: 'waypoints', label: `Waypoints${form.waypoints.length ? ` (${form.waypoints.length})` : ''}` }]
-    : [
-      { id: 'details', label: 'General' },
-      { id: 'trail', label: 'Route Path (GPS)' },
-      { id: 'waypoints', label: `Waypoints${form.waypoints.length ? ` (${form.waypoints.length})` : ''}` },
-      { id: 'preview', label: 'Preview' },
-    ];
+  // Narrators get the full editing toolset (General, Route Path, Waypoints,
+  // Preview). Their only restriction is they cannot create a brand-new route
+  // from scratch, which is gated on the start screen — not here.
+  const tabs = [
+    { id: 'details', label: 'General' },
+    { id: 'trail', label: 'Route Path (GPS)' },
+    { id: 'waypoints', label: `Waypoints${form.waypoints.length ? ` (${form.waypoints.length})` : ''}` },
+    { id: 'preview', label: 'Preview' },
+  ];
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -639,6 +638,24 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
           <h2 className="text-xl font-bold text-white">
             {form.id ? `Editing: ${form.code || form.name}` : 'New Route'}
           </h2>
+          {form.clone_of && (
+            <div className="flex items-center gap-2 ml-2 bg-slate-700/60 border border-purple-700/50 rounded-lg px-3 py-1.5">
+              <input
+                type="checkbox"
+                id="finished-checkbox"
+                checked={!!form.finished}
+                onChange={(e) => {
+                  set('finished', e.target.checked);
+                  if (onToggleFinished && form.id) onToggleFinished(form.id, e.target.checked);
+                }}
+                className="w-4 h-4 accent-purple-500"
+              />
+              <label htmlFor="finished-checkbox" className="text-sm text-slate-200 select-none cursor-pointer">
+                Translation finished
+              </label>
+              <span className="hidden sm:inline text-xs text-slate-500">— sends this clone to admins for review</span>
+            </div>
+          )}
         </div>
       </div>
 
