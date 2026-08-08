@@ -124,8 +124,8 @@ const trailDot = (mode) => L.divIcon({
   iconAnchor: [6.5, 6.5],
 });
 
-export default function TrailPathMapEditor({ trailPath, onChange, trailBreaks = [], onBreaksChange, waypoints = [] }) {
-  const [mode, setMode] = useState('add'); // 'add' | 'delete' | 'cut'
+export default function TrailPathMapEditor({ trailPath, onChange, trailBreaks = [], onBreaksChange, waypoints = [], initialMode = 'add' }) {
+  const [mode, setMode] = useState(initialMode); // 'add' | 'delete' | 'cut'
 
   // Toggle a cut at the segment between point idx and point idx+1.
   const toggleBreak = (idx) => {

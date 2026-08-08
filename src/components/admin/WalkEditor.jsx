@@ -655,10 +655,13 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
     }
   };
 
-  // The Route Path map editor is admin-only (narrators never see it) and is not used
-  // for Driving Tours — those follow roads, so there's no off-road trail to trace.
-  // Walks (WHT) and WalkAbouts (WBT) both get it.
-  const showTrailTab = !isNarrator && form.tour_category !== 'DDV';
+  // The Route Path map editor is admin-only (narrators never see it). It's used for
+  // Walks (WHT), WalkAbouts (WBT) AND Driving Tours (DDV). For DDV the main use is the
+  // Cut tool, which removes the straight "bridge" lines that appear when a GPX
+  // recording has a gap (GPS dropped out and resumed elsewhere) and the trail line is
+  // drawn straight across the gap. Admins don't trace DDV trails from scratch (those
+  // come from the recorded drive), so the editor opens in Cut mode for DDV.
+  const showTrailTab = !isNarrator;
   const tabs = [
     { id: 'details', label: 'General' },
     ...(showTrailTab ? [{ id: 'trail', label: 'Route Path (GPS)' }] : []),
@@ -1077,6 +1080,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 trailBreaks={form.trail_breaks || []}
                 onBreaksChange={breaks => set('trail_breaks', breaks)}
                 waypoints={form.waypoints || []}
+                initialMode={form.tour_category === 'DDV' ? 'cut' : 'add'}
               />
             </div>
 
