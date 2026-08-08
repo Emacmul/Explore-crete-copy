@@ -27,6 +27,7 @@ function roleBadge(role) {
 function EditAppUserDialog({ appUser, onClose }) {
   const [role, setRole] = useState(appUser.role === 'admin' || appUser.role === 'narrator' ? appUser.role : 'user');
   const [password, setPassword] = useState(appUser.password || '');
+  const [dateOfBirth, setDateOfBirth] = useState(appUser.date_of_birth ? String(appUser.date_of_birth).slice(0, 10) : '');
   const [saving, setSaving] = useState(false);
   const qc = useQueryClient();
 
@@ -34,6 +35,7 @@ function EditAppUserDialog({ appUser, onClose }) {
     setSaving(true);
     try {
       const updates = { role };
+      if (dateOfBirth) updates.date_of_birth = dateOfBirth;
       if (role === 'narrator') {
         if (!password.trim()) {
           toast({ variant: 'destructive', title: 'Narr password required', description: 'Set a backend password for this Narr.' });
@@ -81,6 +83,16 @@ function EditAppUserDialog({ appUser, onClose }) {
                 <SelectItem value="admin">Admin (full backend)</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+          <div>
+            <Label className="text-slate-300 mb-1.5 block">Date of birth</Label>
+            <input
+              type="date"
+              value={dateOfBirth}
+              onChange={e => setDateOfBirth(e.target.value)}
+              max={new Date().toISOString().split('T')[0]}
+              className="flex h-9 w-full rounded-md border border-slate-600 bg-slate-700 px-3 py-1 text-sm text-white [color-scheme:dark]"
+            />
           </div>
           {role === 'narrator' && (
             <div>
