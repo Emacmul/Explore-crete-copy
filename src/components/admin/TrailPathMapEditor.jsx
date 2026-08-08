@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { MapContainer, Marker, Polyline, TileLayer, useMap, useMapEvents, CircleMarker } from 'react-leaflet';
+import { MapContainer, Marker, Polyline, TileLayer, useMap, useMapEvents, CircleMarker, Rectangle } from 'react-leaflet';
 import L from 'leaflet';
 import { Button } from '@/components/ui/button';
 import { Trash2, MousePointerClick, Eraser, RefreshCw, MapPin } from 'lucide-react';
@@ -12,6 +12,60 @@ function ClickToAdd({ onAdd, active }) {
     click: (e) => { if (active) onAdd(e.latlng); },
   });
   return null;
+}
+
+// In Delete mode the map's normal click-and-drag pan is disabled so the drag gesture
+// can be used to draw a selection box instead. Add mode keeps panning enabled.
+function DragController({ mode }) {
+  const map = useMap();
+  React.useEffect(() => {
+    if (mode === 'delete') map.dragging.disable();
+    else map.dragging.enable();
+  }, [map, mode]);
+  return null;
+}
+
+// Drag-to-box delete: in Delete mode, mousedown on the map starts a rectangle;
+// on mouseup every trail point inside the rectangle is removed. A click (no drag)
+// deletes nothing — use a marker click for single-point removal.
+function BoxDelete({ active, trailPath, onDelete }) {
+  const startRef = React.useRef(null);
+  const pathRef = React.useRef(trailPath);
+  pathRef.current = trailPath;
+  const [box, setBox] = useState(null);
+
+  useMapEvents({
+    mousedown: (e) => {
+      if (!active) return;
+      startRef.current = e.latlng;
+      setBox({ start: e.latlng, end: e.latlng });
+    },
+    mousemove: (e) => {
+      if (!active || !startRef.current) return;
+      setBox({ start: startRef.current, end: e.latlng });
+    },
+    mouseup: (e) => {
+      if (!active || !startRef.current) return;
+      const start = startRef.current, end = e.latlng;
+      startRef.current = null;
+      setBox(null);
+      const minLat = Math.min(start.lat, end.lat), maxLat = Math.max(start.lat, end.lat);
+      const minLng = Math.min(start.lng, end.lng), maxLng = Math.max(start.lng, end.lng);
+      // Ignore a bare click (no real drag) — single-point deletes happen via marker clicks.
+      if (Math.abs(start.lat - end.lat) < 1e-7 && Math.abs(start.lng - end.lng) < 1e-7) return;
+      const next = pathRef.current.filter(
+        p => !(p.lat >= minLat && p.lat <= maxLat && p.lng >= minLng && p.lng <= maxLng)
+      );
+      onDelete(next);
+    },
+  });
+
+  if (!box) return null;
+  const bounds = [
+    [Math.min(box.start.lat, box.end.lat), Math.min(box.start.lng, box.end.lng)],
+    [Math.max(box.start.lat, box.end.lat), Math.max(box.start.lng, box.end.lng)],
+  ];
+  return <Rectangle bounds={bounds} pathOptions={{ color: '#ef4444', weight: 2, dashArray: '5 5', fillOpacity: 0.12 }} />;
 }
 
 function FitBounds({ trailPath, waypoints }) {
@@ -156,12 +210,14 @@ export default function TrailPathMapEditor({ trailPath, onChange, waypoints = []
       <p className="text-xs text-slate-400">
         {mode === 'add'
           ? 'Click anywhere on the map to drop a trail point — it inserts at the nearest spot along the line. Drag any amber dot to move it onto the visible trail.'
-          : 'Click any red dot to remove it.'}
+          : 'Drag on the map to draw a box and delete every point inside it at once — great for clearing a dense surplus. Or click a single red dot to remove just that one. Deleted points also vanish from the Route Path list below.'}
       </p>
 
       <div className="h-[420px] rounded-xl overflow-hidden border border-slate-600">
         <MapContainer center={center} zoom={14} className="w-full h-full" style={{ minHeight: '420px' }}>
           <ClickToAdd onAdd={insertAt} active={mode === 'add'} />
+          <DragController mode={mode} />
+          <BoxDelete active={mode === 'delete'} trailPath={trailPath} onDelete={onChange} />
 
           {/* OSM tiles — same base map users see */}
           <TileLayer
