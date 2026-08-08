@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Plus, Trash2, GripVertical, Info, Pencil, Check, X } from 'lucide-react';
+import { Plus, Trash2, GripVertical, Info, Pencil, Check, X, Scissors } from 'lucide-react';
+import { reindexAfterInsert, reindexAfterDeleteOne, nearestInsertIndex } from '@/lib/trailBreaks';
 
-export default function TrailPathEditor({ trailPath, onChange }) {
+export default function TrailPathEditor({ trailPath, onChange, trailBreaks = [], onBreaksChange }) {
+  const breakSet = new Set((trailBreaks || []).filter(b => Number.isInteger(b) && b >= 0 && b < trailPath.length - 1));
   const [newLat, setNewLat] = useState('');
   const [newLng, setNewLng] = useState('');
   const [editIndex, setEditIndex] = useState(null);
@@ -45,13 +47,23 @@ export default function TrailPathEditor({ trailPath, onChange }) {
       alert('Coordinates appear to be outside Crete. Please check your values.\nLatitude should be ~35, Longitude should be ~24–26.');
       return;
     }
-    onChange([...trailPath, { lat, lng }]);
+    // Insert at the geographically nearest spot along the existing path — not always
+    // the end — so points land in the right place even after the map editor inserted
+    // others out of order. Re-index any cuts so they stay glued to their segment.
+    const idx = nearestInsertIndex(trailPath, { lat, lng });
+    const next = [...trailPath];
+    next.splice(idx, 0, { lat, lng });
+    onChange(next);
+    onBreaksChange?.(reindexAfterInsert(trailBreaks, idx));
     setNewLat('');
     setNewLng('');
   };
 
   const removePoint = (index) => {
-    onChange(trailPath.filter((_, i) => i !== index));
+    const next = trailPath.filter((_, i) => i !== index);
+    onChange(next);
+    // Re-index cuts so a delete doesn't drag them onto the wrong segment.
+    onBreaksChange?.(reindexAfterDeleteOne(trailBreaks, index));
   };
 
   const handlePaste = (e) => {
@@ -123,7 +135,8 @@ export default function TrailPathEditor({ trailPath, onChange }) {
             <Label className="text-slate-400 text-sm">{trailPath.length} points added</Label>
           </div>
           {trailPath.map((point, index) => (
-            <div key={index} className="flex items-center gap-3 bg-slate-700/50 rounded-lg px-3 py-2 border border-slate-600">
+            <React.Fragment key={index}>
+            <div className="flex items-center gap-3 bg-slate-700/50 rounded-lg px-3 py-2 border border-slate-600">
               <GripVertical className="w-4 h-4 text-slate-500 shrink-0" />
               <span className="text-slate-400 text-xs w-6 text-right">{index + 1}</span>
               {editIndex === index ? (
@@ -168,6 +181,12 @@ export default function TrailPathEditor({ trailPath, onChange }) {
                 </>
               )}
             </div>
+            {breakSet.has(index) && index < trailPath.length - 1 && (
+              <div className="flex items-center gap-2 mx-3 my-1 px-3 py-1 rounded bg-purple-900/30 border border-dashed border-purple-600/50 text-xs text-purple-300">
+                <Scissors className="w-3 h-3" /> Cut — no line is drawn to the next point
+              </div>
+            )}
+            </React.Fragment>
           ))}
         </div>
       )}

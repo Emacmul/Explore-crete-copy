@@ -1085,6 +1085,8 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
             <TrailPathEditor
               trailPath={form.trail_path}
               onChange={path => set('trail_path', path)}
+              trailBreaks={form.trail_breaks || []}
+              onBreaksChange={breaks => set('trail_breaks', breaks)}
             />
 
             {/* GPX File — private upload, handed to the customer as a download */}

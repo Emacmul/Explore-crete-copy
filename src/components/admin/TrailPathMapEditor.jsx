@@ -3,6 +3,7 @@ import { MapContainer, Marker, Polyline, TileLayer, useMap, useMapEvents, Circle
 import L from 'leaflet';
 import { Button } from '@/components/ui/button';
 import { Trash2, MousePointerClick, Eraser, RefreshCw, MapPin, Scissors } from 'lucide-react';
+import { reindexAfterInsert, reindexAfterDeleteOne, reindexAfterDeleteMany, nearestInsertIndex, distToSegmentM } from '@/lib/trailBreaks';
 
 // Click-anywhere handler: inserts a new trail point at the clicked location, at the
 // nearest position along the existing path (so refining a bend drops the point in the
@@ -28,31 +29,9 @@ function DragController({ mode }) {
 // Drag-to-box delete: in Delete mode, mousedown on the map starts a rectangle;
 // on mouseup every trail point inside the rectangle is removed. A click (no drag)
 // deletes nothing — use a marker click for single-point removal.
-// Re-index cut (break) positions when the trail path gains or loses points, so a cut
-// stays glued to the same physical segment instead of drifting onto a neighbouring one
-// (which was making cut lines reappear in the wrong place, or vanish when a delete
-// shrank the path past the stored index).
-function reindexAfterInsert(breaks, idx) {
-  return (breaks || [])
-    .map(b => b >= idx ? b + 1 : b)
-    .filter(b => Number.isInteger(b) && b >= 0);
-}
-function reindexAfterDeleteOne(breaks, deletedIdx) {
-  return (breaks || [])
-    .filter(b => b !== deletedIdx - 1 && b !== deletedIdx)   // the two segments touching the deleted point collapse
-    .map(b => b > deletedIdx ? b - 1 : b)
-    .filter(b => Number.isInteger(b) && b >= 0);
-}
-function reindexAfterDeleteMany(breaks, deletedSet) {
-  return (breaks || [])
-    .filter(b => !deletedSet.has(b) && !deletedSet.has(b + 1)) // segment gone if either endpoint was deleted
-    .map(b => {
-      let shift = 0;
-      deletedSet.forEach(d => { if (d < b) shift++; });
-      return b - shift;
-    })
-    .filter(b => Number.isInteger(b) && b >= 0);
-}
+// Cut re-indexing + nearest-insertion helpers are imported above from
+// @/lib/trailBreaks, shared with the list-style TrailPathEditor so both keep
+// cuts aligned no matter which one edits the path.
 
 // Drag-to-box delete. Uses DOM-level listeners on the map container + window so the box
 // always releases — even if the cursor leaves the map or passes over a marker mid-drag
@@ -136,43 +115,7 @@ function FitBounds({ trailPath, waypoints }) {
   return null;
 }
 
-function haversineM(a, b) {
-  const R = 6371e3, dLat = (b.lat - a.lat) * Math.PI / 180, dLon = (b.lng - a.lng) * Math.PI / 180;
-  const x = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
-}
 
-// Distance from point p to segment a-b (metres).
-function distToSegmentM(p, a, b) {
-  const toRad = d => d * Math.PI / 180;
-  // Approximate as flat for short segments — fine for insertion ranking.
-  const R = 6371e3;
-  const lat0 = (a.lat + b.lat) / 2 * Math.PI / 180;
-  const px = (p.lng - a.lng) * Math.cos(lat0);
-  const py = (p.lat - a.lat);
-  const bx = (b.lng - a.lng) * Math.cos(lat0);
-  const by = (b.lat - a.lat);
-  const len2 = bx * bx + by * by;
-  if (len2 === 0) return haversineM(p, a);
-  let t = (px * bx + py * by) / len2;
-  t = Math.max(0, Math.min(1, t));
-  const proj = { lat: a.lat + t * by, lng: a.lng + t * bx };
-  return haversineM(p, proj);
-}
-
-function nearestInsertIndex(path, latlng) {
-  if (path.length === 0) return 0;
-  if (path.length === 1) return 1;
-  let best = { dist: Infinity, idx: path.length };
-  for (let i = 0; i < path.length - 1; i++) {
-    const d = distToSegmentM(latlng, path[i], path[i + 1]);
-    if (d < best.dist) best = { dist: d, idx: i + 1 };
-  }
-  // Compare with appending after the last point.
-  const dEnd = haversineM(latlng, path[path.length - 1]);
-  if (dEnd < best.dist) return path.length;
-  return best.idx;
-}
 
 const trailDot = (mode) => L.divIcon({
   className: '',
