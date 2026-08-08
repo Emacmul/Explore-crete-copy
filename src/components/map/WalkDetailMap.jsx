@@ -4,6 +4,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import OfflineTileLayer from './OfflineTileLayer';
 import LiveGpsMarker from './LiveGpsMarker';
+import { splitTrailRuns } from '@/lib/routeExport';
 
 const waypointConfig = {
   start: { color: '#22c55e', icon: '🚩', label: 'Start' },
@@ -87,9 +88,10 @@ export default function WalkDetailMap({ walk, followGps = false }) {
 
       <FitBoundsToTrail trailPath={trailPath} waypoints={waypoints} />
 
-      {trailPath.length > 1 && (
+      {splitTrailRuns(trailPath, walk.trail_breaks).map((run, ri) => run.length > 1 && (
         <Polyline
-          positions={trailPath.map(p => [p.lat, p.lng])}
+          key={`run-${ri}`}
+          positions={run}
           pathOptions={{
             color: '#3b82f6',
             weight: 4,
@@ -97,7 +99,7 @@ export default function WalkDetailMap({ walk, followGps = false }) {
             dashArray: '10, 5',
           }}
         />
-      )}
+      ))}
 
       {waypoints.map((wp, i) => {
         const roleConfig = isDrivingTour

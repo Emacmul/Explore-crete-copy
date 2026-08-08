@@ -139,6 +139,13 @@
         }
       }
     },
+    "trail_breaks": {
+      "type": "array",
+      "description": "Segment start indices where the drawn line is broken (no line is drawn between point b and point b+1), so a non-existing link across a gap between two trail sections isn't rendered",
+      "items": {
+        "type": "number"
+      }
+    },
     "waypoints": {
       "type": "array",
       "description": "Important points along the trail",

@@ -220,17 +220,19 @@ export function generateGpx(walk) {
   }
   lines.push('  </metadata>');
 
-  // Route track from trail_path
+  // Route track from trail_path — one <trkseg> per run, so cut/break gaps are preserved
   if (trailPath.length > 0) {
     lines.push('  <trk>');
     lines.push(`    <name>${xmlEscape(tourName)}</name>`);
-    lines.push('    <trkseg>');
-    for (const pt of trailPath) {
-      const ele = pt.elevation != null ? `\n        <ele>${pt.elevation}</ele>` : '';
-      lines.push(`      <trkpt lat="${pt.lat}" lon="${pt.lng}">${ele}`);
-      lines.push('      </trkpt>');
+    for (const run of splitTrailRuns(trailPath, walk.trail_breaks)) {
+      if (run.length === 0) continue;
+      lines.push('    <trkseg>');
+      for (const [lat, lng] of run) {
+        lines.push(`      <trkpt lat="${lat}" lon="${lng}">`);
+        lines.push('      </trkpt>');
+      }
+      lines.push('    </trkseg>');
     }
-    lines.push('    </trkseg>');
     lines.push('  </trk>');
   }
 
@@ -323,17 +325,19 @@ export function generateWalkGpx(walk) {
   }
   lines.push('  </metadata>');
 
-  // Route track from trail_path
+  // Route track from trail_path — one <trkseg> per run, so cut/break gaps are preserved
   if (trailPath.length > 0) {
     lines.push('  <trk>');
     lines.push(`    <name>${xmlEscape(tourName)}</name>`);
-    lines.push('    <trkseg>');
-    for (const pt of trailPath) {
-      const ele = pt.elevation != null ? `\n        <ele>${pt.elevation}</ele>` : '';
-      lines.push(`      <trkpt lat="${pt.lat}" lon="${pt.lng}">${ele}`);
-      lines.push('      </trkpt>');
+    for (const run of splitTrailRuns(trailPath, walk.trail_breaks)) {
+      if (run.length === 0) continue;
+      lines.push('    <trkseg>');
+      for (const [lat, lng] of run) {
+        lines.push(`      <trkpt lat="${lat}" lon="${lng}">`);
+        lines.push('      </trkpt>');
+      }
+      lines.push('    </trkseg>');
     }
-    lines.push('    </trkseg>');
     lines.push('  </trk>');
   }
 
@@ -388,17 +392,20 @@ export function generateKml(walk) {
     lines.push(`    <description>${xmlEscape(description)}</description>`);
   }
 
-  // Route LineString
-  if (trailPath.length > 1) {
+  // Route LineString(s) — one per run, so cut/break gaps are preserved (MultiGeometry)
+  const kmlRuns = splitTrailRuns(trailPath, walk.trail_breaks).filter(r => r.length > 1);
+  if (kmlRuns.length > 0) {
     lines.push('    <Placemark>');
     lines.push(`      <name>${xmlEscape(tourName)} — Route</name>`);
-    lines.push('      <LineString>');
-    lines.push('        <tessellate>1</tessellate>');
-    const coords = trailPath
-      .map(pt => `${pt.lng},${pt.lat},${pt.elevation || 0}`)
-      .join(' ');
-    lines.push(`        <coordinates>${coords}</coordinates>`);
-    lines.push('      </LineString>');
+    lines.push('      <MultiGeometry>');
+    for (const run of kmlRuns) {
+      lines.push('        <LineString>');
+      lines.push('          <tessellate>1</tessellate>');
+      const coords = run.map(([lat, lng]) => `${lng},${lat},0`).join(' ');
+      lines.push(`          <coordinates>${coords}</coordinates>`);
+      lines.push('        </LineString>');
+    }
+    lines.push('      </MultiGeometry>');
     lines.push('    </Placemark>');
   }
 
@@ -433,6 +440,25 @@ export function generateKml(walk) {
 /**
  * Trigger a browser download of a text file.
  */
+/**
+ * Split a trail path into consecutive runs at the given break indices.
+ * A break at index b means NO line is drawn between point b and point b+1.
+ * Returns an array of runs; each run is an array of [lat, lng] pairs.
+ */
+export function splitTrailRuns(trailPath, breaks) {
+  const breakSet = new Set((breaks || []).filter(b => Number.isInteger(b) && b >= 0 && b < trailPath.length - 1));
+  const runs = [];
+  let run = [];
+  for (let i = 0; i < trailPath.length; i++) {
+    run.push([trailPath[i].lat, trailPath[i].lng]);
+    if (breakSet.has(i) || i === trailPath.length - 1) {
+      runs.push(run);
+      run = [];
+    }
+  }
+  return runs;
+}
+
 export function downloadTextFile(content, filename, mimeType) {
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);

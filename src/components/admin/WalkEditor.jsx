@@ -39,6 +39,7 @@ const EMPTY_WALK = {
   region: '',
   main_interest: '',
   trail_path: [],
+  trail_breaks: [],
   waypoints: [],
   segment_scripts: [],
 };
@@ -104,9 +105,11 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   );
 
   // Shared helper: compute distance + elevation from a trailPath array + elevations array
-  const computeStats = (trailPath, elevations) => {
+  const computeStats = (trailPath, elevations, breaks = []) => {
+    const breakSet = new Set(breaks);
     let distanceKm = 0;
     for (let i = 1; i < trailPath.length; i++) {
+      if (breakSet.has(i - 1)) continue; // skip cut segments — they aren't walked
       const R = 6371;
       const dLat = (trailPath[i].lat - trailPath[i-1].lat) * Math.PI / 180;
       const dLon = (trailPath[i].lng - trailPath[i-1].lng) * Math.PI / 180;
@@ -115,6 +118,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
     }
     let elevGain = 0;
     for (let i = 1; i < elevations.length; i++) {
+      if (i - 1 < trailPath.length && breakSet.has(i - 1)) continue;
       if (elevations[i] > elevations[i-1]) elevGain += elevations[i] - elevations[i-1];
     }
     return { distanceKm, elevGain };
@@ -204,6 +208,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
     setForm(prev => ({
       ...prev,
       trail_path: trailPath,
+      trail_breaks: [], // fresh import — no cuts yet
       waypoints: finalWaypoints.length > 0 ? finalWaypoints : prev.waypoints,
       start_lat: startPt ? startPt.lat : prev.start_lat,
       start_lng: startPt ? startPt.lng : prev.start_lng,
@@ -548,7 +553,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
     // future edit (adding/removing waypoints, fixing a bad point, re-routing).
     let recalculatedDistanceKm = form.distance_km ? Number(form.distance_km) : undefined;
     if (!isDrivingAudioTour && form.trail_path && form.trail_path.length > 1) {
-      const { distanceKm } = computeStats(form.trail_path, []);
+      const { distanceKm } = computeStats(form.trail_path, [], form.trail_breaks || []);
       if (distanceKm > 0) {
         recalculatedDistanceKm = Math.round(distanceKm * 10) / 10;
       }
@@ -566,7 +571,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
     if (!isDrivingAudioTour && form.trail_path && form.trail_path.length > 1) {
       try {
         const elevations = await fetchElevations(form.trail_path);
-        const { elevGain } = computeStats(form.trail_path, elevations);
+        const { elevGain } = computeStats(form.trail_path, elevations, form.trail_breaks || []);
         if (elevGain > 0) {
           recalculatedElevationGainM = Math.round(elevGain);
         }
@@ -1069,6 +1074,8 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
               <TrailPathMapEditor
                 trailPath={form.trail_path}
                 onChange={path => set('trail_path', path)}
+                trailBreaks={form.trail_breaks || []}
+                onBreaksChange={breaks => set('trail_breaks', breaks)}
                 waypoints={form.waypoints || []}
               />
             </div>
