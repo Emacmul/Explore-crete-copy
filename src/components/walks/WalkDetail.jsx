@@ -6,7 +6,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   X, Clock, Route, TrendingUp, MapPin, AlertTriangle,
   Eye, Droplets, TreePine, Navigation, Crosshair, ShieldAlert,
-  CheckCircle2, Circle, RotateCcw
+  CheckCircle2, Circle, RotateCcw, Mountain
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import WalkDetailMap from '../map/WalkDetailMap';
@@ -185,6 +185,12 @@ export default function WalkDetail({ walk, onClose }) {
     reachedIds.has(waypointKey(wp, index)) ? index : last
   ), -1);
 
+  // Highest point on the route — shown in the header for walk/hike tours so walkers with
+  // blood-pressure or altitude concerns can judge the route before they set off.
+  const maxElevation = isDrivingTour ? null
+    : waypoints.reduce((max, wp) => (wp.elevation != null && wp.elevation > max ? wp.elevation : max), -Infinity);
+  const hasMaxElevation = !isDrivingTour && maxElevation !== -Infinity && maxElevation > 0;
+
   return (
     <AnimatePresence>
       <motion.div
@@ -249,9 +255,16 @@ export default function WalkDetail({ walk, onClose }) {
             )}
 
             {walk.elevation_gain_m && (
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5" title="Total ascent">
                 <TrendingUp className="w-4 h-4" />
                 <span>{walk.elevation_gain_m}m</span>
+              </div>
+            )}
+
+            {hasMaxElevation && (
+              <div className="flex items-center gap-1.5" title="Highest point on this route">
+                <Mountain className="w-4 h-4" />
+                <span>Max {Math.round(maxElevation)}m</span>
               </div>
             )}
           </div>
@@ -405,6 +418,12 @@ export default function WalkDetail({ walk, onClose }) {
                               <Badge variant="outline" className="text-xs capitalize">
                                 {displayLabel}
                               </Badge>
+                            )}
+
+                            {!isDrivingTour && waypoint.elevation != null && (
+                              <span className="inline-flex items-center gap-0.5 text-xs font-medium text-slate-600 bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5">
+                                <TrendingUp className="w-3 h-3" /> {Math.round(waypoint.elevation)}m
+                              </span>
                             )}
 
                             {isLastReached && (

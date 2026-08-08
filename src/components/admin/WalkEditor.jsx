@@ -365,11 +365,14 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
           if (!hasRealElevation && trailPath.length > 0) {
             elevations = await fetchElevations(trailPath);
           }
-          // Fetch waypoint elevations if any are missing
+          // Fetch waypoint elevations if any are missing. A 0 from the elevation service is a
+          // real sea-level reading, not a Garmin placeholder (that concern only applies to the
+          // embedded <ele> tag checked above) — so save it, otherwise coastal walks end up with
+          // no elevation shown to walkers at all.
           if (waypointsMissingEle.length > 0) {
             const wpElevs = await fetchElevations(waypointsMissingEle);
             waypointsMissingEle.forEach((wp, i) => {
-              if (wpElevs[i] != null && wpElevs[i] !== 0) wp.elevation = Math.round(wpElevs[i]);
+              if (wpElevs[i] != null) wp.elevation = Math.round(wpElevs[i]);
             });
           }
         } catch (err) {
