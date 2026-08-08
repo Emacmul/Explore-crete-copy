@@ -50,14 +50,12 @@
 import Admin from './pages/Admin';
 import Home from './pages/Home';
 import MyWalks from './pages/MyWalks';
-import MyRecordedWalks from './pages/MyRecordedWalks';
 
 
 export const PAGES = {
     "Admin": Admin,
     "Home": Home,
     "MyWalks": MyWalks,
-    "MyRecordedWalks": MyRecordedWalks,
 }
 
 export const pagesConfig = {

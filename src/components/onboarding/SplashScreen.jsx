@@ -1,18 +1,16 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { base44 } from '@/api/base44Client';
 
 const SPLASH_IMAGE = 'https://media.base44.com/images/public/69a7d073cd7cd9b51cfe0fd0/40f0351cc_Walkingappsplashacreen.jpg';
 
 export default function SplashScreen({ onDone }) {
   const [visible, setVisible] = useState(true);
 
-  const handleEnter = async () => {
-    const isAuth = await base44.auth.isAuthenticated();
-    if (!isAuth) {
-      base44.auth.redirectToLogin();
-      return;
-    }
+  // By the time this screen can render, App.jsx has already confirmed the user is logged in via
+  // the WordPress-based auth system — there's nothing left to check here. This used to check
+  // Base44's own separate native login instead, which customers never actually have a session
+  // in, so it was incorrectly sending real customers off to Base44's own generic login page.
+  const handleEnter = () => {
     setVisible(false);
     setTimeout(() => {
       onDone();

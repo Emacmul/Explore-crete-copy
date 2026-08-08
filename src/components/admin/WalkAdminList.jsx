@@ -1,11 +1,8 @@
 import React from 'react';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Plus, Pencil, Trash2, Mountain, Loader2, Ticket, MapPin, Mail, CheckCircle2, ChevronDown } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
-import { TOUR_CATEGORIES, getTourCategory } from '@/lib/tourCategories';
+import { Trash2, Mountain, Loader2, MapPin, Pencil, CalendarCheck, AlertTriangle, RefreshCw } from 'lucide-react';
+import { toast } from '@/components/ui/use-toast';
 
 const difficultyColors = {
   easy: 'bg-green-900 text-green-300',
@@ -14,18 +11,30 @@ const difficultyColors = {
   difficult: 'bg-red-900 text-red-300',
 };
 
-export default function WalkAdminList({ walks, isLoading, onNew, onEdit, onDelete, onVouchers }) {
+const CHECK_INTERVAL_DAYS = 365;
+
+const formatDate = (isoString) => {
+  if (!isoString) return null;
+  try {
+    return new Date(isoString).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  } catch {
+    return null;
+  }
+};
+
+const daysSince = (isoString) => {
+  if (!isoString) return null;
+  const then = new Date(isoString).getTime();
+  if (isNaN(then)) return null;
+  return Math.floor((Date.now() - then) / (1000 * 60 * 60 * 24));
+};
+
+export default function WalkAdminList({ walks, isLoading, onEdit, onDelete, onMarkChecked, onToggleFree, onRefresh, userRole = 'admin' }) {
   const [confirmDelete, setConfirmDelete] = React.useState(null); // holds the walk object
   const [isDeleting, setIsDeleting] = React.useState(false);
-  const [sendingEmail, setSendingEmail] = React.useState(null);
-  const [emailSent, setEmailSent] = React.useState({});
-
-  const handleSendEmail = async (walk) => {
-    setSendingEmail(walk.id);
-    const res = await base44.functions.invoke('sendNewWalkEmail', { walkId: walk.id });
-    setSendingEmail(null);
-    setEmailSent(prev => ({ ...prev, [walk.id]: res.data?.sent || 0 }));
-  };
+  const [markingChecked, setMarkingChecked] = React.useState(null); // walk id currently being marked
+  const [togglingFree, setTogglingFree] = React.useState(null); // walk id currently being toggled
+  const isAdmin = userRole === 'admin';
 
   const handleDelete = (walk) => {
     setConfirmDelete(walk);
@@ -37,35 +46,68 @@ export default function WalkAdminList({ walks, isLoading, onNew, onEdit, onDelet
     setIsDeleting(true);
     try {
       await onDelete(id);
+      setConfirmDelete(null);
     } catch (e) {
       console.error('Delete failed:', e);
+      toast({
+        variant: 'destructive',
+        title: 'Delete failed — nothing was removed',
+        description: e?.message || 'An unexpected error occurred while deleting. Please try again.',
+      });
     }
     setIsDeleting(false);
-    setConfirmDelete(null);
+  };
+
+  const handleToggleFree = async (e, walk) => {
+    e.stopPropagation();
+    setTogglingFree(walk.id);
+    try {
+      await onToggleFree(walk.id, !walk.is_sample_walk);
+    } catch (err) {
+      console.error('Toggle Free/Paid failed:', err);
+      toast({
+        variant: 'destructive',
+        title: 'Could not change Free/Paid',
+        description: err?.message || 'An unexpected error occurred. Please try again.',
+      });
+    }
+    setTogglingFree(null);
+  };
+
+  const handleMarkChecked = async (e, walkId) => {
+    e.stopPropagation();
+    setMarkingChecked(walkId);
+    try {
+      await onMarkChecked(walkId);
+    } catch (err) {
+      console.error('Mark checked failed:', err);
+      toast({
+        variant: 'destructive',
+        title: 'Could not save the check',
+        description: err?.message || 'An unexpected error occurred. Please try again.',
+      });
+    }
+    setMarkingChecked(null);
   };
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6 mt-2">
+      <div className="mb-6 mt-2 flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-white">Tours</h2>
           <p className="text-slate-400 text-sm">{walks.length} tours in database</p>
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button className="bg-amber-500 hover:bg-amber-600 text-white gap-2">
-              <Plus className="w-4 h-4" /> Add New Tour <ChevronDown className="w-3.5 h-3.5" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {TOUR_CATEGORIES.map(cat => (
-              <DropdownMenuItem key={cat.code} onClick={() => onNew(cat.code)} className="gap-2">
-                <span className="font-mono text-xs font-bold bg-slate-100 px-1.5 py-0.5 rounded">{cat.code}</span>
-                {cat.label}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {onRefresh && (
+          <button
+            onClick={onRefresh}
+            disabled={isLoading}
+            title="Reload the list from the server, to check what's actually saved"
+            className="flex items-center gap-2 text-sm text-white font-semibold bg-blue-600 hover:bg-blue-500 border border-blue-400 rounded-lg px-3 py-1.5 transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        )}
       </div>
 
       {isLoading ? (
@@ -76,16 +118,28 @@ export default function WalkAdminList({ walks, isLoading, onNew, onEdit, onDelet
         <div className="text-center py-16 text-slate-500">
           <Mountain className="w-16 h-16 mx-auto mb-4 opacity-30" />
           <p className="text-lg font-medium">No walks yet</p>
-          <p className="text-sm">Click "Add New Walk" to create the first trail</p>
+          <p className="text-sm">Go to Start → New Tour to create the first one</p>
         </div>
       ) : (
         <div className="space-y-3">
-          {walks.map(walk => (
+          {walks.map(walk => {
+            const importDate = formatDate(walk.created_date);
+            const lastCheckedDate = walk.announced_at || walk.created_date;
+            const daysOverdue = daysSince(lastCheckedDate);
+            const needsCheck = daysOverdue !== null && daysOverdue > CHECK_INTERVAL_DAYS;
+            return (
             <div key={walk.id} className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
-              {/* Main row — click anywhere to edit */}
+              {needsCheck && (
+                <div className="flex items-center gap-2 bg-red-900/30 border-b border-red-700/50 px-4 py-1.5 text-xs text-red-300">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  Not checked for accuracy in over a year{walk.announced_at ? ` (last checked ${formatDate(walk.announced_at)})` : ' (never checked since import)'} — please verify on the ground
+                </div>
+              )}
+              <div className="flex items-center">
+              {/* Main content — click anywhere here to edit */}
               <button
                 onClick={() => onEdit(walk)}
-                className="w-full text-left px-4 py-4 flex items-center gap-4 hover:bg-slate-700/60 transition-colors group"
+                className="flex-1 min-w-0 text-left px-4 py-4 flex items-center gap-4 hover:bg-slate-700/60 transition-colors group"
               >
                 <span className="font-mono text-sm bg-slate-700 text-amber-300 px-3 py-1 rounded font-bold shrink-0">
                   {walk.code}
@@ -96,7 +150,7 @@ export default function WalkAdminList({ walks, isLoading, onNew, onEdit, onDelet
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <p className="font-semibold text-white truncate">{walk.name}</p>
-                    <span className="text-xs text-amber-400 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                    <span className="text-xs text-amber-400 flex items-center gap-1 shrink-0">
                       <Pencil className="w-3 h-3" /> Edit
                     </span>
                   </div>
@@ -112,56 +166,51 @@ export default function WalkAdminList({ walks, isLoading, onNew, onEdit, onDelet
                       <MapPin className="w-3 h-3" />
                       {(walk.waypoints || []).length} key points
                     </span>
+                    {importDate && <span className="text-xs text-slate-500">Imported {importDate}</span>}
+                    {walk.announced_at && <span className="text-xs text-slate-500">· Checked {formatDate(walk.announced_at)}</span>}
                   </div>
                 </div>
-                <Pencil className="w-4 h-4 text-slate-500 group-hover:text-amber-400 transition-colors shrink-0" />
               </button>
 
-              {/* Action strip */}
-              <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-t border-slate-700 bg-slate-900/30">
-                <Button
-                  size="sm"
-                  onClick={() => onEdit(walk)}
-                  className="bg-amber-500 hover:bg-amber-600 text-white gap-1.5 text-xs h-7"
+              {/* Free/Paid — admin only. Marks the walk as a free sample available to everyone
+                  (e.g. a free walk given away over Christmas) vs. its normal paid status. */}
+              {isAdmin && (
+                <button
+                  onClick={(e) => handleToggleFree(e, walk)}
+                  disabled={togglingFree === walk.id}
+                  title={walk.is_sample_walk ? 'Free for everyone — click to make it Paid again' : 'Paid — click to make it Free for everyone'}
+                  className={`shrink-0 px-2.5 py-1.5 mr-1 rounded-full text-xs font-semibold transition-colors ${
+                    walk.is_sample_walk ? 'bg-emerald-600 text-white hover:bg-emerald-500' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                  }`}
                 >
-                  <Pencil className="w-3 h-3" /> Edit Tour
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onVouchers(walk)}
-                  className="text-amber-400 hover:text-amber-300 hover:bg-slate-700 gap-1.5 text-xs h-7"
-                >
-                  <Ticket className="w-3 h-3" /> Vouchers
-                </Button>
-                {emailSent[walk.id] != null ? (
-                  <span className="flex items-center gap-1 text-xs text-green-400 px-2">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Sent to {emailSent[walk.id]} members
-                  </span>
-                ) : (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleSendEmail(walk)}
-                    disabled={sendingEmail === walk.id}
-                    className="text-blue-400 hover:text-blue-300 hover:bg-slate-700 gap-1.5 text-xs h-7"
-                  >
-                    {sendingEmail === walk.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
-                    {sendingEmail === walk.id ? 'Sending…' : 'Email all members'}
-                  </Button>
-                )}
-                <div className="flex-1" />
-                <Button
-                  variant="ghost"
-                  size="sm"
+                  {togglingFree === walk.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : (walk.is_sample_walk ? 'Free' : 'Paid')}
+                </button>
+              )}
+
+              {/* Was Checked — confirms the route is still accurate on the ground, resets the 1-year clock */}
+              <button
+                onClick={(e) => handleMarkChecked(e, walk.id)}
+                disabled={markingChecked === walk.id}
+                title="Mark as checked for accuracy today"
+                className={`shrink-0 p-4 transition-colors ${needsCheck ? 'text-red-400 hover:text-green-400' : 'text-slate-500 hover:text-green-400'}`}
+              >
+                {markingChecked === walk.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <CalendarCheck className="w-4 h-4" />}
+              </button>
+
+              {/* Delete — admin only, replaces the old edit-pencil spot */}
+              {isAdmin && (
+                <button
                   onClick={() => handleDelete(walk)}
-                  className="h-7 text-xs gap-1.5 text-red-400 border border-red-700/50 hover:bg-red-900/40"
+                  title="Delete tour"
+                  className="shrink-0 p-4 text-slate-500 hover:text-red-400 transition-colors"
                 >
-                  <Trash2 className="w-3 h-3" /> Delete Tour
-                </Button>
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

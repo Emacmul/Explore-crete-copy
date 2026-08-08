@@ -3,7 +3,7 @@ import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Loader2, MapPin, Mail, CheckCircle2, Eye, EyeOff } from 'lucide-react';
+import { Loader2, Mail, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export default function RegistrationForm({ user, onComplete }) {
@@ -15,7 +15,6 @@ export default function RegistrationForm({ user, onComplete }) {
     newsletter_opted_in: true,
     password: '',
     confirm_password: '',
-    membership_code: '',
   });
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
@@ -55,21 +54,6 @@ export default function RegistrationForm({ user, onComplete }) {
 
     setSaving(true);
 
-    // If a membership code was provided, verify it
-    let is_member = false;
-    let membership_code = null;
-    if (form.membership_code.trim()) {
-      const res = await base44.functions.invoke('verifyMembershipKey', { membershipKey: form.membership_code.trim() });
-      if (res.data?.valid) {
-        is_member = true;
-        membership_code = form.membership_code.trim().toUpperCase();
-      } else {
-        setErrors(prev => ({ ...prev, membership_code: 'Invalid membership code — please check and try again' }));
-        setSaving(false);
-        return;
-      }
-    }
-
     // Check if an AppUser record already exists for this user
     const existing = await base44.entities.AppUser.filter({ user_id: user.id });
     const payload = {
@@ -82,8 +66,7 @@ export default function RegistrationForm({ user, onComplete }) {
       newsletter_opted_in: form.newsletter_opted_in,
       password: form.password,
       registration_complete: true,
-      is_member,
-      membership_code,
+      is_member: false,
     };
 
     if (existing.length > 0) {
@@ -106,9 +89,9 @@ export default function RegistrationForm({ user, onComplete }) {
         {/* Header */}
         <div className="text-center mb-8">
           <div className="w-16 h-16 bg-white/15 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-white/20">
-            <MapPin className="w-8 h-8 text-amber-400" />
+            <img src="/explore-crete-logo.png" alt="Explore Crete" className="w-10 h-10 object-contain" />
           </div>
-          <h1 className="text-2xl font-bold text-white mb-1">Welcome to Crete Walking Trails</h1>
+          <h1 className="text-2xl font-bold text-white mb-1">Welcome to Explore Crete</h1>
           <p className="text-blue-300 text-sm">Create your account to get started</p>
         </div>
 
@@ -225,21 +208,6 @@ export default function RegistrationForm({ user, onComplete }) {
               </button>
             </div>
             {errors.confirm_password && <p className="text-red-400 text-xs mt-1">{errors.confirm_password}</p>}
-          </div>
-
-          {/* Membership code (optional) */}
-          <div>
-            <Label className="text-blue-100 text-sm mb-1.5 block">
-              Membership Code <span className="text-blue-400 font-normal">(optional)</span>
-            </Label>
-            <Input
-              value={form.membership_code}
-              onChange={e => set('membership_code', e.target.value)}
-              placeholder="Enter your membership key"
-              className="bg-white/10 border-white/20 text-white placeholder:text-blue-300/60 font-mono uppercase"
-            />
-            {errors.membership_code && <p className="text-red-400 text-xs mt-1">{errors.membership_code}</p>}
-            <p className="text-blue-400 text-xs mt-1">Enter the key from your WooCommerce order to activate your membership.</p>
           </div>
 
           {/* Divider */}

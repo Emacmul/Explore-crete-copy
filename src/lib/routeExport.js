@@ -6,6 +6,8 @@
  * edits the route twice.
  */
 
+import { getWaypointImages } from './waypointImages';
+
 export const WAYPOINT_ROLE_COLOURS = {
   primary_start: '#22c55e',
   primary_stop: '#ef4444',
@@ -279,6 +281,82 @@ export function generateGpx(walk) {
         lines.push(`      <mc:bearingDirection>${Number(wp.bearing_direction) || 0}</mc:bearingDirection>`);
         lines.push(`      <mc:bearingTolerance>${Number(wp.bearing_tolerance) || 30}</mc:bearingTolerance>`);
       }
+    }
+    lines.push('    </extensions>');
+
+    lines.push('  </wpt>');
+  }
+
+  lines.push('</gpx>');
+  return lines.join('\n');
+}
+
+/**
+ * Generate a GPX file for a plain Walk/Hike tour (as opposed to a driving audio
+ * tour — see generateGpx above). Used by the "Save and Download GPX" button in
+ * the waypoint editor so an admin/narrator can keep a local backup of the full
+ * amended route (track line + every waypoint's name, description, type, photo).
+ *
+ * <name> on each <wpt> is set to the waypoint's segment_id (e.g. "MXR3") because
+ * that's what the existing GPX import matches on when re-importing a file — the
+ * admin's own free-text name/description/type are also written into <mc:...>
+ * extension tags so no data is lost even though today's importer doesn't yet
+ * read them back in.
+ */
+export function generateWalkGpx(walk) {
+  const tourName = walk.name || 'Walk / Hike';
+  const description = walk.description || '';
+  const trailPath = walk.trail_path || [];
+  const waypoints = walk.waypoints || [];
+
+  const lines = [];
+  lines.push('<?xml version="1.0" encoding="UTF-8"?>');
+  lines.push('<gpx version="1.1" creator="Magical Crete Route Editor"');
+  lines.push('  xmlns="http://www.topografix.com/GPX/1/1"');
+  lines.push('  xmlns:mc="https://magicalcrete.com/gpx/extensions">');
+
+  // Metadata
+  lines.push('  <metadata>');
+  lines.push(`    <name>${xmlEscape(tourName)}</name>`);
+  if (description) {
+    lines.push(`    <desc>${xmlEscape(description)}</desc>`);
+  }
+  lines.push('  </metadata>');
+
+  // Route track from trail_path
+  if (trailPath.length > 0) {
+    lines.push('  <trk>');
+    lines.push(`    <name>${xmlEscape(tourName)}</name>`);
+    lines.push('    <trkseg>');
+    for (const pt of trailPath) {
+      const ele = pt.elevation != null ? `\n        <ele>${pt.elevation}</ele>` : '';
+      lines.push(`      <trkpt lat="${pt.lat}" lon="${pt.lng}">${ele}`);
+      lines.push('      </trkpt>');
+    }
+    lines.push('    </trkseg>');
+    lines.push('  </trk>');
+  }
+
+  // Waypoints
+  for (const wp of waypoints) {
+    const ele = wp.elevation != null ? `\n    <ele>${wp.elevation}</ele>` : '';
+    const wptName = wp.segment_id || wp.name || 'Waypoint';
+
+    lines.push(`  <wpt lat="${wp.lat}" lon="${wp.lng}">${ele}`);
+    lines.push(`    <name>${xmlEscape(wptName)}</name>`);
+    if (wp.description) {
+      lines.push(`    <desc>${xmlEscape(wp.description)}</desc>`);
+    }
+
+    lines.push('    <extensions>');
+    if (wp.type) {
+      lines.push(`      <mc:type>${xmlEscape(wp.type)}</mc:type>`);
+    }
+    if (wp.name) {
+      lines.push(`      <mc:label>${xmlEscape(wp.name)}</mc:label>`);
+    }
+    for (const url of getWaypointImages(wp)) {
+      lines.push(`      <mc:imageUrl>${xmlEscape(url)}</mc:imageUrl>`);
     }
     lines.push('    </extensions>');
 

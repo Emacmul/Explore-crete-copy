@@ -5,14 +5,17 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   X, Clock, Route, TrendingUp, MapPin, AlertTriangle,
-  Eye, Droplets, TreePine, Navigation, Crosshair, ShieldAlert
+  Eye, Droplets, TreePine, Navigation, Crosshair, ShieldAlert,
+  CheckCircle2, Circle, RotateCcw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import WalkDetailMap from '../map/WalkDetailMap';
 import DownloadWalkButton from '../offline/DownloadWalkButton';
+import DownloadButton from './DownloadButton';
 import WalkProgressBar from './WalkProgressBar';
 import DrivingModeNotice from './DrivingModeNotice';
 import DrivingTourPlayer from './DrivingTourPlayer';
+import { getWaypointImages } from '@/lib/waypointImages';
 
 const difficultyColors = {
   easy: 'bg-green-100 text-green-700',
@@ -37,20 +40,150 @@ const waypointIcons = {
   abandoned_settlement: { icon: MapPin, color: 'text-slate-600', bg: 'bg-slate-100' },
 };
 
+// Haversine distance between two {lat,lng} points in km — used only to auto-detect when the
+// walker's GPS position comes close to a waypoint, so it can be ticked off automatically.
+function haversineKm(a, b) {
+  const R = 6371;
+  const dLat = (b.lat - a.lat) * Math.PI / 180;
+  const dLon = (b.lng - a.lng) * Math.PI / 180;
+  const s = Math.sin(dLat / 2) ** 2 +
+    Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) *
+    Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
+}
+
+const REACHED_PROXIMITY_KM = 0.06; // ~60m — close enough to count as "you were here"
+
+function reachedStorageKey(walkId) {
+  return `explore_crete_reached__${walkId}`;
+}
+
+// A stable per-waypoint key for tracking "reached" state. Waypoints don't carry their own id
+// field, only a segment_id (e.g. "MXR14"), so fall back to position in the list if that's ever
+// missing rather than breaking the whole feature.
+function waypointKey(waypoint, index) {
+  return waypoint.segment_id || `idx-${index}`;
+}
+
+// If a walker's last tick on this walk was longer ago than this, treat it as a new attempt and
+// start with a clean slate rather than resuming old progress — many walkers (flower enthusiasts
+// especially, per Anoushka) repeat the same walk several times a month and each time is a fresh
+// go, not a continuation. Set generously long (18h) so a single long day-hike, or briefly
+// backgrounding the app for a phone call, never gets mistaken for "a different day".
+const REACHED_STALE_MS = 18 * 60 * 60 * 1000;
+
 export default function WalkDetail({ walk, onClose }) {
   const [followGps, setFollowGps] = React.useState(false);
 
-  if (!walk) return null;
-
-  const isDrivingTour = walk.route_type === 'driving_audio_tour';
+  const isDrivingTour = walk?.route_type === 'driving_audio_tour';
 
   // For driving tours, only show primary_start (the -PS segment-start points) to users.
   // Secondary waypoints are used internally for audio triggering only and are never
   // exposed in the user-facing UI. The route line still follows the full waypoint
   // sequence via trail_path.
   const waypoints = isDrivingTour
-    ? (walk.waypoints || []).filter(wp => wp.waypoint_role === 'primary_start')
-    : (walk.waypoints || []);
+    ? (walk?.waypoints || []).filter(wp => wp.waypoint_role === 'primary_start')
+    : (walk?.waypoints || []);
+
+  // Reached-waypoint tracking (Walk/Hike only) — lets a walker tick off each point as they pass
+  // it, so on a long route (some have 50-60 waypoints) they can always find their way back to
+  // the last point they recognise if they lose the trail. Saved to this device so it survives
+  // closing and reopening the app mid-walk. Not used for driving tours, which navigate by audio
+  // instead.
+  const [reachedIds, setReachedIds] = React.useState(() => {
+    if (!walk?.id) return new Set();
+    try {
+      const raw = localStorage.getItem(reachedStorageKey(walk.id));
+      if (!raw) return new Set();
+      const saved = JSON.parse(raw);
+      // Old format was a plain array with no timestamp — treat that as fresh rather than
+      // discarding it, since we can't tell its age.
+      if (Array.isArray(saved)) return new Set(saved);
+      if (saved && Array.isArray(saved.ids)) {
+        const age = Date.now() - (saved.updatedAt || 0);
+        if (age > REACHED_STALE_MS) {
+          localStorage.removeItem(reachedStorageKey(walk.id));
+          return new Set();
+        }
+        return new Set(saved.ids);
+      }
+      return new Set();
+    } catch (err) {
+      return new Set();
+    }
+  });
+
+  const persistReached = React.useCallback((nextSet) => {
+    if (!walk?.id) return;
+    try {
+      localStorage.setItem(
+        reachedStorageKey(walk.id),
+        JSON.stringify({ ids: Array.from(nextSet), updatedAt: Date.now() })
+      );
+    } catch (err) {
+      // Storage full or unavailable — not fatal, the walker just loses the saved tick-marks
+      // if they close the app, ticking still works for the rest of this session.
+    }
+  }, [walk?.id]);
+
+  const toggleReached = (key) => {
+    setReachedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      persistReached(next);
+      return next;
+    });
+  };
+
+  const resetProgress = () => {
+    setReachedIds(new Set());
+    persistReached(new Set());
+  };
+
+  // Automatically tick off any waypoint the walker's GPS passes close to. This only adds
+  // ticks, never removes one — if GPS is unreliable in the mountains (as it often is on
+  // Crete) the walker's own manual taps always take priority and are never overridden.
+  React.useEffect(() => {
+    if (!walk?.id || isDrivingTour) return;
+    if (!navigator.geolocation) return;
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const userPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setReachedIds(prev => {
+          let changed = false;
+          const next = new Set(prev);
+          waypoints.forEach((wp, index) => {
+            if (wp.lat == null || wp.lng == null) return;
+            const key = waypointKey(wp, index);
+            if (next.has(key)) return;
+            if (haversineKm({ lat: wp.lat, lng: wp.lng }, userPos) <= REACHED_PROXIMITY_KM) {
+              next.add(key);
+              changed = true;
+            }
+          });
+          if (changed) {
+            persistReached(next);
+            return next;
+          }
+          return prev;
+        });
+      },
+      () => { /* GPS unavailable — manual ticking still works fine without it */ },
+      { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 }
+    );
+
+    return () => navigator.geolocation.clearWatch(watchId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [walk?.id, isDrivingTour]);
+
+  if (!walk) return null;
+
+  // The furthest-along waypoint reached so far, so it can be highlighted distinctly — this is
+  // the point a lost walker is most likely to recognise and be able to navigate back to.
+  const lastReachedIndex = waypoints.reduce((last, wp, index) => (
+    reachedIds.has(waypointKey(wp, index)) ? index : last
+  ), -1);
 
   return (
     <AnimatePresence>
@@ -134,8 +267,11 @@ export default function WalkDetail({ walk, onClose }) {
               <DrivingTourPlayer walk={walk} />
             )}
 
-            <div className="flex items-center justify-between">
-              <DownloadWalkButton walk={walk} />
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                <DownloadButton walk={walk} />
+                <DownloadWalkButton walk={walk} />
+              </div>
 
               {followGps && (
                 <span className="text-xs text-blue-600 font-medium flex items-center gap-1">
@@ -185,9 +321,25 @@ export default function WalkDetail({ walk, onClose }) {
 
             {waypoints.length > 0 && (
               <div>
-                <h3 className="font-semibold text-gray-900 mb-3">
-                  {isDrivingTour ? 'Tour Stops' : 'Key Points'}
-                </h3>
+                <div className="flex items-center justify-between mb-1">
+                  <h3 className="font-semibold text-gray-900">
+                    {isDrivingTour ? 'Tour Stops' : 'Key Points'}
+                  </h3>
+                  {!isDrivingTour && reachedIds.size > 0 && (
+                    <button
+                      onClick={resetProgress}
+                      className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600"
+                    >
+                      <RotateCcw className="w-3 h-3" /> Reset progress
+                    </button>
+                  )}
+                </div>
+                {!isDrivingTour && (
+                  <p className="text-xs text-gray-500 mb-3">
+                    Tap the circle as you pass each point — if you lose the trail, you'll always
+                    be able to see the last point you recognised.
+                  </p>
+                )}
 
                 <div className="space-y-2">
                   {waypoints.map((waypoint, index) => {
@@ -202,8 +354,14 @@ export default function WalkDetail({ walk, onClose }) {
                     const displayIcon = roleConfig ? roleConfig.icon : Icon;
                     const displayBg = roleConfig ? roleConfig.bg : config.bg;
                     const displayColor = roleConfig ? roleConfig.color : config.color;
-                    const displayName = isDrivingTour ? (waypoint.segment_title || waypoint.name) : waypoint.name;
+                    const displayName = isDrivingTour
+                      ? (waypoint.segment_title || waypoint.name)
+                      : (waypoint.segment_id && waypoint.name ? `${waypoint.segment_id} — ${waypoint.name}` : (waypoint.segment_id || waypoint.name));
                     const displayLabel = roleConfig ? roleConfig.label : (waypoint.type ? waypoint.type.replace('_', ' ') : null);
+
+                    const key = waypointKey(waypoint, index);
+                    const isReached = !isDrivingTour && reachedIds.has(key);
+                    const isLastReached = !isDrivingTour && index === lastReachedIndex;
 
                     return (
                       <motion.div
@@ -211,19 +369,35 @@ export default function WalkDetail({ walk, onClose }) {
                         initial={{ opacity: 0, x: -10 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: index * 0.05 }}
-                        className={`flex items-start gap-3 p-3 rounded-lg ${
-                          waypoint.type === 'danger'
+                        className={`flex items-start gap-3 p-3 rounded-lg transition-colors ${
+                          isLastReached
+                            ? 'bg-blue-50 border-2 border-blue-400'
+                            : isReached
+                            ? 'bg-gray-100 opacity-60'
+                            : waypoint.type === 'danger'
                             ? 'bg-red-50 border border-red-200'
                             : 'bg-gray-50'
                         }`}
                       >
+                        {!isDrivingTour && (
+                          <button
+                            onClick={() => toggleReached(key)}
+                            className="shrink-0 mt-2"
+                            title={isReached ? 'Mark as not reached' : 'Mark as reached'}
+                          >
+                            {isReached
+                              ? <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                              : <Circle className="w-5 h-5 text-gray-300" />}
+                          </button>
+                        )}
+
                         <div className={`p-2 rounded-lg ${displayBg}`}>
                           <displayIcon className={`w-4 h-4 ${displayColor}`} />
                         </div>
 
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-gray-900">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`font-medium ${isReached ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
                               {displayName}
                             </span>
 
@@ -231,6 +405,10 @@ export default function WalkDetail({ walk, onClose }) {
                               <Badge variant="outline" className="text-xs capitalize">
                                 {displayLabel}
                               </Badge>
+                            )}
+
+                            {isLastReached && (
+                              <Badge className="text-xs bg-blue-600 hover:bg-blue-600">You were last here</Badge>
                             )}
                           </div>
 
@@ -240,12 +418,17 @@ export default function WalkDetail({ walk, onClose }) {
                             </p>
                           )}
 
-                          {waypoint.image_url && (
-                            <img
-                              src={waypoint.image_url}
-                              alt={displayName}
-                              className="mt-2 w-full max-w-xs h-32 object-cover rounded-lg border"
-                            />
+                          {getWaypointImages(waypoint).length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {getWaypointImages(waypoint).map((url, i) => (
+                                <img
+                                  key={i}
+                                  src={url}
+                                  alt={displayName}
+                                  className="w-24 h-24 object-cover rounded-lg border"
+                                />
+                              ))}
+                            </div>
                           )}
                         </div>
                       </motion.div>

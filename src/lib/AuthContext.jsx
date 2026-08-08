@@ -29,51 +29,26 @@ export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
-  // Admin/narrator role, looked up from Base44's own Users table by email —
-  // see getUserRole. null = ordinary customer, no elevated access.
-  const [role, setRole] = useState(null);
-
-  // Looks up the current role for an email and updates state. Never throws —
-  // a lookup failure just means no elevated access, same as no role at all.
-  const refreshRole = async (email) => {
-    if (!email) { setRole(null); return null; }
-    try {
-      const response = await base44.functions.invoke('getUserRole', { email });
-      const fetchedRole = response.data?.role || null;
-      setRole(fetchedRole);
-      return fetchedRole;
-    } catch {
-      setRole(null);
-      return null;
-    }
-  };
 
   useEffect(() => {
-    const restore = async () => {
-      const storedToken = localStorage.getItem(TOKEN_KEY);
-      const storedUser = localStorage.getItem(USER_KEY);
+    const storedToken = localStorage.getItem(TOKEN_KEY);
+    const storedUser = localStorage.getItem(USER_KEY);
 
-      if (storedToken && isTokenValid(storedToken) && storedUser) {
-        try {
-          const userData = JSON.parse(storedUser);
-          setUser(userData);
-          setToken(storedToken);
-          setIsAuthenticated(true);
-          // Re-check role on every app load (not just at login) so a role
-          // change made in Base44's Users panel takes effect the next time
-          // the person opens the app, without needing to log in again.
-          await refreshRole(userData.email);
-        } catch {
-          localStorage.removeItem(TOKEN_KEY);
-          localStorage.removeItem(USER_KEY);
-        }
-      } else {
+    if (storedToken && isTokenValid(storedToken) && storedUser) {
+      try {
+        const userData = JSON.parse(storedUser);
+        setUser(userData);
+        setToken(storedToken);
+        setIsAuthenticated(true);
+      } catch {
         localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem(USER_KEY);
       }
-      setIsLoadingAuth(false);
-    };
-    restore();
+    } else {
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(USER_KEY);
+    }
+    setIsLoadingAuth(false);
   }, []);
 
   const login = async (email, password) => {
@@ -94,7 +69,6 @@ export const AuthProvider = ({ children }) => {
     setUser(userData);
     setToken(wpToken);
     setIsAuthenticated(true);
-    await refreshRole(userData.email);
 
     return userData;
   };
@@ -105,7 +79,6 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
     setToken(null);
     setIsAuthenticated(false);
-    setRole(null);
   };
 
   const syncLibrary = async () => {
@@ -120,9 +93,6 @@ export const AuthProvider = ({ children }) => {
       isAuthenticated,
       isLoadingAuth,
       token,
-      role,
-      isAdmin: role === 'admin',
-      isNarrator: role === 'narrator',
       login,
       logout,
       syncLibrary

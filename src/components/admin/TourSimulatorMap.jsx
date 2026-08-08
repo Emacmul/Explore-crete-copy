@@ -102,7 +102,7 @@ function handleIcon(colour) {
   });
 }
 
-export default function TourSimulatorMap({ trailPath, waypoints, allWaypoints, triggered, currentPos, currentBearing, isWalkingTour, onWaypointUpdate }) {
+export default function TourSimulatorMap({ trailPath, waypoints, triggered, currentPos, currentBearing, isWalkingTour, onWaypointUpdate }) {
   const center = trailPath.length > 0
     ? [trailPath[0].lat, trailPath[0].lng]
     : waypoints.length > 0
@@ -129,23 +129,16 @@ export default function TourSimulatorMap({ trailPath, waypoints, allWaypoints, t
         const hasAudio = wp.trigger_audio && wp.audio_clip_url;
         const colour = isTriggered ? '#22c55e' : (hasAudio ? '#a855f7' : getRoleColour(wp.waypoint_role));
         const emoji = isTriggered ? '✅' : (hasAudio ? '🔊' : '📍');
-        // 150m matches the Walk entity's schema default and the live tour
-        // player's fallback — must stay in sync with those (see TourSimulator.jsx).
-        const radius = Number(wp.trigger_radius_m) || 150;
+        const radius = Number(wp.trigger_radius_m) || 30;
         const bearingDir = Number(wp.bearing_direction) || 0;
         const canEdit = !!onWaypointUpdate;
-        // `waypoints` here may be a filtered subset of the tour's full waypoint
-        // list (entries missing lat/lng are dropped upstream), so its index `i`
-        // does not necessarily match the index onWaypointUpdate expects into the
-        // full, unfiltered waypoints array. Resolve the real index by identity.
-        const origIndex = allWaypoints ? allWaypoints.indexOf(wp) : i;
 
         const bearingTipPos = destinationPoint(wp.lat, wp.lng, bearingDir, radius);
         const bearingTailPos = destinationPoint(wp.lat, wp.lng, bearingDir + 180, radius);
         const radiusHandlePos = destinationPoint(wp.lat, wp.lng, bearingDir + 90, radius);
 
         return (
-          <React.Fragment key={i}>
+          <React.Fragment key={wp.segment_id || `${wp.lat},${wp.lng},${i}`}>
             <Marker position={[wp.lat, wp.lng]} icon={wpIcon(colour, emoji)} />
 
             {/* Pastel red radius circle — scales with zoom (uses metres) */}
@@ -176,11 +169,10 @@ export default function TourSimulatorMap({ trailPath, waypoints, allWaypoints, t
                   draggable={canEdit}
                   eventHandlers={canEdit ? {
                     dragend: (e) => {
-                      if (origIndex < 0) return;
                       const ll = e.target.getLatLng();
                       const newBearing = calculateBearing(wp.lat, wp.lng, ll.lat, ll.lng);
                       const normalized = Math.round(((newBearing % 360) + 360) % 360);
-                      onWaypointUpdate(origIndex, 'bearing_direction', normalized);
+                      onWaypointUpdate(i, 'bearing_direction', normalized);
                     },
                   } : undefined}
                 />
@@ -190,10 +182,9 @@ export default function TourSimulatorMap({ trailPath, waypoints, allWaypoints, t
                   draggable={canEdit}
                   eventHandlers={canEdit ? {
                     dragend: (e) => {
-                      if (origIndex < 0) return;
                       const ll = e.target.getLatLng();
                       const newRadius = haversine(wp.lat, wp.lng, ll.lat, ll.lng);
-                      onWaypointUpdate(origIndex, 'trigger_radius_m', Math.max(10, Math.round(newRadius)));
+                      onWaypointUpdate(i, 'trigger_radius_m', Math.max(10, Math.round(newRadius)));
                     },
                   } : undefined}
                 />

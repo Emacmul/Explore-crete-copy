@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Download, AlertTriangle, CheckCircle2, FileDown } from 'lucide-react';
 import { validateDrivingTour, generateGpx, generateKml, downloadTextFile } from '@/lib/routeExport';
@@ -11,22 +11,12 @@ import { validateDrivingTour, generateGpx, generateKml, downloadTextFile } from 
  */
 export default function DrivingTourExportPanel({ form }) {
   const [errors, setErrors] = useState([]);
-  const [hasValidated, setHasValidated] = useState(false);
 
   const runValidation = () => {
     const errs = validateDrivingTour(form);
     setErrors(errs);
-    setHasValidated(true);
     return errs;
   };
-
-  // Run validation automatically whenever the route data changes, so the
-  // "ready to export" message only ever reflects an actual, current check —
-  // it previously showed as valid by default before Export was ever clicked.
-  useEffect(() => {
-    runValidation();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form]);
 
   const handleExportGpx = () => {
     const errs = runValidation();
@@ -81,7 +71,7 @@ export default function DrivingTourExportPanel({ form }) {
         </div>
       )}
 
-      {hasValidated && isValid && (
+      {isValid && errors.length === 0 && (
         <div className="flex items-center gap-2 text-green-400 text-sm">
           <CheckCircle2 className="w-4 h-4" />
           Route validated — ready to export.

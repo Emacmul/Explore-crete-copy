@@ -6,8 +6,10 @@ import { LANGUAGES } from '@/lib/languages';
 import { base44 } from '@/api/base44Client';
 import { Upload, Loader2, Languages, FileText, ArrowRight } from 'lucide-react';
 import { extractTextFromFile } from '@/lib/fileTextExtractor';
+import { useNarratorApiKeys } from '@/lib/useNarratorApiKeys';
 
 export default function TranslationPanel({ onTranslated }) {
+  const { keys: apiKeys } = useNarratorApiKeys();
   const [importedText, setImportedText] = useState('');
   const [fileName, setFileName] = useState('');
   const [targetLanguage, setTargetLanguage] = useState('English');
@@ -45,12 +47,17 @@ export default function TranslationPanel({ onTranslated }) {
       setError('Import a file first.');
       return;
     }
+    if (!apiKeys.groq_api_key) {
+      setError('No Groq API key found for your account yet. Add your own key via "API Keys" in the header.');
+      return;
+    }
     setError('');
     setTranslating(true);
     try {
       const response = await base44.functions.invoke('translateScript', {
         text: importedText,
         target_language: targetLanguage,
+        apiKey: apiKeys.groq_api_key,
       });
       if (response.data?.translated_text) {
         onTranslated(response.data.translated_text);

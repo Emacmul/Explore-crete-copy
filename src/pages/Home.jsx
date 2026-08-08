@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
-import { Loader2, LogOut, MapPin, User, ShieldCheck, WifiOff, Footprints, Mic } from 'lucide-react';
+import { Loader2, LogOut, User, ShieldCheck, WifiOff } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { useAuth } from '@/lib/AuthContext';
@@ -15,46 +15,100 @@ import WalkDetail from '../components/walks/WalkDetail';
 import UpdateInProgressModal from '../components/offline/UpdateInProgressModal';
 import { isWalkOutdated, saveWalkOffline, preCacheWalkTiles } from '../components/offline/offlineStorage';
 import SplashScreen from '../components/onboarding/SplashScreen';
+import RegistrationForm from '../components/onboarding/RegistrationForm';
 import TourCategoryPicker from '../components/walks/TourCategoryPicker';
 import { getTourCategory } from '../lib/tourCategories';
-import NewWalkAnnouncementModal, { getUnseenAnnouncement } from '../components/walks/NewWalkAnnouncementModal';
+import InstallPrompt from '../components/InstallPrompt';
 
 export default function Home() {
-  // Auth is already handled once, app-wide, by AuthProvider/AuthContext (the
-  // WordPress login) — App.jsx only ever renders this page once that login
-  // has succeeded. Home used to also run its own separate, older login check
-  // here (base44.auth.*), which is what was silently bouncing WordPress users
-  // into the old, unrelated registration screen. That old check — and the
-  // registration screen it triggered — has been removed.
-  const { user, logout, isAdmin, isNarrator } = useAuth();
+  const { user, logout } = useAuth();
+  const [isLoading, setIsLoading] = useState(true);
   const [selectedWalk, setSelectedWalk] = useState(null);
   const [showDetail, setShowDetail] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [tapLocation, setTapLocation] = useState(null);
   const [updatingWalkName, setUpdatingWalkName] = useState(null);
   const [showSplash, setShowSplash] = useState(() => !sessionStorage.getItem('splash_seen'));
-  const [newWalkAnnouncement, setNewWalkAnnouncement] = useState(null);
+  const [registrationComplete, setRegistrationComplete] = useState(false);
   const [selectedTourCategory, setSelectedTourCategory] = useState(() => sessionStorage.getItem('tour_category'));
+  const [isStaff, setIsStaff] = useState(false); // admin or narrator — controls whether the Admin link shows at all
 
   const { getAllOfflineWalks } = useOfflineWalks();
   const offlineCount = getAllOfflineWalks().length;
   const updatingRef = useRef(false);
 
-  const { data: walks = [], isLoading: walksLoading } = useQuery({
+  useEffect(() => {
+    const checkRegistration = async () => {
+      try {
+        const appUsers = await base44.entities.AppUser.filter({ user_id: user.id });
+        let finalAppUser = appUsers[0] || null;
+
+        if (finalAppUser && finalAppUser.registration_complete) {
+          setRegistrationComplete(true);
+        } else if (finalAppUser) {
+          // AppUser record exists (matched by user_id) but was never marked complete (e.g.
+          // created before this fix) — WordPress registration already collected everything
+          // needed, so just mark it complete now instead of showing the old in-app form again.
+          await base44.entities.AppUser.update(finalAppUser.id, { registration_complete: true });
+          finalAppUser = { ...finalAppUser, registration_complete: true };
+          setRegistrationComplete(true);
+        } else {
+          // No record matched by user_id — but Enda may have already invited this person as an
+          // admin/narrator via the Users Manager, which creates their AppUser record ahead of
+          // time (with their role already set) but with no user_id yet, since they hadn't
+          // logged in. Check by email before assuming this is a brand new person — otherwise
+          // this would create a second, separate record with no role at all, silently locking
+          // a newly invited admin/narrator out of the Admin Panel.
+          const byEmail = await base44.entities.AppUser.filter({ email: (user.email || '').toLowerCase() });
+          const invited = byEmail.find(u => !u.user_id);
+
+          if (invited) {
+            await base44.entities.AppUser.update(invited.id, {
+              user_id: user.id,
+              registration_complete: true,
+            });
+            finalAppUser = { ...invited, user_id: user.id, registration_complete: true };
+          } else {
+            // Genuinely this person's first login after registering through WordPress. Create
+            // the record straight away, already complete, instead of asking them to re-enter
+            // information WordPress's registration form already collected a moment ago. Name is
+            // filled in on a best-effort basis from whatever WordPress provides
+            // (full_name/display_name) — never required, since the app itself doesn't collect
+            // it anymore.
+            const nameParts = (user.full_name || user.display_name || '').trim().split(/\s+/);
+            const created = await base44.entities.AppUser.create({
+              user_id: user.id,
+              email: user.email,
+              first_name: nameParts[0] || '',
+              last_name: nameParts.slice(1).join(' ') || '',
+              registration_complete: true,
+            });
+            finalAppUser = created;
+          }
+          setRegistrationComplete(true);
+        }
+
+        // This login is WordPress-based (see AuthContext.jsx) and carries no role field of its
+        // own — unlike Admin.jsx, which checks Base44's separate native login. The AppUser
+        // record's own `role` field is the only real source of truth here.
+        if (finalAppUser && (finalAppUser.role === 'admin' || finalAppUser.role === 'narrator')) {
+          setIsStaff(true);
+        }
+      } catch (error) {
+        console.error('Registration check error:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (user) checkRegistration();
+  }, [user]);
+
+  const { data: walks = [], isLoading: walksLoading, refetch: refetchWalks, isFetching: walksRefreshing } = useQuery({
     queryKey: ['walks'],
     queryFn: () => base44.entities.Walk.list(),
     enabled: !!user,
   });
-
-  useEffect(() => {
-    if (!walks.length) return;
-
-    const unseen = getUnseenAnnouncement(walks);
-
-    if (unseen) {
-      setNewWalkAnnouncement(unseen);
-    }
-  }, [walks]);
 
   useEffect(() => {
     if (!walks.length || updatingRef.current) return;
@@ -135,7 +189,27 @@ export default function Home() {
     ? accessibleWalks.filter(w => w.tour_category === selectedTourCategory)
     : accessibleWalks;
 
-  if (!showSplash && !selectedTourCategory) {
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-amber-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-10 h-10 animate-spin text-blue-600 mx-auto mb-4" />
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!registrationComplete && !showSplash) {
+    return (
+      <RegistrationForm
+        user={user}
+        onComplete={() => setRegistrationComplete(true)}
+      />
+    );
+  }
+
+  if (registrationComplete && !showSplash && !selectedTourCategory) {
     return (
       <TourCategoryPicker onSelect={handleCategorySelect} />
     );
@@ -152,24 +226,16 @@ export default function Home() {
         />
       )}
 
-      {newWalkAnnouncement && !showSplash && (
-        <NewWalkAnnouncementModal
-          walk={newWalkAnnouncement}
-          onDismiss={() => setNewWalkAnnouncement(null)}
-        />
-      )}
-
       <UpdateInProgressModal walkName={updatingWalkName} />
+      <InstallPrompt />
 
       <header className="bg-white/80 backdrop-blur-md border-b sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl flex items-center justify-center shadow-lg">
-              <MapPin className="w-5 h-5 text-white" />
-            </div>
+            <img src="/explore-crete-logo.png" alt="Explore Crete" className="w-10 h-10 rounded-xl shadow-lg object-contain" />
 
             <div>
-              <h1 className="font-bold text-gray-900">Crete Walking Trails</h1>
+              <h1 className="font-bold text-gray-900">Explore Crete</h1>
               <p className="text-xs text-gray-500">Discover the island's beauty</p>
             </div>
           </div>
@@ -187,15 +253,15 @@ export default function Home() {
                 onClick={handleChangeCategory}
                 className="gap-2 border-blue-300 text-blue-700 hover:bg-blue-50"
               >
-                <span className="font-mono text-xs font-bold">{selectedTourCategory}</span>
-                <span className="hidden sm:inline">Change</span>
+                <span className="sm:hidden">Change</span>
+                <span className="hidden sm:inline">Change tour type</span>
               </Button>
             )}
 
             <Link to={createPageUrl('MyWalks')}>
               <Button variant="outline" size="sm" className="gap-2 border-green-300 text-green-700 hover:bg-green-50 relative">
                 <WifiOff className="w-4 h-4" />
-                <span className="hidden sm:inline">My Walks</span>
+                <span className="hidden sm:inline">My Library</span>
 
                 {offlineCount > 0 && (
                   <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-green-500 text-white text-xs rounded-full flex items-center justify-center font-bold">
@@ -205,27 +271,11 @@ export default function Home() {
               </Button>
             </Link>
 
-            <Link to={createPageUrl('MyRecordedWalks')}>
-              <Button variant="outline" size="sm" className="gap-2 border-amber-300 text-amber-700 hover:bg-amber-50">
-                <Footprints className="w-4 h-4" />
-                <span className="hidden sm:inline">Recorded Walks</span>
-              </Button>
-            </Link>
-
-            {isAdmin && (
+            {isStaff && (
               <Link to={createPageUrl('Admin')}>
                 <Button variant="outline" size="sm" className="gap-2 border-amber-300 text-amber-600 hover:bg-amber-50">
                   <ShieldCheck className="w-4 h-4" />
                   <span className="hidden sm:inline">Admin</span>
-                </Button>
-              </Link>
-            )}
-
-            {isNarrator && (
-              <Link to={createPageUrl('Admin')}>
-                <Button variant="outline" size="sm" className="gap-2 border-purple-300 text-purple-700 hover:bg-purple-50">
-                  <Mic className="w-4 h-4" />
-                  <span className="hidden sm:inline">Narrator</span>
                 </Button>
               </Link>
             )}
@@ -252,6 +302,9 @@ export default function Home() {
               onWalkSelect={handleWalkSelect}
               searchQuery={searchQuery}
               onSearchChange={setSearchQuery}
+              onRefresh={refetchWalks}
+              refreshing={walksRefreshing}
+              tourCategoryCode={selectedTourCategory}
             />
           </div>
 

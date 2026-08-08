@@ -3,7 +3,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Mountain, Loader2, AlertCircle } from 'lucide-react';
+import { Loader2, AlertCircle } from 'lucide-react';
 
 export default function Login() {
   const { login } = useAuth();
@@ -30,10 +30,10 @@ export default function Login() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-white/10 backdrop-blur-sm mb-4">
-            <Mountain className="w-8 h-8 text-white" />
+            <img src="/explore-crete-logo.png" alt="Explore Crete" className="w-11 h-11 object-contain" />
           </div>
           <h1 className="text-2xl font-bold text-white">Explore Crete</h1>
-          <p className="text-teal-200 text-sm mt-1">Walking tours &amp; driving audio guides</p>
+          <p className="text-teal-200 text-sm mt-1">Walking, Hiking, WalkAbout, Driving</p>
         </div>
 
         <div className="bg-white rounded-2xl shadow-xl p-6 space-y-4">
@@ -91,7 +91,7 @@ export default function Login() {
           <div className="text-center pt-2 border-t">
             <p className="text-sm text-muted-foreground mb-1">Don't have an account?</p>
             <a
-              href="https://magicalcrete.com/my-account"
+              href="https://magicalcrete.com/wp-login.php?action=register"
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm text-teal-700 font-medium hover:underline"

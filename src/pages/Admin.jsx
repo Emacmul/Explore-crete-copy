@@ -1,53 +1,55 @@
 import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
-import { Loader2, LogOut, ShieldCheck, ArrowLeft, Mic } from 'lucide-react';
+import { Loader2, LogOut, ShieldCheck, ArrowLeft, Mic, KeyRound } from 'lucide-react';
 import { createPageUrl } from '@/utils';
 import { Link } from 'react-router-dom';
 import WalkEditor from '../components/admin/WalkEditor';
 import WalkAdminList from '../components/admin/WalkAdminList';
-import VoucherManager from '../components/admin/VoucherManager';
 import WalksDashboard from '../components/admin/WalksDashboard';
 import AdminStartScreen from '../components/admin/AdminStartScreen';
 import UsersManager from '../components/admin/UsersManager';
+import ApiKeysDialog from '../components/admin/ApiKeysDialog';
 import { getRouteTypeForCategory } from '@/lib/tourCategories';
 
 export default function Admin() {
-  // This is deliberately a SECOND, separate login from the teal WordPress
-  // one — Base44's own native login. The WordPress login (checked once,
-  // app-wide, in AuthContext) only establishes who's using the front end;
-  // it says nothing about backend access. Anyone who reaches this page
-  // (because Home.jsx showed them an Admin or Narrator button) still has to
-  // sign in again here with their actual Base44 account before the backend
-  // opens — base44.auth.isAuthenticated()/redirectToLogin() is exactly that
-  // second gate, and must stay separate from the WordPress one.
   const [user, setUser] = useState(null);
   const [userRole, setUserRole] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [editingWalk, setEditingWalk] = useState(null);
-  const [voucherWalk, setVoucherWalk] = useState(null);
   const [view, setView] = useState('start');
   const [focusWaypointIndex, setFocusWaypointIndex] = useState(null);
-  const queryClient = useQueryClient();
+  const [showApiKeysDialog, setShowApiKeysDialog] = useState(false);
+  const [walks, setWalks] = useState([]);
+  const [walksLoading, setWalksLoading] = useState(true);
 
   useEffect(() => {
     const checkAuth = async () => {
+      console.log('[Admin] checkAuth starting — this confirms the current code is actually running.');
       try {
         const isAuth = await base44.auth.isAuthenticated();
-        if (!isAuth) { base44.auth.redirectToLogin(window.location.href); return; }
+        console.log('[Admin] base44.auth.isAuthenticated() returned:', isAuth);
+        if (!isAuth) {
+          console.log('[Admin] Not authenticated via Base44 native auth — redirecting to Base44 login.');
+          base44.auth.redirectToLogin(window.location.href);
+          return;
+        }
 
         const userData = await base44.auth.me();
+        console.log('[Admin] base44.auth.me() returned:', userData);
 
-        // Role lives on the Base44 "User" record itself (Users panel in the
-        // Base44 dashboard) — admin, narrator, or plain user. Not admin or
-        // narrator means this Base44 account isn't authorized for the
-        // backend, even though it did successfully log in.
-        const role = (userData.role === 'admin' || userData.role === 'narrator')
-          ? userData.role
-          : null;
+        let role = null;
+        if (userData.role === 'admin') {
+          role = 'admin';
+        } else {
+          const appUsers = await base44.entities.AppUser.filter({ user_id: userData.id });
+          if (appUsers.length > 0 && (appUsers[0].role === 'narrator' || appUsers[0].role === 'admin')) {
+            role = appUsers[0].role;
+          }
+        }
 
         if (!role) {
+          console.log('[Admin] No admin/narrator role found for this login — sending to Home.', { isAuth, userData });
           window.location.href = createPageUrl('Home');
           return;
         }
@@ -56,9 +58,6 @@ export default function Admin() {
         setUserRole(role);
       } catch (error) {
         console.error('Auth check error:', error);
-        if (error?.status === 401 || error?.status === 403) {
-          base44.auth.redirectToLogin(window.location.href);
-        }
       } finally {
         setIsLoading(false);
       }
@@ -66,26 +65,71 @@ export default function Admin() {
     checkAuth();
   }, []);
 
-  const { data: walks = [], isLoading: walksLoading } = useQuery({
-    queryKey: ['walks'],
-    queryFn: () => base44.entities.Walk.list('-created_date'),
-    enabled: !!user,
-  });
+  // Load the walks list once. Every action below (save, delete, mark-checked) updates this local
+  // state directly and only in response to that specific action's own confirmed result — nothing
+  // reacts to background events from elsewhere, which removes any risk of a delayed or unrelated
+  // event changing what's on screen.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    base44.entities.Walk.list('-created_date').then((initial) => {
+      if (!cancelled) {
+        setWalks(initial || []);
+        setWalksLoading(false);
+      }
+    }).catch((err) => {
+      console.error('Failed to load walks:', err);
+      if (!cancelled) setWalksLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [user]);
+
+  const refreshWalks = async () => {
+    setWalksLoading(true);
+    try {
+      const fresh = await base44.entities.Walk.list('-created_date');
+      setWalks(fresh || []);
+    } catch (err) {
+      console.error('Failed to refresh walks:', err);
+    }
+    setWalksLoading(false);
+  };
 
   const handleSave = async (walkData) => {
+    let saved;
     if (walkData.id) {
-      await base44.entities.Walk.update(walkData.id, walkData);
+      saved = await base44.entities.Walk.update(walkData.id, walkData);
+      setWalks((prev) => prev.map(w => w.id === walkData.id ? { ...w, ...walkData, ...saved } : w));
     } else {
-      await base44.entities.Walk.create(walkData);
+      saved = await base44.entities.Walk.create(walkData);
+      setWalks((prev) => [{ ...walkData, ...saved }, ...prev]);
     }
-    queryClient.invalidateQueries({ queryKey: ['walks'] });
-    setEditingWalk(null);
-    setFocusWaypointIndex(null);
+    // Deliberately does NOT close the editor or reset focus here — Save persists changes and keeps
+    // the admin/narrator working; only clicking Back actually leaves the editing screen.
+    return saved;
   };
 
   const handleDelete = async (walkId) => {
-    await base44.entities.Walk.delete(walkId);
-    queryClient.invalidateQueries({ queryKey: ['walks'] });
+    const result = await base44.entities.Walk.delete(walkId);
+    if (result && result.success === false) {
+      throw new Error('The server did not confirm this delete.');
+    }
+    // Re-fetch the real list from the server rather than just removing this walk from what's
+    // on screen — that way what the admin sees right after deleting is what the server actually
+    // has, not a guess that could be wrong if the delete takes a moment to fully land.
+    const fresh = await base44.entities.Walk.list('-created_date');
+    setWalks(fresh || []);
+  };
+
+  const handleToggleFree = async (walkId, nextValue) => {
+    await base44.entities.Walk.update(walkId, { is_sample_walk: nextValue });
+    setWalks((prev) => prev.map(w => w.id === walkId ? { ...w, is_sample_walk: nextValue } : w));
+  };
+
+  const handleMarkChecked = async (walkId) => {
+    const checkedAt = new Date().toISOString();
+    await base44.entities.Walk.update(walkId, { announced_at: checkedAt });
+    setWalks((prev) => prev.map(w => w.id === walkId ? { ...w, announced_at: checkedAt } : w));
   };
 
   if (isLoading) {
@@ -96,7 +140,7 @@ export default function Admin() {
     );
   }
 
-  const showBackToStart = editingWalk !== null || voucherWalk !== null || view !== 'start';
+  const showBackToStart = editingWalk !== null || view !== 'start';
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
@@ -120,23 +164,41 @@ export default function Admin() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => { setEditingWalk(null); setVoucherWalk(null); setView('start'); }}
+                onClick={() => { setEditingWalk(null); setView('start'); }}
                 className="text-slate-300 hover:text-white gap-2"
               >
                 <ArrowLeft className="w-4 h-4" /> Start
               </Button>
             )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowApiKeysDialog(true)}
+              className="text-slate-300 hover:text-white gap-2"
+            >
+              <KeyRound className="w-4 h-4" /> API Keys
+            </Button>
             <Link to={createPageUrl('Home')}>
               <Button variant="ghost" size="sm" className="text-slate-300 hover:text-white gap-2">
                 Front End
               </Button>
             </Link>
-            <Button variant="ghost" size="sm" onClick={() => base44.auth.logout()} className="text-slate-300 hover:text-white gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={async () => {
+                await base44.auth.logout();
+                window.location.href = createPageUrl('Home');
+              }}
+              className="text-slate-300 hover:text-white gap-2"
+            >
               <LogOut className="w-4 h-4" /> Logout
             </Button>
           </div>
         </div>
       </header>
+
+      <ApiKeysDialog open={showApiKeysDialog} onOpenChange={setShowApiKeysDialog} />
 
       <main className="max-w-6xl mx-auto p-4">
         {editingWalk !== null ? (
@@ -147,11 +209,6 @@ export default function Admin() {
             userRole={userRole}
             focusWaypointIndex={focusWaypointIndex}
           />
-        ) : voucherWalk !== null ? (
-          <VoucherManager
-            walk={voucherWalk}
-            onBack={() => setVoucherWalk(null)}
-          />
         ) : view === 'users' ? (
           <UsersManager />
         ) : view === 'dashboard' ? (
@@ -160,10 +217,12 @@ export default function Admin() {
           <WalkAdminList
             walks={walks}
             isLoading={walksLoading}
-            onNew={(categoryCode) => setEditingWalk({ tour_category: categoryCode, route_type: getRouteTypeForCategory(categoryCode) })}
+            userRole={userRole}
             onEdit={(walk) => setEditingWalk(walk)}
             onDelete={handleDelete}
-            onVouchers={(walk) => setVoucherWalk(walk)}
+            onMarkChecked={handleMarkChecked}
+            onToggleFree={handleToggleFree}
+            onRefresh={refreshWalks}
           />
         ) : (
           <AdminStartScreen

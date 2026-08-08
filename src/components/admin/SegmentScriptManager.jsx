@@ -71,7 +71,7 @@ export default function SegmentScriptManager({ waypoints, segmentScripts, onSegm
       .filter((wp) => wp.narration_script?.trim())
       .map((wp) => wp.narration_script.trim());
     if (parts.length === 0) return null;
-    return parts.join('\n<break time="1s"/>\n');
+    return parts.join('\n<break time="0.5s"/>\n');
   };
 
   const upsertSegmentScript = (segmentNumber, segmentId, combined) => {

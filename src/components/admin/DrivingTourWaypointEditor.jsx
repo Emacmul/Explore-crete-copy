@@ -7,9 +7,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   Plus, Trash2, ChevronDown, ChevronUp, Info, Loader2,
   Upload, FileCheck, Save, Flag, Square, Circle, GripVertical, Play, Compass,
+  ImagePlus, X,
 } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { getRoleColour, getRoleLabel, buildSegmentId } from '@/lib/routeExport';
+import { compressImage, MAX_WAYPOINT_IMAGES, getWaypointImages } from '@/lib/waypointImages';
+import { base44 } from '@/api/base44Client';
 import AudioTriggerFields from './AudioTriggerFields';
 import NarrationTtsEditor from './NarrationTtsEditor';
 import TourSimulator from './TourSimulator';
@@ -39,22 +42,96 @@ const EMPTY_WP = {
   use_bearing: false,
   bearing_direction: 0,
   bearing_tolerance: 30,
+  image_urls: [],
 };
 
 function autoColour(role) {
   return getRoleColour(role);
 }
 
+const R_EARTH_M = 6371000;
+function haversineM(lat1, lng1, lat2, lng2) {
+  const toRad = d => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R_EARTH_M * Math.asin(Math.sqrt(a));
+}
+
+/**
+ * Cut out just the stretch of the tour's real (road-following) trail line that covers one
+ * location, instead of drawing straight lines directly between that location's own waypoints.
+ * Falls back to the old straight-line behaviour only if there's no usable trail line at all
+ * (e.g. an older tour that hasn't been re-imported since the trail-line import fix).
+ */
+function sliceTrailForLocation(trailPath, locationWaypoints) {
+  if (!trailPath || trailPath.length < 2 || locationWaypoints.length === 0) {
+    return locationWaypoints.map(p => ({ lat: p.lat, lng: p.lng }));
+  }
+  const nearestIndex = (lat, lng) => {
+    let bestIdx = 0, bestD = Infinity;
+    trailPath.forEach((pt, i) => {
+      const d = haversineM(lat, lng, pt.lat, pt.lng);
+      if (d < bestD) { bestD = d; bestIdx = i; }
+    });
+    return bestIdx;
+  };
+  const first = locationWaypoints[0];
+  const last = locationWaypoints[locationWaypoints.length - 1];
+  const startIdx = nearestIndex(first.lat, first.lng);
+  const endIdx = nearestIndex(last.lat, last.lng);
+  const lo = Math.min(startIdx, endIdx);
+  const hi = Math.max(startIdx, endIdx);
+  const slice = trailPath.slice(lo, hi + 1);
+  return slice.length > 1 ? slice : locationWaypoints.map(p => ({ lat: p.lat, lng: p.lng }));
+}
+
+const VALID_ROLES = ['primary_start', 'primary_stop', 'secondary'];
+
 function parseGpxCoords(xmlText) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xmlText, 'application/xml');
   const wpts = Array.from(doc.querySelectorAll('wpt'));
-  return wpts.map(wpt => ({
-    lat: parseFloat(wpt.getAttribute('lat')),
-    lng: parseFloat(wpt.getAttribute('lon')),
-    elevation: wpt.querySelector('ele') ? parseFloat(wpt.querySelector('ele').textContent) : null,
-    name: wpt.querySelector('name')?.textContent?.trim() || '',
-  })).filter(wp => !isNaN(wp.lat) && !isNaN(wp.lng));
+  return wpts.map(wpt => {
+    const roleTxt = wpt.getElementsByTagName('mc:role')[0]?.textContent?.trim();
+    return {
+      lat: parseFloat(wpt.getAttribute('lat')),
+      lng: parseFloat(wpt.getAttribute('lon')),
+      elevation: wpt.querySelector('ele') ? parseFloat(wpt.querySelector('ele').textContent) : null,
+      name: wpt.querySelector('name')?.textContent?.trim() || '',
+      // Optional extras — present when the file was pre-annotated with the Waypoint GPX Builder
+      // tool. A plain Garmin Explore export has neither, so both fall back to their old
+      // behaviour: description stays blank, role is inferred from the naming convention.
+      description: wpt.querySelector('desc')?.textContent?.trim() || '',
+      role: VALID_ROLES.includes(roleTxt) ? roleTxt : null,
+    };
+  }).filter(wp => !isNaN(wp.lat) && !isNaN(wp.lng));
+}
+
+/**
+ * Extract the actual route LINE from a GPX file — the dense trkpt/rtept sequence that follows
+ * real roads/streets — completely separate from the sparse named <wpt> points parsed above.
+ * Garmin Explore writes a proper road-following <trk> or <rte> when a route is drawn along
+ * streets, but that was previously being discarded entirely: only the named waypoint pins were
+ * ever read, so the map line just cut straight between them regardless of what roads existed
+ * between two points. Falls back to the waypoints themselves only if the file truly has no
+ * track/route data at all (matches the same trkpt → rtept → wpt fallback order used for
+ * Walk/Hike GPX import in WalkEditor.jsx).
+ */
+function parseGpxTrail(xmlText) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xmlText, 'application/xml');
+  const toPoints = (els) => Array.from(els).map(el => ({
+    lat: parseFloat(el.getAttribute('lat')),
+    lng: parseFloat(el.getAttribute('lon')),
+  })).filter(pt => !isNaN(pt.lat) && !isNaN(pt.lng));
+
+  const trkpts = toPoints(doc.querySelectorAll('trkpt'));
+  if (trkpts.length > 1) return trkpts;
+  const rtepts = toPoints(doc.querySelectorAll('rtept'));
+  if (rtepts.length > 1) return rtepts;
+  return toPoints(doc.querySelectorAll('wpt'));
 }
 
 /**
@@ -105,9 +182,9 @@ function parseLocationPrefix(wp) {
   return m ? `${m[1]}${parseInt(m[2], 10)}` : null;
 }
 
-export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCode, tourCategory, onSave, saving, userRole = 'admin', focusWaypointIndex, segmentScripts, onSegmentScriptsChange }) {
+export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCode, tourCategory, onSave, saving, userRole = 'admin', focusWaypointIndex, segmentScripts, onSegmentScriptsChange, onTrailPathChange, trailPath }) {
   const isNarrator = userRole === 'narrator';
-  const defaultSpeed = tourCategory === 'WBT' ? 3 : 50;
+  const defaultSpeed = tourCategory === 'WBT' ? 3.5 : 50;
   const [expanded, setExpanded] = useState(focusWaypointIndex != null ? focusWaypointIndex : null);
   const [newWp, setNewWp] = useState({ ...EMPTY_WP, avg_segment_speed_kmh: defaultSpeed });
   const [showAddForm, setShowAddForm] = useState(true);
@@ -277,6 +354,24 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
     onChange(updated);
   };
 
+  const [uploadingImageIndex, setUploadingImageIndex] = useState(null);
+
+  const handleImageUpload = async (file, index) => {
+    setUploadingImageIndex(index);
+    const compressed = await compressImage(file);
+    const { file_url } = await base44.integrations.Core.UploadFile({ file: compressed });
+    const current = getWaypointImages(waypoints[index]);
+    if (current.length < MAX_WAYPOINT_IMAGES) {
+      updateWaypoint(index, 'image_urls', [...current, file_url]);
+    }
+    setUploadingImageIndex(null);
+  };
+
+  const removeImage = (index, imgIndex) => {
+    const current = getWaypointImages(waypoints[index]);
+    updateWaypoint(index, 'image_urls', current.filter((_, i) => i !== imgIndex));
+  };
+
   const onDragEnd = (result) => {
     if (!result.destination || result.destination.index === result.source.index) return;
     const updated = [...waypoints];
@@ -321,7 +416,9 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
           ? String(key.segment).padStart(2, '0').slice(-2)
           : '01';
         const segId = buildSegmentId(tourCode, segNum) || '';
-        const role = isPS ? 'primary_start' : 'secondary';
+        // An explicit role from the file (set via the Waypoint GPX Builder tool) always wins —
+        // it's unambiguous. Otherwise fall back to the naming-convention guess, same as before.
+        const role = pt.role || (isPS ? 'primary_start' : 'secondary');
         return {
           lat: pt.lat,
           lng: pt.lng,
@@ -331,7 +428,7 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
           segment_id: segId,
           segment_title: pt.name || `Segment ${segNum}`,
           avg_segment_speed_kmh: defaultSpeed,
-          description: '',
+          description: pt.description || '',
           narration_script: '',
           trigger_audio: false,
           audio_clip_url: '',
@@ -343,23 +440,28 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
           waypoint_colour: autoColour(role),
           name: pt.name || (segId ? `${segId} — Segment ${segNum}` : `Segment ${segNum}`),
           type: role,
+          image_urls: [],
         };
       });
-      // See matching note in WalkEditor.jsx's GPX import: nothing in the GPX
-      // naming convention marks where a tour ends, so without this every
-      // imported tour's final point comes in as "Secondary" and needs manual
-      // re-classification to Primary-Stop every time.
-      if (imported.length > 1 && !imported.some(wp => wp.waypoint_role === 'primary_stop')) {
-        const last = imported[imported.length - 1];
-        if (last.waypoint_role !== 'primary_start') {
-          last.waypoint_role = 'primary_stop';
-          last.type = 'primary_stop';
-          last.waypoint_colour = autoColour('primary_stop');
+      onChange(imported);
+
+      // Import the actual road-following route line too, separately from the sparse named
+      // waypoints above — this is what was missing, causing the map to draw straight lines
+      // between waypoints instead of following real streets.
+      let trailPointCount = 0;
+      let trailIsRealTrack = false;
+      if (onTrailPathChange) {
+        const trail = parseGpxTrail(ev.target.result);
+        if (trail.length > 1) {
+          onTrailPathChange(trail);
+          trailPointCount = trail.length;
+          // A real track/route has far more points than there are named waypoints — a sparse
+          // fallback (waypoints-as-trail) will have roughly the same count as `imported`.
+          trailIsRealTrack = trail.length > imported.length * 1.5;
         }
       }
 
-      onChange(imported);
-      setGpxImportResult({ count: imported.length });
+      setGpxImportResult({ count: imported.length, trailPointCount, trailIsRealTrack });
       setTimeout(() => setGpxImportResult(null), 4000);
     };
     reader.readAsText(file);
@@ -391,7 +493,16 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
           {gpxImportResult && (
             gpxImportResult.error
               ? <span className="text-red-400 text-sm">{gpxImportResult.error}</span>
-              : <span className="flex items-center gap-1 text-green-400 text-sm"><FileCheck className="w-4 h-4" /> {gpxImportResult.count} waypoint{gpxImportResult.count !== 1 ? 's' : ''} imported</span>
+              : (
+                <span className="flex items-center gap-1 text-green-400 text-sm">
+                  <FileCheck className="w-4 h-4" /> {gpxImportResult.count} waypoint{gpxImportResult.count !== 1 ? 's' : ''} imported
+                  {gpxImportResult.trailIsRealTrack ? (
+                    <span className="text-slate-400 ml-1">— route line follows the recorded track ({gpxImportResult.trailPointCount} points)</span>
+                  ) : gpxImportResult.trailPointCount > 0 ? (
+                    <span className="text-amber-400 ml-1">— ⚠ no track/route found in this file, route line just connects the waypoints in a straight line. Use the Trail tab to trace the real streets if needed.</span>
+                  ) : null}
+                </span>
+              )
           )}
         </div>
       )}
@@ -621,6 +732,18 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                             <Input value={wp.description} readOnly className="bg-slate-800 border-slate-600 text-slate-300 h-8 text-sm" />
                           </div>
                         )}
+                        {getWaypointImages(wp).length > 0 && (
+                          <div>
+                            <Label className="text-slate-400 text-xs mb-1 block">Photos</Label>
+                            <div className="flex flex-wrap gap-2">
+                              {getWaypointImages(wp).map((url, i) => (
+                                <div key={i} className="w-16 h-16 rounded-lg overflow-hidden border border-slate-600 shrink-0">
+                                  <img src={url} alt="waypoint" className="w-full h-full object-cover" />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
 
                         {/* Editable: Narration Script & TTS */}
                         <NarrationTtsEditor
@@ -719,6 +842,29 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                             className="bg-slate-700 border-slate-500 text-white h-8 text-sm"
                           />
                         </div>
+                        <div>
+                          <Label className="text-slate-400 text-xs mb-1 block">Photos ({getWaypointImages(wp).length}/{MAX_WAYPOINT_IMAGES})</Label>
+                          <div className="flex flex-wrap gap-2">
+                            {getWaypointImages(wp).map((url, i) => (
+                              <div key={i} className="relative w-20 h-20 rounded-lg overflow-hidden border border-slate-600 shrink-0">
+                                <img src={url} alt="waypoint" className="w-full h-full object-cover" />
+                                <button
+                                  onClick={() => removeImage(index, i)}
+                                  className="absolute top-0.5 right-0.5 bg-black/60 rounded-full p-0.5 text-white hover:bg-black/80"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </div>
+                            ))}
+                            {getWaypointImages(wp).length < MAX_WAYPOINT_IMAGES && (
+                              <label className="flex flex-col items-center justify-center gap-1 cursor-pointer bg-slate-700 border border-dashed border-slate-500 rounded-lg w-20 h-20 shrink-0 text-slate-400 hover:text-white hover:border-slate-400 transition-colors text-xs text-center">
+                                {uploadingImageIndex === index ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
+                                {uploadingImageIndex !== index && 'Add'}
+                                <input type="file" accept="image/*" className="hidden" onChange={e => e.target.files[0] && handleImageUpload(e.target.files[0], index)} disabled={uploadingImageIndex !== null} />
+                              </label>
+                            )}
+                          </div>
+                        </div>
 
                         {/* Narration Script & TTS generation */}
                         <NarrationTtsEditor
@@ -733,31 +879,17 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
 
                         {/* Audio activation radius and bearing */}
                         <div className="bg-slate-800/50 rounded-lg border border-red-600/30 p-3 space-y-3">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <Compass className="w-4 h-4 text-red-400" />
-                              <Label className="text-slate-300 text-sm font-medium">Audio Activation Radius & Bearing</Label>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Label className="text-slate-400 text-xs">Trigger Audio</Label>
-                              <Switch
-                                checked={wp.trigger_audio ?? false}
-                                onCheckedChange={v => updateWaypoint(index, 'trigger_audio', v)}
-                              />
-                            </div>
+                          <div className="flex items-center gap-2">
+                            <Compass className="w-4 h-4 text-red-400" />
+                            <Label className="text-slate-300 text-sm font-medium">Audio Activation Radius & Bearing</Label>
                           </div>
-                          {wp.trigger_audio && !wp.audio_clip_url && (
-                            <p className="text-xs text-amber-400">
-                              Trigger Audio is on but no audio clip has been generated/uploaded yet for this waypoint.
-                            </p>
-                          )}
                           <div className="grid grid-cols-2 gap-3">
                             <div>
                               <Label className="text-slate-400 text-xs mb-1 block">Trigger Radius (m)</Label>
                               <Input
                                 type="number" min="10" max="2000" step="5"
-                                value={wp.trigger_radius_m ?? 150}
-                                onChange={e => updateWaypoint(index, 'trigger_radius_m', e.target.value === '' ? 150 : Number(e.target.value))}
+                                value={wp.trigger_radius_m ?? 30}
+                                onChange={e => updateWaypoint(index, 'trigger_radius_m', e.target.value === '' ? 30 : Number(e.target.value))}
                                 className="bg-slate-700 border-slate-500 text-white h-8 text-sm"
                               />
                             </div>
@@ -820,7 +952,7 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                     onClick={() => setTestSegment({
                        startIndex: locGroup.startIndex,
                        title: locGroup.location || `Location ${wp.segment_number}`,
-                       trailPath: locGroup.waypoints.map(p => ({ lat: p.lat, lng: p.lng })),
+                       trailPath: sliceTrailForLocation(trailPath, locGroup.waypoints),
                        waypoints: locGroup.waypoints.map(p => ({ ...p, trigger_audio: true })),
                      })}
                     title={isLocationTestable(locGroup)

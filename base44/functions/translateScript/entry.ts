@@ -5,7 +5,7 @@ Deno.serve(async (req) => {
     const base44 = createClientFromRequest(req);
 
     const body = await req.json();
-    const { text, target_language } = body;
+    const { text, target_language, apiKey } = body;
 
     if (!text || !text.trim()) {
       return Response.json({ error: 'Missing text to translate' }, { status: 400 });
@@ -14,9 +14,10 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'Missing target language' }, { status: 400 });
     }
 
-    const apiKey = Deno.env.get('GROQ_API_KEY');
-    if (!apiKey) {
-      return Response.json({ error: 'Groq API key not configured' }, { status: 500 });
+    // Each narrator uses their own Groq key (set on their own account) rather than one shared
+    // across everyone.
+    if (!apiKey || !apiKey.trim()) {
+      return Response.json({ error: 'No Groq API key found for your account. Add your own key under "API Keys" in the Admin Panel header.' }, { status: 400 });
     }
 
     const prompt = `Translate the following narration script into ${target_language}.
