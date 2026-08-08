@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { MapContainer, TileLayer, Polyline, Marker, Circle, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { getRoleColour, calculateBearing } from '@/lib/routeExport';
+import { getRoleColour, calculateBearing, splitTrailRuns } from '@/lib/routeExport';
 
 const R_EARTH = 6371000;
 
@@ -102,7 +102,7 @@ function handleIcon(colour) {
   });
 }
 
-export default function TourSimulatorMap({ trailPath, waypoints, triggered, currentPos, currentBearing, isWalkingTour, onWaypointUpdate }) {
+export default function TourSimulatorMap({ trailPath, waypoints, triggered, currentPos, currentBearing, isWalkingTour, onWaypointUpdate, breaks }) {
   const center = trailPath.length > 0
     ? [trailPath[0].lat, trailPath[0].lng]
     : waypoints.length > 0
@@ -117,12 +117,16 @@ export default function TourSimulatorMap({ trailPath, waypoints, triggered, curr
       />
       <FitBounds trailPath={trailPath} waypoints={waypoints} />
 
-      {trailPath.length > 1 && (
-        <Polyline
-          positions={trailPath.map(p => [p.lat, p.lng])}
-          pathOptions={{ color: '#3b82f6', weight: 4, opacity: 0.7 }}
-        />
-      )}
+      {trailPath.length > 1 &&
+        splitTrailRuns(trailPath, breaks).map((run, i) =>
+          run.length > 1 ? (
+            <Polyline
+              key={i}
+              positions={run.map(([lat, lng]) => [lat, lng])}
+              pathOptions={{ color: '#3b82f6', weight: 4, opacity: 0.7 }}
+            />
+          ) : null
+        )}
 
       {waypoints.map((wp, i) => {
         const isTriggered = triggered[i];

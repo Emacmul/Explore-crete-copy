@@ -14,8 +14,10 @@ function haversine(a, b) {
 
 // Given a trail path array and a user position, return the cumulative distance
 // up to the closest point on the trail (in km).
-function progressAlongTrail(trail, userPos) {
+function progressAlongTrail(trail, breaks, userPos) {
   if (!trail || trail.length < 2) return 0;
+
+  const breakSet = new Set((breaks || []).filter(b => Number.isInteger(b) && b >= 0 && b < trail.length - 1));
 
   let bestIdx = 0;
   let bestDist = Infinity;
@@ -24,19 +26,25 @@ function progressAlongTrail(trail, userPos) {
     if (d < bestDist) { bestDist = d; bestIdx = i; }
   }
 
-  // Sum cumulative distance up to the closest point
+  // Sum cumulative distance up to the closest point, skipping cut segments
   let cumulative = 0;
   for (let i = 1; i <= bestIdx; i++) {
+    if (breakSet.has(i - 1)) continue;
     cumulative += haversine(trail[i - 1], trail[i]);
   }
   return cumulative;
 }
 
-// Total trail length in km
-function trailLength(trail) {
+// Total trail length in km, excluding cut segments (a break at index b means
+// the hiker does not walk the line between point b and b+1).
+function trailLength(trail, breaks) {
   if (!trail || trail.length < 2) return 0;
+  const breakSet = new Set((breaks || []).filter(b => Number.isInteger(b) && b >= 0 && b < trail.length - 1));
   let total = 0;
-  for (let i = 1; i < trail.length; i++) total += haversine(trail[i - 1], trail[i]);
+  for (let i = 1; i < trail.length; i++) {
+    if (breakSet.has(i - 1)) continue;
+    total += haversine(trail[i - 1], trail[i]);
+  }
   return total;
 }
 
@@ -45,7 +53,7 @@ export default function WalkProgressBar({ walk }) {
   const [gpsError, setGpsError] = useState(false);
 
   const totalKm = walk.distance_km ||
-    (walk.trail_path?.length >= 2 ? trailLength(walk.trail_path) : null);
+    (walk.trail_path?.length >= 2 ? trailLength(walk.trail_path, walk.trail_breaks) : null);
 
   useEffect(() => {
     if (!navigator.geolocation) { setGpsError(true); return; }
@@ -56,7 +64,7 @@ export default function WalkProgressBar({ walk }) {
 
         let walkedKm = 0;
         if (walk.trail_path?.length >= 2) {
-          walkedKm = progressAlongTrail(walk.trail_path, userPos);
+          walkedKm = progressAlongTrail(walk.trail_path, walk.trail_breaks, userPos);
         } else if (walk.start_lat && walk.start_lng) {
           // Fallback: distance from start point
           walkedKm = haversine({ lat: walk.start_lat, lng: walk.start_lng }, userPos);

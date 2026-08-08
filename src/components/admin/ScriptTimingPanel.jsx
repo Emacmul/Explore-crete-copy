@@ -40,10 +40,12 @@ function nearestPathIndex(path, lat, lng) {
   return nearestIdx;
 }
 
-function pathDistanceBetween(path, startIdx, endIdx) {
+function pathDistanceBetween(path, startIdx, endIdx, breakSet) {
+  const breaks = breakSet || new Set();
   if (startIdx >= endIdx) return 0;
   let total = 0;
   for (let i = startIdx; i < endIdx && i < path.length - 1; i++) {
+    if (breaks.has(i)) continue; // cut segment — not driven, exclude from segment distance
     total += haversine(path[i].lat, path[i].lng, path[i + 1].lat, path[i + 1].lng);
   }
   return total;
@@ -67,7 +69,7 @@ const STATUS_STYLES = {
   neutral: { bg: 'bg-slate-800/50', border: 'border-slate-600', text: 'text-slate-400', icon: Clock },
 };
 
-export default function ScriptTimingPanel({ trailPath, waypoints, tourCategory }) {
+export default function ScriptTimingPanel({ trailPath, waypoints, tourCategory, breaks }) {
   const [narrators, setNarrators] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedLanguage, setSelectedLanguage] = useState(LANGUAGES[0]);
@@ -119,6 +121,8 @@ export default function ScriptTimingPanel({ trailPath, waypoints, tourCategory }
   const segments = useMemo(() => {
     if (trailPath.length < 2 || waypoints.length === 0) return [];
 
+    const breakSet = new Set((breaks || []).filter(b => Number.isInteger(b) && b >= 0 && b < trailPath.length - 1));
+
     const starts = waypoints
       .map((wp, i) => ({ wp, i }))
       .filter(({ wp }) => wp.waypoint_role === 'primary_start');
@@ -141,7 +145,7 @@ export default function ScriptTimingPanel({ trailPath, waypoints, tourCategory }
 
       const pathStartIdx = nearestPathIndex(trailPath, startWp.lat, startWp.lng);
       const pathEndIdx = nearestPathIndex(trailPath, endWp.lat, endWp.lng);
-      const distance = pathDistanceBetween(trailPath, pathStartIdx, pathEndIdx);
+      const distance = pathDistanceBetween(trailPath, pathStartIdx, pathEndIdx, breakSet);
 
       const speed = Number(startWp.avg_segment_speed_kmh) || (tourCategory === 'WBT' ? 3.5 : 50);
       const travelSeconds = speed > 0 ? (distance / 1000) / speed * 3600 : 0;
@@ -160,7 +164,7 @@ export default function ScriptTimingPanel({ trailPath, waypoints, tourCategory }
         timing, hasScript: script.trim().length > 0,
       };
     });
-  }, [waypoints, trailPath, effectiveWpm, tourCategory]);
+  }, [waypoints, trailPath, effectiveWpm, tourCategory, breaks]);
 
   const totalDistance = segments.reduce((sum, s) => sum + s.distance, 0);
   const totalTravel = segments.reduce((sum, s) => sum + s.travelSeconds, 0);

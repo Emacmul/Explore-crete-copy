@@ -20,10 +20,14 @@ function haversine(lat1, lng1, lat2, lng2) {
   return 2 * R_EARTH * Math.asin(Math.sqrt(a));
 }
 
-function buildPath(path) {
+function buildPath(path, breakSet) {
+  const breaks = breakSet || new Set();
   const segments = [];
   let total = 0;
   for (let i = 0; i < path.length - 1; i++) {
+    // A cut at index i means no path between point i and i+1 — the simulated
+    // vehicle jumps across the gap, so that segment adds no driven distance.
+    if (breaks.has(i)) continue;
     const dist = haversine(path[i].lat, path[i].lng, path[i + 1].lat, path[i + 1].lng);
     segments.push({ start: path[i], end: path[i + 1], dist, cumStart: total });
     total += dist;
@@ -101,7 +105,11 @@ export default function TourSimulator({ form, onWaypointUpdate, segmentScripts, 
     }
   };
 
-  const pathData = useMemo(() => buildPath(trailPath), [trailPath]);
+  const breakSet = useMemo(
+    () => new Set((form.trail_breaks || []).filter(b => Number.isInteger(b) && b >= 0 && b < trailPath.length - 1)),
+    [form.trail_breaks, trailPath.length]
+  );
+  const pathData = useMemo(() => buildPath(trailPath, breakSet), [trailPath, breakSet]);
   const speedZones = useMemo(() => {
     return waypoints
       .map((wp, index) => ({ wp, index }))
@@ -125,11 +133,12 @@ export default function TourSimulator({ form, onWaypointUpdate, segmentScripts, 
         });
         let cumDist = 0;
         for (let i = 1; i <= nearestIdx; i++) {
+          if (breakSet.has(i - 1)) continue; // cut segment — not driven, skip its distance
           cumDist += haversine(trailPath[i - 1].lat, trailPath[i - 1].lng, trailPath[i].lat, trailPath[i].lng);
         }
         return { wp, index, cumDist, label: wp.segment_id || wp.segment_title || wp.name || `Location ${index + 1}` };
       });
-  }, [waypoints, trailPath]);
+  }, [waypoints, trailPath, breakSet]);
   const [jumpTargetIndex, setJumpTargetIndex] = useState('');
 
   useEffect(() => { speedRef.current = speed; }, [speed]);
@@ -505,7 +514,7 @@ export default function TourSimulator({ form, onWaypointUpdate, segmentScripts, 
       </div>
 
       {/* Script Timing */}
-      <ScriptTimingPanel trailPath={trailPath} waypoints={waypoints} tourCategory={form.tour_category} />
+      <ScriptTimingPanel trailPath={trailPath} waypoints={waypoints} tourCategory={form.tour_category} breaks={form.trail_breaks} />
 
       {/* Map */}
       <div className="h-80 rounded-xl overflow-hidden border border-slate-600">
@@ -517,6 +526,7 @@ export default function TourSimulator({ form, onWaypointUpdate, segmentScripts, 
           currentBearing={currentBearing}
           isWalkingTour={isWalkingTour}
           onWaypointUpdate={onWaypointUpdate}
+          breaks={form.trail_breaks}
         />
       </div>
 
