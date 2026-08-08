@@ -44,7 +44,7 @@
     },
     "password": {
       "type": "string",
-      "description": "Narr backend password \u2014 set by an admin in EditAppUser, used only to log into the Narr Studio via the Narr button. Separate from the WordPress password used for the front end; ignored for admin accounts (admins sign in via Base44)."
+      "description": "Backend password set by an admin in EditAppUser."
     },
     "newsletter_opted_in": {
       "type": "boolean",

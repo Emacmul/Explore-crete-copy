@@ -11,6 +11,7 @@ import {
 import { base44 } from '@/api/base44Client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/components/ui/use-toast';
+import DateOfBirthSelect from '@/components/admin/DateOfBirthSelect';
 
 function roleBadge(role) {
   if (role === 'admin') return <Badge className="text-xs text-amber-300 border-amber-700 bg-amber-900/30">admin</Badge>;
@@ -36,15 +37,14 @@ function EditAppUserDialog({ appUser, onClose }) {
     try {
       const updates = { role };
       if (dateOfBirth) updates.date_of_birth = dateOfBirth;
-      if (role === 'narrator') {
+      if (role === 'narrator' || role === 'admin') {
         if (!password.trim()) {
-          toast({ variant: 'destructive', title: 'Narr password required', description: 'Set a backend password for this Narr.' });
+          toast({ variant: 'destructive', title: 'Password required', description: 'Set a backend password for this Narrator/Admin.' });
           setSaving(false);
           return;
         }
         updates.password = password.trim();
       } else {
-        // Moving away from Narr: clear the backend password so it can't be reused.
         updates.password = '';
       }
 
@@ -86,25 +86,13 @@ function EditAppUserDialog({ appUser, onClose }) {
           </div>
           <div>
             <Label className="text-slate-300 mb-1.5 block">Date of birth</Label>
-            <input
-              type="date"
-              value={dateOfBirth}
-              onChange={e => setDateOfBirth(e.target.value)}
-              max={new Date().toISOString().split('T')[0]}
-              className="flex h-9 w-full rounded-md border border-slate-600 bg-slate-700 px-3 py-1 text-sm text-white [color-scheme:dark]"
-            />
+            <DateOfBirthSelect value={dateOfBirth} onChange={setDateOfBirth} />
           </div>
-          {role === 'narrator' && (
+          {(role === 'narrator' || role === 'admin') && (
             <div>
-              <Label className="text-slate-300 mb-1.5 block">Narr backend password</Label>
-              <Input value={password} onChange={e => setPassword(e.target.value)} className="bg-slate-700 border-slate-600 text-white" placeholder="Set the password for the Narr button" />
-              <p className="text-xs text-slate-500 mt-1">Separate from the WordPress password they use for the front end.</p>
+              <Label className="text-slate-300 mb-1.5 block">Backend password <span className="text-red-400">*</span></Label>
+              <Input value={password} onChange={e => setPassword(e.target.value)} className="bg-slate-700 border-slate-600 text-white" placeholder="Set the backend password" />
             </div>
-          )}
-          {role === 'admin' && (
-            <p className="text-xs text-amber-300 bg-amber-900/20 border border-amber-700/40 rounded p-2">
-              Admins log in via the Admin button with their Base44 sign-in. An invitation will be sent if this is a new admin.
-            </p>
           )}
         </div>
         <DialogFooter>
