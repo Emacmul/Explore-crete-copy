@@ -10,7 +10,6 @@ import { useOfflineWalks } from '../components/offline/useOfflineWalks';
 import { motion, AnimatePresence } from 'framer-motion';
 import CreteMap from '../components/map/CreteMap';
 import WalkList from '../components/walks/WalkList';
-import { getAccessibleWalks } from '../lib/membership';
 import WalkDetail from '../components/walks/WalkDetail';
 import UpdateInProgressModal from '../components/offline/UpdateInProgressModal';
 import { isWalkOutdated, saveWalkOffline, preCacheWalkTiles } from '../components/offline/offlineStorage';
@@ -184,7 +183,7 @@ export default function Home() {
     setShowDetail(false);
   };
 
-  const accessibleWalks = getAccessibleWalks(walks);
+  const accessibleWalks = walks.filter(w => w.approved !== false);
   const categoryWalks = selectedTourCategory
     ? accessibleWalks.filter(w => w.tour_category === selectedTourCategory)
     : accessibleWalks;

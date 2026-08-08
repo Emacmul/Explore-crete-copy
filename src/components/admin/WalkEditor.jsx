@@ -29,7 +29,6 @@ const EMPTY_WALK = {
   difficulty: 'moderate',
   walk_category: 'official',
   is_sample_walk: false,
-  is_member_included: false,
   contributor_name: '',
   distance_km: '',
   duration_hours: '',

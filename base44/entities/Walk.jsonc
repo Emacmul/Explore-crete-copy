@@ -89,11 +89,6 @@
       "default": false,
       "description": "One of the free sample walks available to all users"
     },
-    "is_member_included": {
-      "type": "boolean",
-      "default": false,
-      "description": "Included as part of the yearly member allocation"
-    },
     "price_eur": {
       "type": "number",
       "default": 15,

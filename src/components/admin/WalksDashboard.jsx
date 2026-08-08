@@ -41,14 +41,6 @@ function getAccessLabel(walk) {
     };
   }
 
-  if (walk.is_member_included) {
-    return {
-      label: 'Included with Membership',
-      icon: CheckCircle2,
-      className: 'text-green-400 bg-green-900/40 border-green-700',
-    };
-  }
-
   return {
     label: 'Purchase Required',
     icon: Ticket,
@@ -59,7 +51,6 @@ function getAccessLabel(walk) {
 export default function WalksDashboard({ walks }) {
   const totalWalks = walks.length;
   const sampleWalks = walks.filter(w => w.is_sample_walk);
-  const memberWalks = walks.filter(w => w.is_member_included);
   const communityWalks = walks.filter(w => w.walk_category === 'community');
   const withGpx = walks.filter(w => w.gpx_file_uri || w.gpx_url);
 
@@ -74,7 +65,6 @@ export default function WalksDashboard({ walks }) {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard icon={Mountain} label="Total Walks" value={totalWalks} color="bg-slate-600" />
         <StatCard icon={Sparkles} label="Sample Walks" value={sampleWalks.length} color="bg-emerald-600" />
-        <StatCard icon={CheckCircle2} label="Member Walks" value={memberWalks.length} color="bg-green-600" />
         <StatCard icon={Users} label="Community" value={communityWalks.length} color="bg-blue-600" />
       </div>
 

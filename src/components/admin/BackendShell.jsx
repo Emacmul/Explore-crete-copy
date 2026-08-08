@@ -97,7 +97,6 @@ export default function BackendShell({ user, userRole, authMode, onLogout }) {
       approved: false,
       requires_review: false,
       is_sample_walk: false,
-      is_member_included: false,
       creem_product_id: undefined,
       trail_path: (original.trail_path || []).map(p => ({ ...p })),
       waypoints: (original.waypoints || []).map(w => ({ ...w })),
