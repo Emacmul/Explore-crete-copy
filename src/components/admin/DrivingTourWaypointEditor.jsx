@@ -182,6 +182,13 @@ function parseLocationPrefix(wp) {
   return m ? `${m[1]}${parseInt(m[2], 10)}` : null;
 }
 
+// Build a road-following polyline between ordered waypoints (OSRM) for a driving tour
+// whose GPX import had no recorded track/route line.
+const routeWaypoints = async (points) => {
+  const res = await base44.functions.invoke('routeWaypoints', { points });
+  return res.data.trail;
+};
+
 export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCode, tourCategory, onSave, saving, userRole = 'admin', focusWaypointIndex, segmentScripts, onSegmentScriptsChange, onTrailPathChange, trailPath }) {
   const isNarrator = userRole === 'narrator';
   const defaultSpeed = tourCategory === 'WBT' ? 3.5 : 50;
@@ -399,7 +406,7 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
       }
     }
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       const parsed = parseGpxCoords(ev.target.result);
       if (parsed.length === 0) {
         setGpxImportResult({ error: 'No waypoints found in this GPX file.' });
@@ -461,8 +468,29 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
         }
       }
 
-      setGpxImportResult({ count: imported.length, trailPointCount, trailIsRealTrack });
-      setTimeout(() => setGpxImportResult(null), 4000);
+      setGpxImportResult({ count: imported.length, trailPointCount, trailIsRealTrack, routing: false });
+
+      // No real track in the file — route along roads between the ordered waypoints so a
+      // driving tour doesn't render as straight lines between sparse pins.
+      if (onTrailPathChange && !trailIsRealTrack && imported.length >= 2) {
+        setGpxImportResult({ count: imported.length, trailPointCount, trailIsRealTrack, routing: true });
+        try {
+          const ordered = imported.map(wp => ({ lat: wp.lat, lng: wp.lng }));
+          const routed = await routeWaypoints(ordered);
+          if (routed && routed.length > 1) {
+            onTrailPathChange(routed);
+            trailPointCount = routed.length;
+            trailIsRealTrack = true;
+            setGpxImportResult({ count: imported.length, trailPointCount, trailIsRealTrack, routing: false, routed: true });
+          } else {
+            setGpxImportResult({ count: imported.length, trailPointCount, trailIsRealTrack, routing: false, routeError: true });
+          }
+        } catch (err) {
+          console.warn('Road routing failed:', err);
+          setGpxImportResult({ count: imported.length, trailPointCount, trailIsRealTrack, routing: false, routeError: true });
+        }
+      }
+      setTimeout(() => setGpxImportResult(null), 5000);
     };
     reader.readAsText(file);
     e.target.value = '';
@@ -495,8 +523,16 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
               ? <span className="text-red-400 text-sm">{gpxImportResult.error}</span>
               : (
                 <span className="flex items-center gap-1 text-green-400 text-sm">
-                  <FileCheck className="w-4 h-4" /> {gpxImportResult.count} waypoint{gpxImportResult.count !== 1 ? 's' : ''} imported
-                  {gpxImportResult.trailIsRealTrack ? (
+                  {gpxImportResult.routing
+                    ? <Loader2 className="w-4 h-4 animate-spin" />
+                    : <FileCheck className="w-4 h-4" />} {gpxImportResult.count} waypoint{gpxImportResult.count !== 1 ? 's' : ''} imported
+                  {gpxImportResult.routing ? (
+                    <span className="text-slate-400 ml-1">— building road-following route…</span>
+                  ) : gpxImportResult.routed ? (
+                    <span className="text-slate-400 ml-1">— route follows roads ({gpxImportResult.trailPointCount} points)</span>
+                  ) : gpxImportResult.routeError ? (
+                    <span className="text-amber-400 ml-1">— ⚠ road routing failed, route connects waypoints in a straight line. Use the Trail tab to trace it.</span>
+                  ) : gpxImportResult.trailIsRealTrack ? (
                     <span className="text-slate-400 ml-1">— route line follows the recorded track ({gpxImportResult.trailPointCount} points)</span>
                   ) : gpxImportResult.trailPointCount > 0 ? (
                     <span className="text-amber-400 ml-1">— ⚠ no track/route found in this file, route line just connects the waypoints in a straight line. Use the Trail tab to trace the real streets if needed.</span>

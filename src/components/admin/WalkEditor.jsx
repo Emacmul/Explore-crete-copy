@@ -88,6 +88,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   const [gpxImporting, setGpxImporting] = useState(false);
   const [gpxImportDone, setGpxImportDone] = useState(false);
   const [elevFetching, setElevFetching] = useState(false);
+  const [routeFetching, setRouteFetching] = useState(false);
   const gpxInputRef = useRef(null);
   const canImportGpx = !!(form.code?.trim() && form.name?.trim() && form.tour_category);
   const isDrivingAudioTourForGate = form.route_type === 'driving_audio_tour';
@@ -219,6 +220,13 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
     return res.data.elevations;
   };
 
+  // Build a road-following polyline between ordered waypoints (OSRM) for driving tours
+  // whose GPX import had no recorded track/route line.
+  const routeWaypoints = async (points) => {
+    const res = await base44.functions.invoke('routeWaypoints', { points });
+    return res.data.trail;
+  };
+
   const handleGpxImport = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -255,7 +263,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
 
       const pts = trkpts.length > 0 ? trkpts : rtepts.length > 0 ? rtepts : wpts;
 
-      const trailPath = pts.map(pt => ({
+      let trailPath = pts.map(pt => ({
         lat: parseFloat(pt.getAttribute('lat')),
         lng: parseFloat(pt.getAttribute('lon')),
       })).filter(p => !isNaN(p.lat) && !isNaN(p.lng));
@@ -318,6 +326,21 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
           ...(ele !== null && !isNaN(ele) ? { elevation: Math.round(ele) } : {}),
         };
       }).filter(p => !isNaN(p.lat) && !isNaN(p.lng));
+
+      // Driving tours: if the GPX had no track/route (only sparse waypoints), build a
+      // road-following line between the ordered waypoints instead of straight lines.
+      if (isDrivingAudioTour && trkpts.length === 0 && rtepts.length === 0 && waypoints.length >= 2) {
+        setGpxImporting(false);
+        setRouteFetching(true);
+        try {
+          const ordered = waypoints.map(wp => ({ lat: wp.lat, lng: wp.lng }));
+          const routed = await routeWaypoints(ordered);
+          if (routed && routed.length > 1) trailPath = routed;
+        } catch (err) {
+          console.warn('Road routing failed:', err);
+        }
+        setRouteFetching(false);
+      }
 
       // Try embedded elevations first, otherwise fetch from Open Topo Data
       let elevations = pts.map(pt => parseFloat(pt.querySelector('ele')?.textContent || 'NaN')).filter(e => !isNaN(e));
@@ -759,8 +782,8 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                         : 'bg-slate-700 text-slate-500 cursor-not-allowed'
                     }`}
                   >
-                     {(gpxImporting || elevFetching) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                     {gpxImporting ? 'Reading…' : elevFetching ? 'Fetching elevation…' : 'Choose GPX / FIT'}
+                     {(gpxImporting || elevFetching || routeFetching) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                     {gpxImporting ? 'Reading…' : routeFetching ? 'Routing road…' : elevFetching ? 'Fetching elevation…' : 'Choose GPX / FIT'}
                    </label>
                 </>
               )}
