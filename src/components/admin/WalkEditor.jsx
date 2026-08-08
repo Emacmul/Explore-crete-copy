@@ -222,8 +222,8 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
 
   // Build a road-following polyline between ordered waypoints (OSRM) for driving tours
   // whose GPX import had no recorded track/route line.
-  const routeWaypoints = async (points) => {
-    const res = await base44.functions.invoke('routeWaypoints', { points });
+  const routeWaypoints = async (points, profile) => {
+    const res = await base44.functions.invoke('routeWaypoints', { points, profile });
     return res.data.trail;
   };
 
@@ -327,14 +327,16 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
         };
       }).filter(p => !isNaN(p.lat) && !isNaN(p.lng));
 
-      // Driving tours: if the GPX had no track/route (only sparse waypoints), build a
-      // road-following line between the ordered waypoints instead of straight lines.
-      if (isDrivingAudioTour && trkpts.length === 0 && rtepts.length === 0 && waypoints.length >= 2) {
+      // If the GPX had no recorded track/route (only sparse waypoints), build a
+      // path-following line between the ordered waypoints instead of straight lines.
+      // Walks and Walkabouts use the foot router; driving tours use the driving router.
+      if (trkpts.length === 0 && rtepts.length === 0 && waypoints.length >= 2) {
+        const profile = form.tour_category === 'DDV' ? 'driving' : 'foot';
         setGpxImporting(false);
         setRouteFetching(true);
         try {
           const ordered = waypoints.map(wp => ({ lat: wp.lat, lng: wp.lng }));
-          const routed = await routeWaypoints(ordered);
+          const routed = await routeWaypoints(ordered, profile);
           if (routed && routed.length > 1) {
             trailPath = routed;
           } else {
@@ -788,7 +790,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                     }`}
                   >
                      {(gpxImporting || elevFetching || routeFetching) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                     {gpxImporting ? 'Reading…' : routeFetching ? 'Routing road…' : elevFetching ? 'Fetching elevation…' : 'Choose GPX / FIT'}
+                     {gpxImporting ? 'Reading…' : routeFetching ? 'Routing path…' : elevFetching ? 'Fetching elevation…' : 'Choose GPX / FIT'}
                    </label>
                 </>
               )}
