@@ -26,12 +26,11 @@
         "admin"
       ],
       "default": "user",
-      "description": "user = front-end only (default for everyone on first login); narrator (Narr) = translates cloned tours via the Narr button + Narr password; admin = full backend via the Admin button + Base44 sign-in."
+      "description": "user = front-end only; narrator = translates cloned tours via the Narr button; admin = full backend via Base44 sign-in."
     },
     "date_of_birth": {
       "type": "string",
-      "format": "date",
-      "description": "Date of birth"
+      "description": "Date of birth (YYYY-MM-DD)"
     },
     "gender": {
       "type": "string",
@@ -44,7 +43,7 @@
     },
     "password": {
       "type": "string",
-      "description": "Backend password set by an admin in EditAppUser."
+      "description": "Backend password \u2014 required for Narrator and Admin roles."
     },
     "newsletter_opted_in": {
       "type": "boolean",
