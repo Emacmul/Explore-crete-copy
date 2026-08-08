@@ -100,7 +100,7 @@ Deno.serve(async (req) => {
           </p>
 
           <p>
-            A new walk is now available as part of your Magical Crete membership.
+            A new walk is now available on Magical Crete.
           </p>
 
           <div style="background:#f8fafc;border-radius:12px;padding:20px;margin:20px 0;border-left:4px solid #1d4ed8;">
@@ -130,14 +130,10 @@ Deno.serve(async (req) => {
             Log into your Magical Crete account and claim your copy of this walk.
           </p>
 
-          <p>
-            Your membership includes six new walks each year.
-          </p>
-
           <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;" />
 
           <p style="color:#9ca3af;font-size:12px;text-align:center;">
-            You're receiving this because you're a Magical Crete member.<br/>
+            You're receiving this because you have a Magical Crete account.<br/>
             Magical Crete Walking Trails
           </p>
 
