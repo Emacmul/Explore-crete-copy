@@ -650,12 +650,13 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
     }
   };
 
-  // Narrators get the full editing toolset (General, Route Path, Waypoints,
-  // Preview). Their only restriction is they cannot create a brand-new route
-  // from scratch, which is gated on the start screen — not here.
+  // The Route Path map editor is admin-only (narrators never see it) and is not used
+  // for Driving Tours — those follow roads, so there's no off-road trail to trace.
+  // Walks (WHT) and WalkAbouts (WBT) both get it.
+  const showTrailTab = !isNarrator && form.tour_category !== 'DDV';
   const tabs = [
     { id: 'details', label: 'General' },
-    { id: 'trail', label: 'Route Path (GPS)' },
+    ...(showTrailTab ? [{ id: 'trail', label: 'Route Path (GPS)' }] : []),
     { id: 'waypoints', label: `Waypoints${form.waypoints.length ? ` (${form.waypoints.length})` : ''}` },
     { id: 'preview', label: 'Preview' },
   ];
