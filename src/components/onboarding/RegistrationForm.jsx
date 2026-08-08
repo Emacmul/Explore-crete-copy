@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader2, Mail, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { motion } from 'framer-motion';
+import DateOfBirthPicker from './DateOfBirthPicker';
 
 export default function RegistrationForm({ user, onComplete }) {
   const [form, setForm] = useState({
@@ -134,12 +135,9 @@ export default function RegistrationForm({ user, onComplete }) {
           {/* Date of birth */}
           <div>
             <Label className="text-blue-100 text-sm mb-1.5 block">Date of Birth *</Label>
-            <Input
-              type="date"
+            <DateOfBirthPicker
               value={form.date_of_birth}
-              onChange={e => set('date_of_birth', e.target.value)}
-              max={new Date().toISOString().split('T')[0]}
-              className="bg-white/10 border-white/20 text-white [color-scheme:dark]"
+              onChange={v => set('date_of_birth', v)}
             />
             {errors.date_of_birth && <p className="text-red-400 text-xs mt-1">{errors.date_of_birth}</p>}
           </div>
