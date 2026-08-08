@@ -179,7 +179,7 @@ export default function TrailPathMapEditor({ trailPath, onChange, waypoints = []
           <Button
             type="button" size="sm"
             variant={mode === 'delete' ? 'default' : 'outline'}
-            onClick={() => setMode('delete')}
+            onClick={() => setMode(mode === 'delete' ? 'add' : 'delete')}
             className={mode === 'delete' ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-slate-700 border-slate-600 text-slate-300'}
           >
             <Eraser className="w-4 h-4" /> Delete
