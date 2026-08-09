@@ -4,11 +4,11 @@
   "properties": {
     "user_id": {
       "type": "string",
-      "description": "Base44 user ID"
+      "description": "WordPress user ID (set on first login via ensureAppUserOnboarding, or by the sync). Not a Base44 user id \u2014 real customers never have a Base44 session."
     },
     "email": {
       "type": "string",
-      "description": "Email address"
+      "description": "Email address (lowercased)"
     },
     "first_name": {
       "type": "string",
@@ -26,7 +26,7 @@
         "admin"
       ],
       "default": "user",
-      "description": "user = front-end only; narrator = translates cloned tours via the Narr button; admin = full backend via Base44 sign-in."
+      "description": "user = front-end only; narrator = translates cloned tours via the Narr button; admin = full backend via Base44 sign-in. Only ever changed by an admin through saveAppUserAdmin."
     },
     "date_of_birth": {
       "type": "string",
@@ -70,9 +70,6 @@
   "rls": {
     "read": {
       "$or": [
-        {
-          "data.user_id": "{{user.id}}"
-        },
         {
           "data.email": "{{user.email}}"
         },
