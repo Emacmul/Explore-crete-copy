@@ -10,7 +10,7 @@ import WalksDashboard from './WalksDashboard';
 import AdminStartScreen from './AdminStartScreen';
 import UsersManager from './UsersManager';
 import ApiKeysDialog from './ApiKeysDialog';
-import { getRouteTypeForCategory } from '@/lib/tourCategories';
+import { getRouteTypeForCategory, defaultPriceForCategory } from '@/lib/tourCategories';
 import { toast } from '@/components/ui/use-toast';
 
 /**
@@ -212,7 +212,16 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
             unrestricted={unrestricted}
             user={user}
             works={walks}
-            onNewTour={(categoryCode) => setEditingWalk({ tour_category: categoryCode, route_type: getRouteTypeForCategory(categoryCode) })}
+            onNewTour={(categoryCode) => setEditingWalk({
+              tour_category: categoryCode,
+              route_type: getRouteTypeForCategory(categoryCode),
+              // The category is already chosen here, before the editor opens — so the
+              // editor's dropdown change-handler never fires. Seed the category default
+              // price now (€12.50 WHT / €24.99 WBT & DDV, VAT included) so a brand-new
+              // Walkabout or Driving Tour doesn't silently fall back to the €12.50
+              // Walk/Hike baseline and launch at half price.
+              price_eur: defaultPriceForCategory(categoryCode),
+            })}
             onContinueTour={(walk, wpIndex) => { setEditingWalk(walk); setFocusWaypointIndex(wpIndex ?? null); }}
             onManageUsers={() => setView('users')}
             onDashboard={() => setView('dashboard')}
