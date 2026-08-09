@@ -15,7 +15,7 @@ import UpdateInProgressModal from '../components/offline/UpdateInProgressModal';
 import { isWalkOutdated, replaceWalkOffline, preCacheWalkTiles, preCacheWalkAudio } from '../components/offline/offlineStorage';
 import SplashScreen from '../components/onboarding/SplashScreen';
 import RegistrationForm from '../components/onboarding/RegistrationForm';
-import TourCategoryPicker from '../components/walks/TourCategoryPicker';
+import TourCategoryDialog from '../components/walks/TourCategoryDialog';
 import { getTourCategory } from '../lib/tourCategories';
 import InstallPrompt from '../components/InstallPrompt';
 import LanguagePicker from '@/components/ui/LanguagePicker';
@@ -33,7 +33,8 @@ export default function Home() {
   const [updatingWalkName, setUpdatingWalkName] = useState(null);
   const [showSplash, setShowSplash] = useState(() => !sessionStorage.getItem('splash_seen'));
   const [registrationComplete, setRegistrationComplete] = useState(false);
-  const [selectedTourCategory, setSelectedTourCategory] = useState(() => sessionStorage.getItem('tour_category'));
+  const [selectedTourCategory, setSelectedTourCategory] = useState(() => sessionStorage.getItem('tour_category') || 'WHT');
+  const [showCategoryDialog, setShowCategoryDialog] = useState(false);
   const [userRole, setUserRole] = useState(null); // 'admin' | 'narrator' | null — which back-end button (Admin or Narr) to show
 
   const { getAllOfflineWalks } = useOfflineWalks();
@@ -210,14 +211,12 @@ export default function Home() {
     setSelectedTourCategory(code);
     setSelectedWalk(null);
     setShowDetail(false);
+    setShowCategoryDialog(false);
   };
 
-  const handleChangeCategory = () => {
-    sessionStorage.removeItem('tour_category');
-    setSelectedTourCategory(null);
-    setSelectedWalk(null);
-    setShowDetail(false);
-  };
+  // "Change tour type" now opens the picker as a non-blocking dialog instead of pushing
+  // a full interstitial screen — the front-end stays visible the whole time.
+  const handleChangeCategory = () => setShowCategoryDialog(true);
 
   const accessibleWalks = walks.filter(w => w.approved !== false);
   const categoryWalks = selectedTourCategory
@@ -244,12 +243,6 @@ export default function Home() {
     );
   }
 
-  if (registrationComplete && !showSplash && !selectedTourCategory) {
-    return (
-      <TourCategoryPicker onSelect={handleCategorySelect} />
-    );
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-amber-50">
       {showSplash && (
@@ -263,6 +256,11 @@ export default function Home() {
 
       <UpdateInProgressModal walkName={updatingWalkName} />
       <InstallPrompt />
+      <TourCategoryDialog
+        open={showCategoryDialog}
+        onSelect={handleCategorySelect}
+        onClose={() => setShowCategoryDialog(false)}
+      />
 
       <header className="bg-white/80 backdrop-blur-md border-b sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
