@@ -24,7 +24,17 @@ export async function recordMembership(base44, { buyerEmail, processor, subscrip
     subscription_id: subscriptionId,
   });
   const current = existing[0];
-  const expiresAtValue = expiresAt || null;
+  let expiresAtValue = expiresAt || null;
+
+  // Safeguard: a cancellation should keep the member covered until the end of the period
+  // they already paid for. Creem's canceled/scheduled_cancel payloads do carry
+  // current_period_end_date, but if one ever arrived without it we must NOT null the
+  // stored expiry (that would instantly mark a paying member as lapsed). Preserve the
+  // existing value instead. Revoke events (expired/paused/past_due/unpaid) deliberately
+  // still null here — losing access then is the intended behavior.
+  if (!expiresAtValue && status === 'canceled' && current?.expires_at) {
+    expiresAtValue = current.expires_at;
+  }
 
   if (!current) {
     const created = await base44.asServiceRole.entities.Membership.create({

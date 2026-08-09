@@ -81,7 +81,12 @@ Deno.serve(async (req) => {
 
       const expiresAt = sub.current_period_end_date || null;
 
-      const grantEvents = ['subscription.active', 'subscription.trialing', 'subscription.paid', 'subscription.update'];
+      // Only events that confirm money (or a genuine trial) turned on should grant access.
+      // subscription.active is NOT one of them — Creem's own docs warn active fires for
+      // internal syncing and does NOT confirm a payment; only subscription.paid does.
+      // subscription.update is a generic "something changed" event, not a payment, so it is
+      // excluded too. subscription.trialing is a documented grant case (a real trial).
+      const grantEvents = ['subscription.trialing', 'subscription.paid'];
       const cancelEvents = ['subscription.canceled', 'subscription.scheduled_cancel'];
       const revokeEvents = ['subscription.expired', 'subscription.paused', 'subscription.past_due', 'subscription.unpaid'];
 
