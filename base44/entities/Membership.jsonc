@@ -1,0 +1,73 @@
+{
+  "name": "Membership",
+  "type": "object",
+  "properties": {
+    "buyer_email": {
+      "type": "string",
+      "description": "Email of the member (lowercased). Identifies the owner for access checks \u2014 matched against the logged-in user's email, the same way Purchase.buyer_email is."
+    },
+    "processor": {
+      "type": "string",
+      "enum": [
+        "creem",
+        "paddle",
+        "manual"
+      ],
+      "description": "Which Merchant of Record this membership was bought through (creem/paddle), or 'manual' for an admin-granted membership. All three flow through the same status check."
+    },
+    "subscription_id": {
+      "type": "string",
+      "description": "The subscription ID from the processor (e.g. Creem's sub_\u2026). Stable across the whole lifecycle \u2014 start, every renewal, cancellation and expiry all update this same record, never create a second one."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "canceled",
+        "expired"
+      ],
+      "default": "active",
+      "description": "active = currently paid up; canceled = the member (or merchant) cancelled but the paid period may not have ended yet (access continues until expires_at); expired = the membership has lapsed or been revoked (no current access)."
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "End of the current paid period (the processor's current_period_end_date). The membership lapses after this moment \u2014 an annual fee must actually expire if it isn't renewed."
+    }
+  },
+  "required": [
+    "buyer_email",
+    "processor",
+    "subscription_id",
+    "status"
+  ],
+  "rls": {
+    "read": {
+      "$or": [
+        {
+          "data.buyer_email": "{{user.email}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

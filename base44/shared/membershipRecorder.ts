@@ -1,0 +1,46 @@
+// Processor-agnostic membership status recording.
+//
+// This is the ONE place that records/updates "this person's membership is now in this
+// state". It is called by each Merchant-of-Record webhook receiver (Creem now, Paddle
+// later) AFTER that receiver has verified the incoming webhook is genuinely from its
+// processor and parsed the subscription lifecycle event. Adding a new processor later is
+// therefore just a second webhook receiver (with its own signature verification) feeding
+// into this same function — not new membership logic. Mirrors recordPurchase.
+//
+// Idempotent: the subscription id is stable across the entire lifecycle (start → each
+// renewal → cancellation/expiry), so we upsert keyed by (processor, subscription_id).
+// A redelivered webhook just re-writes the same status/expiry — never a duplicate row.
+
+export async function recordMembership(base44, { buyerEmail, processor, subscriptionId, status, expiresAt }) {
+  const email = (buyerEmail || '').toLowerCase().trim();
+  if (!email || !subscriptionId || !status) {
+    return { recorded: false, reason: 'missing_email_subscription_or_status' };
+  }
+
+  // Find the existing membership for this processor + subscription id — one row per
+  // subscription, updated on every lifecycle event.
+  const existing = await base44.asServiceRole.entities.Membership.filter({
+    processor,
+    subscription_id: subscriptionId,
+  });
+  const current = existing[0];
+  const expiresAtValue = expiresAt || null;
+
+  if (!current) {
+    const created = await base44.asServiceRole.entities.Membership.create({
+      buyer_email: email,
+      processor,
+      subscription_id: subscriptionId,
+      status,
+      expires_at: expiresAtValue,
+    });
+    return { recorded: true, action: 'created', membership_id: created.id };
+  }
+
+  // Update the status + expiry. The buyer email can very rarely change for the same
+  // subscription id — keep it fresh if it did.
+  const update = { status, expires_at: expiresAtValue };
+  if (current.buyer_email !== email) update.buyer_email = email;
+  await base44.asServiceRole.entities.Membership.update(current.id, update);
+  return { recorded: true, action: 'updated', membership_id: current.id };
+}
