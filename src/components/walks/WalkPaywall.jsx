@@ -1,6 +1,7 @@
 import React from 'react';
 import { Lock } from 'lucide-react';
 import BuyButton from './BuyButton';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 /**
  * WalkPaywall — shown in place of the full walk detail when the logged-in user hasn't
@@ -9,26 +10,26 @@ import BuyButton from './BuyButton';
  * the purchase is recorded.
  */
 export default function WalkPaywall({ walk }) {
+  const { t } = useLanguage();
   return (
     <div className="space-y-4">
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 text-center">
         <Lock className="w-8 h-8 text-amber-600 mx-auto mb-2" />
-        <h3 className="font-bold text-gray-900">This tour is part of the paid library</h3>
+        <h3 className="font-bold text-gray-900">{t('paywall.title')}</h3>
         <p className="text-sm text-gray-600 mt-1 max-w-md mx-auto">
-          Buy this tour once to unlock the full route map, waypoints, safety notes and
-          narration — then use it online or offline on your device.
+          {t('paywall.body')}
         </p>
         <div className="mt-4 flex justify-center">
           <BuyButton walk={walk} size="lg" />
         </div>
         {!walk?.checkout_url && (
-          <p className="text-xs text-gray-400 mt-2">Pricing for this tour is being prepared — check back soon.</p>
+          <p className="text-xs text-gray-400 mt-2">{t('paywall.preparing')}</p>
         )}
       </div>
 
       {walk?.description && (
         <div>
-          <h3 className="font-semibold text-gray-900 mb-2">About this walk</h3>
+          <h3 className="font-semibold text-gray-900 mb-2">{t('paywall.about')}</h3>
           <p className="text-gray-600 text-sm leading-relaxed">{walk.description}</p>
         </div>
       )}
