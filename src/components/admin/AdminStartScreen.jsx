@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import {
   Footprints, MapPin, Car, ChevronRight, ShieldCheck, Mic,
   LayoutDashboard, List, Users, Plus, AlertCircle, Volume2,
-  Languages, CheckCircle2, Send,
+  Languages, CheckCircle2, Send, AlertTriangle,
 } from 'lucide-react';
 import { TOUR_CATEGORIES } from '@/lib/tourCategories';
 import CloneTourDialog from './CloneTourDialog';
@@ -122,6 +122,7 @@ function ReviewCloneRow({ walk, onReview, onPublish }) {
 export default function AdminStartScreen({
   userRole, user, works, onNewTour, onContinueTour, onManageUsers, onDashboard, onManageWalks,
   onCloneTour, onPublishClone, cloneableTours = [], myClones = [], reviewClones = [],
+  onManageDisputes,
   unrestricted = false,
 }) {
   const isNarrator = userRole === 'narrator';
@@ -243,7 +244,7 @@ export default function AdminStartScreen({
       {/* Admin tools */}
       <div>
         <h2 className="text-lg font-bold text-white mb-3">Admin Tools</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <Button variant="outline" onClick={onDashboard} className="bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 gap-2 h-auto py-3 justify-start">
             <LayoutDashboard className="w-5 h-5 text-amber-400" />
             <div className="text-left"><p className="font-medium">Dashboard</p><p className="text-xs text-slate-400">Overview & stats</p></div>
@@ -255,6 +256,10 @@ export default function AdminStartScreen({
           <Button variant="outline" onClick={onManageUsers} className="bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 gap-2 h-auto py-3 justify-start">
             <Users className="w-5 h-5 text-purple-400" />
             <div className="text-left"><p className="font-medium">Manage Users</p><p className="text-xs text-slate-400">Promote / set Narr passwords</p></div>
+          </Button>
+          <Button variant="outline" onClick={onManageDisputes} className="bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 gap-2 h-auto py-3 justify-start">
+            <AlertTriangle className="w-5 h-5 text-rose-400" />
+            <div className="text-left"><p className="font-medium">Disputes</p><p className="text-xs text-slate-400">Restore access after a won chargeback</p></div>
           </Button>
         </div>
       </div>

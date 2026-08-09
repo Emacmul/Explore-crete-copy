@@ -1,0 +1,92 @@
+{
+  "name": "Dispute",
+  "type": "object",
+  "properties": {
+    "buyer_email": {
+      "type": "string",
+      "description": "Email of the customer whose chargeback/dispute revoked their access (lowercased)."
+    },
+    "processor": {
+      "type": "string",
+      "enum": [
+        "creem",
+        "paddle"
+      ],
+      "description": "Which Merchant of Record the disputed charge came through."
+    },
+    "product_id": {
+      "type": "string",
+      "description": "The disputed product's id at the processor (creem_product_id). Empty if the dispute webhook didn't carry a product id."
+    },
+    "access_target": {
+      "type": "string",
+      "enum": [
+        "membership",
+        "purchase"
+      ],
+      "description": "What was revoked: 'membership' = the annual membership was marked expired; 'purchase' = a one-time walk Purchase record was deleted."
+    },
+    "walk_id": {
+      "type": "string",
+      "description": "For access_target=purchase: the Walk whose Purchase was deleted, so restore can recreate the ownership record."
+    },
+    "transaction_id": {
+      "type": "string",
+      "description": "For purchases: the original Purchase transaction_id captured before deletion, so the recreated Purchase keeps the same dedupe key."
+    },
+    "subscription_id": {
+      "type": "string",
+      "description": "For membership disputes: the processor subscription id, so restore targets the right membership record."
+    },
+    "creem_event_id": {
+      "type": "string",
+      "description": "The processor dispute event id (evt_...). Used to dedupe redelivered dispute.created webhooks \u2014 the same dispute is logged once, not per redelivery."
+    },
+    "reason": {
+      "type": "string",
+      "description": "Dispute reason from the processor, if provided."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "revoked",
+        "restored"
+      ],
+      "default": "revoked",
+      "description": "revoked = access was removed when the chargeback opened; restored = an admin has put access back after the processor resolved the dispute in our favor."
+    },
+    "restored_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When an admin restored access, if applicable."
+    }
+  },
+  "required": [
+    "buyer_email",
+    "processor",
+    "access_target",
+    "status"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

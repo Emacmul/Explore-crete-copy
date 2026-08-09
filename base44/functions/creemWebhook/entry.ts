@@ -135,6 +135,29 @@ Deno.serve(async (req) => {
         processor: 'creem',
         productId,
       });
+
+      // A chargeback (dispute.created) is contested — it may later be resolved in our favor,
+      // so log it so an admin can restore access once they see the win in Creem's dashboard
+      // (Creem sends no "dispute won" event). A refund is final, so there's nothing to
+      // restore later. Dedupe by the event id so a redelivered webhook doesn't double-log.
+      if (eventType === 'dispute.created' && result.revoked && event.id) {
+        const existingDispute = await base44.asServiceRole.entities.Dispute.filter({ creem_event_id: event.id });
+        if (existingDispute.length === 0) {
+          await base44.asServiceRole.entities.Dispute.create({
+            buyer_email: customerEmail,
+            processor: 'creem',
+            product_id: productId,
+            access_target: result.target,
+            walk_id: result.walk_id || null,
+            transaction_id: result.transaction_id || null,
+            subscription_id: result.subscription_id || null,
+            creem_event_id: event.id,
+            reason: obj.reason || obj.dispute_reason || null,
+            status: 'revoked',
+          });
+        }
+      }
+
       return Response.json({
         received: true,
         revoked: result.revoked,

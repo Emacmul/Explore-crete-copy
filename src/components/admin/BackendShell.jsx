@@ -10,6 +10,7 @@ import WalksDashboard from './WalksDashboard';
 import AdminStartScreen from './AdminStartScreen';
 import UsersManager from './UsersManager';
 import ApiKeysDialog from './ApiKeysDialog';
+import DisputesManager from './DisputesManager';
 import { getRouteTypeForCategory, defaultPriceForCategory } from '@/lib/tourCategories';
 import { toast } from '@/components/ui/use-toast';
 
@@ -195,6 +196,8 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
           <UsersManager />
         ) : view === 'dashboard' ? (
           <WalksDashboard walks={walks} />
+        ) : view === 'disputes' ? (
+          <DisputesManager />
         ) : view === 'walks' ? (
           <WalkAdminList
             walks={walks}
@@ -225,6 +228,7 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
             onContinueTour={(walk, wpIndex) => { setEditingWalk(walk); setFocusWaypointIndex(wpIndex ?? null); }}
             onManageUsers={() => setView('users')}
             onDashboard={() => setView('dashboard')}
+            onManageDisputes={() => setView('disputes')}
             onManageWalks={() => setView('walks')}
             onCloneTour={handleCloneTour}
             onPublishClone={handlePublishClone}
