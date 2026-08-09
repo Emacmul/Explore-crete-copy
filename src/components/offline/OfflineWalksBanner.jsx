@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { WifiOff, ChevronDown, ChevronUp } from 'lucide-react';
 import { getAllOfflineWalks } from './offlineStorage';
 import WalkCard from '../walks/WalkCard';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 export default function OfflineWalksBanner({ onWalkSelect, selectedWalk }) {
+  const { t } = useLanguage();
   const [offlineWalks, setOfflineWalks] = useState([]);
   const [expanded, setExpanded] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -40,7 +42,7 @@ export default function OfflineWalksBanner({ onWalkSelect, selectedWalk }) {
         <div className="flex items-center gap-2">
           <WifiOff className={`w-4 h-4 ${!isOnline ? 'text-amber-600' : 'text-gray-500'}`} />
           <span className={`font-medium text-sm ${!isOnline ? 'text-amber-700' : 'text-gray-700'}`}>
-            {!isOnline ? 'Offline mode — ' : ''}{offlineWalks.length} saved walk{offlineWalks.length !== 1 ? 's' : ''}
+            {!isOnline ? 'Offline mode — ' : ''}{t(offlineWalks.length === 1 ? 'offline.savedWalkOne' : 'offline.savedWalkMany', { n: offlineWalks.length })}
           </span>
         </div>
         {expanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}

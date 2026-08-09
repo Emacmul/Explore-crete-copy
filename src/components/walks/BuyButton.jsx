@@ -1,6 +1,7 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { ShoppingBag, Lock } from 'lucide-react';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 /**
  * BuyButton — sends the buyer to the Merchant of Record's own checkout page for this
@@ -11,6 +12,7 @@ import { ShoppingBag, Lock } from 'lucide-react';
  * before its product is ready without linking to a dead page.
  */
 export default function BuyButton({ walk, size = 'sm' }) {
+  const { t } = useLanguage();
   const url = walk?.checkout_url;
   const price = walk?.price_eur;
 
@@ -18,6 +20,8 @@ export default function BuyButton({ walk, size = 'sm' }) {
     e?.stopPropagation();
     if (url) window.open(url, '_blank', 'noopener,noreferrer');
   };
+
+  const label = price != null ? `${t('card.buy')} · €${Number(price).toFixed(2)}` : t('card.buy');
 
   return (
     <Button
@@ -27,7 +31,7 @@ export default function BuyButton({ walk, size = 'sm' }) {
       className="gap-2 bg-amber-500 hover:bg-amber-600 text-white border-0"
     >
       {url ? <ShoppingBag className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
-      {price ? `Buy · €${price}` : 'Buy'}
+      {label}
     </Button>
   );
 }
