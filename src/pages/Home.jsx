@@ -14,7 +14,6 @@ import WalkDetail from '../components/walks/WalkDetail';
 import UpdateInProgressModal from '../components/offline/UpdateInProgressModal';
 import { isWalkOutdated, replaceWalkOffline, preCacheWalkTiles, preCacheWalkAudio } from '../components/offline/offlineStorage';
 import SplashScreen from '../components/onboarding/SplashScreen';
-import RegistrationForm from '../components/onboarding/RegistrationForm';
 import TourCategoryDialog from '../components/walks/TourCategoryDialog';
 import { getTourCategory } from '../lib/tourCategories';
 import InstallPrompt from '../components/InstallPrompt';
@@ -194,15 +193,6 @@ export default function Home() {
           <p className="text-gray-600">{t('common.loading')}</p>
         </div>
       </div>
-    );
-  }
-
-  if (!registrationComplete && !showSplash) {
-    return (
-      <RegistrationForm
-        user={user}
-        onComplete={() => setRegistrationComplete(true)}
-      />
     );
   }
 
