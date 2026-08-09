@@ -123,6 +123,7 @@ export default function AdminStartScreen({
   userRole, user, works, onNewTour, onContinueTour, onManageUsers, onDashboard, onManageWalks,
   onCloneTour, onPublishClone, cloneableTours = [], myClones = [], reviewClones = [],
   onManageDisputes,
+  onManageTranslations,
   unrestricted = false,
 }) {
   const isNarrator = userRole === 'narrator';
@@ -143,6 +144,14 @@ export default function AdminStartScreen({
             if (saved) onContinueTour(saved);
           }}
         />
+
+        <button onClick={onManageTranslations} className="w-full bg-purple-700 hover:bg-purple-800 text-white rounded-xl p-4 shadow-lg flex items-center gap-3 transition-all hover:scale-[1.01] active:scale-[0.99] text-left">
+          <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center shrink-0"><Languages className="w-5 h-5" /></div>
+          <div className="flex-1 min-w-0">
+            <p className="font-bold">Correct UI translations</p>
+            <p className="text-sm text-white/80 mt-0.5">Fix unnatural Dutch, Czech, etc. — overrides go live for everyone</p>
+          </div>
+        </button>
 
         <div>
           <h2 className="text-lg font-bold text-white mb-1">Clone a tour to translate</h2>
@@ -260,6 +269,10 @@ export default function AdminStartScreen({
           <Button variant="outline" onClick={onManageDisputes} className="bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 gap-2 h-auto py-3 justify-start">
             <AlertTriangle className="w-5 h-5 text-rose-400" />
             <div className="text-left"><p className="font-medium">Disputes</p><p className="text-xs text-slate-400">Restore access after a won chargeback</p></div>
+          </Button>
+          <Button variant="outline" onClick={onManageTranslations} className="bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 gap-2 h-auto py-3 justify-start">
+            <Languages className="w-5 h-5 text-purple-400" />
+            <div className="text-left"><p className="font-medium">Translations</p><p className="text-xs text-slate-400">Correct UI strings</p></div>
           </Button>
         </div>
       </div>

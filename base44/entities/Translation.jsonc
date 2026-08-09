@@ -1,0 +1,50 @@
+{
+  "name": "Translation",
+  "type": "object",
+  "properties": {
+    "key": {
+      "type": "string",
+      "description": "The i18n key being overridden (e.g. 'home.logout')."
+    },
+    "lang": {
+      "type": "string",
+      "enum": [
+        "en",
+        "nl",
+        "cs"
+      ],
+      "description": "UI language code this override applies to."
+    },
+    "value": {
+      "type": "string",
+      "description": "The corrected text for this key in this language."
+    },
+    "edited_by_email": {
+      "type": "string",
+      "description": "Email of the admin/narrator who last saved this override."
+    }
+  },
+  "required": [
+    "key",
+    "lang",
+    "value"
+  ],
+  "rls": {
+    "read": {},
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

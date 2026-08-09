@@ -11,6 +11,7 @@ import AdminStartScreen from './AdminStartScreen';
 import UsersManager from './UsersManager';
 import ApiKeysDialog from './ApiKeysDialog';
 import DisputesManager from './DisputesManager';
+import TranslationsManager from './TranslationsManager';
 import { getRouteTypeForCategory, defaultPriceForCategory } from '@/lib/tourCategories';
 import { toast } from '@/components/ui/use-toast';
 
@@ -198,6 +199,8 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
           <WalksDashboard walks={walks} />
         ) : view === 'disputes' ? (
           <DisputesManager />
+        ) : view === 'translations' ? (
+          <TranslationsManager authMode={authMode} user={user} />
         ) : view === 'walks' ? (
           <WalkAdminList
             walks={walks}
@@ -229,6 +232,7 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
             onManageUsers={() => setView('users')}
             onDashboard={() => setView('dashboard')}
             onManageDisputes={() => setView('disputes')}
+            onManageTranslations={() => setView('translations')}
             onManageWalks={() => setView('walks')}
             onCloneTour={handleCloneTour}
             onPublishClone={handlePublishClone}
