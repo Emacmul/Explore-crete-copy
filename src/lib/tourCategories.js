@@ -54,3 +54,15 @@ export function getRouteTypeForCategory(categoryCode) {
   const cat = getTourCategory(categoryCode);
   return cat ? cat.route_type : 'walk';
 }
+
+// Default purchase price (EUR, VAT included) per tour category.
+// Walk/Hike (WHT) = €12.50; Walkabout (WBT) and Driving Tour (DDV) = €24.99.
+export const DEFAULT_PRICE_BY_CATEGORY = {
+  WHT: 12.50,
+  WBT: 24.99,
+  DDV: 24.99,
+};
+
+export function defaultPriceForCategory(categoryCode) {
+  return DEFAULT_PRICE_BY_CATEGORY[categoryCode] ?? 12.50;
+}

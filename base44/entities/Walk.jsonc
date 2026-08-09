@@ -91,8 +91,8 @@
     },
     "price_eur": {
       "type": "number",
-      "default": 15,
-      "description": "Purchase price for non-members"
+      "default": 12.5,
+      "description": "Purchase price for non-members, VAT included. Defaults by tour category (applied automatically when the tour type is chosen in the editor): Walk/Hike (WHT) = \u20ac12.50, Walkabout (WBT) and Driving Tour (DDV) = \u20ac24.99."
     },
     "creem_product_id": {
       "type": "string",

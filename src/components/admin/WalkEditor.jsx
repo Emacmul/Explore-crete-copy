@@ -15,7 +15,7 @@ import TrailPathEditor from './TrailPathEditor';
 import TrailPathMapEditor from './TrailPathMapEditor';
 import AdminPreviewMap from './AdminPreviewMap';
 import { validateDrivingTour, generateGpx, generateWalkGpx, generateKml, downloadTextFile, buildSegmentId, getRoleColour } from '@/lib/routeExport';
-import { getRouteTypeForCategory } from '@/lib/tourCategories';
+import { getRouteTypeForCategory, defaultPriceForCategory } from '@/lib/tourCategories';
 import { MAX_WAYPOINT_IMAGES } from '@/lib/waypointImages';
 import { toast } from '@/components/ui/use-toast';
 
@@ -732,6 +732,10 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 onValueChange={(v) => {
                   set('tour_category', v);
                   set('route_type', getRouteTypeForCategory(v));
+                  // Default price follows the tour type: €12.50 for Walk/Hike, €24.99 for
+                  // Walkabout and Driving Tour (both VAT included). Selecting/changing the
+                  // type sets this default; the admin can still override the field below.
+                  set('price_eur', defaultPriceForCategory(v));
                 }}
               >
                 <SelectTrigger className={`bg-slate-700 text-white ${!form.tour_category ? 'border-amber-500/70 focus-visible:ring-amber-500' : 'border-slate-600'}`}>
