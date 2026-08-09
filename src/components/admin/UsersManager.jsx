@@ -6,12 +6,13 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import {
-  Trash2, Loader2, Mail, ShieldCheck, Mic, Users, Pencil, Search, User, KeyRound,
+  Trash2, Loader2, Mail, ShieldCheck, Mic, Users, Pencil, Search, User, KeyRound, Gift,
 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/components/ui/use-toast';
 import DateOfBirthSelect from '@/components/admin/DateOfBirthSelect';
+import GiftWalkDialog from '@/components/admin/GiftWalkDialog';
 
 function roleBadge(role) {
   if (role === 'admin') return <Badge className="text-xs text-amber-300 border-amber-700 bg-amber-900/30">admin</Badge>;
@@ -109,6 +110,7 @@ function EditAppUserDialog({ appUser, onClose }) {
 export default function UsersManager() {
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState(null);
+  const [gifting, setGifting] = useState(null);
   const qc = useQueryClient();
 
   const { data: appUsers = [], isLoading } = useQuery({
@@ -146,6 +148,7 @@ export default function UsersManager() {
       </div>
 
       {editing && <EditAppUserDialog appUser={editing} onClose={() => setEditing(null)} />}
+      {gifting && <GiftWalkDialog appUser={gifting} onClose={() => setGifting(null)} />}
 
       {isLoading ? (
         <div className="flex justify-center py-10"><Loader2 className="w-8 h-8 animate-spin text-amber-400" /></div>
@@ -169,6 +172,7 @@ export default function UsersManager() {
                 <span className="hidden sm:flex items-center gap-1 text-xs text-purple-400" title="Backend password set"><KeyRound className="w-3.5 h-3.5" /></span>
               )}
               {roleBadge(u.role)}
+              <Button variant="ghost" size="sm" onClick={() => setGifting(u)} className="text-slate-300 hover:text-amber-400 gap-2"><Gift className="w-3.5 h-3.5" /> Gift</Button>
               <Button variant="ghost" size="sm" onClick={() => setEditing(u)} className="text-slate-300 hover:text-white gap-2"><Pencil className="w-3.5 h-3.5" /> Edit</Button>
               <Button variant="ghost" size="icon" onClick={() => handleDelete(u.id)} className="text-slate-500 hover:text-red-400 w-7 h-7" title="Remove"><Trash2 className="w-3.5 h-3.5" /></Button>
             </div>

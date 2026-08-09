@@ -22,18 +22,19 @@
       "type": "string",
       "enum": [
         "creem",
-        "paddle"
+        "paddle",
+        "manual"
       ],
-      "description": "Which Merchant of Record processed this payment (creem now, paddle later)."
+      "description": "How ownership was granted: creem/paddle = a real payment via that Merchant of Record; manual = an admin gifted this walk for free (birthday raffle, etc.). All three flow through the same entitlement check."
     },
     "transaction_id": {
       "type": "string",
-      "description": "Order/checkout ID from the processor \u2014 used to dedupe redelivered webhooks so a repeat delivery never creates a duplicate record."
+      "description": "Order/checkout ID from the processor \u2014 used to dedupe redelivered webhooks so a repeat delivery never creates a duplicate record. Null for manual grants (deduped by email + product id instead)."
     },
     "purchased_at": {
       "type": "string",
       "format": "date-time",
-      "description": "When the purchase was recorded (webhook arrival time)."
+      "description": "When the purchase was recorded (webhook arrival time, or the manual grant time)."
     }
   },
   "required": [
