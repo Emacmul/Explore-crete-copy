@@ -1,6 +1,7 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 import { recordPurchase } from '../../shared/purchaseRecorder.ts';
 import { recordMembership } from '../../shared/membershipRecorder.ts';
+import { revokeAccess } from '../../shared/accessRevoker.ts';
 
 // Creem webhook receiver (sandbox for now; live Creem or a Paddle receiver later).
 //
@@ -110,6 +111,35 @@ Deno.serve(async (req) => {
         received: true,
         recorded: result.recorded,
         action: result.action || null,
+        reason: result.reason || null,
+      });
+    }
+
+    // ---- Refund / chargeback: revoke the access that disputed payment granted ----
+    // A refund or chargeback means the money came back out, so the access it granted must
+    // come off too — otherwise someone who disputes the membership charge keeps 25%-off
+    // access for the rest of the year. revokeAccess routes by the disputed product: a walk
+    // product → its Purchase record is deleted (getOwnedProductIds drops it); the membership
+    // product → the membership is marked expired (getMembershipStatus → not a member). Both
+    // refund.created and dispute.created revoke immediately, by design.
+    if (eventType === 'refund.created' || eventType === 'dispute.created') {
+      const obj = payload || {};
+      const customerEmail = (obj.customer?.email || obj.customer_email || '').toLowerCase().trim();
+      const productId = obj.product?.id || obj.product_id || obj.order?.product || null;
+      if (!customerEmail) {
+        console.error('Creem refund/dispute event missing customer email', JSON.stringify(event));
+        return Response.json({ error: 'Missing customer email' }, { status: 400 });
+      }
+      const result = await revokeAccess(base44, {
+        buyerEmail: customerEmail,
+        processor: 'creem',
+        productId,
+      });
+      return Response.json({
+        received: true,
+        revoked: result.revoked,
+        target: result.target || null,
+        count: result.count || 0,
         reason: result.reason || null,
       });
     }
