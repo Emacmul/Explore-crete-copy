@@ -49,7 +49,7 @@ function EditAppUserDialog({ appUser, onClose }) {
         updates.password = '';
       }
 
-      await base44.entities.AppUser.update(appUser.id, updates);
+      await base44.functions.invoke('saveAppUserAdmin', { id: appUser.id, updates });
 
       // Promoting to admin: invite them to Base44 so the Admin button works for them.
       if (role === 'admin' && appUser.role !== 'admin') {
@@ -115,7 +115,10 @@ export default function UsersManager() {
 
   const { data: appUsers = [], isLoading } = useQuery({
     queryKey: ['appUsers-all'],
-    queryFn: () => base44.entities.AppUser.list('-created_date', 500),
+    queryFn: async () => {
+      const res = await base44.functions.invoke('listAppUsersAdmin', {});
+      return res.data?.users || [];
+    },
   });
 
   const filtered = appUsers.filter(u => {
@@ -131,7 +134,7 @@ export default function UsersManager() {
   });
 
   const handleDelete = async (userId) => {
-    await base44.entities.AppUser.delete(userId);
+    await base44.functions.invoke('deleteAppUserAdmin', { id: userId });
     qc.invalidateQueries({ queryKey: ['appUsers-all'] });
   };
 

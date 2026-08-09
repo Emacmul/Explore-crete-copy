@@ -29,7 +29,7 @@ export default function Admin() {
         if (userData.role === 'admin') {
           role = 'admin';
         } else {
-          const appUsers = await base44.entities.AppUser.filter({ user_id: userData.id });
+          const appUsers = await base44.entities.AppUser.filter({ email: String(userData.email || '').toLowerCase() });
           if (appUsers.length > 0 && (appUsers[0].role === 'narrator' || appUsers[0].role === 'admin')) {
             role = appUsers[0].role;
           }

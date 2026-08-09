@@ -1,0 +1,45 @@
+{
+  "trigger": {
+    "condition": null,
+    "config": {
+      "trigger_type": "scheduled",
+      "events": [],
+      "schedule_mode": "recurring",
+      "cron_expression": "*/5 * * * *",
+      "one_time_date": null,
+      "timezone": "Europe/Bucharest",
+      "interval_value": null,
+      "interval_unit": null,
+      "interval_anchor": null,
+      "ends_type": "never",
+      "ends_on_date": null,
+      "ends_after_count": null
+    }
+  },
+  "description": "Every 5 minutes (the platform's shortest allowed schedule), pulls every WordPress-registered user into AppUser as a plain 'user' so admins can see and promote them. Only creates missing rows (matched by email); never touches an existing row or its role. Runs on Base44's own schedule, polling WordPress from the outside \u2014 no WP-Cron.",
+  "name": "Sync WordPress Users to AppUser",
+  "definition": {
+    "document": {
+      "dsl": "1.0.0",
+      "name": "sync_wp_users",
+      "version": "1.0",
+      "namespace": "base44"
+    },
+    "do": [
+      {
+        "sync": {
+          "call": "invoke_backend_function",
+          "with": {
+            "function_name": "syncAppUsersFromWordPress",
+            "args": {}
+          },
+          "then": "end",
+          "x-base44": {
+            "title": "Sync WordPress users",
+            "description": "Create missing AppUser rows"
+          }
+        }
+      }
+    ]
+  }
+}
