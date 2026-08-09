@@ -1,0 +1,73 @@
+{
+  "name": "Purchase",
+  "type": "object",
+  "properties": {
+    "buyer_email": {
+      "type": "string",
+      "description": "Email of the customer who bought the walk (lowercased). Identifies the owner for access checks \u2014 matched against the logged-in user's email."
+    },
+    "creem_product_id": {
+      "type": "string",
+      "description": "The product ID at the Merchant of Record that was purchased. Matched against Walk.creem_product_id to grant access \u2014 NOT a loose text match on the walk code."
+    },
+    "walk_id": {
+      "type": "string",
+      "description": "The Walk record this purchase grants access to (resolved by creem_product_id at recording time). May be null if no walk matched the product id yet (recorded anyway for support + future-proofing)."
+    },
+    "walk_name": {
+      "type": "string",
+      "description": "Snapshot of the walk name at purchase time, for support lookups."
+    },
+    "processor": {
+      "type": "string",
+      "enum": [
+        "creem",
+        "paddle"
+      ],
+      "description": "Which Merchant of Record processed this payment (creem now, paddle later)."
+    },
+    "transaction_id": {
+      "type": "string",
+      "description": "Order/checkout ID from the processor \u2014 used to dedupe redelivered webhooks so a repeat delivery never creates a duplicate record."
+    },
+    "purchased_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the purchase was recorded (webhook arrival time)."
+    }
+  },
+  "required": [
+    "buyer_email",
+    "creem_product_id",
+    "processor"
+  ],
+  "rls": {
+    "read": {
+      "$or": [
+        {
+          "data.buyer_email": "{{user.email}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

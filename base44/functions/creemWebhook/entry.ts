@@ -1,9 +1,19 @@
-import { createClientFromRequest } from 'npm:@base44/sdk@0.8.23';
+import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
+import { recordPurchase } from '../../shared/purchaseRecorder.ts';
 
-// Creem signs every webhook with HMAC-SHA256 over the raw request body, using the webhook
-// secret as the key, sent in a header called "creem-signature" — confirmed directly from
-// Creem's own documentation (docs.creem.io/learn/webhooks/verify-webhook-requests).
-async function verifySignature(payload: string, signature: string, secret: string): Promise<boolean> {
+// Creem webhook receiver (sandbox for now; live Creem or a Paddle receiver later).
+//
+// This file is the Creem-SPECIFIC part: it verifies the incoming request is genuinely
+// from Creem, then extracts the buyer + product. The actual ownership recording is
+// delegated to the shared, processor-agnostic recordPurchase() — so adding Paddle
+// later is a second webhook receiver (with Paddle's own signature verification)
+// calling the same recordPurchase with processor: 'paddle'.
+//
+// Creem signs every webhook with HMAC-SHA256 over the raw request body, using the
+// webhook secret as the key, sent in the "creem-signature" header
+// (docs.creem.io/learn/webhooks/verify-webhook-requests). This verification is never
+// skipped — without it anyone could POST a fake purchase here.
+async function verifySignature(payload, signature, secret) {
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
     'raw',
@@ -20,79 +30,64 @@ async function verifySignature(payload: string, signature: string, secret: strin
 }
 
 Deno.serve(async (req) => {
-  const base44 = createClientFromRequest(req);
-
-  const rawBody = await req.text();
-  const signature = req.headers.get('creem-signature');
-  const secret = Deno.env.get('CREEM_WEBHOOK_SECRET');
-
-  if (!secret) {
-    console.error('CREEM_WEBHOOK_SECRET is not set — this must be configured before this webhook can accept anything.');
-    return Response.json({ error: 'Webhook not configured' }, { status: 500 });
-  }
-  if (!signature) {
-    return Response.json({ error: 'Missing creem-signature header' }, { status: 400 });
-  }
-
-  const valid = await verifySignature(rawBody, signature, secret);
-  if (!valid) {
-    console.error('Creem webhook signature did not match — request rejected, not from Creem or the secret is wrong.');
-    return Response.json({ error: 'Invalid signature' }, { status: 401 });
-  }
-
-  let event;
   try {
-    event = JSON.parse(rawBody);
-  } catch (err) {
-    return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
-  }
+    const base44 = createClientFromRequest(req);
 
-  // Only checkout.completed actually confirms a successful one-time payment. The app currently
-  // only sells individual walks/tours as one-time purchases, not subscriptions — the
-  // subscription.* events are subscribed to (per the webhook setup) but not acted on here yet.
-  // NOTE: the exact field names below (eventType, customer.email, product.id) are a best-effort
-  // reading of Creem's general webhook shape — worth confirming against a real test event sent
-  // from the Creem dashboard once that's available, and adjusting if the actual payload differs.
-  const eventType = event.eventType || event.type;
-  if (eventType !== 'checkout.completed') {
-    return Response.json({ received: true, skipped: true });
-  }
+    const rawBody = await req.text();
+    const signature = req.headers.get('creem-signature');
+    const secret = Deno.env.get('CREEM_WEBHOOK_SECRET');
 
-  const checkout = event.object || event.data || event;
-  const customerEmail = (checkout.customer?.email || checkout.customer_email || '').toLowerCase().trim();
-  const productId = checkout.product?.id || checkout.product_id;
+    if (!secret) {
+      console.error('CREEM_WEBHOOK_SECRET is not set — webhook cannot accept anything until it is configured.');
+      return Response.json({ error: 'Webhook not configured' }, { status: 500 });
+    }
+    if (!signature) {
+      return Response.json({ error: 'Missing creem-signature header' }, { status: 400 });
+    }
 
-  if (!customerEmail || !productId) {
-    console.error('Creem webhook payload missing email or product ID', JSON.stringify(event));
-    return Response.json({ error: 'Missing customer email or product ID in payload' }, { status: 400 });
-  }
+    const valid = await verifySignature(rawBody, signature, secret);
+    if (!valid) {
+      console.error('Creem webhook signature did not match — request rejected (not from Creem, or the secret is wrong).');
+      return Response.json({ error: 'Invalid signature' }, { status: 401 });
+    }
 
-  // Find which walk this Creem product corresponds to.
-  const walks = await base44.asServiceRole.entities.Walk.filter({ creem_product_id: productId });
-  const walk = walks[0];
-  if (!walk) {
-    console.error('No walk found with creem_product_id matching:', productId);
-    return Response.json({ error: 'No matching walk for this product ID' }, { status: 404 });
-  }
+    let event;
+    try {
+      event = JSON.parse(rawBody);
+    } catch {
+      return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
+    }
 
-  // Record the purchase against the customer's AppUser record.
-  const appUsers = await base44.asServiceRole.entities.AppUser.filter({ email: customerEmail });
-  const appUser = appUsers[0];
+    // Only checkout.completed confirms a successful one-time payment. The app sells
+    // individual walks/tours as one-time purchases today; subscription.* events are
+    // subscribed to but not acted on here yet (the future membership will use them).
+    const eventType = event.eventType || event.type;
+    if (eventType !== 'checkout.completed') {
+      return Response.json({ received: true, skipped: true });
+    }
 
-  if (!appUser) {
-    // They paid before ever logging into the app — genuinely possible (bought from the website
-    // first). Create a placeholder record with no user_id yet; Home.jsx's own registration check
-    // already knows how to find and link up a record like this by email on their first real
-    // login, same mechanism already built for admin-invited staff.
-    await base44.asServiceRole.entities.AppUser.create({
-      email: customerEmail,
-      purchased_walk_ids: [walk.id],
+    const checkout = event.object || event.data || event;
+    const customerEmail = (checkout.customer?.email || checkout.customer_email || '').toLowerCase().trim();
+    const productId = checkout.product?.id || checkout.product_id;
+    // Order/checkout id from Creem — used to dedupe redelivered webhooks.
+    const transactionId = checkout.id || checkout.checkout_id || event.id || null;
+
+    if (!customerEmail || !productId) {
+      console.error('Creem webhook payload missing email or product ID', JSON.stringify(event));
+      return Response.json({ error: 'Missing customer email or product ID' }, { status: 400 });
+    }
+
+    // Hand off to the shared ownership recorder. This is the only part that touches our
+    // data; everything above is Creem-specific verification + parsing.
+    const result = await recordPurchase(base44, {
+      buyerEmail: customerEmail,
+      productId,
+      processor: 'creem',
+      transactionId,
     });
-  } else if (!(appUser.purchased_walk_ids || []).includes(walk.id)) {
-    await base44.asServiceRole.entities.AppUser.update(appUser.id, {
-      purchased_walk_ids: [...(appUser.purchased_walk_ids || []), walk.id],
-    });
-  }
 
-  return Response.json({ received: true });
+    return Response.json({ received: true, recorded: result.recorded, reason: result.reason || null });
+  } catch (error) {
+    return Response.json({ error: error.message }, { status: 500 });
+  }
 });
