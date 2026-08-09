@@ -69,9 +69,11 @@ export default async function (req) {
       if (existingEmails.has(email)) continue;
       await svc.entities.AppUser.create({
         email,
+        user_id: wp.id ? String(wp.id) : '',
         first_name: String(wp.first_name || '').trim(),
         last_name: String(wp.last_name || '').trim(),
         role: 'user',
+        registration_complete: true,
         newsletter_opted_in: false,
       });
       existingEmails.add(email);

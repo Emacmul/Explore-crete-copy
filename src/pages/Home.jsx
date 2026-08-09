@@ -44,59 +44,22 @@ export default function Home() {
   useEffect(() => {
     const checkRegistration = async () => {
       try {
-        const appUsers = await base44.entities.AppUser.filter({ user_id: user.id });
-        let finalAppUser = appUsers[0] || null;
-
-        if (finalAppUser && finalAppUser.registration_complete) {
+        // Onboarding runs through a token-identified backend function (asServiceRole)
+        // rather than direct client-SDK writes: real customers log in through
+        // WordPress and have NO Base44 session, so RLS (which keys off the Base44
+        // user) can't identify them. The function ensures their AppUser row exists
+        // and is linked — and never touches role, which only changes via
+        // saveAppUserAdmin (admin-gated).
+        const res = await base44.functions.invoke('ensureAppUserOnboarding', {
+          token,
+          display_name: user.full_name || user.display_name,
+        });
+        const appUser = res.data?.appUser;
+        if (appUser) {
           setRegistrationComplete(true);
-        } else if (finalAppUser) {
-          // AppUser record exists (matched by user_id) but was never marked complete (e.g.
-          // created before this fix) — WordPress registration already collected everything
-          // needed, so just mark it complete now instead of showing the old in-app form again.
-          await base44.entities.AppUser.update(finalAppUser.id, { registration_complete: true });
-          finalAppUser = { ...finalAppUser, registration_complete: true };
-          setRegistrationComplete(true);
-        } else {
-          // No record matched by user_id — but Enda may have already invited this person as an
-          // admin/narrator via the Users Manager, which creates their AppUser record ahead of
-          // time (with their role already set) but with no user_id yet, since they hadn't
-          // logged in. Check by email before assuming this is a brand new person — otherwise
-          // this would create a second, separate record with no role at all, silently locking
-          // a newly invited admin/narrator out of the Admin Panel.
-          const byEmail = await base44.entities.AppUser.filter({ email: (user.email || '').toLowerCase() });
-          const invited = byEmail.find(u => !u.user_id);
-
-          if (invited) {
-            await base44.entities.AppUser.update(invited.id, {
-              user_id: user.id,
-              registration_complete: true,
-            });
-            finalAppUser = { ...invited, user_id: user.id, registration_complete: true };
-          } else {
-            // Genuinely this person's first login after registering through WordPress. Create
-            // the record straight away, already complete, instead of asking them to re-enter
-            // information WordPress's registration form already collected a moment ago. Name is
-            // filled in on a best-effort basis from whatever WordPress provides
-            // (full_name/display_name) — never required, since the app itself doesn't collect
-            // it anymore.
-            const nameParts = (user.full_name || user.display_name || '').trim().split(/\s+/);
-            const created = await base44.entities.AppUser.create({
-              user_id: user.id,
-              email: user.email,
-              first_name: nameParts[0] || '',
-              last_name: nameParts.slice(1).join(' ') || '',
-              registration_complete: true,
-            });
-            finalAppUser = created;
+          if (appUser.role === 'admin' || appUser.role === 'narrator') {
+            setUserRole(appUser.role);
           }
-          setRegistrationComplete(true);
-        }
-
-        // This login is WordPress-based (see AuthContext.jsx) and carries no role field of its
-        // own — unlike Admin.jsx, which checks Base44's separate native login. The AppUser
-        // record's own `role` field is the only real source of truth here.
-        if (finalAppUser && (finalAppUser.role === 'admin' || finalAppUser.role === 'narrator')) {
-          setUserRole(finalAppUser.role);
         }
       } catch (error) {
         console.error('Registration check error:', error);
