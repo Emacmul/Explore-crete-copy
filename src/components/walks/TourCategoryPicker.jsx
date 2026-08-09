@@ -2,6 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Footprints, MapPin, Car, ChevronRight } from 'lucide-react';
 import { TOUR_CATEGORIES } from '@/lib/tourCategories';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 const ICONS = { Footprints, MapPin, Car };
 
@@ -27,6 +28,7 @@ const COLOR_STYLES = {
 };
 
 export default function TourCategoryPicker({ onSelect }) {
+  const { t } = useLanguage();
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-amber-50 flex flex-col items-center justify-center p-6">
       <motion.div
@@ -37,8 +39,8 @@ export default function TourCategoryPicker({ onSelect }) {
         <div className="w-16 h-16 bg-gradient-to-br from-blue-600 to-blue-700 rounded-2xl flex items-center justify-center shadow-lg mx-auto mb-4">
           <img src="/explore-crete-logo.png" alt="Explore Crete" className="w-11 h-11 object-contain" />
         </div>
-        <h1 className="text-2xl font-bold text-gray-900">Choose Your Tour Type</h1>
-        <p className="text-sm text-gray-500 mt-1">Select a category to see the tours you own</p>
+        <h1 className="text-2xl font-bold text-gray-900">{t('picker.title')}</h1>
+        <p className="text-sm text-gray-500 mt-1">{t('picker.subtitle')}</p>
       </motion.div>
 
       <div className="w-full max-w-md space-y-3">
@@ -63,9 +65,9 @@ export default function TourCategoryPicker({ onSelect }) {
                   <span className="font-mono text-xs bg-white/25 px-2 py-0.5 rounded font-bold">
                     {cat.code}
                   </span>
-                  <h2 className="font-bold text-lg">{cat.label}</h2>
+                  <h2 className="font-bold text-lg">{t('tour.' + cat.code + '.label')}</h2>
                 </div>
-                <p className="text-sm text-white/80 mt-0.5">{cat.description}</p>
+                <p className="text-sm text-white/80 mt-0.5">{t('tour.' + cat.code + '.description')}</p>
               </div>
               <ChevronRight className="w-5 h-5 shrink-0 opacity-70" />
             </motion.button>

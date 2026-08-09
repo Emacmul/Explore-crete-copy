@@ -4,6 +4,8 @@ import { Badge } from '@/components/ui/badge';
 import { Clock, Route, TrendingUp, ChevronRight, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useOfflineWalks } from '../offline/useOfflineWalks';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
+import { getTourLanguage, LANGUAGE_NAME_BY_CODE } from '@/lib/i18n';
 import OfflineBadge from './OfflineBadge';
 import BuyButton from './BuyButton';
 
@@ -18,6 +20,10 @@ export default function WalkCard({ walk, onClick, isSelected, accessible = true 
   const { isDownloaded } = useOfflineWalks();
   const downloaded = isDownloaded(walk.id);
   const locked = accessible === false && !walk.is_sample_walk;
+  const { t, lang } = useLanguage();
+  const tourLang = getTourLanguage(walk);
+  const uiLangName = LANGUAGE_NAME_BY_CODE[lang] || 'English';
+  const showLangBadge = tourLang !== uiLangName;
 
   return (
     <motion.div
@@ -43,13 +49,19 @@ export default function WalkCard({ walk, onClick, isSelected, accessible = true 
 
               {walk.difficulty && (
                 <Badge variant="outline" className={`text-xs ${difficultyColors[walk.difficulty]}`}>
-                  {walk.difficulty}
+                  {t('diff.' + walk.difficulty)}
                 </Badge>
               )}
 
               {walk.is_sample_walk && (
                 <Badge variant="outline" className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200 flex items-center gap-1">
-                  <Sparkles className="w-3 h-3" /> Sample Walk
+                  <Sparkles className="w-3 h-3" /> {t('card.sampleWalk')}
+                </Badge>
+              )}
+
+              {showLangBadge && (
+                <Badge variant="outline" className="text-xs bg-slate-50 text-slate-600 border-slate-200">
+                  {tourLang}
                 </Badge>
               )}
             </div>

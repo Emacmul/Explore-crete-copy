@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 const SPLASH_IMAGE = 'https://media.base44.com/images/public/69a7d073cd7cd9b51cfe0fd0/40f0351cc_Walkingappsplashacreen.jpg';
 
 export default function SplashScreen({ onDone }) {
+  const { t } = useLanguage();
   const [visible, setVisible] = useState(true);
 
   // By the time this screen can render, App.jsx has already confirmed the user is logged in via
@@ -45,7 +47,7 @@ export default function SplashScreen({ onDone }) {
               onClick={handleEnter}
               className="w-full max-w-xs bg-white/20 hover:bg-white/30 active:scale-95 text-white font-semibold text-base py-3 rounded-2xl border border-white/50 backdrop-blur-sm tracking-wide transition-all duration-150"
             >
-              Enter
+              {t('splash.enter')}
             </motion.button>
           </div>
         </motion.div>

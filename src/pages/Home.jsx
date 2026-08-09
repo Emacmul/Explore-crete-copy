@@ -18,9 +18,12 @@ import RegistrationForm from '../components/onboarding/RegistrationForm';
 import TourCategoryPicker from '../components/walks/TourCategoryPicker';
 import { getTourCategory } from '../lib/tourCategories';
 import InstallPrompt from '../components/InstallPrompt';
+import LanguagePicker from '@/components/ui/LanguagePicker';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 export default function Home() {
   const { user, logout, token } = useAuth();
+  const { t } = useLanguage();
   const [isLoading, setIsLoading] = useState(true);
   const [selectedWalk, setSelectedWalk] = useState(null);
   const [showDetail, setShowDetail] = useState(false);
@@ -216,7 +219,7 @@ export default function Home() {
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-amber-50 flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="w-10 h-10 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-gray-600">Loading...</p>
+          <p className="text-gray-600">{t('common.loading')}</p>
         </div>
       </div>
     );
@@ -257,12 +260,14 @@ export default function Home() {
             <img src="/explore-crete-logo.png" alt="Explore Crete" className="w-10 h-10 rounded-xl shadow-lg object-contain" />
 
             <div>
-              <h1 className="font-bold text-gray-900">Explore Crete</h1>
-              <p className="text-xs text-gray-500">Discover the island's beauty</p>
+              <h1 className="font-bold text-gray-900">{t('app.title')}</h1>
+              <p className="text-xs text-gray-500">{t('app.tagline')}</p>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
+            <LanguagePicker />
+
             <div className="hidden sm:flex items-center gap-2 text-sm text-gray-600">
               <User className="w-4 h-4" />
               <span>{user?.full_name || user?.email}</span>
@@ -275,15 +280,15 @@ export default function Home() {
                 onClick={handleChangeCategory}
                 className="gap-2 border-blue-300 text-blue-700 hover:bg-blue-50"
               >
-                <span className="sm:hidden">Change</span>
-                <span className="hidden sm:inline">Change tour type</span>
+                <span className="sm:hidden">{t('home.change')}</span>
+                <span className="hidden sm:inline">{t('home.changeTourType')}</span>
               </Button>
             )}
 
             <Link to={createPageUrl('MyWalks')}>
               <Button variant="outline" size="sm" className="gap-2 border-green-300 text-green-700 hover:bg-green-50 relative">
                 <WifiOff className="w-4 h-4" />
-                <span className="hidden sm:inline">My Library</span>
+                <span className="hidden sm:inline">{t('home.myLibrary')}</span>
 
                 {offlineCount > 0 && (
                   <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-green-500 text-white text-xs rounded-full flex items-center justify-center font-bold">
@@ -297,7 +302,7 @@ export default function Home() {
               <Link to={createPageUrl('Admin')}>
                 <Button variant="outline" size="sm" className="gap-2 border-amber-300 text-amber-600 hover:bg-amber-50">
                   <ShieldCheck className="w-4 h-4" />
-                  <span className="hidden sm:inline">Admin</span>
+                  <span className="hidden sm:inline">{t('home.admin')}</span>
                 </Button>
               </Link>
             )}
@@ -305,7 +310,7 @@ export default function Home() {
               <Link to={createPageUrl('Narr')}>
                 <Button variant="outline" size="sm" className="gap-2 border-purple-300 text-purple-600 hover:bg-purple-50">
                   <Mic className="w-4 h-4" />
-                  <span className="hidden sm:inline">Narr</span>
+                  <span className="hidden sm:inline">{t('home.narr')}</span>
                 </Button>
               </Link>
             )}
@@ -317,7 +322,7 @@ export default function Home() {
               className="gap-2"
             >
               <LogOut className="w-4 h-4" />
-              <span className="hidden sm:inline">Logout</span>
+              <span className="hidden sm:inline">{t('home.logout')}</span>
             </Button>
           </div>
         </div>
@@ -379,8 +384,7 @@ export default function Home() {
 
                   <div className="absolute bottom-4 left-4 right-4 bg-white/90 backdrop-blur-sm rounded-lg p-3 shadow-lg border">
                     <p className="text-sm text-gray-600 text-center">
-                      <span className="font-medium text-gray-900">Tap the map</span> to find walks near that location,
-                      or <span className="font-medium text-gray-900">tap a walk code</span> to see details
+                      {t('home.mapHint')}
                     </p>
                   </div>
                 </motion.div>
