@@ -1,21 +1,28 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 import { getEmailFromToken } from '../../shared/wpToken.ts';
 
-// The walk catalogue, with protected content withheld from callers who haven't bought it.
+// The walk catalogue, collapsed to one STABLE entry per tour (not per language).
 //
-// This is the real fix for the "paywall only hides content" problem: instead of sending
-// every walk's full data to the browser and choosing not to display it, the server here
-// strips the protected fields (narration scripts, audio URLs, the full route line, the
-// GPX) from any walk the caller doesn't own. The browser only ever receives teaser data
-// (name, description, stats, start point, price, buy link) for locked walks — so there is
-// nothing to read out of devtools.
+// A translated tour is stored as its own Walk record (a "clone") pointing back to the
+// original via `clone_of`. But a customer buys the EXPERIENCE once — which narration
+// language plays is a preference, not a separate purchase — and their library and offline
+// downloads are one slot per tour, never one per language. So this function collapses every
+// tour family into a single record keyed by the ORIGINAL's id (the stable identity), filled
+// with whichever language record is "active" for this caller right now:
+//   - a published clone (finished + approved) whose target_language matches the caller's
+//     narration preference, if one exists; otherwise
+//   - the original (English) — so an unfinished translation never reaches a customer (only
+//     swap once actually finished & published).
+// The active record's CONTENT (name, narration, audio, route) is served; the original's
+// identity, price, checkout link and creem product id are attached, so entitlement is "do you
+// own the original of this family" and a language swap is a genuine replacement at the same
+// stable id (downloads overwrite into the same slot, they don't orphan a second copy beside
+// the first).
 //
-// The caller is identified from the WordPress-issued token the client already holds
-// (same as syncLibrary / getOwnedProductIds), not Base44's own session. Each walk is
-// returned with an `_accessible` flag (free sample OR owns its creem_product_id) so the
-// client can show a Buy button / paywall without re-deciding entitlement.
+// Protected content is withheld from non-entitled callers (the paywall-is-just-CSS fix):
+// teaser fields only for walks the caller doesn't own. The caller is identified from the
+// WordPress-issued token (not Base44's session), like syncLibrary / getOwnedProductIds.
 
-// Protected content withheld from non-entitled callers.
 const PROTECTED_FIELDS = [
   'trail_path',
   'trail_breaks',
@@ -30,31 +37,78 @@ export default async function(req) {
     const base44 = createClientFromRequest(req);
     const body = await req.json().catch(() => ({}));
     const email = getEmailFromToken(body.token);
+    const narrationLang = body.narrationLang || 'English';
 
-    // Resolve the caller's owned product IDs by email (case-insensitive both sides).
-    // An unidentified caller (no/invalid token) owns nothing — every non-sample walk is
-    // returned as a teaser only.
+    // Owned product ids by email. Entitlement is decided HERE, by the ORIGINAL's product id
+    // — a clone is never a separate sellable product, so owning the original grants every
+    // language version of it.
     let ownedSet = new Set();
     if (email) {
       const purchases = await base44.asServiceRole.entities.Purchase.filter({ buyer_email: email });
       ownedSet = new Set(purchases.map(p => p.creem_product_id).filter(Boolean));
     }
 
-    // Fetch the published catalogue. Service role because this is the shared catalogue and
-    // the caller's entitlement is decided here (by email), not by Walk row-level security.
-    const allWalks = await base44.asServiceRole.entities.Walk.list('-created_date', 1000);
+    const all = await base44.asServiceRole.entities.Walk.list('-created_date', 1000);
 
-    const walks = allWalks.map(w => {
-      const accessible =
-        w.approved !== false &&
-        (!!w.is_sample_walk || !!(w.creem_product_id && ownedSet.has(w.creem_product_id)));
-      const out = { ...w };
+    const originals = all.filter(w => !w.clone_of);
+    const clones = all.filter(w => !!w.clone_of);
+    const originalsById = new Map(originals.map(o => [o.id, o]));
+
+    // A record reaches a customer when:
+    //  - original: approved !== false
+    //  - clone: finished === true AND approved !== false (only swap once finished + published)
+    const eligibleOriginals = originals.filter(w => w.approved !== false);
+    const eligibleClones = clones.filter(w => w.finished === true && w.approved !== false);
+
+    // Group into families keyed by the original's id (the stable identity).
+    const families = new Map(); // familyId -> { original, clones: [] }
+    for (const o of eligibleOriginals) families.set(o.id, { original: o, clones: [] });
+    for (const c of eligibleClones) {
+      const fid = c.clone_of;
+      if (!families.has(fid)) families.set(fid, { original: originalsById.get(fid) || null, clones: [] });
+      families.get(fid).clones.push(c);
+    }
+
+    const walks = [];
+    for (const [familyId, fam] of families) {
+      const matchClone = fam.clones.find(c => c.target_language === narrationLang) || null;
+      let active;
+      if (matchClone) active = matchClone;
+      else if (fam.original) active = fam.original;
+      else if (fam.clones.length) active = fam.clones[0]; // orphan family (original gone)
+      else continue;
+      if (!active) continue;
+
+      const metaOriginal = originalsById.get(familyId) || null;
+
+      const out = { ...active };
+      // Stable identity: the catalog record's id IS the original's id, so the library, the
+      // offline downloads and the "is it downloaded" check all key on a value that never
+      // changes when the active language record swaps. The active record's own id is kept
+      // aside in _active_id.
+      out.id = familyId;
+      out._family_id = familyId;
+      out._active_id = active.id;
+      out._active_lang = active.target_language || 'English';
+      out._available_langs = Array.from(new Set([
+        ...(fam.original ? ['English'] : []),
+        ...fam.clones.map(c => c.target_language).filter(Boolean),
+      ]));
+
+      // Pricing, checkout and product id belong to the ORIGINAL — a clone is never a separate
+      // sellable product (point 1: one purchase per tour, not per language).
+      out.creem_product_id = metaOriginal?.creem_product_id ?? active.creem_product_id ?? null;
+      out.price_eur = metaOriginal?.price_eur ?? active.price_eur;
+      out.checkout_url = metaOriginal?.checkout_url ?? active.checkout_url;
+      out.is_sample_walk = metaOriginal?.is_sample_walk ?? active.is_sample_walk ?? false;
+
+      const accessible = out.is_sample_walk === true || !!(out.creem_product_id && ownedSet.has(out.creem_product_id));
       if (!accessible) {
         for (const f of PROTECTED_FIELDS) delete out[f];
       }
       out._accessible = accessible;
-      return out;
-    });
+      walks.push(out);
+    }
 
     return Response.json({ walks });
   } catch (error) {

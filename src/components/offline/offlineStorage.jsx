@@ -163,3 +163,17 @@ export async function removeWalkFullyOffline(walkId) {
   }
   await offlineStorageService.removeWalkData(walkId);
 }
+
+// Save a walk into its stable family slot, replacing the previous language record when the
+// active narration has swapped. When the active record changes (a new translation became
+// available for a tour the customer already owns), the previous record's narration audio is
+// removed first so the swap genuinely replaces the download instead of leaving an
+// orphaned, silently-useless copy beside it (point 5). `walk.id` is the stable family id
+// (set by getWalkCatalog); `walk._active_id` identifies the specific language record.
+export async function replaceWalkOffline(walk) {
+  const existing = await offlineStorageService.getWalkData(walk.id);
+  if (existing && existing._active_id && walk._active_id && existing._active_id !== walk._active_id) {
+    await offlineStorageService.removeAudioUrls(collectWalkAudioUrls(existing));
+  }
+  await offlineStorageService.saveWalkData(walk);
+}

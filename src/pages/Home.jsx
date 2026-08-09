@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -12,18 +12,19 @@ import CreteMap from '../components/map/CreteMap';
 import WalkList from '../components/walks/WalkList';
 import WalkDetail from '../components/walks/WalkDetail';
 import UpdateInProgressModal from '../components/offline/UpdateInProgressModal';
-import { isWalkOutdated, saveWalkOffline, preCacheWalkTiles, preCacheWalkAudio } from '../components/offline/offlineStorage';
+import { isWalkOutdated, replaceWalkOffline, preCacheWalkTiles, preCacheWalkAudio } from '../components/offline/offlineStorage';
 import SplashScreen from '../components/onboarding/SplashScreen';
 import RegistrationForm from '../components/onboarding/RegistrationForm';
 import TourCategoryPicker from '../components/walks/TourCategoryPicker';
 import { getTourCategory } from '../lib/tourCategories';
 import InstallPrompt from '../components/InstallPrompt';
 import LanguagePicker from '@/components/ui/LanguagePicker';
+import NarrationLanguagePicker from '@/components/ui/NarrationLanguagePicker';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 export default function Home() {
   const { user, logout, token } = useAuth();
-  const { t } = useLanguage();
+  const { t, effectiveNarrationLang } = useLanguage();
   const [isLoading, setIsLoading] = useState(true);
   const [selectedWalk, setSelectedWalk] = useState(null);
   const [showDetail, setShowDetail] = useState(false);
@@ -117,10 +118,19 @@ export default function Home() {
   // (they log in through WordPress only). The server decides entitlement by email; the
   // browser never sees protected fields for walks it doesn't own.
   const { data: walks = [], isLoading: walksLoading, refetch: refetchWalks, isFetching: walksRefreshing } = useQuery({
-    queryKey: ['walkCatalog', token],
-    queryFn: async () => (await base44.functions.invoke('getWalkCatalog', { token })).data.walks || [],
+    queryKey: ['walkCatalog', token, effectiveNarrationLang],
+    queryFn: async () => (await base44.functions.invoke('getWalkCatalog', { token, narrationLang: effectiveNarrationLang })).data.walks || [],
     enabled: !!user && !!token,
   });
+
+  // The languages that actually have a published narration somewhere in the loaded
+  // catalogue — feeds the narration picker so it never offers a language nothing is
+  // available in. English (the original) is always present.
+  const availableNarrationLangs = useMemo(() => {
+    const set = new Set(['English']);
+    walks.forEach(w => (w._available_langs || []).forEach(l => set.add(l)));
+    return [...set];
+  }, [walks]);
 
   useEffect(() => {
     if (!walks.length || updatingRef.current) return;
@@ -137,7 +147,7 @@ export default function Home() {
 
         if (outdated) {
           setUpdatingWalkName(serverWalk.name);
-          await saveWalkOffline(serverWalk);
+          await replaceWalkOffline(serverWalk);
           await preCacheWalkTiles(serverWalk, () => {});
           await preCacheWalkAudio(serverWalk, () => {});
           setUpdatingWalkName(null);
@@ -164,7 +174,7 @@ export default function Home() {
 
     if (outdated) {
       setUpdatingWalkName(walk.name);
-      await saveWalkOffline(walk);
+      await replaceWalkOffline(walk);
       await preCacheWalkTiles(walk, () => {});
       await preCacheWalkAudio(walk, () => {});
       setUpdatingWalkName(null);
@@ -267,6 +277,7 @@ export default function Home() {
 
           <div className="flex items-center gap-3">
             <LanguagePicker />
+            <NarrationLanguagePicker availableLangs={availableNarrationLangs} />
 
             <div className="hidden sm:flex items-center gap-2 text-sm text-gray-600">
               <User className="w-4 h-4" />

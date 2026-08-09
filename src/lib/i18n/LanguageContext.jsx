@@ -1,27 +1,35 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
-import { translations } from './index';
+import { translations, LANGUAGE_NAME_BY_CODE } from './index';
 
 const STORAGE_KEY = 'mc_ui_lang';
+const NARRATION_KEY = 'mc_narration_lang';
 const DEFAULT_LANG = 'en';
 
 const LanguageContext = createContext(null);
 
-// Provides the current UI language + a t(key, params) translator to the whole customer app.
-// The choice persists in localStorage (per-device for now; a profile field can sync it
-// across devices later). t() prefers an admin/narrator-corrected override (from the
-// Translation entity), then the baseline for the current language, then English, then the
-// raw key — so an untranslated or uncorrected key degrades gracefully instead of showing a
-// broken token.
+// Provides the UI language AND a separate, independent narration-language preference.
+//
+// UI language (lang): chrome strings only — buttons, labels, hints. Persists per-device in
+// localStorage.
+//
+// Narration preference (narrationPref): which spoken language the customer wants tours
+// narrated in — a full language name ("Dutch") or null = "follow the UI language". It is
+// independent of the UI language (the customer can change it on its own afterward) but
+// defaults to matching the UI language when first set, via effectiveNarrationLang.
+//
+// t() prefers an admin/narrator-corrected override (from the Translation entity), then the
+// baseline for the current language, then English, then the raw key — so an untranslated
+// or uncorrected key degrades gracefully instead of showing a broken token.
 export function LanguageProvider({ children }) {
   const [lang, setLangState] = useState(() => {
     try { return localStorage.getItem(STORAGE_KEY) || DEFAULT_LANG; } catch { return DEFAULT_LANG; }
   });
+  const [narrationPref, setNarrationPrefState] = useState(() => {
+    try { return localStorage.getItem(NARRATION_KEY) || null; } catch { return null; }
+  });
   const [overrides, setOverrides] = useState({});
 
-  // Load corrected overrides from the Translation entity and merge over the baseline.
-  // Translation.read is public (UI strings aren't sensitive), so this works for every
-  // auth state (logged-out login page, WordPress customer, Base44 admin).
   const loadOverrides = useCallback(async () => {
     try {
       const list = await base44.entities.Translation.list('-updated_date', 1000);
@@ -41,6 +49,20 @@ export function LanguageProvider({ children }) {
     try { localStorage.setItem(STORAGE_KEY, next); } catch { /* ignore */ }
   }, []);
 
+  const setNarrationPref = useCallback((name) => {
+    if (!name) {
+      setNarrationPrefState(null);
+      try { localStorage.removeItem(NARRATION_KEY); } catch { /* ignore */ }
+    } else {
+      setNarrationPrefState(name);
+      try { localStorage.setItem(NARRATION_KEY, name); } catch { /* ignore */ }
+    }
+  }, []);
+
+  // Effective narration language: the customer's explicit choice, or — when unset — the
+  // narration language matching their UI language (Dutch UI → Dutch narration by default).
+  const effectiveNarrationLang = narrationPref || LANGUAGE_NAME_BY_CODE[lang] || 'English';
+
   const t = useCallback((key, params) => {
     const raw =
       (overrides[lang] && overrides[lang][key]) ??
@@ -54,14 +76,19 @@ export function LanguageProvider({ children }) {
   }, [lang, overrides]);
 
   const value = useMemo(
-    () => ({ lang, setLang, t, reloadTranslations: loadOverrides }),
-    [lang, setLang, t, loadOverrides]
+    () => ({ lang, setLang, t, reloadTranslations: loadOverrides, narrationPref, effectiveNarrationLang, setNarrationPref }),
+    [lang, setLang, t, loadOverrides, narrationPref, effectiveNarrationLang, setNarrationPref]
   );
   return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;
 }
 
 export function useLanguage() {
   const ctx = useContext(LanguageContext);
-  if (!ctx) return { lang: 'en', setLang: () => {}, t: (k) => k, reloadTranslations: async () => {} };
+  if (!ctx) {
+    return {
+      lang: 'en', setLang: () => {}, t: (k) => k, reloadTranslations: async () => {},
+      narrationPref: null, effectiveNarrationLang: 'English', setNarrationPref: () => {},
+    };
+  }
   return ctx;
 }

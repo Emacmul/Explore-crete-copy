@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import * as offlineStorageService from '@/lib/offlineStorageService';
 import {
-  saveWalkOffline,
+  replaceWalkOffline,
   preCacheWalkTiles,
   preCacheWalkAudio,
   removeWalkFullyOffline,
@@ -41,7 +41,7 @@ export function useOfflineWalks() {
   // one IndexedDB store. onProgress reports 0–100 across tiles (0–70%) then audio
   // (70–100%), so the button can show a real percentage instead of a fake spinner.
   const downloadWalk = useCallback(async (walk, onProgress) => {
-    await saveWalkOffline(walk);
+    await replaceWalkOffline(walk);
     await preCacheWalkTiles(walk, p => onProgress?.(Math.round(p * 0.7)));
     await preCacheWalkAudio(walk, p => onProgress?.(70 + Math.round(p * 0.3)));
     onProgress?.(100);
