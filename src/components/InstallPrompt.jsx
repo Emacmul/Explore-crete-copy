@@ -67,7 +67,7 @@ export default function InstallPrompt() {
   if (!deferredPrompt && !showIOSInstructions) return null;
 
   return (
-    <div className="fixed bottom-4 left-4 right-4 z-50 max-w-md mx-auto bg-white rounded-xl shadow-lg border border-gray-200 p-4">
+    <div className="fixed bottom-4 left-4 right-4 z-[1000] max-w-md mx-auto bg-white rounded-xl shadow-2xl border border-gray-200 p-4">
       <button onClick={dismiss} className="absolute top-2 right-2 text-gray-400 hover:text-gray-600">
         <X className="w-4 h-4" />
       </button>
