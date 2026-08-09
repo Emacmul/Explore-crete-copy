@@ -98,6 +98,10 @@
       "type": "string",
       "description": "The matching product's ID in Creem \u2014 used to identify which walk was purchased when a payment webhook arrives"
     },
+    "checkout_url": {
+      "type": "string",
+      "description": "Checkout URL for this product at the current Merchant of Record (Creem sandbox now, Paddle later). The in-app Buy button opens this URL, so the MoR owns the checkout page, tax collection and payment. Swapping processors = update this link."
+    },
     "contributor_name": {
       "type": "string",
       "description": "Name of community contributor if applicable"

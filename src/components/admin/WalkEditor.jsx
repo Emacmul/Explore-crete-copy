@@ -587,6 +587,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
       duration_hours: form.duration_hours ? Number(form.duration_hours) : undefined,
       elevation_gain_m: recalculatedElevationGainM,
       default_driving_speed_kmh: form.default_driving_speed_kmh ? Number(form.default_driving_speed_kmh) : undefined,
+      price_eur: form.price_eur ? Number(form.price_eur) : undefined,
       start_lat: Number(form.start_lat),
       start_lng: Number(form.start_lng),
     };
@@ -1060,6 +1061,25 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
               <p className="text-xs text-slate-500 mt-2">
                 💡 Tip: Right-click any location on Google Maps and click the coordinates to copy them.
               </p>
+            </div>
+
+            <div className="border-t border-slate-700 pt-5">
+              <Label className="text-slate-300 mb-3 block font-semibold">Pricing &amp; Purchase</Label>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-slate-400 text-xs mb-1.5 block">Price (EUR)</Label>
+                  <Input type="number" value={form.price_eur ?? ''} onChange={e => set('price_eur', e.target.value)} placeholder="e.g. 15" className="bg-slate-700 border-slate-600 text-white" />
+                </div>
+                <div>
+                  <Label className="text-slate-400 text-xs mb-1.5 block">Creem Product ID</Label>
+                  <Input value={form.creem_product_id || ''} onChange={e => set('creem_product_id', e.target.value)} placeholder="e.g. prod_abc123" className="bg-slate-700 border-slate-600 text-white font-mono" />
+                </div>
+              </div>
+              <div className="mt-3">
+                <Label className="text-slate-400 text-xs mb-1.5 block">Checkout URL (Merchant of Record)</Label>
+                <Input value={form.checkout_url || ''} onChange={e => set('checkout_url', e.target.value)} placeholder="https://creem.io/checkout/..." className="bg-slate-700 border-slate-600 text-white" />
+                <p className="text-xs text-slate-500 mt-1">The product's checkout link at the MoR (Creem sandbox now). The in-app Buy button opens this. Swapping to Paddle later = paste the Paddle checkout link here.</p>
+              </div>
             </div>
 
             <SaveButton onSave={handleSave} saving={saving} canSave={canSave} />

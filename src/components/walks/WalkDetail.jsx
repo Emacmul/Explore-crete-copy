@@ -16,6 +16,7 @@ import WalkProgressBar from './WalkProgressBar';
 import DrivingModeNotice from './DrivingModeNotice';
 import DrivingTourPlayer from './DrivingTourPlayer';
 import { getWaypointImages } from '@/lib/waypointImages';
+import WalkPaywall from './WalkPaywall';
 
 const difficultyColors = {
   easy: 'bg-green-100 text-green-700',
@@ -72,7 +73,7 @@ function waypointKey(waypoint, index) {
 // backgrounding the app for a phone call, never gets mistaken for "a different day".
 const REACHED_STALE_MS = 18 * 60 * 60 * 1000;
 
-export default function WalkDetail({ walk, onClose }) {
+export default function WalkDetail({ walk, onClose, accessible = true }) {
   const [followGps, setFollowGps] = React.useState(false);
 
   const isDrivingTour = walk?.route_type === 'driving_audio_tour';
@@ -272,6 +273,8 @@ export default function WalkDetail({ walk, onClose }) {
 
         <ScrollArea className="flex-1">
           <div className="p-4 space-y-4">
+            {accessible ? (
+            <>
             {walk.route_type === 'driving_audio_tour' && (
               <DrivingModeNotice />
             )}
@@ -455,6 +458,10 @@ export default function WalkDetail({ walk, onClose }) {
                   })}
                 </div>
               </div>
+            )}
+            </>
+            ) : (
+              <WalkPaywall walk={walk} />
             )}
           </div>
         </ScrollArea>

@@ -109,6 +109,26 @@ export default function Home() {
     enabled: !!user,
   });
 
+  // Entitlements: the set of Merchant-of-Record product IDs this logged-in user has
+  // purchased (resolved from Purchase records by email, server-side). Combined with
+  // each walk's is_sample_walk flag, this decides which walks they can actually open
+  // vs. see a Buy button for. This replaces the old single-line "approved !== false"
+  // check that let every published walk open for free.
+  const { data: ownedProductIds = [], isLoading: entitlementsLoading } = useQuery({
+    queryKey: ['ownedProductIds'],
+    queryFn: async () => (await base44.functions.invoke('getOwnedProductIds', {})).data.productIds || [],
+    enabled: !!user,
+  });
+  const ownedSet = new Set(ownedProductIds);
+  // While entitlements are still loading, don't false-lock paying users — treat every
+  // published walk as accessible until the real ownership list arrives.
+  const isAccessible = (w) => {
+    if (w.approved === false) return false;
+    if (entitlementsLoading) return true;
+    return !!w.is_sample_walk || !!(w.creem_product_id && ownedSet.has(w.creem_product_id));
+  };
+  const accessibleMap = Object.fromEntries(walks.map(w => [w.id, isAccessible(w)]));
+
   useEffect(() => {
     if (!walks.length || updatingRef.current) return;
 
@@ -314,6 +334,7 @@ export default function Home() {
               onRefresh={refetchWalks}
               refreshing={walksRefreshing}
               tourCategoryCode={selectedTourCategory}
+              accessibleMap={accessibleMap}
             />
           </div>
 
@@ -330,6 +351,7 @@ export default function Home() {
                   <WalkDetail
                     walk={selectedWalk}
                     onClose={() => setShowDetail(false)}
+                    accessible={accessibleMap[selectedWalk.id] ?? true}
                   />
                 </motion.div>
               ) : (

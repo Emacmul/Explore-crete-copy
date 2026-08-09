@@ -5,6 +5,7 @@ import { Clock, Route, TrendingUp, ChevronRight, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useOfflineWalks } from '../offline/useOfflineWalks';
 import OfflineBadge from './OfflineBadge';
+import BuyButton from './BuyButton';
 
 const difficultyColors = {
   easy: 'bg-green-100 text-green-700 border-green-200',
@@ -13,9 +14,10 @@ const difficultyColors = {
   difficult: 'bg-red-100 text-red-700 border-red-200',
 };
 
-export default function WalkCard({ walk, onClick, isSelected }) {
+export default function WalkCard({ walk, onClick, isSelected, accessible = true }) {
   const { isDownloaded } = useOfflineWalks();
   const downloaded = isDownloaded(walk.id);
+  const locked = accessible === false && !walk.is_sample_walk;
 
   return (
     <motion.div
@@ -84,7 +86,13 @@ export default function WalkCard({ walk, onClick, isSelected }) {
             </div>
           </div>
 
-          <ChevronRight className={`w-5 h-5 text-gray-400 mt-1 transition-transform ${isSelected ? 'rotate-90' : ''}`} />
+          {locked ? (
+            <div className="flex flex-col items-end gap-1 mt-1 shrink-0">
+              <BuyButton walk={walk} size="sm" />
+            </div>
+          ) : (
+            <ChevronRight className={`w-5 h-5 text-gray-400 mt-1 transition-transform ${isSelected ? 'rotate-90' : ''}`} />
+          )}
         </div>
       </Card>
     </motion.div>
