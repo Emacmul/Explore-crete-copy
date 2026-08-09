@@ -12,7 +12,7 @@ import CreteMap from '../components/map/CreteMap';
 import WalkList from '../components/walks/WalkList';
 import WalkDetail from '../components/walks/WalkDetail';
 import UpdateInProgressModal from '../components/offline/UpdateInProgressModal';
-import { isWalkOutdated, saveWalkOffline, preCacheWalkTiles } from '../components/offline/offlineStorage';
+import { isWalkOutdated, saveWalkOffline, preCacheWalkTiles, preCacheWalkAudio } from '../components/offline/offlineStorage';
 import SplashScreen from '../components/onboarding/SplashScreen';
 import RegistrationForm from '../components/onboarding/RegistrationForm';
 import TourCategoryPicker from '../components/walks/TourCategoryPicker';
@@ -122,6 +122,7 @@ export default function Home() {
           setUpdatingWalkName(serverWalk.name);
           await saveWalkOffline(serverWalk);
           await preCacheWalkTiles(serverWalk, () => {});
+          await preCacheWalkAudio(serverWalk, () => {});
           setUpdatingWalkName(null);
 
           setSelectedWalk(prev => prev?.id === serverWalk.id ? serverWalk : prev);
@@ -141,6 +142,7 @@ export default function Home() {
       setUpdatingWalkName(walk.name);
       await saveWalkOffline(walk);
       await preCacheWalkTiles(walk, () => {});
+      await preCacheWalkAudio(walk, () => {});
       setUpdatingWalkName(null);
     }
 

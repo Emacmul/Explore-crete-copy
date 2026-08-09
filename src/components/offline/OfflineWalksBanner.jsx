@@ -18,11 +18,14 @@ export default function OfflineWalksBanner({ onWalkSelect, selectedWalk }) {
       getAllOfflineWalks().then(setOfflineWalks);
     };
 
+    const handleSync = () => getAllOfflineWalks().then(setOfflineWalks);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    window.addEventListener('offline-walks-changed', handleSync);
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('offline-walks-changed', handleSync);
     };
   }, []);
 

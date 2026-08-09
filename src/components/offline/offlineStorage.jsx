@@ -98,3 +98,68 @@ export async function preCacheWalkTiles(walk, onProgress) {
 
   return { total, cached };
 }
+
+export const getCachedAudio = offlineStorageService.getCachedAudio;
+export const cacheAudio = offlineStorageService.cacheAudio;
+
+/**
+ * Every audio URL referenced by a walk — waypoint trigger clips plus all segment
+ * narration audio (production finished audio, with draft/final audio as fallback).
+ * Used both to pre-download for offline and to clean up when a walk is removed.
+ */
+export function collectWalkAudioUrls(walk) {
+  const urls = new Set();
+  (walk?.waypoints || []).forEach(wp => {
+    if (wp.audio_clip_url) urls.add(wp.audio_clip_url);
+  });
+  (walk?.segment_scripts || []).forEach(s => {
+    if (s.finished_audio_url) urls.add(s.finished_audio_url);
+    if (s.final_audio_url) urls.add(s.final_audio_url);
+    if (s.combined_audio_url) urls.add(s.combined_audio_url);
+  });
+  return [...urls].filter(Boolean);
+}
+
+/**
+ * Pre-download all narration audio for a walk into IndexedDB so it plays offline.
+ * Skips clips already cached. Returns { total, cached }.
+ */
+export async function preCacheWalkAudio(walk, onProgress) {
+  const urls = collectWalkAudioUrls(walk);
+  const total = urls.length;
+  let done = 0;
+  let cached = 0;
+
+  for (const url of urls) {
+    try {
+      const existing = await offlineStorageService.getCachedAudio(url);
+      if (existing) {
+        cached++;
+      } else {
+        const res = await fetch(url);
+        if (res.ok) {
+          const blob = await res.blob();
+          await offlineStorageService.cacheAudio(url, blob);
+          cached++;
+        }
+      }
+    } catch { /* skip a single failed clip — the rest still download */ }
+    done++;
+    if (onProgress) onProgress(total ? Math.round((done / total) * 100) : 100);
+  }
+
+  return { total, cached };
+}
+
+/**
+ * Remove a walk and its downloaded audio from offline storage. Tiles are left in
+ * place — their bounding boxes overlap between walks, so they're harmless to keep
+ * and expensive to re-fetch.
+ */
+export async function removeWalkFullyOffline(walkId) {
+  const walk = await offlineStorageService.getWalkData(walkId);
+  if (walk) {
+    await offlineStorageService.removeAudioUrls(collectWalkAudioUrls(walk));
+  }
+  await offlineStorageService.removeWalkData(walkId);
+}

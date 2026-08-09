@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useOfflineWalks } from '@/components/offline/useOfflineWalks';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, WifiOff } from 'lucide-react';
+import { ArrowLeft, WifiOff, Loader2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -11,7 +11,7 @@ import OfflineBadge from '../components/walks/OfflineBadge';
 
 export default function MyWalks() {
   const [selectedWalk, setSelectedWalk] = useState(null);
-  const { getAllOfflineWalks } = useOfflineWalks();
+  const { getAllOfflineWalks, loaded } = useOfflineWalks();
   const offlineWalks = getAllOfflineWalks();
 
   return (
@@ -39,7 +39,11 @@ export default function MyWalks() {
             </motion.div>
           ) : (
             <motion.div key="list" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              {offlineWalks.length === 0 ? (
+              {!loaded ? (
+                <div className="text-center py-20 text-gray-400">
+                  <Loader2 className="w-8 h-8 mx-auto animate-spin" />
+                </div>
+              ) : offlineWalks.length === 0 ? (
                 <div className="text-center py-20 text-gray-500">
                   <WifiOff className="w-16 h-16 mx-auto mb-4 opacity-20" />
                   <p className="text-xl font-semibold mb-2">No walks downloaded yet</p>

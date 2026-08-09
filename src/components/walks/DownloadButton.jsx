@@ -5,28 +5,48 @@ import { useOfflineWalks } from '@/components/offline/useOfflineWalks';
 
 export default function DownloadButton({ walk, size = 'sm', showLabel = true }) {
   const { downloadWalk, removeWalk, isDownloaded } = useOfflineWalks();
-  const [loading, setLoading] = useState(false);
+  const [phase, setPhase] = useState('idle'); // 'idle' | 'saving' | 'removing'
+  const [progress, setProgress] = useState(0);
   const downloaded = isDownloaded(walk.id);
 
   const handleDownload = async (e) => {
     e.stopPropagation();
-    setLoading(true);
-    // Simulate brief save delay for UX feedback
-    await new Promise(r => setTimeout(r, 400));
-    downloadWalk(walk);
-    setLoading(false);
+    setPhase('saving');
+    setProgress(0);
+    try {
+      // Saves the full walk data, pre-caches the map tiles, then pre-downloads the
+      // narration audio — all into one IndexedDB store, with a real progress %.
+      await downloadWalk(walk, p => setProgress(p));
+    } finally {
+      setPhase('idle');
+      setProgress(0);
+    }
   };
 
-  const handleRemove = (e) => {
+  const handleRemove = async (e) => {
     e.stopPropagation();
-    removeWalk(walk.id);
+    setPhase('removing');
+    try {
+      await removeWalk(walk.id);
+    } finally {
+      setPhase('idle');
+    }
   };
 
-  if (loading) {
+  if (phase === 'saving') {
     return (
       <Button size={size} variant="outline" disabled className="gap-2">
         <Loader2 className="w-3.5 h-3.5 animate-spin" />
-        {showLabel && <span>Saving…</span>}
+        {showLabel && <span>Saving {progress}%</span>}
+      </Button>
+    );
+  }
+
+  if (phase === 'removing') {
+    return (
+      <Button size={size} variant="outline" disabled className="gap-2">
+        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+        {showLabel && <span>Removing…</span>}
       </Button>
     );
   }
