@@ -79,6 +79,13 @@ export default async function(req) {
       else continue;
       if (!active) continue;
 
+      // Re-check approval at the very end, not just at family-building. A family can be
+      // seeded by a published clone whose ORIGINAL has since been unapproved (paused for
+      // edits); when the narration preference doesn't match that clone, the active record
+      // falls back to that unapproved original — a draft tour's name/description (and, if it
+      // was marked a free sample, its protected content) must not reach customers at all.
+      if (active.approved === false) continue;
+
       const metaOriginal = originalsById.get(familyId) || null;
 
       const out = { ...active };

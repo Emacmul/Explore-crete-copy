@@ -172,8 +172,26 @@ export async function removeWalkFullyOffline(walkId) {
 // (set by getWalkCatalog); `walk._active_id` identifies the specific language record.
 export async function replaceWalkOffline(walk) {
   const existing = await offlineStorageService.getWalkData(walk.id);
-  if (existing && existing._active_id && walk._active_id && existing._active_id !== walk._active_id) {
-    await offlineStorageService.removeAudioUrls(collectWalkAudioUrls(existing));
+  if (existing) {
+    const oldAudio = collectWalkAudioUrls(existing);
+    // A swap is normally detected by the active-record marker changing. Downloads saved
+    // before that marker existed have no _active_id, so for that legacy case fall back to
+    // comparing the narration audio URL sets — if they differ, the language really did swap
+    // and the old audio should be removed (otherwise the very first swap leaves an
+    // orphaned, unused copy on device, once). A same-language refresh keeps matching URL
+    // sets, so no cleanup runs and audio isn't needlessly re-downloaded.
+    const newAudio = collectWalkAudioUrls(walk);
+    const markerSwap = !!(existing._active_id && walk._active_id && existing._active_id !== walk._active_id);
+    const legacySwap = !existing._active_id && !sameAudioSet(oldAudio, newAudio);
+    if (markerSwap || legacySwap) {
+      await offlineStorageService.removeAudioUrls(oldAudio);
+    }
   }
   await offlineStorageService.saveWalkData(walk);
+}
+
+function sameAudioSet(a, b) {
+  if (a.length !== b.length) return false;
+  const bs = new Set(b);
+  return a.every(u => bs.has(u));
 }
