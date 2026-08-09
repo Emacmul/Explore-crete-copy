@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
-import { translations, LANGUAGE_NAME_BY_CODE } from './index';
+import { translations, LANGUAGE_NAME_BY_CODE, UI_LANGUAGES } from './index';
 
 const STORAGE_KEY = 'mc_ui_lang';
 const NARRATION_KEY = 'mc_narration_lang';
@@ -43,6 +43,15 @@ export function LanguageProvider({ children }) {
   }, []);
 
   useEffect(() => { loadOverrides(); }, [loadOverrides]);
+
+  // Flip the document direction + language for RTL UI languages (Hebrew, Arabic) so the
+  // whole layout mirrors — text alignment, flex row order, icon flips — instead of staying
+  // left-to-right. Restored to 'ltr' for any other language.
+  useEffect(() => {
+    const def = UI_LANGUAGES.find((l) => l.code === lang);
+    document.documentElement.dir = def?.rtl ? 'rtl' : 'ltr';
+    document.documentElement.lang = lang;
+  }, [lang]);
 
   const setLang = useCallback((next) => {
     setLangState(next);
