@@ -162,7 +162,7 @@ export default function TranslationsManager({ authMode, user }) {
                   rows={1}
                   className="flex-1 bg-slate-700 border-slate-600 text-white text-sm rounded-md px-2.5 py-2 resize-y min-h-[38px] focus:outline-none focus:ring-1 focus:ring-purple-500"
                 />
-                <Button size="sm" onClick={() => save(key)} disabled={!dirty || savingKey === key} className="bg-emerald-600 hover:bg-emerald-700 gap-1 shrink-0">
+                <Button size="sm" onClick={() => save(key)} disabled={savingKey === key} className="bg-emerald-600 hover:bg-emerald-700 gap-1 shrink-0">
                   {savingKey === key ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />} Save
                 </Button>
                 {ov && (
