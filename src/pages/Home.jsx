@@ -20,7 +20,7 @@ import { getTourCategory } from '../lib/tourCategories';
 import InstallPrompt from '../components/InstallPrompt';
 
 export default function Home() {
-  const { user, logout } = useAuth();
+  const { user, logout, token } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [selectedWalk, setSelectedWalk] = useState(null);
   const [showDetail, setShowDetail] = useState(false);
@@ -103,31 +103,21 @@ export default function Home() {
     if (user) checkRegistration();
   }, [user]);
 
+  // The catalogue comes from getWalkCatalog (not a raw Walk.list()) so the SERVER can
+  // withhold protected content — narration scripts, audio URLs, the full route line and
+  // the GPX — from walks the caller hasn't bought. Each walk carries `_accessible` (true if
+  // it's a free sample or the caller owns its creem_product_id), so the client shows a Buy
+  // button / paywall for the rest without ever receiving their protected data.
+  //
+  // The caller is identified from the WordPress-issued token the client already holds (the
+  // same way syncLibrary does) — NOT Base44's own session, which real customers never have
+  // (they log in through WordPress only). The server decides entitlement by email; the
+  // browser never sees protected fields for walks it doesn't own.
   const { data: walks = [], isLoading: walksLoading, refetch: refetchWalks, isFetching: walksRefreshing } = useQuery({
-    queryKey: ['walks'],
-    queryFn: () => base44.entities.Walk.list(),
-    enabled: !!user,
+    queryKey: ['walkCatalog', token],
+    queryFn: async () => (await base44.functions.invoke('getWalkCatalog', { token })).data.walks || [],
+    enabled: !!user && !!token,
   });
-
-  // Entitlements: the set of Merchant-of-Record product IDs this logged-in user has
-  // purchased (resolved from Purchase records by email, server-side). Combined with
-  // each walk's is_sample_walk flag, this decides which walks they can actually open
-  // vs. see a Buy button for. This replaces the old single-line "approved !== false"
-  // check that let every published walk open for free.
-  const { data: ownedProductIds = [], isLoading: entitlementsLoading } = useQuery({
-    queryKey: ['ownedProductIds'],
-    queryFn: async () => (await base44.functions.invoke('getOwnedProductIds', {})).data.productIds || [],
-    enabled: !!user,
-  });
-  const ownedSet = new Set(ownedProductIds);
-  // While entitlements are still loading, don't false-lock paying users — treat every
-  // published walk as accessible until the real ownership list arrives.
-  const isAccessible = (w) => {
-    if (w.approved === false) return false;
-    if (entitlementsLoading) return true;
-    return !!w.is_sample_walk || !!(w.creem_product_id && ownedSet.has(w.creem_product_id));
-  };
-  const accessibleMap = Object.fromEntries(walks.map(w => [w.id, isAccessible(w)]));
 
   useEffect(() => {
     if (!walks.length || updatingRef.current) return;
@@ -136,6 +126,10 @@ export default function Home() {
       updatingRef.current = true;
 
       for (const serverWalk of walks) {
+        // Skip walks the caller doesn't own — they have no protected content to cache, and
+        // pre-caching tiles/audio for a locked walk would be wasted work on teaser data.
+        if (serverWalk._accessible === false) continue;
+
         const outdated = await isWalkOutdated(serverWalk);
 
         if (outdated) {
@@ -156,6 +150,13 @@ export default function Home() {
   }, [walks]);
 
   const handleWalkSelect = async (walk) => {
+    // A locked walk has no protected content to cache — just open its paywall.
+    if (walk._accessible === false) {
+      setSelectedWalk(walk);
+      setShowDetail(true);
+      return;
+    }
+
     const outdated = await isWalkOutdated(walk);
 
     if (outdated) {
@@ -334,7 +335,6 @@ export default function Home() {
               onRefresh={refetchWalks}
               refreshing={walksRefreshing}
               tourCategoryCode={selectedTourCategory}
-              accessibleMap={accessibleMap}
             />
           </div>
 
@@ -351,7 +351,7 @@ export default function Home() {
                   <WalkDetail
                     walk={selectedWalk}
                     onClose={() => setShowDetail(false)}
-                    accessible={accessibleMap[selectedWalk.id] ?? true}
+                    accessible={selectedWalk._accessible ?? true}
                   />
                 </motion.div>
               ) : (

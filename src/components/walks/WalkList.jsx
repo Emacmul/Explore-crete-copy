@@ -11,7 +11,7 @@ import { getTourCategory } from '../../lib/tourCategories';
 const REGIONS = ['Chania', 'Rethymno', 'Heraklion', 'Lasithi'];
 const DIFFICULTIES = ['easy', 'moderate', 'challenging', 'difficult'];
 
-export default function WalkList({ walks, selectedWalk, onWalkSelect, searchQuery, onSearchChange, onRefresh, refreshing, tourCategoryCode, accessibleMap = {} }) {
+export default function WalkList({ walks, selectedWalk, onWalkSelect, searchQuery, onSearchChange, onRefresh, refreshing, tourCategoryCode }) {
   const pluralLabel = getTourCategory(tourCategoryCode).pluralLabel;
   const [showFilters, setShowFilters] = useState(false);
   const [region, setRegion] = useState('all');
@@ -193,7 +193,7 @@ export default function WalkList({ walks, selectedWalk, onWalkSelect, searchQuer
                 walk={walk}
                 isSelected={selectedWalk?.id === walk.id}
                 onClick={() => onWalkSelect(walk)}
-                accessible={accessibleMap[walk.id] ?? true}
+                accessible={walk._accessible ?? true}
               />
             ))
           ) : (
