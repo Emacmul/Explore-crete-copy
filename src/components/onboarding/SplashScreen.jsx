@@ -31,7 +31,7 @@ export default function SplashScreen({ onDone }) {
           {/* Full-screen background image */}
           <img
             src={SPLASH_IMAGE}
-            alt="Magical Crete Walking App"
+            alt="Explore Crete App"
             className="absolute inset-0 w-full h-full object-cover"
           />
 
