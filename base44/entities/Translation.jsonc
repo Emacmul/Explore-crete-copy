@@ -11,7 +11,27 @@
       "enum": [
         "en",
         "nl",
-        "cs"
+        "cs",
+        "fr",
+        "de",
+        "es",
+        "pt",
+        "it",
+        "el",
+        "pl",
+        "ro",
+        "hu",
+        "ru",
+        "tr",
+        "sh",
+        "he",
+        "ar",
+        "no",
+        "da",
+        "sv",
+        "fi",
+        "bg",
+        "sl"
       ],
       "description": "UI language code this override applies to."
     },
