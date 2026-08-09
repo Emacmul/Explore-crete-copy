@@ -31,7 +31,6 @@ export default function Home() {
   const [tapLocation, setTapLocation] = useState(null);
   const [updatingWalkName, setUpdatingWalkName] = useState(null);
   const [showSplash, setShowSplash] = useState(() => !sessionStorage.getItem('splash_seen'));
-  const [registrationComplete, setRegistrationComplete] = useState(false);
   const [selectedTourCategory, setSelectedTourCategory] = useState(() => sessionStorage.getItem('tour_category') || 'WHT');
   const [showCategoryDialog, setShowCategoryDialog] = useState(false);
   const [userRole, setUserRole] = useState(null); // 'admin' | 'narrator' | null — which back-end button (Admin or Narr) to show
@@ -51,14 +50,12 @@ export default function Home() {
         // saveAppUserAdmin (admin-gated).
         const res = await base44.functions.invoke('ensureAppUserOnboarding', {
           token,
+          email: user.email,
           display_name: user.full_name || user.display_name,
         });
-        const appUser = res.data?.appUser;
-        if (appUser) {
-          setRegistrationComplete(true);
-          if (appUser.role === 'admin' || appUser.role === 'narrator') {
-            setUserRole(appUser.role);
-          }
+        const role = res.data?.role;
+        if (role === 'admin' || role === 'narrator') {
+          setUserRole(role);
         }
       } catch (error) {
         console.error('Registration check error:', error);
