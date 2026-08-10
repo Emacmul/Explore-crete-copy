@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 
@@ -19,11 +19,20 @@ export default function SplashScreen({ onDone }) {
     }, 400);
   };
 
+  // Lock background scroll while the splash is up. Without this, the app content rendered
+  // behind the overlay keeps the document scrollable on a phone, so the Enter button ends up
+  // below the visible fold and the customer has to hunt for it.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
   return (
     <AnimatePresence>
       {visible && (
         <motion.div
-          className="fixed inset-0 z-[9999] flex flex-col"
+          className="fixed top-0 left-0 right-0 h-[100dvh] w-full z-[9999] overflow-hidden flex flex-col overscroll-none"
           initial={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.4 }}
@@ -39,7 +48,7 @@ export default function SplashScreen({ onDone }) {
           <div className="absolute bottom-0 left-0 right-0 h-48 bg-gradient-to-t from-black/70 to-transparent" />
 
           {/* Enter button */}
-          <div className="absolute bottom-12 left-0 right-0 flex justify-center px-8">
+          <div className="absolute bottom-8 left-0 right-0 flex justify-center px-8 pb-[env(safe-area-inset-bottom)]">
             <motion.button
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
