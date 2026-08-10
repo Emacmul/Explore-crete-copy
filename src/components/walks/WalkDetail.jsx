@@ -17,6 +17,7 @@ import DrivingModeNotice from './DrivingModeNotice';
 import DrivingTourPlayer from './DrivingTourPlayer';
 import { getWaypointImages } from '@/lib/waypointImages';
 import WalkPaywall from './WalkPaywall';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 const difficultyColors = {
   easy: 'bg-green-100 text-green-700',
@@ -75,6 +76,7 @@ const REACHED_STALE_MS = 18 * 60 * 60 * 1000;
 
 export default function WalkDetail({ walk, onClose, accessible = true }) {
   const [followGps, setFollowGps] = React.useState(false);
+  const { t } = useLanguage();
 
   const isDrivingTour = walk?.route_type === 'driving_audio_tour';
 
@@ -373,7 +375,7 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
                     const displayName = isDrivingTour
                       ? (waypoint.segment_title || waypoint.name)
                       : (waypoint.segment_id && waypoint.name ? `${waypoint.segment_id} — ${waypoint.name}` : (waypoint.segment_id || waypoint.name));
-                    const displayLabel = roleConfig ? roleConfig.label : (waypoint.type ? waypoint.type.replace('_', ' ') : null);
+                    const displayLabel = roleConfig ? roleConfig.label : (waypoint.type ? t('wpType.' + waypoint.type) : null);
 
                     const key = waypointKey(waypoint, index);
                     const isReached = !isDrivingTour && reachedIds.has(key);
