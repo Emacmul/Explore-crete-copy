@@ -9,10 +9,12 @@ import { getEmailFromToken } from '../../shared/wpToken.ts';
 // downloads are one slot per tour, never one per language. So this function collapses every
 // tour family into a single record keyed by the ORIGINAL's id (the stable identity), filled
 // with whichever language record is "active" for this caller right now:
-//   - a published clone (finished + approved) whose target_language matches the caller's
-//     narration preference, if one exists; otherwise
-//   - the original (English) — so an unfinished translation never reaches a customer (only
-//     swap once actually finished & published).
+//   1. a published clone (finished + approved) whose target_language matches the caller's
+//      narration preference, if one exists; otherwise
+//   2. the approved English original (only if it's currently published — a tour is never
+//      hidden just because its English version is paused for edits); otherwise
+//   3. every other published clone, alphabetically by language; otherwise
+//   4. nothing — the tour is dropped ONLY if genuinely nothing is published in any language.
 // The active record's CONTENT (name, narration, audio, route) is served; the original's
 // identity, price, checkout link and creem product id are attached, so entitlement is "do you
 // own the original of this family" and a language swap is a genuine replacement at the same
@@ -57,34 +59,36 @@ export default async function(req) {
     // A record reaches a customer when:
     //  - original: approved !== false
     //  - clone: finished === true AND approved !== false (only swap once finished + published)
-    const eligibleOriginals = originals.filter(w => w.approved !== false);
+    const approvedOriginals = originals.filter(w => w.approved !== false);
     const eligibleClones = clones.filter(w => w.finished === true && w.approved !== false);
 
-    // Group into families keyed by the original's id (the stable identity).
+    // Group into families keyed by the original's id (the stable identity). `original` holds
+    // the APPROVED original only — null when the English source is paused for edits or gone —
+    // so a family can survive on its published clones alone. A tour never vanishes just
+    // because its English version is mid-edit while another language is live and published.
     const families = new Map(); // familyId -> { original, clones: [] }
-    for (const o of eligibleOriginals) families.set(o.id, { original: o, clones: [] });
+    for (const o of approvedOriginals) families.set(o.id, { original: o, clones: [] });
     for (const c of eligibleClones) {
       const fid = c.clone_of;
-      if (!families.has(fid)) families.set(fid, { original: originalsById.get(fid) || null, clones: [] });
+      if (!families.has(fid)) families.set(fid, { original: null, clones: [] });
       families.get(fid).clones.push(c);
     }
 
     const walks = [];
     for (const [familyId, fam] of families) {
-      const matchClone = fam.clones.find(c => c.target_language === narrationLang) || null;
-      let active;
-      if (matchClone) active = matchClone;
-      else if (fam.original) active = fam.original;
-      else if (fam.clones.length) active = fam.clones[0]; // orphan family (original gone)
-      else continue;
+      // Real priority list — never stop at the second step:
+      //   1. a published clone matching the caller's narration preference
+      //   2. the approved English original
+      //   3. every other published clone, alphabetically by language
+      //   4. give up ONLY if nothing is published in any language at all
+      const otherClones = [...fam.clones].sort((a, b) =>
+        (a.target_language || '').localeCompare(b.target_language || ''));
+      const active =
+        fam.clones.find(c => c.target_language === narrationLang) ||
+        fam.original ||
+        otherClones[0] ||
+        null;
       if (!active) continue;
-
-      // Re-check approval at the very end, not just at family-building. A family can be
-      // seeded by a published clone whose ORIGINAL has since been unapproved (paused for
-      // edits); when the narration preference doesn't match that clone, the active record
-      // falls back to that unapproved original — a draft tour's name/description (and, if it
-      // was marked a free sample, its protected content) must not reach customers at all.
-      if (active.approved === false) continue;
 
       const metaOriginal = originalsById.get(familyId) || null;
 
