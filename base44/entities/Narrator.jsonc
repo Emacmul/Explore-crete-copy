@@ -18,6 +18,11 @@
     "sample_audio_url": {
       "type": "string",
       "description": "URL to a sample audio clip of this narrator for reference"
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 1000,
+      "description": "Optional free-text notes for internal reference."
     }
   },
   "required": [

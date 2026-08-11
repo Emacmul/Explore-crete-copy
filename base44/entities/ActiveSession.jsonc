@@ -19,6 +19,11 @@
       "type": "boolean",
       "default": true,
       "description": "Whether this session is considered active"
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 1000,
+      "description": "Optional free-text notes for internal reference."
     }
   },
   "required": [

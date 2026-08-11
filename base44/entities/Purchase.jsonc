@@ -4,11 +4,11 @@
   "properties": {
     "buyer_email": {
       "type": "string",
-      "description": "Email of the customer who bought the walk (lowercased). Identifies the owner for access checks \u2014 matched against the logged-in user's email."
+      "description": "Email of the customer who bought the walk (lowercased). Identifies the owner for access checks — matched against the logged-in user's email."
     },
     "creem_product_id": {
       "type": "string",
-      "description": "The product ID at the Merchant of Record that was purchased. Matched against Walk.creem_product_id to grant access \u2014 NOT a loose text match on the walk code."
+      "description": "The product ID at the Merchant of Record that was purchased. Matched against Walk.creem_product_id to grant access — NOT a loose text match on the walk code."
     },
     "walk_id": {
       "type": "string",
@@ -29,12 +29,17 @@
     },
     "transaction_id": {
       "type": "string",
-      "description": "Order/checkout ID from the processor \u2014 used to dedupe redelivered webhooks so a repeat delivery never creates a duplicate record. Null for manual grants (deduped by email + product id instead)."
+      "description": "Order/checkout ID from the processor — used to dedupe redelivered webhooks so a repeat delivery never creates a duplicate record. Null for manual grants (deduped by email + product id instead)."
     },
     "purchased_at": {
       "type": "string",
       "format": "date-time",
       "description": "When the purchase was recorded (webhook arrival time, or the manual grant time)."
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 1000,
+      "description": "Optional free-text notes for internal reference."
     }
   },
   "required": [

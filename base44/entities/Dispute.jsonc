@@ -40,7 +40,7 @@
     },
     "creem_event_id": {
       "type": "string",
-      "description": "The processor dispute event id (evt_...). Used to dedupe redelivered dispute.created webhooks \u2014 the same dispute is logged once, not per redelivery."
+      "description": "The processor dispute event id (evt_...). Used to dedupe redelivered dispute.created webhooks — the same dispute is logged once, not per redelivery."
     },
     "reason": {
       "type": "string",
@@ -59,6 +59,11 @@
       "type": "string",
       "format": "date-time",
       "description": "When an admin restored access, if applicable."
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 1000,
+      "description": "Optional free-text notes for internal reference."
     }
   },
   "required": [

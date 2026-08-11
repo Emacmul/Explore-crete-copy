@@ -15,6 +15,21 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-11 (later same day) — Optional description field added to 9 entities
+Scope: `base44/entities/ActiveSession.jsonc`, `Device.jsonc`,
+`DeviceChallenge.jsonc`, `Dispute.jsonc`, `Membership.jsonc`,
+`Narrator.jsonc`, `Purchase.jsonc`, `Translation.jsonc`, `AppUser.jsonc`.
+
+Per instruction: added an optional `description` string field (max
+1000 characters) to each of these 9 entities. Checked each one first
+for an existing description/summary/content/body/text/bio/about field
+before adding — none had one, so all 9 got the field. Not added to
+any `required` array (genuinely optional); RLS blocks on the entities
+that have them (Dispute, Membership, Purchase, Translation, AppUser)
+left untouched. Built and verified clean.
+
+---
+
 ## 2026-08-11 — Public About and Contact pages (built directly by Claude, not routed through Base44)
 Scope: new `src/pages/About.jsx`, new `src/pages/Contact.jsx`,
 `src/pages.config.js` (registered both), `src/App.jsx` (login-gate

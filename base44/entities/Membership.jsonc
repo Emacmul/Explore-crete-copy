@@ -4,7 +4,7 @@
   "properties": {
     "buyer_email": {
       "type": "string",
-      "description": "Email of the member (lowercased). Identifies the owner for access checks \u2014 matched against the logged-in user's email, the same way Purchase.buyer_email is."
+      "description": "Email of the member (lowercased). Identifies the owner for access checks — matched against the logged-in user's email, the same way Purchase.buyer_email is."
     },
     "processor": {
       "type": "string",
@@ -17,7 +17,7 @@
     },
     "subscription_id": {
       "type": "string",
-      "description": "The subscription ID from the processor (e.g. Creem's sub_\u2026). Stable across the whole lifecycle \u2014 start, every renewal, cancellation and expiry all update this same record, never create a second one."
+      "description": "The subscription ID from the processor (e.g. Creem's sub_…). Stable across the whole lifecycle — start, every renewal, cancellation and expiry all update this same record, never create a second one."
     },
     "status": {
       "type": "string",
@@ -32,7 +32,12 @@
     "expires_at": {
       "type": "string",
       "format": "date-time",
-      "description": "End of the current paid period (the processor's current_period_end_date). The membership lapses after this moment \u2014 an annual fee must actually expire if it isn't renewed."
+      "description": "End of the current paid period (the processor's current_period_end_date). The membership lapses after this moment — an annual fee must actually expire if it isn't renewed."
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 1000,
+      "description": "Optional free-text notes for internal reference."
     }
   },
   "required": [

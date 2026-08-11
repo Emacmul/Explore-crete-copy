@@ -39,6 +39,11 @@
       ],
       "default": "pending",
       "description": "Current state of this challenge"
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 1000,
+      "description": "Optional free-text notes for internal reference."
     }
   },
   "required": [

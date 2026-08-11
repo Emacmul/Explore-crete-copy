@@ -4,7 +4,7 @@
   "properties": {
     "user_id": {
       "type": "string",
-      "description": "WordPress user ID (set on first login via ensureAppUserOnboarding, or by the sync). Not a Base44 user id \u2014 real customers never have a Base44 session."
+      "description": "WordPress user ID (set on first login via ensureAppUserOnboarding, or by the sync). Not a Base44 user id — real customers never have a Base44 session."
     },
     "email": {
       "type": "string",
@@ -43,7 +43,7 @@
     },
     "password": {
       "type": "string",
-      "description": "Backend password \u2014 required for Narrator and Admin roles."
+      "description": "Backend password — required for Narrator and Admin roles."
     },
     "newsletter_opted_in": {
       "type": "boolean",
@@ -61,7 +61,12 @@
         "type": "string"
       },
       "default": [],
-      "description": "IDs of walks this person has purchased \u2014 set automatically when Creem confirms a payment, never edited by hand"
+      "description": "IDs of walks this person has purchased — set automatically when Creem confirms a payment, never edited by hand"
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 1000,
+      "description": "Optional free-text notes for internal reference."
     }
   },
   "required": [

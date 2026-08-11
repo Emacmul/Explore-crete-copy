@@ -42,6 +42,11 @@
     "edited_by_email": {
       "type": "string",
       "description": "Email of the admin/narrator who last saved this override."
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 1000,
+      "description": "Optional free-text notes for internal reference."
     }
   },
   "required": [

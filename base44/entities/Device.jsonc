@@ -23,6 +23,11 @@
       "type": "string",
       "format": "date-time",
       "description": "When this device last completed a login"
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 1000,
+      "description": "Optional free-text notes for internal reference."
     }
   },
   "required": [
