@@ -15,6 +15,29 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-11 (later same day) — Splash screen removed entirely
+Scope: `src/pages/Home.jsx`, deleted
+`src/components/onboarding/SplashScreen.jsx`,
+`src/lib/i18n/index.js` (removed the now-orphaned `splash.enter` key
+from all three languages that had it — en, nl, cs).
+
+The splash image had "MAGICAL CRETE WALKING APP" baked directly into
+the picture as pixels (not real text), so it couldn't pick up the
+app's current name and rendered badly across different phone shapes.
+The original source image couldn't be located (checked Base44's own
+media library too). Rather than leave a stopgap in place, removed
+the screen entirely per instruction — the app now goes straight from
+login to the tour list, no splash step. Confirmed zero remaining
+references anywhere (`SplashScreen`, `showSplash`, `splash_seen`,
+`splash.enter`) before considering this done. Built and verified
+clean.
+
+If a splash screen is wanted again later, it needs a background image
+with no text baked in and the title rendered as real HTML/CSS on top
+— exactly the design discussed earlier, just not built today.
+
+---
+
 ## 2026-08-11 (later same day) — Full i18n audit: every customer-facing string now routes through the translation system
 Scope: `src/lib/i18n/index.js` (+103 new keys, 90→193 total), and every
 file listed below rewired to use `t()` instead of hardcoded English.
