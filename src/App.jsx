@@ -25,8 +25,15 @@ const AuthenticatedApp = () => {
   // through here regardless of customer auth state, or staff can never reach it at all.
   const isAdminPath = window.location.pathname.toLowerCase().startsWith('/admin');
   const isNarrPath = window.location.pathname.toLowerCase().startsWith('/narr');
+  // About and Contact are public marketing/info pages — a prospective customer (or an app-store
+  // reviewer) needs to reach these WITHOUT a WordPress account, so they're exempted from the
+  // login gate the same way Admin/Narr are, just for the opposite reason (no login at all vs.
+  // a different login).
+  const isAboutPath = window.location.pathname.toLowerCase().startsWith('/about');
+  const isContactPath = window.location.pathname.toLowerCase().startsWith('/contact');
+  const isPublicPath = isAdminPath || isNarrPath || isAboutPath || isContactPath;
 
-  if (isLoadingAuth && !isAdminPath && !isNarrPath) {
+  if (isLoadingAuth && !isPublicPath) {
     return (
       <div className="fixed inset-0 flex items-center justify-center">
         <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin"></div>
@@ -34,7 +41,7 @@ const AuthenticatedApp = () => {
     );
   }
 
-  if (!isAuthenticated && !isAdminPath && !isNarrPath) {
+  if (!isAuthenticated && !isPublicPath) {
     return <Login />;
   }
 

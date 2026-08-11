@@ -15,6 +15,36 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-11 — Public About and Contact pages (built directly by Claude, not routed through Base44)
+Scope: new `src/pages/About.jsx`, new `src/pages/Contact.jsx`,
+`src/pages.config.js` (registered both), `src/App.jsx` (login-gate
+exemption), `src/pages/Login.jsx` (footer links), `src/pages/Home.jsx`
+(footer links).
+
+Added two public info pages per an external requirement (h1 heading +
+150+ words on About describing what the app does/who it's for/who
+builds it; h1 + at least one contact method on Contact). Word count
+verified at 206.
+
+The real work was making them genuinely reachable without an account —
+the app otherwise shows nothing but the login screen to anyone not
+signed in. Added `/about` and `/contact` to the same login-gate
+exemption `/admin` and `/narr` already use in `App.jsx`, so these two
+paths render for logged-out visitors too. Linked from a small footer
+on `Login.jsx` (the actual public entry point) and a matching one on
+`Home.jsx` for logged-in users.
+
+Contact email used is `enda@magicalcrete.com` — the only address
+already present anywhere in the codebase; no dedicated support/info
+address existed to reuse. Flagged to Enda as a placeholder, swap-out
+is a one-line change if he wants a different address.
+
+Built and verified directly (fresh clone, real `npm run build`, h1
+count checked, word count checked) — not delegated to Base44 this
+time, per explicit instruction to make the change directly.
+
+---
+
 ## 2026-08-06 — First real piece of payment integration: Creem webhook receiver
 Scope: new `base44/functions/creemWebhook/entry.ts`,
 `base44/entities/Walk.jsonc` (+`creem_product_id`),

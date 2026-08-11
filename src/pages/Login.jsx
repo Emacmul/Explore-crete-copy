@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -99,6 +100,12 @@ export default function Login() {
               Create your Free Magical Crete Account
             </a>
           </div>
+        </div>
+
+        <div className="flex items-center justify-center gap-4 mt-6 text-sm text-teal-200">
+          <Link to="/About" className="hover:text-white hover:underline">About</Link>
+          <span className="text-teal-400">·</span>
+          <Link to="/Contact" className="hover:text-white hover:underline">Contact</Link>
         </div>
       </div>
     </div>

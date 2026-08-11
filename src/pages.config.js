@@ -50,12 +50,16 @@
 import Admin from './pages/Admin';
 import Home from './pages/Home';
 import MyWalks from './pages/MyWalks';
+import About from './pages/About';
+import Contact from './pages/Contact';
 
 
 export const PAGES = {
     "Admin": Admin,
     "Home": Home,
     "MyWalks": MyWalks,
+    "About": About,
+    "Contact": Contact,
 }
 
 export const pagesConfig = {

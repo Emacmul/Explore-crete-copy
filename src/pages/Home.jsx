@@ -287,6 +287,14 @@ export default function Home() {
         </div>
       </header>
 
+      <footer className="border-t bg-white/60 py-3">
+        <div className="max-w-7xl mx-auto px-4 flex items-center justify-center gap-4 text-xs text-gray-500">
+          <Link to="/About" className="hover:text-gray-800 hover:underline">About</Link>
+          <span>·</span>
+          <Link to="/Contact" className="hover:text-gray-800 hover:underline">Contact</Link>
+        </div>
+      </footer>
+
       <main className="max-w-7xl mx-auto p-4">
         <div className="grid lg:grid-cols-3 gap-4 h-[calc(100vh-180px)]">
           <div className="lg:col-span-1 h-full">
