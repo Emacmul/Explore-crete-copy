@@ -46,11 +46,16 @@ export default function SplashScreen({ onDone }) {
           {/* Soft overlay at the top for title readability against the sky */}
           <div className="absolute top-0 left-0 right-0 h-40 bg-gradient-to-b from-black/25 to-transparent" />
 
-          {/* Title */}
-          <div className="absolute top-0 left-0 right-0 pt-10 px-6 text-center">
+          {/* Title — sized with clamp() so it scales in direct proportion to the real
+              viewport width on whatever device it's actually rendering on, instead of a
+              fixed size guessed at design time. Cannot overflow a narrow phone screen. */}
+          <div className="absolute top-0 left-0 right-0 pt-10 px-4 text-center">
             <h1
-              className="text-4xl font-extrabold tracking-wide text-blue-700"
-              style={{ textShadow: '0 1px 3px rgba(255,255,255,0.6), 0 2px 12px rgba(0,0,0,0.25)' }}
+              className="font-extrabold text-blue-700 leading-tight"
+              style={{
+                fontSize: 'clamp(1.5rem, 8vw, 2.75rem)',
+                textShadow: '0 1px 3px rgba(255,255,255,0.6), 0 2px 12px rgba(0,0,0,0.25)',
+              }}
             >
               {t('app.title')}
             </h1>

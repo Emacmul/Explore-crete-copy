@@ -15,6 +15,35 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-11 (later same day) — Splash title fixed: was overflowing off the right edge of real phone screens
+Scope: `src/components/onboarding/SplashScreen.jsx` only.
+
+The "Explore Crete" title rendered fine in a desktop preview but ran
+off the right edge on Enda's actual phone (screenshot showed only
+"Explore Cr" visible). Root cause of the mismatch: the preview I'd
+rendered earlier tested the text against the *image's* raw pixel
+resolution (896px), not a real phone's much narrower CSS viewport
+width (~360–430px) — a fixed 36px font size that looked proportionate
+against 896px is far too large against ~400px, which is what
+actually happened on-device.
+
+Fixed properly rather than just guessing a smaller fixed number:
+font-size is now `clamp(1.5rem, 8vw, 2.75rem)` — scales in direct
+proportion to whatever the real viewport width is on whatever device
+it renders on, instead of a static guess. Verified by calculation
+across the realistic phone width range (320–430px): fits with 64–85px
+of margin on each side at every size tested, never overflows. Also
+dropped the unnecessary `tracking-wide` letter-spacing, which was
+adding avoidable extra width for no visual benefit at this size.
+
+Not touched, flagged instead: a Facebook Messenger-style chat bubble
+visible in the top-left of Enda's screenshot isn't part of this
+component or anything Claude built — likely a separate script/plugin
+injected elsewhere on the page. Left alone pending Enda's input on
+what it actually is.
+
+---
+
 ## 2026-08-11 (later same day) — Splash screen rebuilt with the new image and real HTML text
 Scope: new `public/splash-background.jpg` (Enda's replacement photo,
 converted from the 2.1MB PNG he supplied down to a 296KB optimized
