@@ -17,7 +17,6 @@ export default function SplashScreen({ onDone }) {
     }, 400);
   };
 
-
   // Lock background scroll while the splash is up. Without this, the app content rendered
   // behind the overlay keeps the document scrollable on a phone, so the Enter button ends up
   // below the visible fold and the customer has to hunt for it.
