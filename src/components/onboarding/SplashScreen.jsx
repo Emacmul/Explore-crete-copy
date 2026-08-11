@@ -2,16 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 
-const SPLASH_IMAGE = 'https://media.base44.com/images/public/69a7d073cd7cd9b51cfe0fd0/40f0351cc_Walkingappsplashacreen.jpg';
+const SPLASH_IMAGE = '/splash-background.jpg';
 
 export default function SplashScreen({ onDone }) {
   const { t } = useLanguage();
   const [visible, setVisible] = useState(true);
 
   // By the time this screen can render, App.jsx has already confirmed the user is logged in via
-  // the WordPress-based auth system — there's nothing left to check here. This used to check
-  // Base44's own separate native login instead, which customers never actually have a session
-  // in, so it was incorrectly sending real customers off to Base44's own generic login page.
+  // the WordPress-based auth system — there's nothing left to check here.
   const handleEnter = () => {
     setVisible(false);
     setTimeout(() => {
@@ -37,12 +35,26 @@ export default function SplashScreen({ onDone }) {
           exit={{ opacity: 0 }}
           transition={{ duration: 0.4 }}
         >
-          {/* Full-screen background image */}
+          {/* Full-screen background image — a clean photo with no text baked in, so the
+              title below is always real, live, translatable text instead. */}
           <img
             src={SPLASH_IMAGE}
-            alt="Explore Crete App"
+            alt={t('app.title')}
             className="absolute inset-0 w-full h-full object-cover"
           />
+
+          {/* Soft overlay at the top for title readability against the sky */}
+          <div className="absolute top-0 left-0 right-0 h-40 bg-gradient-to-b from-black/25 to-transparent" />
+
+          {/* Title */}
+          <div className="absolute top-0 left-0 right-0 pt-10 px-6 text-center">
+            <h1
+              className="text-4xl font-extrabold tracking-wide text-blue-700"
+              style={{ textShadow: '0 1px 3px rgba(255,255,255,0.6), 0 2px 12px rgba(0,0,0,0.25)' }}
+            >
+              {t('app.title')}
+            </h1>
+          </div>
 
           {/* Subtle dark overlay at the bottom for button readability */}
           <div className="absolute bottom-0 left-0 right-0 h-48 bg-gradient-to-t from-black/70 to-transparent" />

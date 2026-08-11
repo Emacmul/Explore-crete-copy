@@ -15,6 +15,31 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-11 (later same day) — Splash screen rebuilt with the new image and real HTML text
+Scope: new `public/splash-background.jpg` (Enda's replacement photo,
+converted from the 2.1MB PNG he supplied down to a 296KB optimized
+JPEG — same visual quality, much faster first load on mobile),
+new `src/components/onboarding/SplashScreen.jsx`, `src/pages/Home.jsx`
+(re-added the import/state/render block removed in the last entry),
+`src/lib/i18n/index.js` (restored the `splash.enter` key — same
+English/Dutch/Czech values as before removal, so no re-translation
+needed).
+
+This replaces the splash screen removed earlier today. Exactly the
+design discussed then: the new background photo has no text baked
+into the pixels — the "Explore Crete" title is now real, live HTML,
+pulled from `t('app.title')` so it can never go stale on a rename
+again, in blue lettering with a soft top gradient + text shadow for
+contrast against the sky, sitting in the open space the photo was
+deliberately composed to leave for it. Rendered a pixel preview of
+the actual composed result before considering this done — text is
+clearly readable, doesn't overlap the backpack/gear composition below.
+
+Built and verified the image is actually present in the production
+`dist/` output, not just referenced.
+
+---
+
 ## 2026-08-11 (later same day) — Splash screen removed entirely
 Scope: `src/pages/Home.jsx`, deleted
 `src/components/onboarding/SplashScreen.jsx`,
