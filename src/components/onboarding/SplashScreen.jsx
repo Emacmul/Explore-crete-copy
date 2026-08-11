@@ -47,13 +47,16 @@ export default function SplashScreen({ onDone }) {
           <div className="absolute top-0 left-0 right-0 h-40 bg-gradient-to-b from-black/25 to-transparent" />
 
           {/* Title — sized with clamp() so it scales in direct proportion to the real
-              viewport width on whatever device it's actually rendering on, instead of a
-              fixed size guessed at design time. Cannot overflow a narrow phone screen. */}
+              viewport width on whatever device it's actually rendering on. Reduced from
+              8vw to 6vw and allowed to wrap to two lines (break-words, no nowrap) as a
+              genuine safety net — even if the vw-based size is ever slightly too large
+              for a given device/font combination, it now folds to a second line instead
+              of running off the edge of the screen. */}
           <div className="absolute top-0 left-0 right-0 pt-10 px-4 text-center">
             <h1
-              className="font-extrabold text-blue-700 leading-tight"
+              className="font-extrabold text-blue-700 leading-tight break-words"
               style={{
-                fontSize: 'clamp(1.5rem, 8vw, 2.75rem)',
+                fontSize: 'clamp(1.25rem, 6vw, 2.75rem)',
                 textShadow: '0 1px 3px rgba(255,255,255,0.6), 0 2px 12px rgba(0,0,0,0.25)',
               }}
             >

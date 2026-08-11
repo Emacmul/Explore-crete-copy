@@ -15,6 +15,28 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-11 (later same day) — Splash title: added wrap-to-two-lines safety net, per Base44 support
+Scope: `src/components/onboarding/SplashScreen.jsx` only.
+
+The earlier `clamp(1.5rem, 8vw, 2.75rem)` fix was calculated to fit
+comfortably (checked mathematically against a realistic phone-width
+range) but still clipped on Enda's actual device. Base44 support
+confirmed the served code genuinely matched the editor throughout
+that whole debugging session — ruling out a stale deploy/cache issue
+after a long investigation (Cloudflare DNS/proxy setup was checked
+and ruled out too, along with the `.base44.app` direct link showing
+the identical result). Real device font rendering evidently produces
+a wider result than the reference font used to check the math.
+
+Applied Base44's exact recommended fix: reduced to
+`clamp(1.25rem, 6vw, 2.75rem)` and added `break-words` with wrapping
+allowed, so the title can now fold to two lines rather than clip if
+it's ever still too wide for a given device/font combination — a
+genuine safety net rather than another single-point guess. Built and
+verified clean.
+
+---
+
 ## 2026-08-11 (later same day) — Splash title fixed: was overflowing off the right edge of real phone screens
 Scope: `src/components/onboarding/SplashScreen.jsx` only.
 
