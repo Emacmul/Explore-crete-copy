@@ -15,6 +15,20 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-11 (later same day) — "Show password" toggle added to both login screens
+Scope: `src/pages/Login.jsx`, `src/pages/Narr.jsx`, `src/lib/i18n/index.js`
+(+2 keys: `login.showPassword`, `login.hidePassword`).
+
+Anoushka request. Added an eye-icon toggle to reveal/hide the typed
+password, on both the customer WordPress login and the narrator
+backend login (Narr.jsx) — wasn't sure which one she meant, so did
+both rather than guess wrong. Customer-facing one uses `t()` like
+everything else from today's sweep; the narrator one is plain English
+text, matching the "backend stays English" rule Enda set today. Built
+and verified clean.
+
+---
+
 ## 2026-08-11 (later same day) — Splash title: added wrap-to-two-lines safety net, per Base44 support
 Scope: `src/components/onboarding/SplashScreen.jsx` only.
 

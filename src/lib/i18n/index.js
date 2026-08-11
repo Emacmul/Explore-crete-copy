@@ -182,6 +182,8 @@ export const translations = {
     'login.emailPlaceholder': "you@example.com",
     'login.password': "Password",
     'login.passwordPlaceholder': "Your password",
+    'login.showPassword': "Show password",
+    'login.hidePassword': "Hide password",
     'login.failedDefault': "Login failed. Please try again.",
     'login.signingIn': "Signing in...",
     'login.signIn': "Sign In",

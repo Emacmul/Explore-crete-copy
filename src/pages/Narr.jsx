@@ -4,7 +4,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Loader2, Mic, ArrowLeft, LogOut } from 'lucide-react';
+import { Loader2, Mic, ArrowLeft, LogOut, Eye, EyeOff } from 'lucide-react';
 import { createPageUrl } from '@/utils';
 import { Link, useNavigate } from 'react-router-dom';
 import BackendShell from '@/components/admin/BackendShell';
@@ -24,6 +24,7 @@ export default function Narr() {
     try { return JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null'); } catch { return null; }
   });
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -79,15 +80,26 @@ export default function Narr() {
         </div>
         <div>
           <Label className="text-slate-300 mb-1.5 block">Narr password</Label>
-          <Input
-            type="password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleLogin()}
-            className="bg-slate-700 border-slate-600 text-white"
-            placeholder="Enter your Narr password"
-            autoFocus
-          />
+          <div className="relative">
+            <Input
+              type={showPassword ? 'text' : 'password'}
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleLogin()}
+              className="bg-slate-700 border-slate-600 text-white pr-10"
+              placeholder="Enter your Narr password"
+              autoFocus
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(v => !v)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              tabIndex={-1}
+            >
+              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
           {error && <p className="text-red-400 text-sm mt-2">{error}</p>}
           <p className="text-xs text-slate-500 mt-2">This is the backend password an admin set for you — separate from your WordPress front-end password.</p>
         </div>
