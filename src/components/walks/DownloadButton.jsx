@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Download, Trash2, CheckCircle, Loader2 } from 'lucide-react';
 import { useOfflineWalks } from '@/components/offline/useOfflineWalks';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 export default function DownloadButton({ walk, size = 'sm', showLabel = true }) {
+  const { t } = useLanguage();
   const { downloadWalk, removeWalk, isDownloaded } = useOfflineWalks();
   const [phase, setPhase] = useState('idle'); // 'idle' | 'saving' | 'removing'
   const [progress, setProgress] = useState(0);
@@ -37,7 +39,7 @@ export default function DownloadButton({ walk, size = 'sm', showLabel = true }) 
     return (
       <Button size={size} variant="outline" disabled className="gap-2">
         <Loader2 className="w-3.5 h-3.5 animate-spin" />
-        {showLabel && <span>Saving {progress}%</span>}
+        {showLabel && <span>{t('download.savingPct', { n: progress })}</span>}
       </Button>
     );
   }
@@ -46,7 +48,7 @@ export default function DownloadButton({ walk, size = 'sm', showLabel = true }) 
     return (
       <Button size={size} variant="outline" disabled className="gap-2">
         <Loader2 className="w-3.5 h-3.5 animate-spin" />
-        {showLabel && <span>Removing…</span>}
+        {showLabel && <span>{t('download.removing')}</span>}
       </Button>
     );
   }
@@ -63,8 +65,8 @@ export default function DownloadButton({ walk, size = 'sm', showLabel = true }) 
         <Trash2 className="w-3.5 h-3.5 hidden group-hover:block" />
         {showLabel && (
           <>
-            <span className="group-hover:hidden">Saved Offline</span>
-            <span className="hidden group-hover:block">Remove</span>
+            <span className="group-hover:hidden">{t('download.savedOffline')}</span>
+            <span className="hidden group-hover:block">{t('download.remove')}</span>
           </>
         )}
       </Button>
@@ -79,7 +81,7 @@ export default function DownloadButton({ walk, size = 'sm', showLabel = true }) 
       className="gap-2 border-blue-300 text-blue-700 hover:bg-blue-50"
     >
       <Download className="w-3.5 h-3.5" />
-      {showLabel && <span>Save for Offline</span>}
+      {showLabel && <span>{t('download.saveForOffline')}</span>}
     </Button>
   );
 }

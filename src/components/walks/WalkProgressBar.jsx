@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Navigation2 } from 'lucide-react';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 // Haversine distance between two {lat,lng} points in km
 function haversine(a, b) {
@@ -49,6 +50,7 @@ function trailLength(trail, breaks) {
 }
 
 export default function WalkProgressBar({ walk }) {
+  const { t } = useLanguage();
   const [progress, setProgress] = useState(null); // { walkedKm, totalKm, pct }
   const [gpsError, setGpsError] = useState(false);
 
@@ -86,7 +88,7 @@ export default function WalkProgressBar({ walk }) {
     return (
       <div className="flex items-center gap-2 text-xs text-gray-400">
         <Navigation2 className="w-3.5 h-3.5 animate-pulse" />
-        <span>Getting GPS location…</span>
+        <span>{t('progress.gettingLocation')}</span>
       </div>
     );
   }
@@ -99,7 +101,7 @@ export default function WalkProgressBar({ walk }) {
       <div className="flex items-center justify-between text-xs">
         <span className="flex items-center gap-1.5 font-medium text-gray-700">
           <Navigation2 className="w-3.5 h-3.5 text-blue-500" />
-          Your progress
+          {t('progress.yourProgress')}
         </span>
         <span className={`font-bold ${isComplete ? 'text-emerald-600' : 'text-blue-600'}`}>
           {walkedKm} / {totalKm} km · {pct}%
@@ -112,7 +114,7 @@ export default function WalkProgressBar({ walk }) {
         />
       </div>
       {isComplete && (
-        <p className="text-xs text-emerald-600 font-medium text-center">🎉 Walk complete!</p>
+        <p className="text-xs text-emerald-600 font-medium text-center">{t('progress.complete')}</p>
       )}
     </div>
   );

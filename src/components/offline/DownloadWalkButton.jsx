@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Download, CheckCircle, Loader2, FileQuestion } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 export default function DownloadWalkButton({ walk }) {
+  const { t } = useLanguage();
   const [downloading, setDownloading] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
 
@@ -44,7 +46,7 @@ export default function DownloadWalkButton({ walk }) {
     return (
       <div className="flex items-center gap-2 text-gray-400 text-sm">
         <FileQuestion className="w-4 h-4" />
-        <span>GPX file not yet available</span>
+        <span>{t('gpx.notAvailable')}</span>
       </div>
     );
   }
@@ -54,7 +56,7 @@ export default function DownloadWalkButton({ walk }) {
       {downloaded && (
         <div className="flex items-center gap-1.5 text-emerald-600 text-sm font-medium">
           <CheckCircle className="w-4 h-4" />
-          <span>GPX downloaded!</span>
+          <span>{t('gpx.downloaded')}</span>
         </div>
       )}
 
@@ -66,7 +68,7 @@ export default function DownloadWalkButton({ walk }) {
         className="gap-2 border-blue-200 text-blue-600 hover:bg-blue-50"
       >
         {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-        {downloading ? 'Downloading…' : downloaded ? 'Download again' : 'Download GPX'}
+        {downloading ? t('gpx.downloading') : downloaded ? t('gpx.downloadAgain') : t('gpx.downloadGpx')}
       </Button>
     </div>
   );

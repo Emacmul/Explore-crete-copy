@@ -3,6 +3,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle, Smartphone, Sun, ShieldCheck } from 'lucide-react';
 import * as wakeLockService from '@/lib/wakeLockService';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 /**
  * Shown for driving_audio_tour routes. Warns the user that the app
@@ -10,6 +11,7 @@ import * as wakeLockService from '@/lib/wakeLockService';
  * Optionally activates a screen wake lock to prevent auto-lock.
  */
 export default function DrivingModeNotice() {
+  const { t } = useLanguage();
   const [wakeLockActive, setWakeLockActive] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
 
@@ -51,7 +53,7 @@ export default function DrivingModeNotice() {
       <Card className="bg-amber-50 border-amber-300 p-3 flex items-center gap-3">
         <ShieldCheck className="w-5 h-5 text-amber-600 shrink-0" />
         <p className="text-xs text-amber-800 flex-1">
-          Driving Mode active — keep this app in the foreground.
+          {t('drivingNotice.activeShort')}
         </p>
         <Button
           variant="ghost"
@@ -59,7 +61,7 @@ export default function DrivingModeNotice() {
           onClick={() => setAcknowledged(false)}
           className="text-amber-700 hover:bg-amber-100 h-7 px-2 text-xs"
         >
-          View again
+          {t('drivingNotice.viewAgain')}
         </Button>
       </Card>
     );
@@ -69,28 +71,25 @@ export default function DrivingModeNotice() {
     <Card className="bg-amber-50 border-amber-400 p-4 space-y-3">
       <div className="flex items-center gap-2">
         <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
-        <h3 className="font-bold text-amber-900">Driving Mode — Read Before Starting</h3>
+        <h3 className="font-bold text-amber-900">{t('drivingNotice.title')}</h3>
       </div>
 
       <div className="space-y-2 text-sm text-amber-900">
         <p className="font-medium">
-          Keep this app open and the screen on during the tour.
-          Audio triggers may not work if the phone is locked or another app is opened.
+          {t('drivingNotice.keepOpen')}
         </p>
 
         <div className="flex items-start gap-2 text-amber-800">
           <Smartphone className="w-4 h-4 mt-0.5 shrink-0" />
           <p>
-            The phone cannot be used for other apps during the tour —
-            switching away pauses GPS tracking and audio playback.
+            {t('drivingNotice.noOtherApps')}
           </p>
         </div>
 
         <div className="flex items-start gap-2 text-amber-800">
           <Sun className="w-4 h-4 mt-0.5 shrink-0" />
           <p>
-            Mount your phone on the dashboard so the screen stays visible
-            and GPS signal is strong.
+            {t('drivingNotice.mountPhone')}
           </p>
         </div>
       </div>
@@ -107,7 +106,7 @@ export default function DrivingModeNotice() {
           }`}
         >
           <Sun className="w-4 h-4" />
-          {wakeLockActive ? 'Screen staying on' : 'Keep screen on'}
+          {wakeLockActive ? t('drivingNotice.screenStayingOn') : t('drivingNotice.keepScreenOn')}
         </Button>
 
         <Button
@@ -115,7 +114,7 @@ export default function DrivingModeNotice() {
           onClick={() => setAcknowledged(true)}
           className="bg-amber-600 text-white hover:bg-amber-700"
         >
-          I understand
+          {t('drivingNotice.iUnderstand')}
         </Button>
       </div>
     </Card>

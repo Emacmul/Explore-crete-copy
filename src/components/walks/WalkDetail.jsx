@@ -219,7 +219,7 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
                 variant="ghost"
                 size="icon"
                 onClick={() => setFollowGps(f => !f)}
-                title={followGps ? 'Stop following GPS' : 'Follow my location'}
+                title={followGps ? t('detail.stopFollowingGps') : t('detail.followMyLocation')}
                 className={`${followGps ? 'bg-white/30 text-white' : 'text-white/70 hover:bg-white/20'}`}
               >
                 <Crosshair className="w-5 h-5" />
@@ -239,7 +239,7 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
           <div className="flex items-center gap-4 mt-4 text-sm">
             {walk.difficulty && (
               <Badge className={`${difficultyColors[walk.difficulty]} border-0`}>
-                {walk.difficulty}
+                {t('diff.' + walk.difficulty)}
               </Badge>
             )}
 
@@ -258,16 +258,16 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
             )}
 
             {walk.elevation_gain_m && (
-              <div className="flex items-center gap-1.5" title="Total ascent">
+              <div className="flex items-center gap-1.5" title={t('detail.totalAscent')}>
                 <TrendingUp className="w-4 h-4" />
                 <span>{walk.elevation_gain_m}m</span>
               </div>
             )}
 
             {hasMaxElevation && (
-              <div className="flex items-center gap-1.5" title="Highest point on this route">
+              <div className="flex items-center gap-1.5" title={t('detail.highestPoint')}>
                 <Mountain className="w-4 h-4" />
-                <span>Max {Math.round(maxElevation)}m</span>
+                <span>{t('detail.max', { n: Math.round(maxElevation) })}</span>
               </div>
             )}
           </div>
@@ -293,7 +293,7 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
 
               {followGps && (
                 <span className="text-xs text-blue-600 font-medium flex items-center gap-1">
-                  <Crosshair className="w-3.5 h-3.5" /> Tracking location
+                  <Crosshair className="w-3.5 h-3.5" /> {t('detail.trackingLocation')}
                 </span>
               )}
             </div>
@@ -310,18 +310,17 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
             <div className="bg-red-50 border border-red-200 rounded-xl p-4">
               <div className="flex items-center gap-2 mb-2">
                 <ShieldAlert className="w-5 h-5 text-red-600 shrink-0" />
-                <h3 className="font-bold text-red-700">Before You Set Off</h3>
+                <h3 className="font-bold text-red-700">{t('detail.beforeYouSetOff')}</h3>
               </div>
 
               <p className="text-red-700 text-sm leading-relaxed whitespace-pre-line">
-                {walk.safety_notes ||
-                  `Essential equipment: sun hat, sturdy walking shoes or boots, walking poles, and a minimum of 2 litres of water per person.\n\nMobile signal may be unreliable. Download the GPX file and load it into a navigation app before departure.\n\nUnder Greek law, the cost of any search and rescue operation is charged to the individual. Do not attempt any walk unprepared.`}
+                {walk.safety_notes || t('detail.defaultSafetyNotes')}
               </p>
             </div>
 
             {walk.description && (
               <div>
-                <h3 className="font-semibold text-gray-900 mb-2">About this walk</h3>
+                <h3 className="font-semibold text-gray-900 mb-2">{t('detail.aboutThisWalk')}</h3>
                 <p className="text-gray-600 text-sm leading-relaxed">
                   {walk.description}
                 </p>
@@ -330,9 +329,9 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
 
             {walk.walk_category === 'community' && walk.contributor_name && (
               <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-                <h3 className="font-semibold text-green-800 mb-1">Community Walk</h3>
+                <h3 className="font-semibold text-green-800 mb-1">{t('detail.communityWalk')}</h3>
                 <p className="text-sm text-green-700">
-                  Contributed by {walk.contributor_name}
+                  {t('detail.contributedBy', { name: walk.contributor_name })}
                 </p>
               </div>
             )}
@@ -341,21 +340,20 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <h3 className="font-semibold text-gray-900">
-                    {isDrivingTour ? 'Tour Stops' : 'Key Points'}
+                    {isDrivingTour ? t('detail.tourStops') : t('detail.keyPoints')}
                   </h3>
                   {!isDrivingTour && reachedIds.size > 0 && (
                     <button
                       onClick={resetProgress}
                       className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600"
                     >
-                      <RotateCcw className="w-3 h-3" /> Reset progress
+                      <RotateCcw className="w-3 h-3" /> {t('detail.resetProgress')}
                     </button>
                   )}
                 </div>
                 {!isDrivingTour && (
                   <p className="text-xs text-gray-500 mb-3">
-                    Tap the circle as you pass each point — if you lose the trail, you'll always
-                    be able to see the last point you recognised.
+                    {t('detail.tapInstructions')}
                   </p>
                 )}
 
@@ -366,8 +364,8 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
 
                     // For driving tours, use role-based styling
                     const roleConfig = isDrivingTour ? {
-                      primary_start: { icon: Navigation, color: 'text-green-600', bg: 'bg-green-100', label: 'Start' },
-                      primary_stop: { icon: MapPin, color: 'text-red-600', bg: 'bg-red-100', label: 'Stop' },
+                      primary_start: { icon: Navigation, color: 'text-green-600', bg: 'bg-green-100', label: t('detail.roleStart') },
+                      primary_stop: { icon: MapPin, color: 'text-red-600', bg: 'bg-red-100', label: t('detail.roleStop') },
                     }[waypoint.waypoint_role] : null;
                     const displayIcon = roleConfig ? roleConfig.icon : Icon;
                     const displayBg = roleConfig ? roleConfig.bg : config.bg;
@@ -401,7 +399,7 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
                           <button
                             onClick={() => toggleReached(key)}
                             className="shrink-0 mt-2"
-                            title={isReached ? 'Mark as not reached' : 'Mark as reached'}
+                            title={isReached ? t('detail.markNotReached') : t('detail.markReached')}
                           >
                             {isReached
                               ? <CheckCircle2 className="w-5 h-5 text-emerald-600" />
@@ -432,7 +430,7 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
                             )}
 
                             {isLastReached && (
-                              <Badge className="text-xs bg-blue-600 hover:bg-blue-600">You were last here</Badge>
+                              <Badge className="text-xs bg-blue-600 hover:bg-blue-600">{t('detail.youWereLastHere')}</Badge>
                             )}
                           </div>
 

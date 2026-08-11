@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { X, Download, Share } from 'lucide-react';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 const DISMISSED_KEY = 'explore_crete_install_prompt_dismissed';
 
@@ -16,6 +17,7 @@ function isIOS() {
 // nothing does this automatically on any platform, every browser requires an explicit tap, so
 // without this most people (reasonably) never discover the option exists at all.
 export default function InstallPrompt() {
+  const { t } = useLanguage();
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [showIOSInstructions, setShowIOSInstructions] = useState(false);
   const [dismissed, setDismissed] = useState(() => {
@@ -74,18 +76,18 @@ export default function InstallPrompt() {
 
       {deferredPrompt ? (
         <>
-          <p className="font-semibold text-gray-900 mb-1">Add Explore Crete to your home screen</p>
-          <p className="text-sm text-gray-600 mb-3">Get one-tap access next time — no need to type the address again.</p>
+          <p className="font-semibold text-gray-900 mb-1">{t('install.addToHomeScreen')}</p>
+          <p className="text-sm text-gray-600 mb-3">{t('install.oneTapAccess')}</p>
           <Button onClick={handleInstallClick} className="w-full bg-blue-600 hover:bg-blue-500 text-white gap-2">
-            <Download className="w-4 h-4" /> Add to Home Screen
+            <Download className="w-4 h-4" /> {t('install.addButton')}
           </Button>
         </>
       ) : (
         <>
-          <p className="font-semibold text-gray-900 mb-1">Add Explore Crete to your home screen</p>
+          <p className="font-semibold text-gray-900 mb-1">{t('install.addToHomeScreen')}</p>
           <p className="text-sm text-gray-600 flex items-center gap-1 flex-wrap">
-            Tap <Share className="w-4 h-4 inline" /> at the bottom of Safari, then choose
-            <strong>"Add to Home Screen."</strong>
+            {t('install.iosTapShare')} <Share className="w-4 h-4 inline" /> {t('install.iosThenChoose')}
+            <strong>{t('install.iosAddToHomeScreen')}</strong>
           </p>
         </>
       )}

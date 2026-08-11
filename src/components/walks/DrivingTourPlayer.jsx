@@ -6,6 +6,7 @@ import * as audioService from '@/lib/audioService';
 import * as tourLogService from '@/lib/tourLogService';
 import { calculateBearing, isBearingInRange } from '@/lib/routeExport';
 import TourDebugLog from './TourDebugLog';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 const R_EARTH = 6371000;
 
@@ -18,13 +19,13 @@ function haversine(lat1, lng1, lat2, lng2) {
   return 2 * R_EARTH * Math.asin(Math.sqrt(a));
 }
 
-const STATUS = {
-  idle: { label: 'Ready', color: 'text-slate-400' },
-  running: { label: 'Tour Active', color: 'text-green-400' },
-  paused: { label: 'Paused', color: 'text-amber-400' },
-};
-
 export default function DrivingTourPlayer({ walk }) {
+  const { t } = useLanguage();
+  const STATUS = {
+    idle: { label: t('player.ready'), color: 'text-slate-400' },
+    running: { label: t('player.active'), color: 'text-green-400' },
+    paused: { label: t('player.paused'), color: 'text-amber-400' },
+  };
   const [status, setStatus] = useState('idle');
   const [currentPos, setCurrentPos] = useState(null);
   const [triggeredWpIds, setTriggeredWpIds] = useState(new Set());
@@ -232,7 +233,7 @@ export default function DrivingTourPlayer({ walk }) {
             })}
           </div>
           <div className="text-xs text-slate-500 mt-1">
-            {triggeredWpIds.size}/{triggerWaypoints.length} triggers fired
+            {t('player.triggersFired', { done: triggeredWpIds.size, total: triggerWaypoints.length })}
           </div>
         </div>
       )}
@@ -244,7 +245,7 @@ export default function DrivingTourPlayer({ walk }) {
             onClick={handleStart}
             className="flex-1 gap-2 bg-green-600 hover:bg-green-700 text-white"
           >
-            <Play className="w-4 h-4" /> Start Tour
+            <Play className="w-4 h-4" /> {t('player.startTour')}
           </Button>
         )}
         {status === 'running' && (
@@ -254,14 +255,14 @@ export default function DrivingTourPlayer({ walk }) {
               variant="outline"
               className="flex-1 gap-2 border-amber-500 text-amber-400 hover:bg-amber-900/20"
             >
-              <Pause className="w-4 h-4" /> Pause
+              <Pause className="w-4 h-4" /> {t('player.pause')}
             </Button>
             <Button
               onClick={handleStop}
               variant="outline"
               className="flex-1 gap-2 border-red-500 text-red-400 hover:bg-red-900/20"
             >
-              <Square className="w-4 h-4" /> Stop
+              <Square className="w-4 h-4" /> {t('player.stop')}
             </Button>
           </>
         )}
@@ -271,14 +272,14 @@ export default function DrivingTourPlayer({ walk }) {
               onClick={handleResume}
               className="flex-1 gap-2 bg-green-600 hover:bg-green-700 text-white"
             >
-              <Play className="w-4 h-4" /> Resume
+              <Play className="w-4 h-4" /> {t('player.resume')}
             </Button>
             <Button
               onClick={handleStop}
               variant="outline"
               className="flex-1 gap-2 border-red-500 text-red-400 hover:bg-red-900/20"
             >
-              <Square className="w-4 h-4" /> Stop
+              <Square className="w-4 h-4" /> {t('player.stop')}
             </Button>
           </>
         )}
@@ -288,7 +289,7 @@ export default function DrivingTourPlayer({ walk }) {
           size="icon"
           onClick={() => setShowDebug(!showDebug)}
           className={`shrink-0 ${showDebug ? 'text-purple-400 bg-purple-900/20' : 'text-slate-400'}`}
-          title="Toggle audit log"
+          title={t('player.toggleLog')}
         >
           <Bug className="w-4 h-4" />
         </Button>

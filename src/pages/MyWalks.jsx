@@ -8,8 +8,10 @@ import { AnimatePresence, motion } from 'framer-motion';
 import WalkCard from '../components/walks/WalkCard';
 import WalkDetail from '../components/walks/WalkDetail';
 import OfflineBadge from '../components/walks/OfflineBadge';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 export default function MyWalks() {
+  const { t } = useLanguage();
   const [selectedWalk, setSelectedWalk] = useState(null);
   const { getAllOfflineWalks, loaded } = useOfflineWalks();
   const offlineWalks = getAllOfflineWalks();
@@ -20,12 +22,12 @@ export default function MyWalks() {
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center gap-3">
           <Link to={createPageUrl('Home')}>
             <Button variant="ghost" size="sm" className="gap-2">
-              <ArrowLeft className="w-4 h-4" /> Back
+              <ArrowLeft className="w-4 h-4" /> {t('common.back')}
             </Button>
           </Link>
           <div className="flex items-center gap-2">
             <WifiOff className="w-5 h-5 text-green-600" />
-            <h1 className="font-bold text-gray-900">My Downloaded Walks</h1>
+            <h1 className="font-bold text-gray-900">{t('mywalks.title')}</h1>
           </div>
         </div>
       </header>
@@ -46,16 +48,16 @@ export default function MyWalks() {
               ) : offlineWalks.length === 0 ? (
                 <div className="text-center py-20 text-gray-500">
                   <WifiOff className="w-16 h-16 mx-auto mb-4 opacity-20" />
-                  <p className="text-xl font-semibold mb-2">No walks downloaded yet</p>
-                  <p className="text-sm mb-6">Go back and tap "Save for Offline" on any walk to add it here.</p>
+                  <p className="text-xl font-semibold mb-2">{t('mywalks.emptyTitle')}</p>
+                  <p className="text-sm mb-6">{t('mywalks.emptyHint')}</p>
                   <Link to={createPageUrl('Home')}>
-                    <Button>Browse Walks</Button>
+                    <Button>{t('mywalks.browseWalks')}</Button>
                   </Link>
                 </div>
               ) : (
                 <div>
                   <p className="text-sm text-gray-500 mb-4">
-                    These walks are saved on your device and work without internet.
+                    {t('mywalks.offlineNote')}
                   </p>
                   <div className="space-y-3 max-w-xl">
                     {offlineWalks.map(walk => (

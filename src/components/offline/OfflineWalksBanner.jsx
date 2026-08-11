@@ -42,7 +42,7 @@ export default function OfflineWalksBanner({ onWalkSelect, selectedWalk }) {
         <div className="flex items-center gap-2">
           <WifiOff className={`w-4 h-4 ${!isOnline ? 'text-amber-600' : 'text-gray-500'}`} />
           <span className={`font-medium text-sm ${!isOnline ? 'text-amber-700' : 'text-gray-700'}`}>
-            {!isOnline ? 'Offline mode — ' : ''}{t(offlineWalks.length === 1 ? 'offline.savedWalkOne' : 'offline.savedWalkMany', { n: offlineWalks.length })}
+            {!isOnline ? t('offline.modePrefix') : ''}{t(offlineWalks.length === 1 ? 'offline.savedWalkOne' : 'offline.savedWalkMany', { n: offlineWalks.length })}
           </span>
         </div>
         {expanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}

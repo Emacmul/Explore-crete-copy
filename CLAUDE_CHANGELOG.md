@@ -15,6 +15,64 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-11 (later same day) — Full i18n audit: every customer-facing string now routes through the translation system
+Scope: `src/lib/i18n/index.js` (+103 new keys, 90→193 total), and every
+file listed below rewired to use `t()` instead of hardcoded English.
+
+Context: the admin/narrator "translate our labels" list is driven
+entirely by `Object.keys(translations.en)` — so any hardcoded string
+in the app was invisible to that list and could never be translated,
+with no error or warning anywhere. Enda had twice found untranslated
+labels by accident and asked for a full sweep, not another patch.
+
+Went through every customer-facing page and component individually,
+file by file, checking for any JSX text, placeholder, title/aria
+attribute, or toast/error message not wired to `t()`. Real, confirmed
+gaps found and fixed:
+
+- **`Login.jsx` — the actual first screen every visitor sees — had
+  zero translation wiring at all.** Every string on it (labels,
+  placeholders, the "Sign In" button, the error fallback, the
+  "Create your Free Magical Crete Account" link) was hardcoded.
+- `MyWalks.jsx`, `About.jsx`, `Contact.jsx` — same issue, 100%
+  hardcoded (About/Contact are the pages Claude built directly
+  earlier today — didn't wire i18n into them at the time, caught and
+  fixed as part of this sweep).
+- `PageNotFound.jsx` — customer-visible parts only (left the
+  admin-only debug hint in English, not customer-facing).
+- `WalkDetail.jsx` — the single biggest gap: safety notes heading and
+  default fallback text, "About this walk", "Community Walk",
+  waypoint list heading/instructions, "Reset progress", the
+  reached/not-reached toggle titles, "You were last here", the
+  Start/Stop role badge labels for driving tours (previously a
+  separate hardcoded object, not reusing the existing wpType keys),
+  elevation tooltips, and the raw (untranslated) difficulty badge —
+  WalkCard already correctly translated difficulty, WalkDetail didn't.
+- `DrivingModeNotice.jsx` — the whole driving-tour safety card.
+- `WalkProgressBar.jsx`, `DrivingTourPlayer.jsx` (status labels,
+  Start/Pause/Stop/Resume, trigger counter).
+- `DownloadButton.jsx` ("Save for Offline" + all its states),
+  `DownloadWalkButton.jsx` ("Download GPX" + all its states).
+- `OfflineWalksBanner.jsx` (the "Offline mode —" prefix),
+  `UpdateInProgressModal.jsx`, `InstallPrompt.jsx`.
+
+Confirmed already correct, no changes needed: WalkPaywall, BuyButton,
+WalkCard, WalkList, TourCategoryPicker, TourCategoryDialog,
+NarrationLanguagePicker, LanguagePicker, OfflineBadge, Home.jsx,
+SplashScreen.jsx.
+
+Two deliberate exclusions, flagged to Enda for confirmation rather
+than silently skipped: `TourDebugLog.jsx` (a technical GPS/trigger
+diagnostic view — raw coordinates and technical terms, judged not
+really "UI" in the normal sense) and `UserNotRegisteredError.jsx`
+(confirmed dead code — not imported or reachable from anywhere, so it
+genuinely cannot be shown to anyone).
+
+Built and verified clean. Final sweep re-grepped every touched file
+afterward to confirm no hardcoded strings remained.
+
+---
+
 ## 2026-08-11 (later same day) — Optional description field added to 9 entities
 Scope: `base44/entities/ActiveSession.jsonc`, `Device.jsonc`,
 `DeviceChallenge.jsonc`, `Dispute.jsonc`, `Membership.jsonc`,

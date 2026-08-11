@@ -5,9 +5,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader2, AlertCircle } from 'lucide-react';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 export default function Login() {
   const { login } = useAuth();
+  const { t } = useLanguage();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
@@ -20,7 +22,7 @@ export default function Login() {
     try {
       await login(email, password);
     } catch (err) {
-      setError(err.response?.data?.error || err.message || 'Login failed. Please try again.');
+      setError(err.response?.data?.error || err.message || t('login.failedDefault'));
     } finally {
       setLoading(false);
     }
@@ -31,35 +33,35 @@ export default function Login() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-white/10 backdrop-blur-sm mb-4">
-            <img src="/explore-crete-logo.png" alt="Explore Crete" className="w-11 h-11 object-contain" />
+            <img src="/explore-crete-logo.png" alt={t('app.title')} className="w-11 h-11 object-contain" />
           </div>
-          <h1 className="text-2xl font-bold text-white">Explore Crete</h1>
-          <p className="text-teal-200 text-sm mt-1">Walking, Hiking, WalkAbout, Driving</p>
+          <h1 className="text-2xl font-bold text-white">{t('app.title')}</h1>
+          <p className="text-teal-200 text-sm mt-1">{t('login.tagline')}</p>
         </div>
 
         <div className="bg-white rounded-2xl shadow-xl p-6 space-y-4">
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">{t('login.email')}</Label>
               <Input
                 id="email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
+                placeholder={t('login.emailPlaceholder')}
                 required
                 autoComplete="email"
                 disabled={loading}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">{t('login.password')}</Label>
               <Input
                 id="password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Your password"
+                placeholder={t('login.passwordPlaceholder')}
                 required
                 autoComplete="current-password"
                 disabled={loading}
@@ -81,31 +83,31 @@ export default function Login() {
               {loading ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Signing in...
+                  {t('login.signingIn')}
                 </>
               ) : (
-                'Sign In'
+                t('login.signIn')
               )}
             </Button>
           </form>
 
           <div className="text-center pt-2 border-t">
-            <p className="text-sm text-muted-foreground mb-1">Don't have an account?</p>
+            <p className="text-sm text-muted-foreground mb-1">{t('login.noAccount')}</p>
             <a
               href="https://magicalcrete.com/wp-login.php?action=register"
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm text-teal-700 font-medium hover:underline"
             >
-              Create your Free Magical Crete Account
+              {t('login.createAccount')}
             </a>
           </div>
         </div>
 
         <div className="flex items-center justify-center gap-4 mt-6 text-sm text-teal-200">
-          <Link to="/About" className="hover:text-white hover:underline">About</Link>
+          <Link to="/About" className="hover:text-white hover:underline">{t('footer.about')}</Link>
           <span className="text-teal-400">·</span>
-          <Link to="/Contact" className="hover:text-white hover:underline">Contact</Link>
+          <Link to="/Contact" className="hover:text-white hover:underline">{t('footer.contact')}</Link>
         </div>
       </div>
     </div>
