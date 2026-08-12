@@ -24,7 +24,7 @@ export default function NarrationLanguagePicker({ availableLangs = [] }) {
 
   return (
     <Select value={value} onValueChange={(v) => setNarrationPref(v === '__auto__' ? null : v)}>
-      <SelectTrigger className="h-8 w-auto gap-1.5 text-xs border-slate-300" aria-label={t('home.narration')}>
+      <SelectTrigger className="h-8 w-[230px] gap-1.5 text-xs border-slate-300" aria-label={t('home.narration')}>
         <Mic2 className="w-3.5 h-3.5 text-slate-500 shrink-0" />
         <span className="text-slate-500 font-medium">{t('home.narration')}:</span>
         <SelectValue />

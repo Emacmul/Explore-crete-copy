@@ -17,6 +17,26 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-12 (later same day) — UI and narration language pickers stacked vertically, not side by side
+Scope: `src/pages/Home.jsx`, `src/components/ui/LanguagePicker.jsx`,
+`src/components/ui/NarrationLanguagePicker.jsx`.
+
+Direct consequence of the previous entry: making the narration picker
+show its "Narration:" label made it visibly wider, and that was
+enough to push an already-crowded header over the edge — the title
+and tagline started wrapping and visually overlapping the language
+dropdown on Enda's screen. Per his own suggestion: the two language
+controls are now stacked one above the other instead of sitting side
+by side, which keeps the same total content but in a much narrower
+horizontal footprint. Gave them a shared, consistent width (wide
+enough to comfortably fit the longest realistic content — "Match UI
+(Portuguese)" — without truncating) so the stack reads as one
+deliberate pair, not two mismatched boxes.
+
+Built and verified clean.
+
+---
+
 ## 2026-08-12 (later same day) — Narration picker now clearly labeled — was reading as an unexplained duplicate language picker
 Scope: `src/components/ui/NarrationLanguagePicker.jsx` only.
 

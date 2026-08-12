@@ -214,8 +214,14 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-3">
-            <LanguagePicker />
-            <NarrationLanguagePicker availableLangs={availableNarrationLangs} />
+            {/* Stacked, not side-by-side — two full-width dropdowns sitting next to each
+                other in an already-crowded header was pushing things wide enough to wrap
+                and overlap the title/tagline on narrower screens. Stacking them keeps the
+                same total content but in a much narrower horizontal footprint. */}
+            <div className="flex flex-col gap-1.5">
+              <LanguagePicker />
+              <NarrationLanguagePicker availableLangs={availableNarrationLangs} />
+            </div>
 
             <div className="hidden sm:flex items-center gap-2 text-sm text-gray-600">
               <User className="w-4 h-4" />
