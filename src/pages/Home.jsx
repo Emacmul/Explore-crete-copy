@@ -230,11 +230,13 @@ export default function Home() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {TOUR_CATEGORIES.map(cat => (
-                    <SelectItem key={cat.code} value={cat.code}>
-                      {t('tour.' + cat.code + '.label')}
-                    </SelectItem>
-                  ))}
+                  {[...TOUR_CATEGORIES]
+                    .sort((a, b) => (a.code === selectedTourCategory ? -1 : b.code === selectedTourCategory ? 1 : 0))
+                    .map(cat => (
+                      <SelectItem key={cat.code} value={cat.code}>
+                        {t('tour.' + cat.code + '.label')}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             )}

@@ -17,6 +17,33 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-12 (later same day) — Real bug found and fixed: the shared dropdown component was clipping its own list
+Scope: `src/components/ui/select.jsx` (the shared dropdown primitive
+used everywhere — language picker, narration picker, tour type, and
+admin dropdowns, 15 files total), `src/pages/Home.jsx` (tour-type
+list reordering).
+
+Enda noticed "Driving Tour" vanishing from the tour-type dropdown
+whenever "Walkabout" was selected. Traced this to a genuine bug in
+the shared dropdown component itself, not the tour-type list's own
+logic (which correctly lists all three regardless of selection) —
+one CSS line was forcing the dropdown's visible list to be exactly as
+tall as the tiny trigger button itself (~32px), clipping anything
+that didn't fit in that sliver, rather than sizing to fit its actual
+contents. Since this is the one shared `Select` component nearly the
+whole app uses, this had the potential to be quietly clipping other,
+longer dropdowns too, not just this one — fixed at the source rather
+than patched around it in one place.
+
+Also implemented Enda's reordering request: whichever tour type is
+currently selected now always shows at the top of the list, with the
+other two below it — all three still genuinely present and correct,
+just reordered for visibility, not filtered.
+
+Built and verified clean.
+
+---
+
 ## 2026-08-12 (later same day) — "My Library" badge was showing the wrong number entirely
 Scope: `src/pages/Home.jsx` only.
 
