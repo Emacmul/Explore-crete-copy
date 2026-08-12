@@ -17,6 +17,37 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-12 (later same day) — Temporary on-screen debug console added, for capturing phone errors without USB/remote debugging
+Scope: new `src/components/DebugConsoleOverlay.jsx`, `src/App.jsx`
+(+2 lines wiring it in).
+
+Base44 asked Enda for browser console logs from his phone to
+investigate the splash screen issue. Real remote debugging on his
+specific phone (a Redmi/MIUI device) turned out to require signing
+into a Xiaomi account first — a genuine manufacturer security measure
+on USB debugging, not a mistake on his end, but a real hurdle for a
+one-off diagnostic.
+
+Built a much simpler alternative: a small on-screen console that
+mirrors what the browser's own DevTools Console would show, directly
+on the phone's screen — no cable, no computer, no account. Only ever
+appears when `?debug=1` is added to the web address; does nothing at
+all otherwise, so it can never show up for a real customer by
+accident. Captures `console.log`/`warn`/`error` calls and uncaught
+errors/promise rejections, shown in a small floating panel a tester
+can screenshot directly.
+
+Safe by design: every capture is wrapped so a bug in the debug tool
+itself can never be the thing that breaks the real page underneath
+it.
+
+Built and verified clean. To use: visit the app with `?debug=1`
+appended to the address (e.g. `https://app.magicalcrete.com/?debug=1`),
+reproduce the issue, tap the bug icon in the bottom-right corner if
+the panel isn't already open, and screenshot what's shown.
+
+---
+
 ## 2026-08-12 (later same day) — Waypoint tap instructions reworded — was implying a link to the progress bar that doesn't exist
 Scope: `src/lib/i18n/index.js` (English text for `detail.tapInstructions`
 only — this key hasn't been translated into Dutch/Czech yet).

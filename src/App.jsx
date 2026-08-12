@@ -8,6 +8,7 @@ import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { LanguageProvider } from '@/lib/i18n/LanguageContext';
 import Login from './pages/Login';
 import Narr from './pages/Narr';
+import DebugConsoleOverlay from './components/DebugConsoleOverlay';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -81,6 +82,7 @@ function App() {
             <AuthenticatedApp />
           </Router>
           <Toaster />
+          <DebugConsoleOverlay />
         </QueryClientProvider>
       </AuthProvider>
     </LanguageProvider>
