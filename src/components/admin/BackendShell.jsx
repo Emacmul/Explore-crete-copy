@@ -84,7 +84,10 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
     setWalks((prev) => prev.map(w => w.id === walkId ? { ...w, announced_at: checkedAt } : w));
   };
 
-  // Clone an approved tour into a private translation copy owned by this Narr.
+  // Clone a tour into a private translation copy owned by this Narr. Masters are offered
+  // for cloning regardless of their own publish status (a narrator can translate a tour
+  // that isn't live yet) — what's actually restricted is the TARGET LANGUAGE: never clone
+  // into a language that already has a finished, published version of this same tour.
   const handleCloneTour = async (original, targetLanguage) => {
     const lang = (targetLanguage || '').trim();
     if (!lang || !original) return null;
@@ -93,6 +96,14 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
     // a time. This must block the actual clone action, not just the button that starts it.
     if (!unrestricted && hasActiveClone) {
       toast({ variant: 'destructive', title: 'Finish your current translation first', description: 'You already have a clone in progress. It needs to be finished and published before you can start another.' });
+      return null;
+    }
+    // Never allow cloning into a language this tour already has a published version in —
+    // checked here too, not just filtered out of the language picker, so this can't be
+    // bypassed even if the dialog's own filtering is ever stale or skipped.
+    const alreadyPublished = walks.some(w => w.clone_of === original.id && w.finished && w.approved && (w.target_language || '').toLowerCase() === lang.toLowerCase());
+    if (alreadyPublished) {
+      toast({ variant: 'destructive', title: 'Already published in this language', description: `“${original.name}” already has a finished, published ${lang} version — cloning it again would duplicate existing work.` });
       return null;
     }
     const clone = {
@@ -143,7 +154,20 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
     toast({ title: 'Published', description: 'The translation is now a standalone public tour.' });
   };
 
-  const cloneableTours = walks.filter(w => w.approved && !w.clone_of);
+  // Every master is offered for cloning regardless of its OWN publish status — a
+  // narrator can translate a tour that isn't published yet. Nothing here restricts by
+  // whether the English master is approved; the restriction lives entirely on the
+  // target-language side, handled in handleCloneTour and passed to CloneTourDialog.
+  const cloneableTours = walks.filter(w => !w.clone_of);
+  // For each master, the set of languages that already have a finished, published clone
+  // — passed to the clone dialog so it can't even be selected there, not just blocked
+  // after the fact.
+  const publishedLanguagesByMaster = {};
+  for (const w of walks) {
+    if (w.clone_of && w.finished && w.approved && w.target_language) {
+      (publishedLanguagesByMaster[w.clone_of] ||= new Set()).add(w.target_language.toLowerCase());
+    }
+  }
   // An unrestricted (admin-wearing-Narr-hat) user sees every translation clone, not just
   // their own — and can publish any of them directly (see AdminStartScreen).
   const myClones = unrestricted
@@ -263,6 +287,7 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
             onCloneTour={handleCloneTour}
             onPublishClone={handlePublishClone}
             cloneableTours={hasActiveClone ? [] : cloneableTours}
+            publishedLanguagesByMaster={publishedLanguagesByMaster}
             hasActiveClone={hasActiveClone}
             myClones={unrestricted ? myClones : myActiveClones}
             reviewClones={reviewClones}

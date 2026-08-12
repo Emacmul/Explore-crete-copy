@@ -6,11 +6,15 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Loader2, Languages } from 'lucide-react';
 import { LANGUAGES } from '@/lib/languages';
 
-export default function CloneTourDialog({ open, tour, onClose, onConfirm }) {
+export default function CloneTourDialog({ open, tour, onClose, onConfirm, excludedLanguages = new Set() }) {
   const [language, setLanguage] = useState('');
   const [busy, setBusy] = useState(false);
 
   useEffect(() => { if (open) setLanguage(''); }, [open]);
+
+  // A language already finished and published for this tour is never offered — cloning
+  // it again would just duplicate work that's already live.
+  const availableLanguages = LANGUAGES.filter(l => !excludedLanguages.has(l.toLowerCase()));
 
   const handleConfirm = async () => {
     if (!language) return;
@@ -38,9 +42,14 @@ export default function CloneTourDialog({ open, tour, onClose, onConfirm }) {
             <Select value={language || undefined} onValueChange={setLanguage}>
               <SelectTrigger className="bg-slate-700 border-slate-600 text-white"><SelectValue placeholder="Select language" /></SelectTrigger>
               <SelectContent>
-                {LANGUAGES.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}
+                {availableLanguages.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}
               </SelectContent>
             </Select>
+            {excludedLanguages.size > 0 && (
+              <p className="text-xs text-slate-500 mt-1.5">
+                Not shown: languages that already have a finished, published version of this tour.
+              </p>
+            )}
             <p className="text-xs text-slate-500 mt-1.5">
               The new tour's code will be <span className="font-mono text-purple-300">{tour?.code}-{language || 'LANG'}</span>.
             </p>

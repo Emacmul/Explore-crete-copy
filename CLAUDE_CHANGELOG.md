@@ -17,6 +17,37 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-12 (later same day) — Corrected: the "unpublished" clone rule, per Enda's follow-up
+Scope: `src/components/admin/BackendShell.jsx`,
+`src/components/admin/AdminStartScreen.jsx`,
+`src/components/admin/CloneTourDialog.jsx`.
+
+Enda corrected the previous entry's assumption — the actual rule is
+the reverse of what was built: **masters are cloneable regardless of
+their own publish status** (a narrator can translate a tour that
+isn't live yet); the "unpublished only" restriction applies to the
+**target language**, not the master — a narrator must never be able
+to clone a tour into a language that already has a finished,
+published version of it, since that's duplicate work.
+
+Fixed properly, in both places, not just one: `cloneableTours` no
+longer filters by the master's own `approved` status at all. Added a
+per-master lookup of which languages already have a finished,
+published clone, and wired it through to the language picker in
+`CloneTourDialog` — an already-published language for that specific
+tour never even appears as an option. Also blocked server-side in
+`handleCloneTour`, same defense-in-depth pattern as the one-clone-limit
+rule from the previous entry — so this can't be bypassed even if the
+dialog's own filtering is ever stale.
+
+The one-clone-in-progress limit and the master-tour-open guard from
+the previous entry were correct as originally understood and are
+unchanged here.
+
+Built and verified clean.
+
+---
+
 ## 2026-08-12 (later same day) — Narrator clone workflow: one-at-a-time limit, master-tour guard, active-only view
 Scope: `src/components/admin/BackendShell.jsx`,
 `src/components/admin/AdminStartScreen.jsx`.

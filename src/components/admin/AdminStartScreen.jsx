@@ -123,6 +123,7 @@ export default function AdminStartScreen({
   userRole, user, works, onNewTour, onContinueTour, onManageUsers, onDashboard, onManageWalks,
   onCloneTour, onPublishClone, cloneableTours = [], myClones = [], reviewClones = [],
   hasActiveClone = false,
+  publishedLanguagesByMaster = {},
   onManageDisputes,
   onManageTranslations,
   unrestricted = false,
@@ -138,6 +139,7 @@ export default function AdminStartScreen({
         <CloneTourDialog
           open={!!cloneTarget}
           tour={cloneTarget}
+          excludedLanguages={cloneTarget ? (publishedLanguagesByMaster[cloneTarget.id] || new Set()) : new Set()}
           onClose={() => setCloneTarget(null)}
           onConfirm={async (lang) => {
             const saved = await onCloneTour(cloneTarget, lang);
