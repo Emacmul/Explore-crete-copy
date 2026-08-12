@@ -17,6 +17,38 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-12 (later same day) — Narration picker now clearly labeled — was reading as an unexplained duplicate language picker
+Scope: `src/components/ui/NarrationLanguagePicker.jsx` only.
+
+Enda's reaction to seeing the UI language picker and narration
+picker side by side, both looking nearly identical: fair confusion —
+the narration one had no visible text saying what it actually
+controls, just a small headphone icon next to a value. The label
+"Narration" already existed as text, in all three languages, but was
+only ever used as an invisible screen-reader label — never actually
+shown on screen.
+
+Made it visible: the picker now reads "🎙 Narration: Match UI
+(English)" instead of just "Match UI (English)" — same visible-prefix
+pattern already used on the tour-type dropdown ("Change: Change tour
+type: ..."), so it reads at a glance as "this is about the spoken
+tour audio," not "why is there a second one of these."
+
+The functionality itself is unchanged and was deliberately kept, not
+removed — this is what makes it possible for a customer with, say, a
+Czech UI to hear German narration if Czech narration isn't published
+for a given tour yet, exactly the case Enda specifically asked for
+earlier. Only the labeling was the actual problem.
+
+Also re-applied the native-language-name fix from earlier today (the
+"Match UI (Italiano)" not "Match UI (Italian)" one) — this file had
+reverted to the English-name lookup, so folding it back in here
+rather than leaving it to regress again silently.
+
+Built and verified clean.
+
+---
+
 ## 2026-08-12 (later same day) — The real cause of the dropdown clipping: it was rendering behind the map, not actually cut off
 Scope: `src/components/ui/select.jsx` only.
 
