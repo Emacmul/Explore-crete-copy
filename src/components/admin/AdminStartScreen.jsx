@@ -122,6 +122,7 @@ function ReviewCloneRow({ walk, onReview, onPublish }) {
 export default function AdminStartScreen({
   userRole, user, works, onNewTour, onContinueTour, onManageUsers, onDashboard, onManageWalks,
   onCloneTour, onPublishClone, cloneableTours = [], myClones = [], reviewClones = [],
+  hasActiveClone = false,
   onManageDisputes,
   onManageTranslations,
   unrestricted = false,
@@ -156,7 +157,13 @@ export default function AdminStartScreen({
         <div>
           <h2 className="text-lg font-bold text-white mb-1">Clone a tour to translate</h2>
           <p className="text-sm text-slate-400 mb-3">Pick an existing tour, then choose the language you're translating into. The clone is private to you until you mark it finished.</p>
-          {sortedCloneable.length === 0 ? (
+          {hasActiveClone ? (
+            <div className="text-center py-8 text-amber-300 border border-dashed border-amber-700/50 rounded-xl bg-amber-900/10">
+              <Languages className="w-10 h-10 mx-auto mb-2 opacity-50" />
+              <p className="font-medium">You have a translation in progress</p>
+              <p className="text-sm text-amber-400/80 mt-1">Finish it and get it published before starting another clone.</p>
+            </div>
+          ) : sortedCloneable.length === 0 ? (
             <div className="text-center py-8 text-slate-500 border border-dashed border-slate-700 rounded-xl">
               <Languages className="w-10 h-10 mx-auto mb-2 opacity-30" />
               <p className="font-medium">No tours available to clone yet</p>
@@ -169,7 +176,8 @@ export default function AdminStartScreen({
         </div>
 
         <div>
-          <h2 className="text-lg font-bold text-white mb-3">{unrestricted ? 'All translation clones' : 'My translation clones'}</h2>
+          <h2 className="text-lg font-bold text-white mb-1">{unrestricted ? 'All translation clones' : 'My translation in progress'}</h2>
+          {!unrestricted && <p className="text-sm text-slate-400 mb-3">Once a translation is finished and published, it moves off this list — it's a live tour at that point, not a clone in progress.</p>}
           {myClones.length === 0 ? (
             <div className="text-center py-8 text-slate-500 border border-dashed border-slate-700 rounded-xl">
               <Mic className="w-10 h-10 mx-auto mb-2 opacity-30" />

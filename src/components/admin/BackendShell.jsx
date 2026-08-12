@@ -88,6 +88,13 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
   const handleCloneTour = async (original, targetLanguage) => {
     const lang = (targetLanguage || '').trim();
     if (!lang || !original) return null;
+    // Enforced here too, not just by hiding the "Clone a tour" section in the UI — a
+    // narrator (not an unrestricted admin) may only have one translation in progress at
+    // a time. This must block the actual clone action, not just the button that starts it.
+    if (!unrestricted && hasActiveClone) {
+      toast({ variant: 'destructive', title: 'Finish your current translation first', description: 'You already have a clone in progress. It needs to be finished and published before you can start another.' });
+      return null;
+    }
     const clone = {
       ...original,
       id: undefined,
@@ -142,7 +149,15 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
   const myClones = unrestricted
     ? walks.filter(w => w.clone_of)
     : walks.filter(w => w.clone_of && (w.assigned_narrator_email || '').toLowerCase() === (user.email || '').toLowerCase());
+  // A narrator's own view of "my clones" only shows active, unpublished work — once a
+  // clone is finished AND published, it's no longer theirs to manage; it's a live tour.
+  // (An unrestricted admin-as-narrator still sees everything, published or not, since
+  // they're the one doing the reviewing/publishing.)
+  const myActiveClones = unrestricted ? myClones : myClones.filter(w => !(w.finished && w.approved));
   const reviewClones = walks.filter(w => w.clone_of && w.finished && !w.approved);
+  // Only one translation clone may be in progress at a time per narrator — once their
+  // current clone is finished AND published, they can start another, not before.
+  const hasActiveClone = !unrestricted && myActiveClones.length > 0;
 
   const isAdmin = userRole === 'admin';
   const showBackToStart = editingWalk !== null || view !== 'start';
@@ -228,7 +243,18 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
               // Walk/Hike baseline and launch at half price.
               price_eur: defaultPriceForCategory(categoryCode),
             })}
-            onContinueTour={(walk, wpIndex) => { setEditingWalk(walk); setFocusWaypointIndex(wpIndex ?? null); }}
+            onContinueTour={(walk, wpIndex) => {
+              // Defense in depth: narrators must only ever open a clone, never the master
+              // copy — enforced here even though the current UI never actually offers a
+              // narrator a button that would call this with a master walk, since that
+              // absence isn't the same as a real guard against it.
+              if (userRole === 'narrator' && !unrestricted && !walk.clone_of) {
+                toast({ variant: 'destructive', title: 'Not allowed', description: 'Narrators can only work on a cloned translation, never the master tour directly.' });
+                return;
+              }
+              setEditingWalk(walk);
+              setFocusWaypointIndex(wpIndex ?? null);
+            }}
             onManageUsers={() => setView('users')}
             onDashboard={() => setView('dashboard')}
             onManageDisputes={() => setView('disputes')}
@@ -236,8 +262,9 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
             onManageWalks={() => setView('walks')}
             onCloneTour={handleCloneTour}
             onPublishClone={handlePublishClone}
-            cloneableTours={cloneableTours}
-            myClones={myClones}
+            cloneableTours={hasActiveClone ? [] : cloneableTours}
+            hasActiveClone={hasActiveClone}
+            myClones={unrestricted ? myClones : myActiveClones}
             reviewClones={reviewClones}
           />
         )}

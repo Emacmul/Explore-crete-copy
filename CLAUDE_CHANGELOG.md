@@ -17,6 +17,53 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-12 (later same day) — Narrator clone workflow: one-at-a-time limit, master-tour guard, active-only view
+Scope: `src/components/admin/BackendShell.jsx`,
+`src/components/admin/AdminStartScreen.jsx`.
+
+Three rules Enda asked for, audited against the actual current code
+first rather than assumed:
+
+1. **Narrators must never open a master tour, only a clone.** Checked
+   this carefully — the current UI already never gives a narrator a
+   button that opens a master (only "Clone" on masters, only "Open"
+   on their own clones), so this wasn't actively broken. But there was
+   no code-level check stopping it either — just the absence of a
+   button, not a real guard. Added an explicit check on the actual
+   open-tour handler: a narrator opening a walk that isn't a clone
+   (`clone_of` unset) is now blocked with a clear message, not just
+   prevented by there happening to be no button for it.
+
+2. **Only one translation clone in progress at a time, per narrator.**
+   Wasn't enforced at all before — a narrator could clone multiple
+   tours simultaneously. Now blocked in two places, not just one: the
+   "Clone a tour to translate" list disappears (replaced with a clear
+   "finish your current one first" message, not a misleading "no
+   tours available") the moment a narrator has any unfinished clone,
+   and the actual clone action itself is blocked server-side too, not
+   just hidden in the UI — so this can't be bypassed by, say, an old
+   cached page still showing the button.
+
+3. **Narrator's own clone list now shows active work only** — the
+   one interpretation here I made a judgment call on rather than
+   found stated outright, flagging clearly: "My translation clones"
+   now hides anything already finished *and* published, since at that
+   point it's a live public tour, not something the narrator still
+   needs to manage. Renamed the heading to "My translation in
+   progress" and added a short explanation so it's clear why
+   something disappears from the list after publishing, rather than
+   looking like it vanished. If this isn't what "should see
+   unpublished only" meant, easy to adjust — flagging the assumption
+   rather than silently guessing.
+
+None of this touches the admin side (an unrestricted admin wearing
+the Narr hat still sees and can manage everything, published or not
+— they're the one doing the reviewing).
+
+Built and verified clean.
+
+---
+
 ## 2026-08-12 (later same day) — "My Library" rebuilt to show everything owned, not just what's downloaded
 Scope: `src/pages/MyWalks.jsx` (full rewrite), `src/lib/i18n/index.js`
 (English text for `home.myLibrary`, `mywalks.title`,
