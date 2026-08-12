@@ -17,6 +17,40 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-12 (later same day) — Splash screen: fixed on iPhone by Enda, broke Android — one specific technique was the cause
+Scope: `src/components/onboarding/SplashScreen.jsx` only.
+
+Enda made his own iOS fixes to this file directly (safe-area-inset
+padding for notch/dynamic-island phones, image centering, a scroll
+lock) — the iPhone result looked correct, but Android stopped
+rendering the splash screen at all afterward.
+
+Traced the actual diff line by line rather than guess broadly. One
+specific addition stood out: setting `document.body`'s CSS position
+to `fixed` (with `width: 100%`) while the splash is up. This is a
+real, well-documented fix — but specifically for one iOS Safari bug
+(background content bouncing/scrolling behind a fixed overlay). It
+is not a general cross-platform technique, and locking the body this
+way is a known, documented source of content rendering off-screen or
+disappearing entirely on Android Chrome, because Android handles the
+viewport and scroll position differently while the body is fixed —
+matching exactly what Enda saw.
+
+Fixed by scoping that specific technique to iOS only (detected via
+user agent), while every platform still gets the simple, safe
+`overflow: hidden` scroll lock that doesn't carry this risk. Also
+removed two smaller, unnecessary additions that weren't needed for
+the intended fix and added risk without benefit: `touch-none` (blocks
+all touch gestures on the element, unrelated to the scroll-bounce bug
+it was likely intended to help with) and `transform-gpu` on the image
+(a GPU-acceleration hint with no clear purpose here). Everything
+genuinely useful from Enda's own changes — safe-area padding on both
+title and button, image centering — was kept as-is.
+
+Built and verified clean.
+
+---
+
 ## 2026-08-12 (later same day) — Narr password re-entry removed entirely, replaced with a real session token — supersedes the previous entry's dialog fix
 Scope: `base44/entities/AppUser.jsonc` (+`narr_session_token`,
 +`narr_session_expires_at`), `base44/functions/narrLogin/entry.ts`,
