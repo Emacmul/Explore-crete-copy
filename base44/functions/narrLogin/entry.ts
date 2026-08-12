@@ -41,9 +41,20 @@ Deno.serve(async (req) => {
       return Response.json({ ok: false, error: 'Wrong password.' });
     }
 
+    // Issue a fresh session token — verified against a real password check right here,
+    // not a bypass of it. Lets the rest of this Narr Studio visit (saving translations,
+    // etc.) skip re-asking for the password, without trusting an unverifiable client
+    // claim of identity the way skipping this check entirely would.
+    const token = crypto.randomUUID() + crypto.randomUUID();
+    const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(); // 12 hours
+    await base44.asServiceRole.entities.AppUser.update(match.id, {
+      narr_session_token: token,
+      narr_session_expires_at: expiresAt,
+    });
+
     const name = `${match.first_name || ''} ${match.last_name || ''}`.trim();
     const isAdmin = match.role === 'admin';
-    return Response.json({ ok: true, email: match.email, role: 'narrator', name, isAdmin });
+    return Response.json({ ok: true, email: match.email, role: 'narrator', name, isAdmin, token });
   } catch (error) {
     return Response.json({ ok: false, error: error.message }, { status: 200 });
   }

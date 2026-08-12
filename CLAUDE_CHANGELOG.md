@@ -17,6 +17,45 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-12 (later same day) — Narr password re-entry removed entirely, replaced with a real session token — supersedes the previous entry's dialog fix
+Scope: `base44/entities/AppUser.jsonc` (+`narr_session_token`,
++`narr_session_expires_at`), `base44/functions/narrLogin/entry.ts`,
+`base44/functions/saveTranslation/entry.ts`, `src/pages/Narr.jsx`,
+`src/components/admin/TranslationsManager.jsx` (simplified back down —
+the password-prompt-dialog added in the previous entry is now gone
+entirely, no longer needed).
+
+Enda's explicit call, after the password dialog from the previous
+entry still felt unnecessary: once logged into Narr Studio, that
+should be enough — no separate re-confirmation for saving a
+translation. Flagged the real tradeoff first (removing the password
+check entirely would mean saveTranslation trusting a plain client-side
+claim of identity, forgeable by anyone with browser dev tools open,
+no actual password needed) — landed on the proper middle ground
+instead of either extreme.
+
+How it actually works now: `narrLogin` — which already genuinely
+verifies the real password at login — now also issues a random,
+unguessable session token at that same moment, stored on the AppUser
+record with a 12-hour expiry, and returned to the client. Narr.jsx
+keeps that token in the session it already holds. Every subsequent
+narrator action (saving/reverting a translation) sends that token
+instead of the password; `saveTranslation` checks it against what's
+stored server-side and confirms it hasn't expired. The password itself
+is still genuinely checked — once, at login, for real — never
+bypassed; what's eliminated is asking for it again for the rest of
+that same login.
+
+Net effect: a narrator logs into Narr Studio once, and every save
+after that just works, with no prompts, no re-entry, nothing to
+notice or miss — while a stolen or guessed email address alone still
+can't be used to save anything without the real token that only comes
+from an actual successful login.
+
+Built and verified clean.
+
+---
+
 ## 2026-08-12 (later same day) — Narrator "Enter your Narr password" fixed — was a discoverability problem, not broken auth logic
 Scope: `src/components/admin/TranslationsManager.jsx` only.
 

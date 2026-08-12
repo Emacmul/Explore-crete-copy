@@ -5,19 +5,23 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 // over the hardcoded baseline in src/lib/i18n by the LanguageProvider, so a correction
 // goes live for every customer on next app load.
 //
-// Authorization — two paths, because the back end is reached two ways:
+// Authorization — three paths, because the back end is reached different ways:
 //  - Admin via the /Admin route: signed in with Base44's own login, so base44.auth.me()
 //    returns role 'admin'. No extra credentials needed.
-//  - Narrator (or admin wearing the Narr hat) via the Narr button: NO Base44 session,
-//    so we verify them by email + the same backend password narrLogin checks against
-//    AppUser.password.
+//  - Narrator (or admin wearing the Narr hat) via the Narr button, within the same
+//    login session: a session token issued by narrLogin at the moment the password was
+//    genuinely verified — this is what lets a narrator save repeatedly without
+//    re-entering the password each time, without ever skipping the actual password
+//    check itself (that check just happened once, at login, not here).
+//  - Narrator email + password directly — kept as a fallback for any caller that
+//    doesn't have a session token for some reason.
 // Runs as the service role so it can read AppUser (narrator auth) and write Translation
 // records regardless of the caller's session.
 export default async function(req) {
   try {
     const base44 = createClientFromRequest(req);
     const body = await req.json();
-    const { key, lang, value, mode, email, narrPassword } = body || {};
+    const { key, lang, value, mode, email, narrPassword, narrToken } = body || {};
 
     if (!key || !lang) {
       return Response.json({ error: 'key and lang are required' }, { status: 400 });
@@ -31,13 +35,19 @@ export default async function(req) {
     } catch { /* no Base44 session — fall through to the narrator path */ }
 
     if (!authorizedEmail) {
-      if (!email || !narrPassword) {
+      if (!email || (!narrPassword && !narrToken)) {
         return Response.json({ error: 'Not authorized' }, { status: 403 });
       }
       const normalized = String(email).trim().toLowerCase();
       const matches = await base44.asServiceRole.entities.AppUser.filter({ email: normalized });
       const u = Array.isArray(matches) ? matches[0] : null;
-      if (!u || (u.role !== 'narrator' && u.role !== 'admin') || !u.password || String(u.password) !== String(narrPassword)) {
+      if (!u || (u.role !== 'narrator' && u.role !== 'admin')) {
+        return Response.json({ error: 'Not authorized' }, { status: 403 });
+      }
+      const tokenValid = narrToken && u.narr_session_token && String(u.narr_session_token) === String(narrToken)
+        && u.narr_session_expires_at && new Date(u.narr_session_expires_at).getTime() > Date.now();
+      const passwordValid = narrPassword && u.password && String(u.password) === String(narrPassword);
+      if (!tokenValid && !passwordValid) {
         return Response.json({ error: 'Not authorized' }, { status: 403 });
       }
       authorizedEmail = u.email;

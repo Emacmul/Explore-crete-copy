@@ -45,6 +45,15 @@
       "type": "string",
       "description": "Backend password — required for Narrator and Admin roles."
     },
+    "narr_session_token": {
+      "type": "string",
+      "description": "Random token issued at successful Narr Studio login, letting authenticated actions (like saving a UI translation) skip re-entering the password for the rest of that login — the password itself is genuinely verified once, at login, not bypassed."
+    },
+    "narr_session_expires_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When narr_session_token stops being valid. Refreshed on each Narr Studio login."
+    },
     "newsletter_opted_in": {
       "type": "boolean",
       "default": true,

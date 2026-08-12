@@ -46,7 +46,7 @@ export default function Narr() {
     try {
       const res = await base44.functions.invoke('narrLogin', { email: user.email, password });
       if (res?.data?.ok) {
-        const sess = { email: user.email, full_name: res.data.name || user.full_name, role: 'narrator', isAdmin: !!res.data.isAdmin };
+        const sess = { email: user.email, full_name: res.data.name || user.full_name, role: 'narrator', isAdmin: !!res.data.isAdmin, token: res.data.token };
         sessionStorage.setItem(SESSION_KEY, JSON.stringify(sess));
         setSession(sess);
       } else {
