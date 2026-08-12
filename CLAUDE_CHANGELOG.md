@@ -17,6 +17,33 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-12 (later same day) — "My Library" badge was showing the wrong number entirely
+Scope: `src/pages/Home.jsx` only.
+
+Enda caught this by testing on a fresh account with nothing purchased
+— the badge on "My Library" showed "1" with nothing actually in it.
+Root cause: when My Library was rebuilt earlier today to show
+everything *owned* rather than just everything *downloaded*, the
+badge count itself was never updated to match — it was still counting
+`getAllOfflineWalks()` (whatever's saved locally in this browser's
+storage, left over from earlier testing sessions), a completely
+different, unrelated number from what the page it's attached to
+actually shows.
+
+Fixed: the badge now counts the exact same thing the page displays —
+owned tours, computed with the identical filter MyWalks.jsx uses,
+from the same already-loaded catalogue data — so this pair can't ever
+disagree with each other again. Also swapped the icon from a Wi-Fi/
+offline symbol (leftover from when this button meant "downloaded") to
+a plain library icon matching what the button now actually represents,
+and removed the offline-walks hook entirely from this file since
+nothing in it needed that data anymore.
+
+Built and verified clean; confirmed no other leftover references to
+the old offline-count logic remain in this file.
+
+---
+
 ## 2026-08-12 (later same day) — Fixed: the pushback lock never released once a narrator actually fixed it
 Scope: `src/components/admin/BackendShell.jsx`,
 `src/components/admin/AdminStartScreen.jsx`.

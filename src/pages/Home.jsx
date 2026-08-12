@@ -2,11 +2,10 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
-import { Loader2, LogOut, User, ShieldCheck, Mic, WifiOff } from 'lucide-react';
+import { Loader2, LogOut, User, ShieldCheck, Mic, Library } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { useAuth } from '@/lib/AuthContext';
-import { useOfflineWalks } from '../components/offline/useOfflineWalks';
 import { motion, AnimatePresence } from 'framer-motion';
 import CreteMap from '../components/map/CreteMap';
 import WalkList from '../components/walks/WalkList';
@@ -34,8 +33,6 @@ export default function Home() {
   const [selectedTourCategory, setSelectedTourCategory] = useState(() => sessionStorage.getItem('tour_category') || 'WHT');
   const [userRole, setUserRole] = useState(null); // 'admin' | 'narrator' | null — which back-end button (Admin or Narr) to show
 
-  const { getAllOfflineWalks } = useOfflineWalks();
-  const offlineCount = getAllOfflineWalks().length;
   const updatingRef = useRef(false);
 
   useEffect(() => {
@@ -175,6 +172,10 @@ export default function Home() {
   const categoryWalks = selectedTourCategory
     ? accessibleWalks.filter(w => w.tour_category === selectedTourCategory)
     : accessibleWalks;
+  // How many tours the customer actually owns (bought or free sample) — same filter as
+  // the My Library page itself, so this badge count can never disagree with what's
+  // actually shown when they click through to it.
+  const ownedCount = walks.filter(w => w._accessible !== false).length;
 
   if (isLoading) {
     return (
@@ -240,12 +241,12 @@ export default function Home() {
 
             <Link to={createPageUrl('MyWalks')}>
               <Button variant="outline" size="sm" className="gap-2 border-green-300 text-green-700 hover:bg-green-50 relative">
-                <WifiOff className="w-4 h-4" />
+                <Library className="w-4 h-4" />
                 <span className="hidden sm:inline">{t('home.myLibrary')}</span>
 
-                {offlineCount > 0 && (
+                {ownedCount > 0 && (
                   <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-green-500 text-white text-xs rounded-full flex items-center justify-center font-bold">
-                    {offlineCount}
+                    {ownedCount}
                   </span>
                 )}
               </Button>
