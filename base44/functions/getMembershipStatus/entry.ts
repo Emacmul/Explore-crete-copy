@@ -23,6 +23,7 @@ export default async function (req) {
     const email = getEmailFromToken(body.token);
     if (!email) return Response.json({ isMember: false, status: null, expiresAt: null });
 
+
     // Service role: read this caller's Membership records. The client only receives a
     // boolean + status + expiry, never raw records, so other members' data isn't exposed.
     const memberships = await base44.asServiceRole.entities.Membership.filter({ buyer_email: email });
