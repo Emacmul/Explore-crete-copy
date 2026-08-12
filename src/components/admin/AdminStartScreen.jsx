@@ -70,10 +70,14 @@ function CloneableTourRow({ walk, onClone }) {
   );
 }
 
-function MyCloneRow({ walk, onContinue, onPublish, unrestricted }) {
+function MyCloneRow({ walk, onContinue, onPublish, unrestricted, locked }) {
   return (
-    <div className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 flex items-center gap-3">
-      <button onClick={() => onContinue(walk)} className="flex items-center gap-3 flex-1 min-w-0 text-left group">
+    <div className={`w-full bg-slate-800 border rounded-xl px-4 py-3 ${walk.pushback_reason ? 'border-red-600/60' : locked ? 'border-slate-800 opacity-50' : 'border-slate-700'}`}>
+      <button
+        onClick={() => !locked && onContinue(walk)}
+        disabled={locked}
+        className={`flex items-center gap-3 flex-1 min-w-0 text-left group w-full ${locked ? 'cursor-not-allowed' : ''}`}
+      >
         <span className="font-mono text-xs bg-slate-700 text-purple-300 px-2 py-1 rounded font-bold shrink-0">{walk.code}</span>
         <Badge className="text-xs bg-purple-900 text-purple-300 border-purple-700 shrink-0">{walk.target_language}</Badge>
         <div className="flex-1 min-w-0">
@@ -82,19 +86,37 @@ function MyCloneRow({ walk, onContinue, onPublish, unrestricted }) {
             <p className="text-xs text-slate-500 truncate">By {walk.assigned_narrator_email}</p>
           )}
         </div>
-        {walk.finished ? (
+        {walk.pushback_reason && walk.finished ? (
+          <span className="flex items-center gap-1 text-xs text-emerald-300 bg-emerald-900/40 border border-emerald-700/50 px-2 py-1 rounded shrink-0">
+            <CheckCircle2 className="w-3.5 h-3.5" /> Correction sent for review
+          </span>
+        ) : walk.pushback_reason ? (
+          <span className="flex items-center gap-1 text-xs text-red-300 bg-red-900/40 border border-red-700/50 px-2 py-1 rounded shrink-0">
+            <AlertTriangle className="w-3.5 h-3.5" /> Needs correction
+          </span>
+        ) : locked ? (
+          <span className="text-xs text-slate-500 shrink-0">On hold — urgent fix pending</span>
+        ) : walk.finished ? (
           <span className="flex items-center gap-1 text-xs text-emerald-300 bg-emerald-900/40 border border-emerald-700/50 px-2 py-1 rounded shrink-0">
             <CheckCircle2 className="w-3.5 h-3.5" /> Sent for review
           </span>
         ) : (
           <span className="text-xs text-amber-300 shrink-0">In progress</span>
         )}
-        <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-purple-400 transition-colors shrink-0" />
+        {!locked && <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-purple-400 transition-colors shrink-0" />}
       </button>
+      {walk.pushback_reason && (
+        <div className="mt-2 pt-2 border-t border-red-900/40 flex items-start gap-2 text-sm text-red-200">
+          <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-red-400" />
+          <p><span className="font-medium">Admin feedback:</span> {walk.pushback_reason}</p>
+        </div>
+      )}
       {unrestricted && !walk.approved && onPublish && (
-        <Button size="sm" onClick={() => onPublish(walk.id)} className="bg-emerald-600 hover:bg-emerald-700 gap-2 shrink-0">
-          <Send className="w-4 h-4" /> Publish
-        </Button>
+        <div className="mt-2 pt-2 border-t border-slate-700 flex justify-end">
+          <Button size="sm" onClick={() => onPublish(walk.id)} className="bg-emerald-600 hover:bg-emerald-700 gap-2">
+            <Send className="w-4 h-4" /> Publish
+          </Button>
+        </div>
       )}
     </div>
   );
@@ -123,6 +145,7 @@ export default function AdminStartScreen({
   userRole, user, works, onNewTour, onContinueTour, onManageUsers, onDashboard, onManageWalks,
   onCloneTour, onPublishClone, cloneableTours = [], myClones = [], reviewClones = [],
   hasActiveClone = false,
+  pendingPushbackId = null,
   publishedLanguagesByMaster = {},
   onManageDisputes,
   onManageTranslations,
@@ -187,7 +210,7 @@ export default function AdminStartScreen({
               <p className="text-sm">Clone a tour above to start a translation.</p>
             </div>
           ) : (
-            <div className="space-y-2">{myClones.map(walk => <MyCloneRow key={walk.id} walk={walk} onContinue={onContinueTour} onPublish={onPublishClone} unrestricted={unrestricted} />)}</div>
+            <div className="space-y-2">{myClones.map(walk => <MyCloneRow key={walk.id} walk={walk} onContinue={onContinueTour} onPublish={onPublishClone} unrestricted={unrestricted} locked={!!pendingPushbackId && walk.id !== pendingPushbackId} />)}</div>
           )}
         </div>
       </div>

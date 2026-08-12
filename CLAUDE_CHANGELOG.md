@@ -17,6 +17,96 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-12 (later same day) — Fixed: the pushback lock never released once a narrator actually fixed it
+Scope: `src/components/admin/BackendShell.jsx`,
+`src/components/admin/AdminStartScreen.jsx`.
+
+Real bug in the previous entry, caught before it was even installed:
+`pushback_reason` stays set on a clone until the admin actually
+re-publishes it (deliberately, so the row keeps showing what was
+wrong). But the lock-out check was reading that same field to decide
+whether a pushback was still "pending" — so a narrator who fixed the
+correction and sent it back for review stayed locked out of their
+other work indefinitely, waiting on the admin to get around to
+reviewing it. That's not "fixes can't wait," that's a new bottleneck.
+
+Fixed: the lock now checks whether the narrator's own part is
+actually done (`pushback_reason` set but not yet marked finished) —
+the moment they tick finished and resubmit it, the lock releases
+immediately, regardless of whether the admin has looked at it yet.
+Also fixed the status badge, which previously could only ever say
+"Needs correction" for a pushed-back clone forever — it now correctly
+shows "Correction sent for review" once resubmitted, distinct from
+still being worked on.
+
+Built and verified clean.
+
+---
+
+## 2026-08-12 (later same day) — Pushback now takes priority over whatever the narrator was already working on
+Scope: `src/components/admin/BackendShell.jsx`,
+`src/components/admin/AdminStartScreen.jsx`.
+
+Real gap Enda caught in the previous entry: pushback can land on a
+*different* tour than the one a narrator currently has in progress —
+it comes from the admin, not from the narrator's own queue, so it
+doesn't go through the one-clone-limit that would normally stop a
+second thing from becoming active. Someone could end up with an
+ordinary in-progress translation *and* an urgent, already-published,
+already-purchased pushback sitting active at the same time, with
+nothing forcing them to deal with the urgent one first.
+
+Fixed: a pending pushback now blocks a narrator from opening
+*anything else* — checked both where it needs to be checked, not just
+one. The open-tour action itself refuses to open a different clone
+while a pushback is pending, with a clear message naming the tour
+that actually needs attention. And the "My translation in progress"
+list reflects this before they even try clicking — the non-priority
+clone visibly greys out with "On hold — urgent fix pending" rather
+than only failing after a click. The pushed-back clone itself stays
+fully open the whole time, obviously — this only blocks switching
+away from it to something else.
+
+Built and verified clean.
+
+---
+
+## 2026-08-12 (later same day) — Admin can push a published translation back to its narrator for correction
+Scope: `base44/entities/Walk.jsonc` (+`pushback_reason`),
+`src/components/admin/WalkAdminList.jsx`,
+`src/components/admin/BackendShell.jsx`,
+`src/components/admin/AdminStartScreen.jsx`.
+
+New feature, admin-only. On the Manage Tours screen, any published
+translation clone (in any language) now has a "push back" button next
+to it — admin writes a reason (spelling error, wrong translation,
+whatever it is), and the tour is immediately unpublished and reopened
+for that narrator to fix, with the reason shown prominently on their
+clone in the Narr Studio (a red "Needs correction" banner with the
+actual feedback text, not just a status change they'd have to guess
+the reason for).
+
+**"Prevented from doing anything further until it's fixed" needed no
+new blocking logic at all** — deliberately built to ride on the
+one-clone-in-progress limit from earlier today rather than duplicate
+it: pushing a clone back sets it to unpublished + unfinished, which
+is exactly the state that limit already treats as "an active clone in
+progress." The narrator's "Clone a tour" section disappears the same
+way it would for any other unfinished translation, and the underlying
+clone action is blocked server-side the same way — both already
+verified against a pushed-back clone specifically, not assumed.
+
+Also added a language badge to the Manage Tours list — clone rows
+previously had no visible way to tell which language they were, which
+would have made finding the right one to push back needlessly hard.
+
+Re-publishing a corrected clone clears the pushback reason
+automatically, since a fresh publish confirms the fix was accepted.
+
+Built and verified clean.
+
+---
+
 ## 2026-08-12 (later same day) — Corrected: the "unpublished" clone rule, per Enda's follow-up
 Scope: `src/components/admin/BackendShell.jsx`,
 `src/components/admin/AdminStartScreen.jsx`,

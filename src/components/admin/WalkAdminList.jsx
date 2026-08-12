@@ -1,7 +1,10 @@
 import React from 'react';
 import { Badge } from '@/components/ui/badge';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Trash2, Mountain, Loader2, MapPin, Pencil, CalendarCheck, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+import { Button } from '@/components/ui/button';
+import { Trash2, Mountain, Loader2, MapPin, Pencil, CalendarCheck, AlertTriangle, RefreshCw, Undo2, Languages } from 'lucide-react';
 import { toast } from '@/components/ui/use-toast';
 
 const difficultyColors = {
@@ -29,11 +32,14 @@ const daysSince = (isoString) => {
   return Math.floor((Date.now() - then) / (1000 * 60 * 60 * 24));
 };
 
-export default function WalkAdminList({ walks, isLoading, onEdit, onDelete, onMarkChecked, onToggleFree, onRefresh, userRole = 'admin' }) {
+export default function WalkAdminList({ walks, isLoading, onEdit, onDelete, onMarkChecked, onToggleFree, onPushBack, onRefresh, userRole = 'admin' }) {
   const [confirmDelete, setConfirmDelete] = React.useState(null); // holds the walk object
   const [isDeleting, setIsDeleting] = React.useState(false);
   const [markingChecked, setMarkingChecked] = React.useState(null); // walk id currently being marked
   const [togglingFree, setTogglingFree] = React.useState(null); // walk id currently being toggled
+  const [pushBackTarget, setPushBackTarget] = React.useState(null); // holds the walk object
+  const [pushBackReason, setPushBackReason] = React.useState('');
+  const [pushingBack, setPushingBack] = React.useState(false);
   const isAdmin = userRole === 'admin';
 
   const handleDelete = (walk) => {
@@ -88,6 +94,24 @@ export default function WalkAdminList({ walks, isLoading, onEdit, onDelete, onMa
       });
     }
     setMarkingChecked(null);
+  };
+
+  const handlePushBack = async () => {
+    if (!pushBackTarget || !pushBackReason.trim()) return;
+    setPushingBack(true);
+    try {
+      await onPushBack(pushBackTarget.id, pushBackReason.trim());
+      setPushBackTarget(null);
+      setPushBackReason('');
+    } catch (err) {
+      console.error('Push back failed:', err);
+      toast({
+        variant: 'destructive',
+        title: 'Could not push back this translation',
+        description: err?.message || 'An unexpected error occurred. Please try again.',
+      });
+    }
+    setPushingBack(false);
   };
 
   return (
@@ -165,6 +189,16 @@ export default function WalkAdminList({ walks, isLoading, onEdit, onDelete, onMa
                     <Badge className={`text-xs ${walk.approved === false ? 'bg-red-900 text-red-300' : 'bg-slate-600 text-slate-200'}`}>
                       {walk.approved === false ? 'Draft — not visible to customers' : 'Published'}
                     </Badge>
+                    {walk.clone_of && walk.target_language && (
+                      <Badge className="text-xs bg-purple-900 text-purple-300 border border-purple-700">
+                        <Languages className="w-3 h-3 mr-1" /> {walk.target_language}
+                      </Badge>
+                    )}
+                    {walk.pushback_reason && (
+                      <Badge className="text-xs bg-red-900 text-red-300 border border-red-700">
+                        Needs correction
+                      </Badge>
+                    )}
                     <span className="text-xs text-slate-500 flex items-center gap-1">
                       <MapPin className="w-3 h-3" />
                       {(walk.waypoints || []).length} key points
@@ -187,6 +221,22 @@ export default function WalkAdminList({ walks, isLoading, onEdit, onDelete, onMa
                   }`}
                 >
                   {togglingFree === walk.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : (walk.is_sample_walk ? 'Free' : 'Paid')}
+                </button>
+              )}
+
+              {/* Push back for correction — admin only, only for a published translation
+                  clone (spelling error, wrong translation, etc.). Unpublishes it, reopens
+                  it for the narrator, and blocks them from starting anything new until
+                  they fix and re-submit it — the same "one clone in progress" limit that
+                  already governs new translations naturally covers this too, since a
+                  pushed-back clone becomes unfinished + unapproved again. */}
+              {isAdmin && walk.clone_of && walk.approved !== false && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setPushBackTarget(walk); setPushBackReason(''); }}
+                  title="Push back to the narrator for correction"
+                  className="shrink-0 p-4 text-slate-500 hover:text-amber-400 transition-colors"
+                >
+                  <Undo2 className="w-4 h-4" />
                 </button>
               )}
 
@@ -238,6 +288,37 @@ export default function WalkAdminList({ walks, isLoading, onEdit, onDelete, onMa
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={!!pushBackTarget} onOpenChange={open => !open && setPushBackTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Push back for correction</DialogTitle>
+            <DialogDescription>
+              <strong>{pushBackTarget?.name}</strong> will be unpublished and sent back to{' '}
+              <strong>{pushBackTarget?.assigned_narrator_email || 'the narrator'}</strong> to fix.
+              They won't be able to start any new translation until this one is corrected
+              and re-published.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={pushBackReason}
+            onChange={e => setPushBackReason(e.target.value)}
+            placeholder="What needs fixing? e.g. 'The word for church on waypoint 3 is misspelled' or 'The safety notes paragraph reads awkwardly'"
+            rows={4}
+          />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setPushBackTarget(null)}>Cancel</Button>
+            <Button
+              onClick={handlePushBack}
+              disabled={!pushBackReason.trim() || pushingBack}
+              className="bg-amber-600 hover:bg-amber-700 text-white gap-2"
+            >
+              {pushingBack ? <Loader2 className="w-4 h-4 animate-spin" /> : <Undo2 className="w-4 h-4" />}
+              Send back for correction
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

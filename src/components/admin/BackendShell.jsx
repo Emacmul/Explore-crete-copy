@@ -147,11 +147,22 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
     });
   };
 
-  // Admin publishes a finished translation as its own standalone public tour.
+  // Admin publishes a finished translation as its own standalone public tour. Also
+  // clears any pushback reason — re-publishing confirms the correction was accepted.
   const handlePublishClone = async (walkId) => {
-    await base44.entities.Walk.update(walkId, { approved: true, finished: true });
-    setWalks((prev) => prev.map(w => w.id === walkId ? { ...w, approved: true, finished: true } : w));
+    await base44.entities.Walk.update(walkId, { approved: true, finished: true, pushback_reason: '' });
+    setWalks((prev) => prev.map(w => w.id === walkId ? { ...w, approved: true, finished: true, pushback_reason: '' } : w));
     toast({ title: 'Published', description: 'The translation is now a standalone public tour.' });
+  };
+
+  // Admin sends an already-published translation clone back to its narrator for
+  // correction. Unpublishing and un-finishing it here is what naturally re-triggers the
+  // existing "one clone in progress" limit — the narrator can't start anything new until
+  // this one is fixed and re-published, with no separate blocking logic needed for that.
+  const handlePushBackClone = async (walkId, reason) => {
+    await base44.entities.Walk.update(walkId, { approved: false, finished: false, pushback_reason: reason });
+    setWalks((prev) => prev.map(w => w.id === walkId ? { ...w, approved: false, finished: false, pushback_reason: reason } : w));
+    toast({ title: 'Sent back for correction', description: 'The narrator will see this the next time they open the Narr Studio.' });
   };
 
   // Every master is offered for cloning regardless of its OWN publish status — a
@@ -182,6 +193,21 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
   // Only one translation clone may be in progress at a time per narrator — once their
   // current clone is finished AND published, they can start another, not before.
   const hasActiveClone = !unrestricted && myActiveClones.length > 0;
+  // A pushback jumps the queue: it's an already-published, already-live tour with a known
+  // error in it, unlike an ordinary in-progress translation nobody's seen yet. If a
+  // narrator has one pending, it must take priority over whatever else they were working
+  // on — they get blocked from opening anything else until the pushback is fixed.
+  // A pushback jumps the queue: it's an already-published, already-live tour with a known
+  // error in it, unlike an ordinary in-progress translation nobody's seen yet. If a
+  // narrator has one pending, it must take priority over whatever else they were working
+  // on — they get blocked from opening anything else until the pushback is fixed.
+  // Critically, "fixed" means the narrator's own part is done — once they've corrected it
+  // and marked it finished (sent back for review), the lock releases immediately. It does
+  // NOT wait for the admin to actually re-review and re-publish; `pushback_reason` itself
+  // stays set until then (so the row still shows what was wrong), but that's an admin-side
+  // detail — the narrator shouldn't be stuck unable to touch anything else just because
+  // the admin hasn't reviewed their fix yet.
+  const pendingPushback = !unrestricted ? myActiveClones.find(w => w.pushback_reason && !w.finished) : null;
 
   const isAdmin = userRole === 'admin';
   const showBackToStart = editingWalk !== null || view !== 'start';
@@ -249,6 +275,7 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
             onDelete={handleDelete}
             onMarkChecked={handleMarkChecked}
             onToggleFree={handleToggleFree}
+            onPushBack={handlePushBackClone}
             onRefresh={refreshWalks}
           />
         ) : (
@@ -276,6 +303,13 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
                 toast({ variant: 'destructive', title: 'Not allowed', description: 'Narrators can only work on a cloned translation, never the master tour directly.' });
                 return;
               }
+              // A pending pushback takes priority over anything else — it's a live,
+              // already-published tour with a known error, so it can't wait behind
+              // whatever else the narrator happens to be mid-way through.
+              if (pendingPushback && walk.id !== pendingPushback.id) {
+                toast({ variant: 'destructive', title: 'Fix your pushed-back translation first', description: `“${pendingPushback.name}” was already published and needs an urgent correction — it takes priority over everything else until it's fixed and re-published.` });
+                return;
+              }
               setEditingWalk(walk);
               setFocusWaypointIndex(wpIndex ?? null);
             }}
@@ -289,6 +323,7 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
             cloneableTours={hasActiveClone ? [] : cloneableTours}
             publishedLanguagesByMaster={publishedLanguagesByMaster}
             hasActiveClone={hasActiveClone}
+            pendingPushbackId={pendingPushback?.id || null}
             myClones={unrestricted ? myClones : myActiveClones}
             reviewClones={reviewClones}
           />
