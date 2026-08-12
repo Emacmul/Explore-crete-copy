@@ -55,7 +55,7 @@ export default function TourCategoryPicker({ onSelect }) {
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: index * 0.1 }}
               onClick={() => onSelect(cat.code)}
-              className={`w-full bg-gradient-to-r ${styles.bg} ${styles.hoverBg} text-white rounded-2xl p-5 shadow-lg flex items-center gap-4 transition-all hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] text-left`}
+              className={`w-full bg-gradient-to-r ${styles.bg} ${styles.hoverBg} text-white rounded-2xl p-5 shadow-lg flex items-center gap-4 transition-all hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] text-left rtl:text-right`}
             >
               <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center shrink-0">
                 <Icon className="w-6 h-6" />
@@ -69,7 +69,7 @@ export default function TourCategoryPicker({ onSelect }) {
                 </div>
                 <p className="text-sm text-white/80 mt-0.5">{t('tour.' + cat.code + '.description')}</p>
               </div>
-              <ChevronRight className="w-5 h-5 shrink-0 opacity-70" />
+              <ChevronRight className="w-5 h-5 shrink-0 opacity-70 rtl:rotate-180" />
             </motion.button>
           );
         })}

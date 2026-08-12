@@ -5,7 +5,7 @@ import { Clock, Route, TrendingUp, ChevronRight, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useOfflineWalks } from '../offline/useOfflineWalks';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
-import { getTourLanguage, LANGUAGE_NAME_BY_CODE } from '@/lib/i18n';
+import { getTourLanguage, LANGUAGE_NAME_BY_CODE, UI_LANGUAGES } from '@/lib/i18n';
 import OfflineBadge from './OfflineBadge';
 import BuyButton from './BuyButton';
 
@@ -103,7 +103,12 @@ export default function WalkCard({ walk, onClick, isSelected, accessible = true 
               <BuyButton walk={walk} size="sm" />
             </div>
           ) : (
-            <ChevronRight className={`w-5 h-5 text-gray-400 mt-1 transition-transform ${isSelected ? 'rotate-90' : ''}`} />
+            <ChevronRight
+              className="w-5 h-5 text-gray-400 mt-1 transition-transform"
+              style={{
+                transform: `rotate(${(UI_LANGUAGES.find(l => l.code === lang)?.rtl ? 180 : 0) + (isSelected ? 90 : 0)}deg)`,
+              }}
+            />
           )}
         </div>
       </Card>

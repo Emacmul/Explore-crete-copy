@@ -214,7 +214,7 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
               )}
             </div>
 
-            <div className="flex items-center gap-1 -mt-1 -mr-1">
+            <div className="flex items-center gap-1 -mt-1 -mr-1 rtl:-mr-0 rtl:-ml-1">
               <Button
                 variant="ghost"
                 size="icon"

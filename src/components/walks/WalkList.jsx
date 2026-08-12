@@ -97,7 +97,7 @@ export default function WalkList({ walks, selectedWalk, onWalkSelect, searchQuer
               <SlidersHorizontal className="w-4 h-4" />
               {t('list.filters')}
               {activeFilterCount > 0 && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-500 text-white text-[10px] rounded-full flex items-center justify-center font-bold">
+                <span className="absolute -top-1 -right-1 rtl:-right-auto rtl:-left-1 w-4 h-4 bg-amber-500 text-white text-[10px] rounded-full flex items-center justify-center font-bold">
                   {activeFilterCount}
                 </span>
               )}
@@ -107,12 +107,12 @@ export default function WalkList({ walks, selectedWalk, onWalkSelect, searchQuer
 
         {/* Search */}
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <Search className="absolute left-3 rtl:left-auto rtl:right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <Input
             placeholder={t('list.searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
-            className="pl-10 bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-400 focus:bg-slate-700"
+            className="pl-10 rtl:pl-3 rtl:pr-10 bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-400 focus:bg-slate-700"
           />
         </div>
 
