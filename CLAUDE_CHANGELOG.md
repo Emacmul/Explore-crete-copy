@@ -17,6 +17,36 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-12 (later same day) — "My Library" button renamed to match its actual destination; offline note reworded
+Scope: `src/lib/i18n/index.js` only (English text for `home.myLibrary`
+and `mywalks.offlineNote`).
+
+Enda flagged the offline note as misleading — "These walks are saved
+on your device and work without internet" reads like it happens
+automatically. Traced it precisely: the page only ever lists walks
+already saved via "Save for Offline," so the sentence was technically
+true for what's shown, but the button leading there was labeled "My
+Library" while the page itself is titled "My Downloaded Walks" — that
+mismatch was very likely the real source of the confusion, not just
+the sentence itself. Fixed both together: the button now says
+"Downloaded Walks," matching the page it actually opens, and the note
+now reads "You saved these walks for offline use — they'll work
+without an internet connection," past tense, describing something the
+customer did rather than something that happens on its own.
+
+**Known gap, not fixed:** Dutch and Czech already had "My Library"
+translated (as "Mijn bibliotheek" / "Moje knihovna") from earlier
+work. Only changed the English source text here — didn't guess at new
+Dutch/Czech wording myself, since that's exactly the kind of stiff,
+non-native phrasing Enda's narrator process exists to avoid. Those two
+languages will show the old "Library" wording until a narrator
+corrects them via the Translations tool, same as any other update to
+existing text.
+
+Built and verified clean.
+
+---
+
 ## 2026-08-12 — "Change tour type" replaced with a dropdown, bypassing an unresolved dialog rendering bug
 Scope: `src/pages/Home.jsx` only.
 

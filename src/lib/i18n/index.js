@@ -73,7 +73,7 @@ export const translations = {
     'common.loading': "Loading...",
     'home.changeTourType': "Change tour type",
     'home.change': "Change",
-    'home.myLibrary': "My Library",
+    'home.myLibrary': "Downloaded Walks",
     'home.admin': "Admin",
     'home.narr': "Narr",
     'home.logout': "Logout",
@@ -194,7 +194,7 @@ export const translations = {
     'mywalks.emptyTitle': "No walks downloaded yet",
     'mywalks.emptyHint': "Go back and tap \"Save for Offline\" on any walk to add it here.",
     'mywalks.browseWalks': "Browse Walks",
-    'mywalks.offlineNote': "These walks are saved on your device and work without internet.",
+    'mywalks.offlineNote': "You saved these walks for offline use — they'll work without an internet connection.",
 
     'notFound.title': "Page Not Found",
     'notFound.body': "The page \"{page}\" could not be found in this application.",
