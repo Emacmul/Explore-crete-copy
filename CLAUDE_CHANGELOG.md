@@ -17,6 +17,34 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-12 (later same day) — The real cause of the dropdown clipping: it was rendering behind the map, not actually cut off
+Scope: `src/components/ui/select.jsx` only.
+
+Enda's own diagnosis, and it was sharper than the previous entry's
+fix: the earlier height-clipping bug was real and worth fixing, but
+it wasn't the whole story. He noticed the *actual* pattern — longer
+labels like "Walking/Hiking Tour" push the header to wrap onto a
+second line, which pushes the map down and gives the dropdown enough
+room to fit entirely within the header's own space. Shorter labels
+like "Driving Tour" don't force that wrap, so the dropdown has to
+extend down over the map area to show its full list — and that's
+exactly when it disappeared, because it was rendering *underneath*
+the map, not actually missing anything.
+
+Confirmed directly: Leaflet (the map library) ships with its own
+built-in z-index values ranging from roughly 200 up to 1000 for its
+various layers and on-screen controls. The dropdown had `z-50` —
+lower than all of it. Any time the dropdown needed to visually overlap
+the map, it was guaranteed to lose. Fixed by raising it to `z-[9999]`,
+comfortably clear of anything Leaflet uses and confirmed (checked
+directly) higher than everything else in the app except two
+deliberately full-screen blocking modals that would never be open
+alongside a dropdown at the same time anyway.
+
+Built and verified clean.
+
+---
+
 ## 2026-08-12 (later same day) — Real bug found and fixed: the shared dropdown component was clipping its own list
 Scope: `src/components/ui/select.jsx` (the shared dropdown primitive
 used everywhere — language picker, narration picker, tour type, and
