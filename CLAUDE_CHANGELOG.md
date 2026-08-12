@@ -17,6 +17,41 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-12 (later same day) — "My Library" rebuilt to show everything owned, not just what's downloaded
+Scope: `src/pages/MyWalks.jsx` (full rewrite), `src/lib/i18n/index.js`
+(English text for `home.myLibrary`, `mywalks.title`,
+`mywalks.emptyTitle`, `mywalks.emptyHint`, `mywalks.offlineNote`).
+
+Enda's own follow-up caught something real in the "Downloaded Walks"
+rename from earlier today: that page only ever showed walks already
+saved for offline — not everything a customer actually owns. His
+concern is a legitimate business risk, not just a wording nitpick — a
+customer who can't easily see what they already bought could end up
+buying it a second time, leading straight into a refund conversation.
+
+Rebuilt the page properly rather than just re-wording it again. It
+now fetches the same live catalogue Home.jsx uses (same React Query
+cache key, so the two screens can't ever disagree with each other),
+filtered down to everything the customer actually owns — purchased or
+free sample, regardless of download status. Each entry shows its real
+offline state: the existing "downloaded" badge if it's already saved,
+or a direct one-tap "Save for Offline" button (reusing the same
+component and progress behavior as everywhere else in the app) if
+it isn't — so a customer can both confirm what they own and manage
+offline access from the one screen, no need to go hunting through the
+main browse list.
+
+Renamed the button back to "My Library" (from "Downloaded Walks",
+which was correct for the old, narrower version of this page but not
+for this one) — and this actually **fixed** an inconsistency from
+earlier today's rename, rather than create a new one: Dutch and Czech
+already said "My Library" from before, so English matching it again
+means nothing needs a narrator correction pass this time.
+
+Built and verified clean.
+
+---
+
 ## 2026-08-12 (later same day) — "My Library" button renamed to match its actual destination; offline note reworded
 Scope: `src/lib/i18n/index.js` only (English text for `home.myLibrary`
 and `mywalks.offlineNote`).

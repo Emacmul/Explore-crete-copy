@@ -1,20 +1,38 @@
 import React, { useState } from 'react';
+import { base44 } from '@/api/base44Client';
+import { useAuth } from '@/lib/AuthContext';
+import { useQuery } from '@tanstack/react-query';
 import { useOfflineWalks } from '@/components/offline/useOfflineWalks';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, WifiOff, Loader2 } from 'lucide-react';
+import { ArrowLeft, Library, Loader2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { AnimatePresence, motion } from 'framer-motion';
 import WalkCard from '../components/walks/WalkCard';
 import WalkDetail from '../components/walks/WalkDetail';
 import OfflineBadge from '../components/walks/OfflineBadge';
+import DownloadButton from '../components/walks/DownloadButton';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 
+// Shows every tour the customer actually owns (purchased + free samples), regardless of
+// whether it's been saved for offline use yet — not just the ones already downloaded.
+// Without this, someone could easily forget they already own something and buy it again,
+// which is exactly the kind of thing that ends up needing a refund later.
 export default function MyWalks() {
-  const { t } = useLanguage();
+  const { t, effectiveNarrationLang } = useLanguage();
+  const { token } = useAuth();
   const [selectedWalk, setSelectedWalk] = useState(null);
-  const { getAllOfflineWalks, loaded } = useOfflineWalks();
-  const offlineWalks = getAllOfflineWalks();
+  const { isDownloaded } = useOfflineWalks();
+
+  // Same query key as Home.jsx's catalog fetch, so this shares the same cached data
+  // instead of re-fetching separately or risking the two screens disagreeing.
+  const { data: walks = [], isLoading } = useQuery({
+    queryKey: ['walkCatalog', token, effectiveNarrationLang],
+    queryFn: async () => (await base44.functions.invoke('getWalkCatalog', { token, narrationLang: effectiveNarrationLang })).data.walks || [],
+    enabled: !!token,
+  });
+
+  const ownedWalks = walks.filter(w => w._accessible !== false);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-amber-50">
@@ -26,7 +44,7 @@ export default function MyWalks() {
             </Button>
           </Link>
           <div className="flex items-center gap-2">
-            <WifiOff className="w-5 h-5 text-green-600" />
+            <Library className="w-5 h-5 text-blue-600" />
             <h1 className="font-bold text-gray-900">{t('mywalks.title')}</h1>
           </div>
         </div>
@@ -41,13 +59,13 @@ export default function MyWalks() {
             </motion.div>
           ) : (
             <motion.div key="list" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              {!loaded ? (
+              {isLoading ? (
                 <div className="text-center py-20 text-gray-400">
                   <Loader2 className="w-8 h-8 mx-auto animate-spin" />
                 </div>
-              ) : offlineWalks.length === 0 ? (
+              ) : ownedWalks.length === 0 ? (
                 <div className="text-center py-20 text-gray-500">
-                  <WifiOff className="w-16 h-16 mx-auto mb-4 opacity-20" />
+                  <Library className="w-16 h-16 mx-auto mb-4 opacity-20" />
                   <p className="text-xl font-semibold mb-2">{t('mywalks.emptyTitle')}</p>
                   <p className="text-sm mb-6">{t('mywalks.emptyHint')}</p>
                   <Link to={createPageUrl('Home')}>
@@ -60,18 +78,21 @@ export default function MyWalks() {
                     {t('mywalks.offlineNote')}
                   </p>
                   <div className="space-y-3 max-w-xl">
-                    {offlineWalks.map(walk => (
-                      <div key={walk.id} className="relative">
-                        <div className="absolute top-3 right-10 z-10">
-                          <OfflineBadge />
+                    {ownedWalks.map(walk => {
+                      const downloaded = isDownloaded(walk.id);
+                      return (
+                        <div key={walk.id} className="relative">
+                          <div className="absolute top-3 right-10 z-10">
+                            {downloaded ? <OfflineBadge /> : <DownloadButton walk={walk} size="sm" showLabel={false} />}
+                          </div>
+                          <WalkCard
+                            walk={walk}
+                            isSelected={selectedWalk?.id === walk.id}
+                            onClick={() => setSelectedWalk(walk)}
+                          />
                         </div>
-                        <WalkCard
-                          walk={walk}
-                          isSelected={selectedWalk?.id === walk.id}
-                          onClick={() => setSelectedWalk(walk)}
-                        />
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
