@@ -17,6 +17,38 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-12 (later same day) — Narrator "Enter your Narr password" fixed — was a discoverability problem, not broken auth logic
+Scope: `src/components/admin/TranslationsManager.jsx` only.
+
+Enda reported narrators being asked for their password "every time"
+in the Translations tool and never being able to save. Traced this
+carefully before touching anything, including checking whether this
+connected to today's earlier RTL/language work — confirmed it didn't;
+nothing touched today reaches this file, this auth flow, or Narr.jsx's
+login logic. Also confirmed the underlying design is sound and
+deliberately secure: a narrator's session intentionally never stores
+their actual password after login (only email, name, role) — so
+re-confirming it specifically for making a content change is a real,
+intentional security choice, not an oversight to remove.
+
+The actual problem: the password field asking for that confirmation
+sat quietly near the top of a page that's mostly a long scrolling list
+of translation keys — genuinely easy to scroll past without ever
+noticing, especially since nothing pointed a narrator at it directly;
+clicking Save just produced a toast saying "enter your password" with
+no indication of where.
+
+Fixed the discoverability, not the security model: clicking Save (or
+Revert) with no password on file now pops up an actual dialog asking
+for it right at that exact moment, submits the pending save the
+instant it's confirmed, and doesn't ask again for the rest of that
+visit — same one-time-per-visit behavior as before, just impossible to
+miss instead of hidden in a box you had to go find.
+
+Built and verified clean.
+
+---
+
 ## 2026-08-12 (later same day) — Temporary on-screen debug console added, for capturing phone errors without USB/remote debugging
 Scope: new `src/components/DebugConsoleOverlay.jsx`, `src/App.jsx`
 (+2 lines wiring it in).

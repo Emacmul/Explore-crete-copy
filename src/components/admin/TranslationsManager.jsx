@@ -1,9 +1,10 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, Save, RotateCcw, Languages, Lock } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { toast } from '@/components/ui/use-toast';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { translations, UI_LANGUAGES } from '@/lib/i18n';
@@ -27,6 +28,10 @@ export default function TranslationsManager({ authMode, user }) {
 
   const needsPassword = authMode === 'narr';
   const [narrPassword, setNarrPassword] = useState('');
+  const [passwordPromptOpen, setPasswordPromptOpen] = useState(false);
+  const [passwordDraft, setPasswordDraft] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const pendingActionRef = useRef(null);
 
   const load = async () => {
     const list = await base44.entities.Translation.list('-updated_date', 1000);
@@ -62,25 +67,47 @@ export default function TranslationsManager({ authMode, user }) {
     return all.filter(k => k.toLowerCase().includes(q) || (translations.en[k] || '').toLowerCase().includes(q));
   }, [search]);
 
-  const ensureAuth = () => {
-    if (needsPassword && !narrPassword) {
-      toast({ variant: 'destructive', title: 'Enter your Narr password to save.' });
-      return false;
+  // If a password is already on file for this visit, runs the action immediately —
+  // otherwise pops up a real dialog asking for it, right at the moment it's actually
+  // needed, and re-runs the same action the instant it's submitted. Replaces the old
+  // approach of a quiet field near the top of the page plus a toast telling the narrator
+  // to go find it — easy to miss on a page that's mostly a long scrolling list.
+  const withAuth = (action) => {
+    if (!needsPassword || narrPassword) {
+      action();
+      return;
     }
-    return true;
+    pendingActionRef.current = action;
+    setPasswordDraft('');
+    setPasswordError('');
+    setPasswordPromptOpen(true);
   };
 
-  const call = async (payload) => base44.functions.invoke('saveTranslation', {
+  const submitPasswordPrompt = () => {
+    if (!passwordDraft) {
+      setPasswordError('Enter your Narr password.');
+      return;
+    }
+    setNarrPassword(passwordDraft);
+    setPasswordPromptOpen(false);
+    const action = pendingActionRef.current;
+    pendingActionRef.current = null;
+    // The save/revert call reads narrPassword from state, which won't have updated yet
+    // on this exact render — pass it through directly instead of relying on the state
+    // set above landing in time.
+    if (action) action(passwordDraft);
+  };
+
+  const call = async (payload, passwordOverride) => base44.functions.invoke('saveTranslation', {
     ...payload,
     email: needsPassword ? user?.email : undefined,
-    narrPassword: needsPassword ? narrPassword : undefined,
+    narrPassword: needsPassword ? (passwordOverride ?? narrPassword) : undefined,
   });
 
-  const save = async (key) => {
-    if (!ensureAuth()) return;
+  const save = async (key, passwordOverride) => {
     setSavingKey(key);
     try {
-      const res = await call({ key, lang: activeLang, value: draftValue(activeLang, key) });
+      const res = await call({ key, lang: activeLang, value: draftValue(activeLang, key) }, passwordOverride);
       const data = res.data || {};
       if (data.ok) {
         toast({ title: 'Saved', description: `${activeLang}: ${key}` });
@@ -96,11 +123,10 @@ export default function TranslationsManager({ authMode, user }) {
     }
   };
 
-  const revert = async (key) => {
-    if (!ensureAuth()) return;
+  const revert = async (key, passwordOverride) => {
     setSavingKey(key);
     try {
-      const res = await call({ key, lang: activeLang, mode: 'delete' });
+      const res = await call({ key, lang: activeLang, mode: 'delete' }, passwordOverride);
       const data = res.data || {};
       if (data.ok) {
         toast({ title: 'Reverted', description: `${activeLang}: ${key} → baseline` });
@@ -127,10 +153,9 @@ export default function TranslationsManager({ authMode, user }) {
         <p className="text-sm text-slate-400">Correct any string that reads unnaturally. Overrides go live for all customers on next load.</p>
       </div>
 
-      {needsPassword && (
-        <div className="bg-amber-900/30 border border-amber-700/50 rounded-xl p-3 flex items-center gap-3">
-          <Lock className="w-4 h-4 text-amber-400 shrink-0" />
-          <Input type="password" value={narrPassword} onChange={e => setNarrPassword(e.target.value)} placeholder="Your Narr password (authorizes edits)" className="bg-slate-700 border-slate-600 text-white h-8" />
+      {needsPassword && narrPassword && (
+        <div className="bg-emerald-900/20 border border-emerald-700/40 rounded-xl px-3 py-2 flex items-center gap-2 text-xs text-emerald-300">
+          <Lock className="w-3.5 h-3.5" /> Authorized for this visit — you won't be asked again unless you leave this page.
         </div>
       )}
 
@@ -162,11 +187,11 @@ export default function TranslationsManager({ authMode, user }) {
                   rows={1}
                   className="flex-1 bg-slate-700 border-slate-600 text-white text-sm rounded-md px-2.5 py-2 resize-y min-h-[38px] focus:outline-none focus:ring-1 focus:ring-purple-500"
                 />
-                <Button size="sm" onClick={() => save(key)} disabled={savingKey === key} className="bg-emerald-600 hover:bg-emerald-700 gap-1 shrink-0">
+                <Button size="sm" onClick={() => withAuth((pw) => save(key, pw))} disabled={savingKey === key} className="bg-emerald-600 hover:bg-emerald-700 gap-1 shrink-0">
                   {savingKey === key ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />} Save
                 </Button>
                 {ov && (
-                  <Button size="sm" variant="outline" onClick={() => revert(key)} disabled={savingKey === key} className="border-slate-600 text-slate-300 hover:bg-slate-700 gap-1 shrink-0">
+                  <Button size="sm" variant="outline" onClick={() => withAuth((pw) => revert(key, pw))} disabled={savingKey === key} className="border-slate-600 text-slate-300 hover:bg-slate-700 gap-1 shrink-0">
                     <RotateCcw className="w-3.5 h-3.5" /> Revert
                   </Button>
                 )}
@@ -175,6 +200,32 @@ export default function TranslationsManager({ authMode, user }) {
           );
         })}
       </div>
+
+      <Dialog open={passwordPromptOpen} onOpenChange={(o) => { if (!o) { setPasswordPromptOpen(false); pendingActionRef.current = null; } }}>
+        <DialogContent className="bg-slate-800 border-slate-700 text-white">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Lock className="w-5 h-5 text-purple-400" /> Enter your Narr password</DialogTitle>
+            <DialogDescription className="text-slate-400">
+              This confirms it's really you making the change — separate from your Narr Studio login,
+              same password. You'll only need to do this once for this visit.
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            type="password"
+            value={passwordDraft}
+            onChange={e => { setPasswordDraft(e.target.value); setPasswordError(''); }}
+            onKeyDown={e => e.key === 'Enter' && submitPasswordPrompt()}
+            placeholder="Your Narr password"
+            className="bg-slate-700 border-slate-600 text-white"
+            autoFocus
+          />
+          {passwordError && <p className="text-sm text-red-400">{passwordError}</p>}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => { setPasswordPromptOpen(false); pendingActionRef.current = null; }}>Cancel</Button>
+            <Button onClick={submitPasswordPrompt} className="bg-purple-600 hover:bg-purple-700">Confirm & Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
