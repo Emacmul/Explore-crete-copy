@@ -30,7 +30,6 @@ export default async function (req) {
       return Response.json({ isMember: false, status: null, expiresAt: null });
     }
 
-
     // A buyer could in principle hold more than one membership record (a stale one plus a
     // new subscription, or a different processor). Use the one with the furthest-future
     // expiry — that's the one granting access right now.
