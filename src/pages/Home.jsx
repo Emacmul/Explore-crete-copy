@@ -250,7 +250,7 @@ export default function Home() {
                 <span className="hidden sm:inline">{t('home.myLibrary')}</span>
 
                 {offlineCount > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 rtl:-right-auto rtl:-left-1.5 w-4 h-4 bg-green-500 text-white text-xs rounded-full flex items-center justify-center font-bold">
+                  <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-green-500 text-white text-xs rounded-full flex items-center justify-center font-bold">
                     {offlineCount}
                   </span>
                 )}

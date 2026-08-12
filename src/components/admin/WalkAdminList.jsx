@@ -162,6 +162,9 @@ export default function WalkAdminList({ walks, isLoading, onEdit, onDelete, onMa
                       </Badge>
                     )}
                     {walk.distance_km && <span className="text-xs text-slate-500">{walk.distance_km} km</span>}
+                    <Badge className={`text-xs ${walk.approved === false ? 'bg-red-900 text-red-300' : 'bg-slate-600 text-slate-200'}`}>
+                      {walk.approved === false ? 'Draft — not visible to customers' : 'Published'}
+                    </Badge>
                     <span className="text-xs text-slate-500 flex items-center gap-1">
                       <MapPin className="w-3 h-3" />
                       {(walk.waypoints || []).length} key points

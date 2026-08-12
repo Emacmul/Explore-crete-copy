@@ -1,7 +1,7 @@
 import React from 'react';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@/components/ui/select';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
-import { UI_LANGUAGES } from '@/lib/i18n';
+import { LANGUAGE_NAME_BY_CODE } from '@/lib/i18n';
 import { Mic2 } from 'lucide-react';
 
 // Compact dropdown for the customer header. Picks the NARRATION language independently of
@@ -12,10 +12,7 @@ import { Mic2 } from 'lucide-react';
 export default function NarrationLanguagePicker({ availableLangs = [] }) {
   const { lang, t, narrationPref, setNarrationPref } = useLanguage();
   const value = narrationPref || '__auto__';
-  // Shown in its own native name (e.g. "Italiano" for an Italian UI), not the English name —
-  // this label is read by whoever has that UI language active, so it should read naturally
-  // to them regardless of what language the rest of the app happens to be in.
-  const uiName = UI_LANGUAGES.find((l) => l.code === lang)?.native || 'English';
+  const uiName = LANGUAGE_NAME_BY_CODE[lang] || 'English';
   // Always show the current pref even if it's no longer in the available set, so the trigger
   // never goes blank.
   const langs = Array.from(new Set([...availableLangs, narrationPref].filter(Boolean)));

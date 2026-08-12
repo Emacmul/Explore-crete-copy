@@ -67,12 +67,12 @@ export default function Login() {
                   required
                   autoComplete="current-password"
                   disabled={loading}
-                  className="pr-10 rtl:pr-3 rtl:pl-10"
+                  className="pr-10"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(v => !v)}
-                  className="absolute right-3 rtl:right-auto rtl:left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                   aria-label={showPassword ? t('login.hidePassword') : t('login.showPassword')}
                   tabIndex={-1}
                 >

@@ -15,52 +15,25 @@ Pulled: 2026-08-03
 
 ---
 
-## 2026-08-11 (later same day) — RTL layout retrofit + "Match UI" now shows the native language name
-Scope: `src/components/ui/NarrationLanguagePicker.jsx`, `src/pages/Home.jsx`,
-`src/pages/Login.jsx`, `src/components/walks/TourCategoryDialog.jsx`,
-`src/components/walks/TourCategoryPicker.jsx`,
-`src/components/walks/WalkDetail.jsx`, `src/components/walks/WalkList.jsx`,
-`src/components/walks/WalkCard.jsx`, `src/components/offline/OfflineWalksBanner.jsx`,
-`src/components/InstallPrompt.jsx`, `src/lib/PageNotFound.jsx`.
+---
 
-Context: Base44 told Enda RTL support "is in place" for Arabic/Hebrew.
-That's half-true and worth being precise about — `document.documentElement.dir`
-flipping to 'rtl' for those two languages genuinely was already wired
-into `LanguageContext.jsx` (confirmed, not new). But that alone only
-handles native text-direction and default form-control behavior — it
-does nothing for the ~15 places across the customer-facing app using
-hardcoded directional Tailwind classes (`ml-`, `pr-`, `right-3`,
-`text-left`, etc.), which stay pinned to their LTR position regardless
-of `dir`. Audited every customer-facing file individually for these
-(excluded admin/narrator backend, which stays English/LTR-only by
-design) and added the matching `rtl:` counterpart to each one, so the
-actual layout mirrors — button icons, search bar icon, badges,
-password-toggle position, close buttons — not just text alignment.
+## 2026-08-11 (later same day) — Manage Tours now shows Published/Draft status
+Scope: `src/components/admin/WalkAdminList.jsx` only.
 
-Also fixed three expand/chevron icons (`TourCategoryDialog`,
-`TourCategoryPicker`, `WalkCard`) that pointed right as a "this leads
-somewhere" cue — under RTL that convention flips to pointing left, so
-these now rotate correctly, including `WalkCard`'s which had to keep
-combining correctly with its existing open/closed rotation state.
+Enda flagged the Manage Tours list had no way to tell whether a tour
+was actually published or still a draft. Checked directly — confirmed,
+the `approved` field was never referenced anywhere in that screen at
+all. Added a clear badge next to each tour's other details: red
+"Draft — not visible to customers" or neutral "Published". Not yet a
+toggle button (kept to exactly what was asked — visibility, not a new
+control) — worth adding if he wants one-click publish/unpublish from
+this list too. Built and verified clean.
 
-**"Match UI (Italian)" → now shows the native name.** Found the exact
-cause: it was pulling `LANGUAGE_NAME_BY_CODE`, the English-name lookup
-table, regardless of which language was actually active. Switched to
-reading the `native` field from `UI_LANGUAGES` instead — Italian UI
-now shows "Adatta UI (Italiano)" once that string itself is
-translated, English name lookup no longer used here at all.
-
-**On "activate all 23 languages", clarified rather than built:** this
-isn't a code restriction — checked directly, the switching mechanism
-(`t()`, `setLang`) has no special-casing limiting it to any subset of
-languages; any language code works the moment content exists for it.
-What's actually happening is expected, not a bug: only English, Dutch,
-and Czech have any translated content yet, so every other language
-correctly falls back to English text (the designed fallback behavior)
-until a narrator writes real content for it — which is the work
-planned to start tomorrow, not something a code change can shortcut.
-
-Built and verified clean.
+Note: this repo, at the time of this entry, does not yet have the
+"RTL layout retrofit" or "show password" changes applied from earlier
+today's session — those are still pending application on Enda's end.
+This entry was made directly against the actual current live state to
+avoid layering a fix on top of code that isn't deployed yet.
 
 ---
 

@@ -36,7 +36,7 @@ export default function OfflineWalksBanner({ onWalkSelect, selectedWalk }) {
   return (
     <div className={`rounded-xl border overflow-hidden ${!isOnline ? 'border-amber-400 bg-amber-50' : 'border-gray-200 bg-gray-50'}`}>
       <button
-        className="w-full flex items-center justify-between px-4 py-3 text-left rtl:text-right"
+        className="w-full flex items-center justify-between px-4 py-3 text-left"
         onClick={() => setExpanded(e => !e)}
       >
         <div className="flex items-center gap-2">
