@@ -13,9 +13,9 @@ import WalkList from '../components/walks/WalkList';
 import WalkDetail from '../components/walks/WalkDetail';
 import UpdateInProgressModal from '../components/offline/UpdateInProgressModal';
 import { isWalkOutdated, replaceWalkOffline, preCacheWalkTiles, preCacheWalkAudio } from '../components/offline/offlineStorage';
-import TourCategoryDialog from '../components/walks/TourCategoryDialog';
 import SplashScreen from '../components/onboarding/SplashScreen';
-import { getTourCategory } from '../lib/tourCategories';
+import { getTourCategory, TOUR_CATEGORIES } from '../lib/tourCategories';
+import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@/components/ui/select';
 import InstallPrompt from '../components/InstallPrompt';
 import LanguagePicker from '@/components/ui/LanguagePicker';
 import NarrationLanguagePicker from '@/components/ui/NarrationLanguagePicker';
@@ -32,7 +32,6 @@ export default function Home() {
   const [updatingWalkName, setUpdatingWalkName] = useState(null);
   const [showSplash, setShowSplash] = useState(() => !sessionStorage.getItem('splash_seen'));
   const [selectedTourCategory, setSelectedTourCategory] = useState(() => sessionStorage.getItem('tour_category') || 'WHT');
-  const [showCategoryDialog, setShowCategoryDialog] = useState(false);
   const [userRole, setUserRole] = useState(null); // 'admin' | 'narrator' | null — which back-end button (Admin or Narr) to show
 
   const { getAllOfflineWalks } = useOfflineWalks();
@@ -170,12 +169,7 @@ export default function Home() {
     setSelectedTourCategory(code);
     setSelectedWalk(null);
     setShowDetail(false);
-    setShowCategoryDialog(false);
   };
-
-  // "Change tour type" now opens the picker as a non-blocking dialog instead of pushing
-  // a full interstitial screen — the front-end stays visible the whole time.
-  const handleChangeCategory = () => setShowCategoryDialog(true);
 
   const accessibleWalks = walks.filter(w => w.approved !== false);
   const categoryWalks = selectedTourCategory
@@ -206,11 +200,6 @@ export default function Home() {
 
       <UpdateInProgressModal walkName={updatingWalkName} />
       <InstallPrompt />
-      <TourCategoryDialog
-        open={showCategoryDialog}
-        onSelect={handleCategorySelect}
-        onClose={() => setShowCategoryDialog(false)}
-      />
 
       <header className="bg-white/80 backdrop-blur-md border-b sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
@@ -233,15 +222,20 @@ export default function Home() {
             </div>
 
             {selectedTourCategory && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleChangeCategory}
-                className="gap-2 border-blue-300 text-blue-700 hover:bg-blue-50"
-              >
-                <span className="sm:hidden">{t('home.change')}</span>
-                <span className="hidden sm:inline">{t('home.changeTourType')}</span>
-              </Button>
+              <Select value={selectedTourCategory} onValueChange={handleCategorySelect}>
+                <SelectTrigger className="h-8 w-auto gap-2 text-xs border-blue-300 text-blue-700">
+                  <span className="sm:hidden">{t('home.change')}:</span>
+                  <span className="hidden sm:inline">{t('home.changeTourType')}:</span>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TOUR_CATEGORIES.map(cat => (
+                    <SelectItem key={cat.code} value={cat.code}>
+                      {t('tour.' + cat.code + '.label')}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             )}
 
             <Link to={createPageUrl('MyWalks')}>

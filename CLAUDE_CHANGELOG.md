@@ -17,6 +17,43 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-12 — "Change tour type" replaced with a dropdown, bypassing an unresolved dialog rendering bug
+Scope: `src/pages/Home.jsx` only.
+
+Enda hit a real bug: clicking "Change tour type" opened the category
+dialog, but it rendered as a collapsed, unusable narrow sliver instead
+of a proper centered card — full-page dimmed overlay, nothing
+clickable, category never actually changed. Traced this together at
+length (screenshots, DevTools inspection, computed styles) — confirmed
+it wasn't the day's RTL work (the only lines touched there are
+RTL-only and inert in English, verified against the exact commit
+diff), and confirmed the dialog's own CSS classes were structurally
+correct. Found one real, reproducible clue — it rendered correctly
+with DevTools open (narrower effective viewport) and broke at the
+full browser width — but couldn't pin down the exact root cause of
+that discrepancy from the code alone, and ruled out page-level
+horizontal overflow as the explanation (no horizontal scrollbar
+present).
+
+Rather than keep chasing an elusive, hard-to-reproduce-remotely CSS
+positioning bug in a fixed-position centered dialog, replaced it
+outright per Enda's own suggestion: a plain dropdown, using the same
+`Select` primitive already proven working elsewhere (language picker,
+narration picker) — no fixed-position overlay math involved at all,
+so the same class of bug structurally can't recur here. Entries pull
+from the same `TOUR_CATEGORIES` list and the same translation keys
+(`tour.WHT.label` etc.) as before, so this correctly shows in
+whichever language the customer has picked, same as everything else.
+
+`TourCategoryDialog.jsx` and `TourCategoryPicker.jsx` are now both
+fully unreferenced anywhere in the app (checked directly) — left in
+place rather than deleted, since removal wasn't explicitly asked for
+this time; flagging as dead code for whenever a cleanup pass happens.
+
+Built and verified clean.
+
+---
+
 ## 2026-08-11 (later same day) — Manage Tours now shows Published/Draft status
 Scope: `src/components/admin/WalkAdminList.jsx` only.
 
