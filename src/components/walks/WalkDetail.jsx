@@ -10,7 +10,6 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import WalkDetailMap from '../map/WalkDetailMap';
-import DownloadWalkButton from '../offline/DownloadWalkButton';
 import DownloadButton from './DownloadButton';
 import WalkProgressBar from './WalkProgressBar';
 import DrivingModeNotice from './DrivingModeNotice';
@@ -288,7 +287,6 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="flex items-center gap-2">
                 <DownloadButton walk={walk} />
-                <DownloadWalkButton walk={walk} />
               </div>
 
               {followGps && (

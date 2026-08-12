@@ -17,6 +17,32 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-12 (later same day) — Customer-facing "Download GPX" removed entirely, per Enda's decision
+Scope: deleted `src/components/offline/DownloadWalkButton.jsx`,
+`src/components/walks/WalkDetail.jsx` (removed the button + import),
+`src/components/admin/WalkEditor.jsx` (removed the now-pointless
+"Customer GPX Download" upload box that only ever fed this button,
+plus its now-unused state and icon imports).
+
+Enda's explicit call: "Save for Offline" already gives customers full
+offline use inside the app, and he doesn't want anyone able to walk
+away with a standalone GPX file usable in a completely different app
+— reasonable, since that's the one thing nothing in the app's own
+offline system can protect against once it's out the door.
+
+Deliberately did NOT touch: the admin's own separate "Export" tool
+(GPX/KML download for Enda's own use — loading a route into a Garmin
+or similar) — that's an admin-only feature, unrelated to what
+customers can reach, confirmed still fully intact and untouched. Also
+left the `gpx_file_uri`/`gpx_filename`/`gpx_url` fields on the Walk
+entity alone rather than removing them — they're simply unused now,
+not worth the extra risk of an entity change for a pure cleanup with
+no functional benefit.
+
+Built and verified clean.
+
+---
+
 ## 2026-08-12 (later same day) — UI and narration language pickers stacked vertically, not side by side
 Scope: `src/pages/Home.jsx`, `src/components/ui/LanguagePicker.jsx`,
 `src/components/ui/NarrationLanguagePicker.jsx`.
