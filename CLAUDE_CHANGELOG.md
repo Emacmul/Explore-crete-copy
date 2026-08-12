@@ -17,6 +17,29 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-12 (later same day) — Waypoint tap instructions reworded — was implying a link to the progress bar that doesn't exist
+Scope: `src/lib/i18n/index.js` (English text for `detail.tapInstructions`
+only — this key hasn't been translated into Dutch/Czech yet).
+
+Enda noticed the progress bar showing a percentage while zero
+waypoint circles were tapped, and rightly questioned whether these two
+things were supposed to be connected. Checked directly: they never
+were — the progress bar calculates entirely from live GPS position,
+the tap circles are a separate, manual system, with no code linking
+them at all. They just happen to sit on the same screen, which is
+what created the impression they were one feature.
+
+Decision: keep them genuinely separate (not merge them into one
+system), but stop the wording implying a connection that isn't there.
+The tap instructions now explicitly say what they're actually for —
+confirming landmarks for the lose-the-trail safety case — and
+explicitly state they're separate from the progress bar and don't
+affect it, rather than leaving that to be assumed incorrectly.
+
+Built and verified clean.
+
+---
+
 ## 2026-08-12 (later same day) — Customer-facing "Download GPX" removed entirely, per Enda's decision
 Scope: deleted `src/components/offline/DownloadWalkButton.jsx`,
 `src/components/walks/WalkDetail.jsx` (removed the button + import),

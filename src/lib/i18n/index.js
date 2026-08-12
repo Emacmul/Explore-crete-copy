@@ -214,7 +214,7 @@ export const translations = {
     'detail.tourStops': "Tour Stops",
     'detail.keyPoints': "Key Points",
     'detail.resetProgress': "Reset progress",
-    'detail.tapInstructions': "Tap the circle as you pass each point — if you lose the trail, you'll always be able to see the last point you recognised.",
+    'detail.tapInstructions': "Tap each circle as you physically pass it, so you'll always know the last landmark you're sure you recognised if you ever lose the trail. This is separate from the progress bar above, which tracks your live GPS position automatically — tapping circles here doesn't affect it.",
     'detail.markNotReached': "Mark as not reached",
     'detail.markReached': "Mark as reached",
     'detail.youWereLastHere': "You were last here",
