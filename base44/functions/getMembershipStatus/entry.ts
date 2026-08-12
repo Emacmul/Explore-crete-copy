@@ -47,6 +47,7 @@ export default async function (req) {
     // 'expired' status or a lapsed expiry means no current membership.
     const isMember = !lapsed && best.status !== 'expired';
 
+
     return Response.json({
       isMember,
       status: best.status,
