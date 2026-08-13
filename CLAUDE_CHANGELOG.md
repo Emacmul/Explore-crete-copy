@@ -17,6 +17,30 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-13 (later same day) — Admin Tools button subtitles overflowing their card edges — a shared cause
+Scope: `src/components/admin/AdminStartScreen.jsx` only.
+
+Enda spotted the "Manage Users" and "Disputes" subtitle text spilling
+past their button's edge. Traced to the shared `Button` component
+itself: its base style includes `whitespace-nowrap`, which every
+child text inherits by default — refusing to wrap onto a second line
+and overflowing outward instead of staying inside the card. Both
+visibly-broken buttons happened to have the two longest subtitles;
+the other three (Dashboard, Manage Tours, Translations) had shorter
+text that happened to still fit on one line by luck, not because they
+were actually built any differently — same latent risk in all five.
+
+Fixed all five together rather than patch just the two currently
+visible — each button's text now explicitly allows wrapping again,
+overriding the inherited no-wrap, and can properly shrink to fit its
+actual card width instead of pushing past it. Checked for this same
+unguarded pattern elsewhere in the admin screens — these five were
+the only instances.
+
+Built and verified clean.
+
+---
+
 ## 2026-08-13 (later same day) — "GPX Ready" dashboard stat and the entire "community walk" concept removed
 Scope: `base44/entities/Walk.jsonc` (removed `walk_category`,
 `contributor_name` fields entirely), `src/components/admin/WalkEditor.jsx`,

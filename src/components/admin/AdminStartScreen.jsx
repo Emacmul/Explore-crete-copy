@@ -288,24 +288,24 @@ export default function AdminStartScreen({
         <h2 className="text-lg font-bold text-white mb-3">Admin Tools</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <Button variant="outline" onClick={onDashboard} className="bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 gap-2 h-auto py-3 justify-start">
-            <LayoutDashboard className="w-5 h-5 text-amber-400" />
-            <div className="text-left"><p className="font-medium">Dashboard</p><p className="text-xs text-slate-400">Overview & stats</p></div>
+            <LayoutDashboard className="w-5 h-5 text-amber-400 shrink-0" />
+            <div className="text-left min-w-0 whitespace-normal"><p className="font-medium">Dashboard</p><p className="text-xs text-slate-400">Overview & stats</p></div>
           </Button>
           <Button variant="outline" onClick={onManageWalks} className="bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 gap-2 h-auto py-3 justify-start">
-            <List className="w-5 h-5 text-blue-400" />
-            <div className="text-left"><p className="font-medium">Manage Tours</p><p className="text-xs text-slate-400">All tours</p></div>
+            <List className="w-5 h-5 text-blue-400 shrink-0" />
+            <div className="text-left min-w-0 whitespace-normal"><p className="font-medium">Manage Tours</p><p className="text-xs text-slate-400">All tours</p></div>
           </Button>
           <Button variant="outline" onClick={onManageUsers} className="bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 gap-2 h-auto py-3 justify-start">
-            <Users className="w-5 h-5 text-purple-400" />
-            <div className="text-left"><p className="font-medium">Manage Users</p><p className="text-xs text-slate-400">Promote / set Narr passwords</p></div>
+            <Users className="w-5 h-5 text-purple-400 shrink-0" />
+            <div className="text-left min-w-0 whitespace-normal"><p className="font-medium">Manage Users</p><p className="text-xs text-slate-400">Promote / set Narr passwords</p></div>
           </Button>
           <Button variant="outline" onClick={onManageDisputes} className="bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 gap-2 h-auto py-3 justify-start">
-            <AlertTriangle className="w-5 h-5 text-rose-400" />
-            <div className="text-left"><p className="font-medium">Disputes</p><p className="text-xs text-slate-400">Restore access after a won chargeback</p></div>
+            <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
+            <div className="text-left min-w-0 whitespace-normal"><p className="font-medium">Disputes</p><p className="text-xs text-slate-400">Restore access after a won chargeback</p></div>
           </Button>
           <Button variant="outline" onClick={onManageTranslations} className="bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 gap-2 h-auto py-3 justify-start">
-            <Languages className="w-5 h-5 text-purple-400" />
-            <div className="text-left"><p className="font-medium">Translations</p><p className="text-xs text-slate-400">Correct UI strings</p></div>
+            <Languages className="w-5 h-5 text-purple-400 shrink-0" />
+            <div className="text-left min-w-0 whitespace-normal"><p className="font-medium">Translations</p><p className="text-xs text-slate-400">Correct UI strings</p></div>
           </Button>
         </div>
       </div>
