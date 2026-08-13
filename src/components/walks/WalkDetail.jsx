@@ -17,6 +17,7 @@ import DrivingTourPlayer from './DrivingTourPlayer';
 import { getWaypointImages } from '@/lib/waypointImages';
 import WalkPaywall from './WalkPaywall';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+import { useOfflineWalks } from '../offline/useOfflineWalks';
 
 const difficultyColors = {
   easy: 'bg-green-100 text-green-700',
@@ -75,7 +76,10 @@ const REACHED_STALE_MS = 18 * 60 * 60 * 1000;
 
 export default function WalkDetail({ walk, onClose, accessible = true }) {
   const [followGps, setFollowGps] = React.useState(false);
+  const [started, setStarted] = React.useState(false);
   const { t } = useLanguage();
+  const { isDownloaded } = useOfflineWalks();
+  const savedOffline = isDownloaded(walk.id);
 
   const isDrivingTour = walk?.route_type === 'driving_audio_tour';
 
@@ -284,6 +288,21 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
               <DrivingTourPlayer walk={walk} />
             )}
 
+            {/* Legal/safety compliance banner — required every time this tour is opened,
+                per Creem/Paddle conditions and applicable law around remote-area
+                connectivity. Not dismissible, re-evaluated fresh every open. */}
+            {savedOffline ? (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                <p className="text-emerald-800 text-sm">{t('detail.offlineThankYou')}</p>
+              </div>
+            ) : (
+              <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+                <p className="text-amber-800 text-sm">{t('detail.offlineWarning')}</p>
+              </div>
+            )}
+
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="flex items-center gap-2">
                 <DownloadButton walk={walk} />
@@ -294,15 +313,6 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
                   <Crosshair className="w-3.5 h-3.5" /> {t('detail.trackingLocation')}
                 </span>
               )}
-            </div>
-
-            <WalkProgressBar walk={walk} />
-
-            <div className="h-64 rounded-xl overflow-hidden border">
-              <WalkDetailMap
-                walk={walk}
-                followGps={followGps}
-              />
             </div>
 
             <div className="bg-red-50 border border-red-200 rounded-xl p-4">
@@ -325,7 +335,39 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
               </div>
             )}
 
-            {waypoints.length > 0 && (
+            {/* Walk/Hike and WalkAbout tours have no equivalent of the driving tour's
+                explicit "Start Tour" button — their GPS progress tracking and waypoint
+                list were always visible immediately, with nothing actually stopping
+                someone from using them without ever saving for offline first. This closes
+                that gap: the interactive part of the tour (map, live progress, waypoint
+                list) now sits behind a real Start action here too, gated the same way. */}
+            {!isDrivingTour && !started ? (
+              <div className="bg-white border-2 border-dashed border-gray-300 rounded-xl p-5 text-center space-y-3">
+                {!savedOffline && (
+                  <p className="text-xs text-amber-700">{t('player.mustSaveFirst')}</p>
+                )}
+                <button
+                  onClick={() => savedOffline && setStarted(true)}
+                  disabled={!savedOffline}
+                  className="w-full sm:w-auto px-6 py-3 rounded-xl bg-blue-600 text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors"
+                >
+                  {t('detail.startWalk')}
+                </button>
+              </div>
+            ) : !isDrivingTour ? (
+              <>
+                <WalkProgressBar walk={walk} />
+
+                <div className="h-64 rounded-xl overflow-hidden border">
+                  <WalkDetailMap
+                    walk={walk}
+                    followGps={followGps}
+                  />
+                </div>
+              </>
+            ) : null}
+
+            {waypoints.length > 0 && (isDrivingTour || started) && (
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <h3 className="font-semibold text-gray-900">

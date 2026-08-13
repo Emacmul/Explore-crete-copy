@@ -17,6 +17,33 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-13 (later same day) — Walk/Hike and WalkAbout tours: real Start button added and gated, closing the bypass
+Scope: `src/components/walks/WalkDetail.jsx`, `src/lib/i18n/index.js`
+(+3 keys: `detail.offlineWarning`, `detail.offlineThankYou`,
+`detail.startWalk`). Also re-applied the compliance banner from an
+earlier entry in this same file, since this fresh clone didn't have
+it yet.
+
+Direct follow-up to the previous entry's honest finding: Enda
+confirmed that if the advice banner alone could be bypassed (it
+could — nothing stopped someone scrolling past it and using the map,
+GPS tracking, and waypoint list regardless), then a real Start button
+was needed for these two tour types as well, not just driving tours.
+
+Built one: the map, live progress bar, and tap-to-mark waypoint list
+are now hidden behind an actual "Start Walk" button, disabled with a
+clear reason until the tour has been saved offline — same enforcement
+as the driving tour fix, adapted to a tour type that never had a
+"start" concept before. Safety notes, the description, and the
+"Save for Offline" button itself stay visible before starting,
+deliberately — someone needs to be able to read the safety
+information and actually save the tour before the app will let them
+in, not have those blocked too.
+
+Built and verified clean.
+
+---
+
 ## 2026-08-13 (later same day) — Driving tours: "Start Tour" now genuinely blocked until saved for offline use
 Scope: `src/components/walks/DrivingTourPlayer.jsx`,
 `src/lib/i18n/index.js` (+1 key: `player.mustSaveFirst`).
