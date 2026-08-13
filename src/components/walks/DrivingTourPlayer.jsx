@@ -7,6 +7,7 @@ import * as tourLogService from '@/lib/tourLogService';
 import { calculateBearing, isBearingInRange } from '@/lib/routeExport';
 import TourDebugLog from './TourDebugLog';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+import { useOfflineWalks } from '../offline/useOfflineWalks';
 
 const R_EARTH = 6371000;
 
@@ -21,6 +22,8 @@ function haversine(lat1, lng1, lat2, lng2) {
 
 export default function DrivingTourPlayer({ walk }) {
   const { t } = useLanguage();
+  const { isDownloaded } = useOfflineWalks();
+  const savedOffline = isDownloaded(walk.id);
   const STATUS = {
     idle: { label: t('player.ready'), color: 'text-slate-400' },
     running: { label: t('player.active'), color: 'text-green-400' },
@@ -239,15 +242,23 @@ export default function DrivingTourPlayer({ walk }) {
       )}
 
       {/* Controls */}
-      <div className="flex items-center gap-2 px-4 pb-3">
-        {status === 'idle' && (
-          <Button
-            onClick={handleStart}
-            className="flex-1 gap-2 bg-green-600 hover:bg-green-700 text-white"
-          >
-            <Play className="w-4 h-4" /> {t('player.startTour')}
-          </Button>
+      <div className="px-4 pb-3 space-y-2">
+        {status === 'idle' && !savedOffline && (
+          <p className="text-xs text-amber-400 text-center">
+            {t('player.mustSaveFirst')}
+          </p>
         )}
+        <div className="flex items-center gap-2">
+          {status === 'idle' && (
+            <Button
+              onClick={handleStart}
+              disabled={!savedOffline}
+              title={!savedOffline ? t('player.mustSaveFirst') : undefined}
+              className="flex-1 gap-2 bg-green-600 hover:bg-green-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Play className="w-4 h-4" /> {t('player.startTour')}
+            </Button>
+          )}
         {status === 'running' && (
           <>
             <Button
@@ -293,6 +304,7 @@ export default function DrivingTourPlayer({ walk }) {
         >
           <Bug className="w-4 h-4" />
         </Button>
+        </div>
       </div>
 
       {/* Debug log */}

@@ -238,6 +238,7 @@ export const translations = {
     'player.paused': "Paused",
     'player.triggersFired': "{done}/{total} triggers fired",
     'player.startTour': "Start Tour",
+    'player.mustSaveFirst': "Save this tour for offline use before starting — cellular and GPS signals can be weak in this area of Crete.",
     'player.pause': "Pause",
     'player.stop': "Stop",
     'player.resume': "Resume",

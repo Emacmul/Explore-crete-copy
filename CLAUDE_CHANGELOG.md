@@ -17,6 +17,39 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-13 (later same day) — Driving tours: "Start Tour" now genuinely blocked until saved for offline use
+Scope: `src/components/walks/DrivingTourPlayer.jsx`,
+`src/lib/i18n/index.js` (+1 key: `player.mustSaveFirst`).
+
+Escalation of the compliance banner from the previous entry — Enda
+wanted it made impossible to actually start a tour without having
+saved it offline first, not just a visible reminder.
+
+Driving tours have a real, explicit "Start Tour" action, so that's
+genuinely disabled now (not just visually greyed out — the click
+handler itself won't fire) until the tour has been saved for offline
+use, with a clear message explaining why sitting right above the
+button, not just a hover tooltip that wouldn't help on a phone.
+Fixed a real JSX nesting mistake introduced while restructuring this
+button's wrapper for the new message — caught before shipping, since
+the build wouldn't have compiled clean otherwise.
+
+**Honest finding, not a fix:** Walk/Hike and WalkAbout tours have no
+equivalent "start" action to gate at all — checked directly, their
+GPS progress tracking already begins passively the moment the screen
+opens, with no button involved. The one control that looked similar
+(the crosshair "follow my location" icon) turned out to just be a
+map-recentering convenience, not something that starts anything.
+Rather than force a fake gate onto something that isn't really
+"starting," left these two tour types covered by the existing
+non-dismissible banner from the previous entry, which already
+satisfies the "shown every time" requirement for them — there's
+simply no further moment to block beyond that.
+
+Built and verified clean.
+
+---
+
 ## 2026-08-13 (later same day) — "Continue Working" renamed to "Audio Still Needed"
 Scope: `src/components/admin/AdminStartScreen.jsx` only.
 
