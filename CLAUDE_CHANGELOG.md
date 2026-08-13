@@ -17,28 +17,30 @@ Pulled: 2026-08-03
 
 ---
 
-## 2026-08-13 (later same day) — "Continue Working" now covers all 3 tour types, not driving tours only
+## 2026-08-13 (later same day) — "Continue Working" renamed to "Audio Still Needed"
 Scope: `src/components/admin/AdminStartScreen.jsx` only.
 
-Follow-up to the previous audit — Enda confirmed this needed to cover
-Walk/Hike and WalkAbout tours too, not just driving tours. The two
-tour families track narration completion completely differently
-(checked directly, not assumed): driving tours use individual
-geofence-triggered clips per waypoint; Walk/Hike and WalkAbout use
-combined narration segments, where the real, final production audio
-only lives in `finished_audio_url` — a draft or simulator-test audio
-existing first is a normal, expected in-progress state, not "done."
+Small follow-up to the previous two entries. Enda's original label
+suggestion ("Driving Tours — Audio Still Needed") was correct for the
+section's scope *before* the immediately preceding fix, but would
+have been wrong immediately after it — that same conversation
+expanded this section to cover all 3 tour types, not driving tours
+only. Flagged that mismatch rather than apply the now-stale wording,
+and used the accurate half instead: "Audio Still Needed," with no
+tour-type qualifier, since it genuinely covers all of them now.
 
-Extended the check to cover both: driving tours still flag missing
-per-waypoint clips exactly as before; Walk/Hike and WalkAbout tours
-now flag any segment missing its final production audio, showing that
-segment's actual production status (not started / draft written /
-timing adjusted / accepted in simulator and ready for final upload)
-so it's clear how close each one actually is, not just that something's
-missing. Clicking a missing waypoint still jumps straight to it in the
-editor as before; clicking a missing segment opens the tour generally,
-since segment-level deep-linking isn't something this screen has a way
-to do yet.
+Also investigated Enda's pushback question for this screen directly
+rather than guess: confirmed no per-file audio rejection mechanism
+exists anywhere in the upload code. But also confirmed this section
+is admin-only — narrators never see it, checked via the actual render
+path — so whoever uploads through this specific screen is Enda
+himself, not a narrator whose work would need routing back to them.
+Where that actually matters — a narrator's audio inside their own
+translated clone — the existing whole-clone pushback system (built
+earlier) already covers it correctly with no new feature needed,
+since a clone is always tied to the narrator who owns it. Nothing
+built from this — reported back for Enda's decision on whether a
+narrower, per-file version is worth building on top of that.
 
 Built and verified clean.
 
