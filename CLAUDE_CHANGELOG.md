@@ -17,6 +17,22 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-13 (later same day) — Re-applied the mobile header wrap fix — yesterday's zip was never actually pushed
+Scope: `src/pages/Home.jsx` only.
+
+Enda reported the same header overlap from yesterday still happening.
+Checked the live code directly before touching anything: it still had
+the pre-fix `flex items-center justify-between` (no wrap), confirming
+the `mobile-header-wrap-fix-2026-08-12.zip` sent yesterday was never
+applied — not a regression, not a new bug, just a zip that didn't make
+it into the repo. Re-applied the identical fix fresh against today's
+code: header can wrap onto multiple lines instead of forcing an
+overlap when everything doesn't fit on one.
+
+Built and verified clean.
+
+---
+
 ## 2026-08-13 — Splash screen: zoom locked (scoped to just this screen), title and Enter button sized up slightly
 Scope: `src/components/onboarding/SplashScreen.jsx` only.
 

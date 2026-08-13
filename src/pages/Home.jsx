@@ -203,17 +203,17 @@ export default function Home() {
       <InstallPrompt />
 
       <header className="bg-white/80 backdrop-blur-md border-b sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <img src="/explore-crete-logo.png" alt="Explore Crete" className="w-10 h-10 rounded-xl shadow-lg object-contain" />
+        <div className="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-y-2">
+          <div className="flex items-center gap-3 min-w-0">
+            <img src="/explore-crete-logo.png" alt="Explore Crete" className="w-10 h-10 rounded-xl shadow-lg object-contain shrink-0" />
 
-            <div>
-              <h1 className="font-bold text-gray-900">{t('app.title')}</h1>
-              <p className="text-xs text-gray-500">{t('app.tagline')}</p>
+            <div className="min-w-0">
+              <h1 className="font-bold text-gray-900 truncate">{t('app.title')}</h1>
+              <p className="text-xs text-gray-500 truncate">{t('app.tagline')}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             {/* Stacked, not side-by-side — two full-width dropdowns sitting next to each
                 other in an already-crowded header was pushing things wide enough to wrap
                 and overlap the title/tagline on narrower screens. Stacking them keeps the
