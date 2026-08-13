@@ -17,6 +17,30 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-13 (later same day) — Waypoint popup labels: internal code no longer shown to customers
+Scope: `src/components/map/WalkDetailMap.jsx` only.
+
+Enda flagged the waypoint code (e.g. "BOR1a-PS") showing alongside
+the plain landmark name in the tap-to-see popup — both in the admin's
+own "Map Preview" panel (explicitly captioned "this is how the walk
+will appear to users") and on the real customer-facing map.
+
+Traced both to the same single shared component — `AdminPreviewMap`
+and the real `WalkDetail` customer page both render through
+`WalkDetailMap.jsx` — so one fix here correctly covers both places at
+once. The popup now shows only the plain name; the internal code
+(`segment_id`) is only used as a fallback if a waypoint somehow has no
+name set at all, never shown alongside a real one.
+
+Deliberately did not touch the admin's actual hands-on editing map —
+a separate component from this one — where the code stays visible,
+exactly as it should for someone actively identifying and working on
+specific waypoints.
+
+Built and verified clean.
+
+---
+
 ## 2026-08-13 (later same day) — Re-applied the mobile header wrap fix — yesterday's zip was never actually pushed
 Scope: `src/pages/Home.jsx` only.
 

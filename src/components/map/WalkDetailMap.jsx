@@ -116,9 +116,15 @@ export default function WalkDetailMap({ walk, followGps = false }) {
         });
         const wpLabel = roleConfig ? roleConfig.label : (waypointConfig[wp.type]?.label || wp.type);
         const wpColor = iconConfig.color;
+        // Customers (and this same component doubles as the admin's own "what will the
+        // customer see" preview) should only ever see the plain landmark name here — the
+        // internal waypoint code (e.g. "BOR1a-PS") is a working reference for whoever's
+        // editing the tour, not something a customer has any use for or should have to
+        // parse. The admin's own hands-on editing map is a separate component and still
+        // shows the code there, where it actually helps.
         const wpName = isDrivingTour
           ? (wp.segment_title || wp.name)
-          : (wp.segment_id && wp.name ? `${wp.segment_id} — ${wp.name}` : (wp.segment_id || wp.name));
+          : (wp.name || wp.segment_id);
 
         return (
         <Marker
