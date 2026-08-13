@@ -17,30 +17,38 @@ Pulled: 2026-08-03
 
 ---
 
-## 2026-08-13 (later same day) — Walk/Hike and WalkAbout tours: real Start button added and gated, closing the bypass
+## 2026-08-13 (later same day) — Offline-save safety requirement, complete: banner, Start gate for all 3 tour types, and reset-on-remove
 Scope: `src/components/walks/WalkDetail.jsx`, `src/lib/i18n/index.js`
-(+3 keys: `detail.offlineWarning`, `detail.offlineThankYou`,
-`detail.startWalk`). Also re-applied the compliance banner from an
-earlier entry in this same file, since this fresh clone didn't have
-it yet.
+(+4 keys: `detail.offlineWarning`, `detail.offlineThankYou`,
+`detail.startWalk`, `player.mustSaveFirst`). Driving tours' own Start
+button (`DrivingTourPlayer.jsx`) was already fixed in an earlier
+session and is unchanged here — this entry completes the same
+requirement for Walk/Hike and WalkAbout tours, which didn't have it
+yet on this particular copy of the code.
 
-Direct follow-up to the previous entry's honest finding: Enda
-confirmed that if the advice banner alone could be bypassed (it
-could — nothing stopped someone scrolling past it and using the map,
-GPS tracking, and waypoint list regardless), then a real Start button
-was needed for these two tour types as well, not just driving tours.
+Full requirement, built together as one consistent piece rather than
+layered separately: a legal/safety compliance banner shows every time
+an owned tour is opened (warning if not saved offline, a thank-you if
+it is); Walk/Hike and WalkAbout tours now have a real "Start Walk"
+button gating the map, live progress, and waypoint list, disabled
+until the tour is saved — closing the gap where the banner alone
+could simply be scrolled past with nothing actually stopping tour use.
 
-Built one: the map, live progress bar, and tap-to-mark waypoint list
-are now hidden behind an actual "Start Walk" button, disabled with a
-clear reason until the tour has been saved offline — same enforcement
-as the driving tour fix, adapted to a tour type that never had a
-"start" concept before. Safety notes, the description, and the
-"Save for Offline" button itself stay visible before starting,
-deliberately — someone needs to be able to read the safety
-information and actually save the tour before the app will let them
-in, not have those blocked too.
+Also handles the case Enda raised directly: removing a downloaded
+tour to free up phone storage, then wanting to redo it later. Checked
+this specifically — `isDownloaded` is already reactive (confirmed via
+the offline hook's own sync event), so the moment a tour is removed
+via "My Library," this screen picks that up immediately. Added one
+more piece for full correctness: if someone removes the offline copy
+while this exact tour is still open and already started, the gate
+now re-locks immediately rather than only re-checking the next time
+the screen happens to be opened fresh — re-downloading later
+genuinely goes through the same Start gate again, not a one-time
+unlock that persists after removal.
 
-Built and verified clean.
+Built and verified clean; checked specifically for leftover duplicate
+declarations after consolidating changes from several separate
+pending pieces into one file.
 
 ---
 

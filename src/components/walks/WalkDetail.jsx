@@ -81,6 +81,16 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
   const { isDownloaded } = useOfflineWalks();
   const savedOffline = isDownloaded(walk.id);
 
+  // If the offline copy is removed (e.g. from "My Library", to free up phone storage)
+  // while this exact tour is still open and already started, the gate must re-lock
+  // immediately, not just the next time this screen happens to be opened fresh — someone
+  // could otherwise keep using the map/tracking on a tour they just removed, until they
+  // navigated away. Re-downloading later correctly requires going through this same gate
+  // again, since `started` only reflects the CURRENT session's offline status.
+  React.useEffect(() => {
+    if (!savedOffline) setStarted(false);
+  }, [savedOffline]);
+
   const isDrivingTour = walk?.route_type === 'driving_audio_tour';
 
   // For driving tours, only show primary_start (the -PS segment-start points) to users.
@@ -336,11 +346,11 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
             )}
 
             {/* Walk/Hike and WalkAbout tours have no equivalent of the driving tour's
-                explicit "Start Tour" button — their GPS progress tracking and waypoint
-                list were always visible immediately, with nothing actually stopping
-                someone from using them without ever saving for offline first. This closes
-                that gap: the interactive part of the tour (map, live progress, waypoint
-                list) now sits behind a real Start action here too, gated the same way. */}
+                explicit "Start Tour" button — the interactive part of the tour is now
+                gated behind a real Start action here too, disabled until saved offline.
+                Removing the offline copy (e.g. from My Library) resets `started` via the
+                effect above, so re-downloading later correctly requires going through
+                this same gate again, not a one-time unlock. */}
             {!isDrivingTour && !started ? (
               <div className="bg-white border-2 border-dashed border-gray-300 rounded-xl p-5 text-center space-y-3">
                 {!savedOffline && (
