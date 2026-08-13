@@ -17,6 +17,33 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-13 (later same day) — "Continue Working" now covers all 3 tour types, not driving tours only
+Scope: `src/components/admin/AdminStartScreen.jsx` only.
+
+Follow-up to the previous audit — Enda confirmed this needed to cover
+Walk/Hike and WalkAbout tours too, not just driving tours. The two
+tour families track narration completion completely differently
+(checked directly, not assumed): driving tours use individual
+geofence-triggered clips per waypoint; Walk/Hike and WalkAbout use
+combined narration segments, where the real, final production audio
+only lives in `finished_audio_url` — a draft or simulator-test audio
+existing first is a normal, expected in-progress state, not "done."
+
+Extended the check to cover both: driving tours still flag missing
+per-waypoint clips exactly as before; Walk/Hike and WalkAbout tours
+now flag any segment missing its final production audio, showing that
+segment's actual production status (not started / draft written /
+timing adjusted / accepted in simulator and ready for final upload)
+so it's clear how close each one actually is, not just that something's
+missing. Clicking a missing waypoint still jumps straight to it in the
+editor as before; clicking a missing segment opens the tour generally,
+since segment-level deep-linking isn't something this screen has a way
+to do yet.
+
+Built and verified clean.
+
+---
+
 ## 2026-08-13 (later same day) — Admin Tools button subtitles overflowing their card edges — a shared cause
 Scope: `src/components/admin/AdminStartScreen.jsx` only.
 

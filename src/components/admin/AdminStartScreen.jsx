@@ -12,38 +12,73 @@ import CloneTourDialog from './CloneTourDialog';
 
 const CATEGORY_ICONS = { Footprints, MapPin, Car };
 
+// Missing audio is tracked differently depending on tour type — driving tours use
+// individual geofence-triggered waypoint clips; Walk/Hike and WalkAbout tours use combined
+// narration segments instead, where the real, final production audio only lives in
+// `finished_audio_url` (a draft/simulator-test audio existing first is normal and doesn't
+// count as done — that's a work-in-progress step, not the finished result).
 function hasMissingAudio(walk) {
-  if (walk.route_type !== 'driving_audio_tour') return false;
-  return (walk.waypoints || []).some(wp => wp.trigger_audio && !wp.audio_clip_url);
+  if (walk.route_type === 'driving_audio_tour') {
+    return (walk.waypoints || []).some(wp => wp.trigger_audio && !wp.audio_clip_url);
+  }
+  return (walk.segment_scripts || []).some(seg => !seg.finished_audio_url);
 }
 
-function getMissingAudioWaypoints(walk) {
-  return (walk.waypoints || [])
-    .map((wp, index) => ({ wp, index }))
-    .filter(({ wp }) => wp.trigger_audio && !wp.audio_clip_url);
+function getMissingAudioItems(walk) {
+  if (walk.route_type === 'driving_audio_tour') {
+    return (walk.waypoints || [])
+      .map((wp, index) => ({ type: 'waypoint', wp, index }))
+      .filter(({ wp }) => wp.trigger_audio && !wp.audio_clip_url);
+  }
+  return (walk.segment_scripts || [])
+    .map((seg, index) => ({ type: 'segment', seg, index }))
+    .filter(({ seg }) => !seg.finished_audio_url);
 }
 
 function MissingAudioTourCard({ walk, onJumpToWaypoint }) {
-  const missingWps = getMissingAudioWaypoints(walk);
+  const missingItems = getMissingAudioItems(walk);
   return (
     <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
       <div className="px-4 py-3 flex items-center gap-3 border-b border-slate-700">
         <span className="font-mono text-xs bg-slate-700 text-amber-300 px-2 py-1 rounded font-bold shrink-0">{walk.code}</span>
         <span className="font-mono text-xs bg-slate-600 text-slate-300 px-2 py-0.5 rounded font-bold shrink-0">{walk.tour_category || 'WHT'}</span>
         <p className="font-medium text-white truncate flex-1">{walk.name}</p>
-        <span className="text-xs text-amber-400 flex items-center gap-1 shrink-0"><Volume2 className="w-3 h-3" /> {missingWps.length} audio missing</span>
+        <span className="text-xs text-amber-400 flex items-center gap-1 shrink-0"><Volume2 className="w-3 h-3" /> {missingItems.length} audio missing</span>
       </div>
       <div className="p-3 space-y-1">
-        <p className="text-xs text-slate-500 mb-2">Audio for the following points is missing — click a point to upload its MP3:</p>
-        {missingWps.map(({ wp, index }) => {
-          const displayName = wp.segment_id || wp.name || `Point ${index + 1}`;
-          const subtitle = wp.segment_title && wp.segment_title !== wp.name ? wp.segment_title : (wp.name && wp.name !== displayName ? wp.name : null);
+        <p className="text-xs text-slate-500 mb-2">
+          {walk.route_type === 'driving_audio_tour'
+            ? 'Audio for the following points is missing — click a point to upload its MP3:'
+            : 'Final production audio for the following segments is still missing — click a segment to open this tour:'}
+        </p>
+        {missingItems.map((item) => {
+          if (item.type === 'waypoint') {
+            const { wp, index } = item;
+            const displayName = wp.segment_id || wp.name || `Point ${index + 1}`;
+            const subtitle = wp.segment_title && wp.segment_title !== wp.name ? wp.segment_title : (wp.name && wp.name !== displayName ? wp.name : null);
+            return (
+              <button key={`wp-${index}`} onClick={() => onJumpToWaypoint(walk, index)} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-700/40 hover:bg-slate-700/80 transition-colors text-left group">
+                <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm text-slate-300 group-hover:text-white truncate block">{displayName}</span>
+                  {subtitle && <span className="text-xs text-slate-500 truncate block">{subtitle}</span>}
+                </div>
+                <ChevronRight className="w-3.5 h-3.5 text-slate-600 group-hover:text-amber-400 shrink-0" />
+              </button>
+            );
+          }
+          const { seg, index } = item;
+          const displayName = seg.segment_id || `Segment ${seg.segment_number || index + 1}`;
+          const statusLabel = seg.status === 'accepted' ? 'Accepted in simulator — ready to upload final audio'
+            : seg.status === 'finalized' ? 'Timing adjusted, not yet tested in simulator'
+            : seg.combined_script ? 'Draft script written, not yet finalized'
+            : 'Not started';
           return (
-            <button key={index} onClick={() => onJumpToWaypoint(walk, index)} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-700/40 hover:bg-slate-700/80 transition-colors text-left group">
+            <button key={`seg-${index}`} onClick={() => onJumpToWaypoint(walk)} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-700/40 hover:bg-slate-700/80 transition-colors text-left group">
               <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
               <div className="flex-1 min-w-0">
                 <span className="text-sm text-slate-300 group-hover:text-white truncate block">{displayName}</span>
-                {subtitle && <span className="text-xs text-slate-500 truncate block">{subtitle}</span>}
+                <span className="text-xs text-slate-500 truncate block">{statusLabel}</span>
               </div>
               <ChevronRight className="w-3.5 h-3.5 text-slate-600 group-hover:text-amber-400 shrink-0" />
             </button>
