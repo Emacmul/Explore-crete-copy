@@ -17,6 +17,36 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-13 — Splash screen: zoom locked (scoped to just this screen), title and Enter button sized up slightly
+Scope: `src/components/onboarding/SplashScreen.jsx` only.
+
+Root cause of the Android "zoomed into a tiny corner" mystery from
+yesterday, confirmed directly: pinch-zoom was never disabled on this
+page at all, and something (an actual 1-year-old, in this case) had
+pinched it and gotten it stuck zoomed in — Chrome remembered that
+zoom level for the site across reloads. Not a code bug; the code was
+correct the whole time.
+
+Fixed by locking zoom specifically while the splash screen is showing
+— not app-wide, which would be a real accessibility downside for
+anyone who wants to zoom elsewhere in the app. Done the same way the
+existing scroll-lock already works: temporarily changes the page's
+zoom setting on mount, puts it back to normal the moment the splash
+closes. Same technique already proven in this file, just applied to
+one more setting.
+
+Also bumped the title (now `clamp(1.75rem, 7vw, 3rem)`, up from
+`clamp(1.5rem, 6vw, 2.5rem)`) and the Enter button (`text-lg py-4`, up
+from `text-base py-3.5`) slightly larger, per request now that normal
+zoom is restored. Re-verified the title still can't overflow on any
+real phone width — checked mathematically against the same range as
+the original fix (320–430px), comfortable margin at every size, plus
+the existing wrap-to-two-lines fallback still in place regardless.
+
+Built and verified clean.
+
+---
+
 ## 2026-08-12 (later same day) — Splash screen: fixed on iPhone by Enda, broke Android — one specific technique was the cause
 Scope: `src/components/onboarding/SplashScreen.jsx` only.
 

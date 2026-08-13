@@ -25,10 +25,21 @@ export default function SplashScreen({ onDone }) {
     }, 400);
   };
 
-  // Lock background scroll while the splash is up.
+  // Lock background scroll AND pinch-zoom while the splash is up — scoped to just this
+  // screen, not the whole app, since disabling zoom app-wide would be a real accessibility
+  // downside for anyone who genuinely relies on it elsewhere. This is the fix for exactly
+  // what happened today: a stray pinch (in Enda's case, a very determined one-year-old)
+  // zooming into this one full-bleed image and getting stuck there. Both settings are
+  // restored to their normal, zoom-permitting state the moment the splash closes.
   useEffect(() => {
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
+
+    const viewportMeta = document.querySelector('meta[name="viewport"]');
+    const prevViewportContent = viewportMeta ? viewportMeta.getAttribute('content') : null;
+    if (viewportMeta) {
+      viewportMeta.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover');
+    }
 
     let prevPosition, prevWidth;
     if (isIOS) {
@@ -41,6 +52,9 @@ export default function SplashScreen({ onDone }) {
 
     return () => {
       document.body.style.overflow = prevOverflow;
+      if (viewportMeta && prevViewportContent !== null) {
+        viewportMeta.setAttribute('content', prevViewportContent);
+      }
       if (isIOS) {
         document.body.style.position = prevPosition;
         document.body.style.width = prevWidth;
@@ -72,7 +86,7 @@ export default function SplashScreen({ onDone }) {
             <h1
               className="font-extrabold text-blue-700 leading-tight break-words select-none"
               style={{
-                fontSize: 'clamp(1.5rem, 6vw, 2.5rem)',
+                fontSize: 'clamp(1.75rem, 7vw, 3rem)',
                 textShadow: '0 1px 3px rgba(255,255,255,0.7), 0 2px 12px rgba(0,0,0,0.3)',
               }}
             >
@@ -91,7 +105,7 @@ export default function SplashScreen({ onDone }) {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3, duration: 0.5 }}
               onClick={handleEnter}
-              className="w-full max-w-xs bg-white/20 hover:bg-white/30 active:scale-95 text-white font-semibold text-base py-3.5 rounded-2xl border border-white/50 backdrop-blur-sm tracking-wide transition-all duration-150 shadow-lg"
+              className="w-full max-w-xs bg-white/20 hover:bg-white/30 active:scale-95 text-white font-semibold text-lg py-4 rounded-2xl border border-white/50 backdrop-blur-sm tracking-wide transition-all duration-150 shadow-lg"
             >
               {t('splash.enter')}
             </motion.button>
