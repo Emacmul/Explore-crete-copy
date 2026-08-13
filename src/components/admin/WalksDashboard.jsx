@@ -1,7 +1,7 @@
 import React from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
-import { Sparkles, Ticket, Mountain, MapPin, Clock, Route, TrendingUp, CheckCircle2, XCircle, Users } from 'lucide-react';
+import { Sparkles, Ticket, Mountain, MapPin, Clock, Route, TrendingUp, CheckCircle2, XCircle } from 'lucide-react';
 
 const DIFFICULTY_COLORS = {
   easy: 'bg-green-900/40 text-green-300 border-green-700',
@@ -25,14 +25,6 @@ function StatCard({ icon: Icon, label, value, color }) {
 }
 
 function getAccessLabel(walk) {
-  if (walk.walk_category === 'community') {
-    return {
-      label: 'Community Contribution',
-      icon: Users,
-      className: 'text-blue-400 bg-blue-900/40 border-blue-700',
-    };
-  }
-
   if (walk.is_sample_walk) {
     return {
       label: 'Sample Walk',
@@ -51,8 +43,6 @@ function getAccessLabel(walk) {
 export default function WalksDashboard({ walks }) {
   const totalWalks = walks.length;
   const sampleWalks = walks.filter(w => w.is_sample_walk);
-  const communityWalks = walks.filter(w => w.walk_category === 'community');
-  const withGpx = walks.filter(w => w.gpx_file_uri || w.gpx_url);
 
   const byRegion = walks.reduce((acc, w) => {
     const r = w.region || 'Unknown';
@@ -65,12 +55,8 @@ export default function WalksDashboard({ walks }) {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard icon={Mountain} label="Total Walks" value={totalWalks} color="bg-slate-600" />
         <StatCard icon={Sparkles} label="Sample Walks" value={sampleWalks.length} color="bg-emerald-600" />
-        <StatCard icon={Users} label="Community" value={communityWalks.length} color="bg-blue-600" />
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-1 gap-3">
-        <StatCard icon={CheckCircle2} label="GPX Ready" value={withGpx.length} color="bg-blue-600" />
-      </div>
 
       {Object.keys(byRegion).length > 0 && (
         <div>
@@ -112,9 +98,6 @@ export default function WalksDashboard({ walks }) {
                       <div className="font-mono text-xs text-slate-400 mb-0.5">{walk.code}</div>
                       <div className="font-medium text-white truncate max-w-[180px]">{walk.name}</div>
                       {walk.region && <div className="text-xs text-slate-500 mt-0.5">{walk.region}</div>}
-                      {walk.walk_category === 'community' && walk.contributor_name && (
-                        <div className="text-xs text-blue-400 mt-0.5">By {walk.contributor_name}</div>
-                      )}
                     </td>
 
                     <td className="px-4 py-3 hidden sm:table-cell">

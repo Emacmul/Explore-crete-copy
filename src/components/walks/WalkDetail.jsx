@@ -325,15 +325,6 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
               </div>
             )}
 
-            {walk.walk_category === 'community' && walk.contributor_name && (
-              <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-                <h3 className="font-semibold text-green-800 mb-1">{t('detail.communityWalk')}</h3>
-                <p className="text-sm text-green-700">
-                  {t('detail.contributedBy', { name: walk.contributor_name })}
-                </p>
-              </div>
-            )}
-
             {waypoints.length > 0 && (
               <div>
                 <div className="flex items-center justify-between mb-1">

@@ -75,15 +75,6 @@
       "type": "string",
       "description": "Main interest or theme"
     },
-    "walk_category": {
-      "type": "string",
-      "enum": [
-        "official",
-        "community"
-      ],
-      "default": "official",
-      "description": "Official Magical Crete walk or community-contributed walk"
-    },
     "is_sample_walk": {
       "type": "boolean",
       "default": false,
@@ -101,10 +92,6 @@
     "checkout_url": {
       "type": "string",
       "description": "Checkout URL for this product at the current Merchant of Record (Creem sandbox now, Paddle later). The in-app Buy button opens this URL, so the MoR owns the checkout page, tax collection and payment. Swapping processors = update this link."
-    },
-    "contributor_name": {
-      "type": "string",
-      "description": "Name of community contributor if applicable"
     },
     "requires_review": {
       "type": "boolean",

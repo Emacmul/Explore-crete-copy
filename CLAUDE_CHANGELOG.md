@@ -17,6 +17,52 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-13 (later same day) — "GPX Ready" dashboard stat and the entire "community walk" concept removed
+Scope: `base44/entities/Walk.jsonc` (removed `walk_category`,
+`contributor_name` fields entirely), `src/components/admin/WalkEditor.jsx`,
+`src/components/admin/WalksDashboard.jsx`, `src/components/walks/WalkDetail.jsx`,
+`src/lib/i18n/index.js` (removed 2 orphaned keys, fixed a 3rd stale one).
+
+Two things, audited fully before touching either:
+
+**"GPX Ready" dashboard stat** — confirmed dead, not just unused: it
+counted walks with a value in the exact field the customer GPX
+download used, and that whole feature (both the customer button and
+the admin upload box that could even set this field) was already
+removed. Nothing could ever change this number again going forward.
+Removed the stat entirely.
+
+**"Community walk" concept — removed completely, per Enda's decision
+not to accept externally-contributed tours.** Searched the whole
+codebase for every reference before removing anything (`community`,
+`contributor`, `walk_category` specifically, since the word search
+alone would have missed a couple of spots). Found it in 5 real
+places — the entity schema, the admin dashboard's default badge
+logic, the dashboard's per-walk contributor line (a second, separate
+spot the first pass initially missed, caught on a follow-up sweep),
+and the customer-facing "Community Walk / Contributed by" badge on
+the tour detail page — all removed. Also ruled out 4 false-positive
+matches from the initial search: "OpenStreetMap contributors" is
+required map-attribution text under OpenStreetMap's own license,
+completely unrelated to this feature, and was correctly left alone.
+
+Confirmed before removing: `walk_category` had no admin UI to ever
+set it to "community" in the first place — it always defaulted to
+"official" with nothing in the editor to change it — so this had been
+fully dead code the entire time, not a working feature being retired.
+
+**Also fixed, spotted while auditing this same area, directly related
+to the GPX removal:** the default safety-notes text shown to
+customers still said "Download the GPX file and load it into a
+navigation app before departure" — stale advice referencing a feature
+that no longer exists. Replaced with a reference to "Save for
+Offline," the actual current mechanism.
+
+Built and verified clean; re-swept after the fixes to confirm nothing
+was missed.
+
+---
+
 ## 2026-08-13 (later same day) — Waypoint popup labels: internal code no longer shown to customers
 Scope: `src/components/map/WalkDetailMap.jsx` only.
 
