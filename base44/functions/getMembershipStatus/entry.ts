@@ -41,6 +41,7 @@ export default async function (req) {
       if (exp > bestExp) { best = m; bestExp = exp; }
     }
 
+
     const expiresAt = best.expires_at || null;
     const lapsed = !best.expires_at || new Date(best.expires_at).getTime() <= now;
     // canceled-but-still-within-the-paid-period keeps access until expires_at; only an
