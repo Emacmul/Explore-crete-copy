@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Play, Pause, Square, Gauge, Clock, Volume2, AlertTriangle, CheckCircle2, MapPin, Radio, Flag } from 'lucide-react';
-import { Switch } from '@/components/ui/switch';
 import { calculateBearing, isBearingInRange } from '@/lib/routeExport';
 import TourSimulatorMap from './TourSimulatorMap';
 import ScriptTimingPanel from './ScriptTimingPanel';
@@ -64,7 +63,12 @@ export default function TourSimulator({ form, onWaypointUpdate, segmentScripts, 
   const waypoints = (form.waypoints || []).filter(wp => wp.lat && wp.lng);
   const isWalkingTour = form.tour_category !== 'DDV';
 
-  const [speed, setSpeed] = useState(form.tour_category === 'WBT' ? 3.5 : 50);
+  // Speed is never user-editable here — an Admin sets it at tour creation, and the
+  // Simulator only ever displays whatever's been set. WBT is always fixed at
+  // 3.5 km/h; DDV starts from the Admin's default_driving_speed_kmh (or 50 as a
+  // last-resort fallback if that hasn't been set) and then auto-advances through
+  // each segment's own avg_segment_speed_kmh as the marker reaches it, below.
+  const [speed, setSpeed] = useState(form.tour_category === 'WBT' ? 3.5 : (Number(form.default_driving_speed_kmh) || 50));
   const [simMult, setSimMult] = useState(5);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentPos, setCurrentPos] = useState(trailPath[0] || null);
@@ -73,7 +77,6 @@ export default function TourSimulator({ form, onWaypointUpdate, segmentScripts, 
   const [triggered, setTriggered] = useState({});
   const [triggerLog, setTriggerLog] = useState([]);
   const [tourComplete, setTourComplete] = useState(false);
-  const [autoSpeed, setAutoSpeed] = useState(true);
   const [currentSegment, setCurrentSegment] = useState(null);
   const [currentBearing, setCurrentBearing] = useState(() =>
     trailPath.length >= 2
@@ -91,7 +94,6 @@ export default function TourSimulator({ form, onWaypointUpdate, segmentScripts, 
   const speedRef = useRef(speed);
   const multRef = useRef(simMult);
   const tickRef = useRef(null);
-  const autoSpeedRef = useRef(true);
   const passedSegmentsRef = useRef(new Set());
   const audioQueueRef = useRef([]);
   const handleAudioEndedRef = useRef(null);
@@ -268,8 +270,10 @@ export default function TourSimulator({ form, onWaypointUpdate, segmentScripts, 
       }]);
     });
 
-    // Check segment speed zones (auto-speed)
-    if (autoSpeedRef.current) {
+    // Advance speed through each segment's own avg_segment_speed_kmh as the marker
+    // reaches it. DDV only — WBT stays fixed at 3.5 km/h regardless of anything set
+    // on a waypoint.
+    if (!isWalkingTour) {
       speedZones.forEach(({ wp, index }) => {
         if (passedSegmentsRef.current.has(index)) return;
         const segD = haversine(newPos.lat, newPos.lng, wp.lat, wp.lng);
@@ -307,7 +311,7 @@ export default function TourSimulator({ form, onWaypointUpdate, segmentScripts, 
   const startSim = () => {
     if (pathData.total === 0 || trailPath.length < 2) return;
     setTourComplete(false);
-    if (autoSpeedRef.current && speedZones.length > 0) {
+    if (!isWalkingTour && speedZones.length > 0) {
       const firstZone = speedZones[0];
       const firstD = haversine(trailPath[0].lat, trailPath[0].lng, firstZone.wp.lat, firstZone.wp.lng);
       if (firstD <= 150) {
@@ -363,49 +367,27 @@ export default function TourSimulator({ form, onWaypointUpdate, segmentScripts, 
       </div>
       <p className="text-slate-400 text-sm">
         {isWalkingTour ? 'Walk' : 'Drive'} a virtual marker along the route. Audio triggers fire exactly as they would
-        on a real tour. Enable auto-speed to use each segment's average speed automatically.
+        on a real tour, at the speed an Admin set for this tour{isWalkingTour ? '' : ', advancing automatically through each segment\'s own speed'}.
       </p>
 
-      {/* Auto-speed toggle */}
-      <div className="flex items-center justify-between bg-slate-800/60 rounded-lg border border-slate-600 px-3 py-2.5">
-        <div className="flex items-center gap-2">
-          <Flag className="w-4 h-4 text-blue-400" />
-          <div>
-            <span className="text-slate-200 text-sm font-medium">Auto-Speed (Segment Zones)</span>
-            <p className="text-slate-500 text-xs">
-              {speedZones.length} segment speed{speedZones.length !== 1 ? 's' : ''} defined on waypoints
-              {currentSegment ? ` · now: ${currentSegment.wp.segment_id || currentSegment.wp.segment_title || 'Segment ' + (currentSegment.index + 1)} → ${currentSegment.speed} km/h` : ''}
-            </p>
-          </div>
-        </div>
-        <Switch checked={autoSpeed} onCheckedChange={setAutoSpeed} />
-      </div>
-
-      {/* Controls */}
+      {/* Speed — read-only. Set by an Admin at tour creation; never editable here or
+          by a Narrator anywhere. WBT is always fixed at 3.5 km/h; DDV auto-advances
+          through each segment's own avg_segment_speed_kmh as the marker reaches it. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <Label className="text-slate-400 text-xs mb-1.5 block">
-            {form.tour_category === 'WBT' ? 'Walking Speed (km/h)' : 'Driving Speed (km/h)'}{autoSpeed ? ' — auto from segments' : ''}
+            {form.tour_category === 'WBT' ? 'Walking Speed (km/h)' : 'Driving Speed (km/h)'}
           </Label>
-          <div className={`flex gap-2 items-center ${autoSpeed ? 'opacity-50 pointer-events-none' : ''}`}>
-            {(form.tour_category === 'WBT' ? [3, 3.5, 4] : [30, 50, 80]).map(s => (
-              <Button
-                key={s}
-                size="sm"
-                variant={speed === s ? 'default' : 'outline'}
-                onClick={() => setSpeed(s)}
-                className={speed === s ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'border-slate-500 text-slate-300'}
-              >
-                {s}
-              </Button>
-            ))}
-            <input
-              type="number"
-              step="0.1"
-              value={speed}
-              onChange={e => setSpeed(Math.max(0.1, Number(e.target.value) || 0))}
-              className="w-16 bg-slate-800 border border-slate-600 text-white rounded px-2 text-sm h-8 text-center"
-            />
+          <div className="flex items-center gap-2 bg-slate-800/60 rounded-lg border border-slate-600 px-3 h-9">
+            <Flag className="w-4 h-4 text-blue-400 shrink-0" />
+            <span className="text-white text-sm font-medium">{speed} km/h</span>
+            <span className="text-slate-500 text-xs">
+              {form.tour_category === 'WBT'
+                ? '— fixed'
+                : currentSegment
+                  ? `— ${currentSegment.wp.segment_id || currentSegment.wp.segment_title || 'Segment ' + (currentSegment.index + 1)}`
+                  : '— default, until first segment'}
+            </span>
           </div>
         </div>
         <div>
@@ -431,7 +413,7 @@ export default function TourSimulator({ form, onWaypointUpdate, segmentScripts, 
         <div className="bg-slate-800 rounded-lg p-2.5 text-center">
           <Gauge className="w-4 h-4 text-blue-400 mx-auto mb-1" />
           <div className="text-white text-sm font-semibold">{speed} km/h</div>
-          <div className="text-slate-500 text-xs">{autoSpeed ? 'Auto' : 'Manual'}</div>
+          <div className="text-slate-500 text-xs">{form.tour_category === 'WBT' ? 'Fixed' : 'Set by Admin'}</div>
         </div>
         <div className="bg-slate-800 rounded-lg p-2.5 text-center">
           <Clock className="w-4 h-4 text-amber-400 mx-auto mb-1" />

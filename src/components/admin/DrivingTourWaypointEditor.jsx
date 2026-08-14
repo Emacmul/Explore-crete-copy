@@ -189,9 +189,13 @@ const routeWaypoints = async (points) => {
   return res.data.trail;
 };
 
-export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCode, tourCategory, onSave, saving, userRole = 'admin', focusWaypointIndex, segmentScripts, onSegmentScriptsChange, onTrailPathChange, trailPath }) {
+export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCode, tourCategory, onSave, saving, userRole = 'admin', focusWaypointIndex, segmentScripts, onSegmentScriptsChange, onTrailPathChange, trailPath, defaultDrivingSpeedKmh }) {
   const isNarrator = userRole === 'narrator';
-  const defaultSpeed = tourCategory === 'WBT' ? 3.5 : 50;
+  // WBT is always fixed at 3.5 km/h. DDV falls back to the Admin-set default
+  // driving speed from the Details tab (form.default_driving_speed_kmh) until a
+  // Primary-Start waypoint sets its own avg_segment_speed_kmh; 50 is the last-resort
+  // fallback only if an Admin hasn't set anything yet.
+  const defaultSpeed = tourCategory === 'WBT' ? 3.5 : (defaultDrivingSpeedKmh || 50);
   const [expanded, setExpanded] = useState(focusWaypointIndex != null ? focusWaypointIndex : null);
   const [newWp, setNewWp] = useState({ ...EMPTY_WP, avg_segment_speed_kmh: defaultSpeed });
   const [showAddForm, setShowAddForm] = useState(true);

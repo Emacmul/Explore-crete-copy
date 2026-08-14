@@ -17,6 +17,194 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-14 (later same day) — Phase 1: real backend access control, ownership, and speed lock-down for Walk
+Scope: implements the Phase 1 plan Enda approved off the Simulator audit below
+(access control + ownership + speed security first; the per-segment
+"completely edited" simulator-unlock gate and the break-tag/audio-timing
+feature are deferred to Phase 2, pending the audio model — see Enda's two
+mid-planning clarifications, captured but not acted on yet).
+
+**The core problem fixed:** every Admin/Narrator rule discussed anywhere in
+this app (who can open which tour, who can set speed, one-clone-at-a-time)
+was UI-only — the Base44 SDK client runs `requiresAuth: false`, Narrator
+"sessions" are just a password-checked token in `sessionStorage` never
+attached to the SDK, and `Walk` had no `rls` block, so every `entities.Walk.*`
+call a Narrator's browser made went out unauthenticated and unrestricted.
+
+New files:
+- `base44/shared/backendActor.ts` — `resolveActor(base44, body)` shared by
+  every Walk function below. Reuses `isAppAdmin()` (native + promoted admins)
+  for the admin path; for Narr Studio sessions, looks up `AppUser` by the
+  claimed `email` and validates that row's own `narr_session_token` +
+  `narr_session_expires_at` (never a global token scan). Returns
+  `{kind:'admin'}` / `{kind:'narrator', email}` / `null`. This is the real
+  security boundary for `Walk` now — `Walk.jsonc`'s new `rls` block (below) is
+  a backstop only.
+- `base44/functions/getWalksForBackend/entry.ts` — admin gets the full list
+  unrestricted; narrator gets cloneable masters trimmed to
+  `id,code,name,tour_category,region` (no script/waypoint/trail data for
+  tours they don't own) plus their own clone(s) in full.
+- `base44/functions/saveWalkForBackend/entry.ts` — admin write is
+  unrestricted. Narrator write is rejected unless the target is their own
+  clone (ownership re-checked server-side against a freshly-fetched copy,
+  never the client's). Narrator payload is whitelisted: top-level
+  `name`/`description`/`safety_notes`/`finished`/`waypoints`/`segment_scripts`
+  only — everything else (region, difficulty, distances, GPS, code, pricing,
+  `default_driving_speed_kmh`, `avg_segment_speed_kmh`, etc.) is silently
+  dropped, not just hidden in the UI. `waypoints[]` merge is index-based
+  (narrators can't reorder/add/remove today) and only takes narration/audio
+  sub-fields from the client — `lat`/`lng`/`waypoint_role`/
+  `avg_segment_speed_kmh` always come from the server. `segment_scripts[]`
+  merge lets a narrator move `draft`↔`finalized` only — `status:'accepted'`
+  and `finished_audio_url` stay admin-only.
+- `base44/functions/cloneWalkForBackend/entry.ts` — re-derives `clone_of`,
+  `assigned_narrator_email`, `finished:false`, `approved:false` server-side.
+  Enforces, server-side: can't clone a clone; a narrator can't start a new
+  clone (of anything) while they have one with `finished:false` in progress —
+  scoped per-narrator, not per-master (matches Enda's clarification that a
+  different narrator can clone the same master concurrently); target language
+  isn't already published for this master. Admins exempt from the one-clone
+  limit.
+- `base44/functions/deleteWalkForBackend/entry.ts` — admin actor only.
+
+Changed files:
+- `base44/entities/Walk.jsonc` — added an `rls` block (read/create/update/
+  delete, `user_condition:{role:"admin"}}`), same shape as `AppUser.jsonc`.
+  Backstop only (see above) — deliberately not the primary gate, since it
+  doesn't recognize "promoted" admins (native role `user`, `AppUser.role`
+  `admin`), which is why real enforcement lives in the functions instead.
+- `src/components/admin/BackendShell.jsx` — every direct
+  `base44.entities.Walk.*` call replaced with `base44.functions.invoke(...)`
+  against the four functions above. Fixed the one-clone unlock timing:
+  `myActiveClones` now filters on `!w.finished` (was `!(w.finished &&
+  w.approved)`) — per Enda, the lock releases the moment a narrator marks
+  their clone finished, not only once an admin has also approved it. Added a
+  `view === 'walks' && isAdmin` guard around `WalkAdminList` (UI backstop
+  only — the real boundary is the functions rejecting a narrator actor).
+- `src/components/admin/WalkEditor.jsx` — gated the Details tab to
+  `!isNarrator` for every structural/admin field: Route Type, Route/Tour
+  Code, GPX Import, Region/Difficulty, free-sample toggle, Main Interests,
+  Distance/Duration/Elevation, Default Average Driving Speed, Starting Point
+  GPS, Pricing & Purchase. Name/Description/Safety Notes stay editable by
+  both roles (the actual translated content). Threaded a new
+  `defaultDrivingSpeedKmh={form.default_driving_speed_kmh}` prop into
+  `<DrivingTourWaypointEditor>`.
+- `src/components/admin/DrivingTourWaypointEditor.jsx` — fixed a dead
+  default: `defaultSpeed` now reads the new `defaultDrivingSpeedKmh` prop
+  (`tourCategory === 'WBT' ? 3.5 : (defaultDrivingSpeedKmh || 50)`) instead of
+  always hardcoding `50` regardless of what an Admin set on the Details tab.
+  (The per-waypoint `avg_segment_speed_kmh` field itself was already
+  correctly admin-only here — that part of the earlier audit finding was
+  already fine.)
+- `src/components/admin/TourSimulator.jsx` — removed the Auto-Speed toggle
+  and the manual speed controls (preset buttons + free-text input) entirely;
+  this was the actively-bypassable hole the audit flagged. Speed is now
+  always computed, never user-set: WBT fixed at 3.5 km/h; DDV starts from
+  `default_driving_speed_kmh` (falling back to 50 only if an Admin hasn't set
+  one) and auto-advances through each segment's own `avg_segment_speed_kmh`
+  as the marker reaches it, via the existing `speedZones` logic. Replaced the
+  removed controls with a plain read-only speed readout. Left the unrelated
+  1×/2×/5×/10× "Simulation Speed" playback multiplier untouched.
+
+Verified: `npm run build` (clean), `npm run lint` (18 pre-existing errors,
+all in files untouched by this change, confirmed identical via `git stash`
+diff — zero new lint errors introduced), `npm run typecheck` (net 4 *fewer*
+errors than baseline, zero new ones — this project's `tsc` pass is a weak
+signal generally, since `jsconfig.json`'s `include` doesn't cover most
+`.jsx` files and most existing errors are a generic `children`-prop typing
+issue unrelated to any of this). No Base44 staging environment available in
+this session to run the functions live — manual QA against the 6-scenario
+matrix in the approved plan (native admin, promoted admin, narrator,
+admin-wearing-Narr-hat, direct-SDK-bypass, anonymous) is still outstanding
+and should happen before this ships.
+
+Deferred to Phase 2 (not started): the per-segment "completely edited →
+simulator unlocks" gate, and the break-tag/audio-duration-vs-simulator-speed
+sync feature — both depend on resolving which audio model is actually live
+(continuous per-segment track vs. today's per-waypoint geofence clips).
+
+## 2026-08-14 — Simulator function: full audit, no code changed
+Scope: audit only. Read in full: `TourSimulator.jsx`, `TourSimulatorMap.jsx`,
+`SegmentScriptEditor.jsx`, `SegmentScriptManager.jsx`, `ScriptTimingPanel.jsx`,
+`NarrationTtsEditor.jsx`, `AudioTriggerFields.jsx`, `DrivingTourWaypointEditor.jsx`,
+`WalkEditor.jsx`, `WalkAdminList.jsx`, `BackendShell.jsx`, `AdminStartScreen.jsx`,
+`Admin.jsx`, `Narr.jsx`, `AuthContext.jsx`, `base44Client.js`, `app-params.js`,
+`narrationUtils.js`, `ttsParser.js`, plus the `Walk`/`User`/`AppUser`/`Narrator`
+entity schemas and the `narrLogin`/`getUserRole` backend functions.
+
+Enda asked for a breakdown of dead ends / non-functioning / not-gated-properly
+issues in the Simulator, checked against a specific spec: Admin+Narrator-only
+access, segment must be "completely edited" before its simulator is available, a
+Narrator restricted to the WalkAbout/Driving tour they're working on, fixed
+non-editable 3.5 km/h walking speed for WBT, Admin-set non-Narrator-editable
+per-segment driving speed for DDV, and break-tag duration editing so a segment's
+audio finishes exactly when the simulator reaches the segment's end. Full writeup
+left at `SIMULATOR_AUDIT_2026-08-14.md` in the repo root (also sent to Enda
+directly) — not duplicated here in full, just the headline findings so a future
+session doesn't have to re-derive them:
+
+- **Biggest finding: enforcement gap predates the Simulator.** `base44Client.js`
+  creates the SDK with `requiresAuth: false`; Admins get a real Base44 session via
+  native login, but Narrators (`Narr.jsx` / `narrLogin`) only get a bespoke
+  `narr_session_token` in `sessionStorage` that's never attached to the SDK client
+  — so every `entities.Walk.*` call a Narrator triggers goes out **unauthenticated**.
+  `Walk.jsonc` has no `rls` block at all (unlike `AppUser.jsonc`, which does). Net
+  effect: literally every role/ownership check anywhere in this app (not just the
+  Simulator) is UI-only today — a client calling the public SDK directly bypasses
+  all of it. Adding `isNarrator` checks inside `TourSimulator.jsx` alone would be
+  cosmetic, not real enforcement, unless this is fixed first (either give Narrators
+  a real authenticated identity + add `rls` to `Walk`, or route Walk writes through
+  a backend function that checks `narr_session_token` server-side).
+- `TourSimulator`/`TourSimulatorMap` currently take **no `userRole` prop at all** —
+  no role-based gating is possible in them as written today. Reachability is
+  narrowed upstream (only admin/narrator ever reach `WalkEditor`; Simulator only
+  renders for WBT/DDV), and Narrator-ownership is *mostly* inherited for free since
+  Narrators today only ever work inside their own translation clone — but
+  `WalkAdminList.jsx`'s `onEdit` path to `WalkEditor` has none of the
+  narrator-must-own-a-clone check that `BackendShell`'s `onContinueTour` has (currently
+  unreachable by narrators via the UI since they're never shown the "Manage Tours"
+  button, so latent rather than live).
+- **No "segment completely edited → simulator available" gate exists anywhere.**
+  `TourSimulator` only checks `trailPath.length >= 2`; `segment_scripts[].status`
+  (draft/finalized/accepted) is tracked but never used to gate simulator
+  availability, only which buttons `SegmentScriptEditor` shows.
+- **Speed lock-down isn't implemented and is actively bypassable.** The Simulator
+  has its own independent, unrestricted speed control (Auto-Speed toggle off →
+  preset buttons `[3, 3.5, 4]` for WBT / `[30, 50, 80]` for DDV → plus an unbounded
+  free-text field) available to either role — this overrides the correctly-locked
+  `avg_segment_speed_kmh` (which *is* properly admin-only inside
+  `DrivingTourWaypointEditor.jsx`). Also found: `default_driving_speed_kmh` (Details
+  tab) has no narrator gate and is dead code — `DrivingTourWaypointEditor.jsx`
+  hardcodes its own default (`WBT ? 3.5 : 50`) and never reads that field at all.
+- **Break-tag ↔ simulator-speed sync (audio finishing exactly at segment end) is
+  essentially unbuilt, and it's structural, not a small gap.** Two disconnected
+  audio models exist: per-waypoint (`wp.audio_clip_url`, geofence-triggered) is
+  what `DrivingTourPlayer.jsx` actually plays live; per-segment (`segment_scripts[]`
+  → combined → break-tag-edited → draft TTS → simulator-tested → accepted →
+  `finished_audio_url` uploaded for ElevenLabs) is what the Simulator's
+  `SegmentScriptEditor` is built around. Grepped `src/`: `segment_scripts` /
+  `finished_audio_url` / `final_audio_url` / `combined_audio_url` are referenced
+  nowhere outside the admin editors except `offlineStorage.jsx` (bundled for
+  offline caching only) — **no live player ever plays segment-level audio**, so
+  today's "accepted, finished" segment audio is never actually heard by a customer.
+  Separately, the Simulator's own `<audio>` element only plays per-waypoint clips on
+  geofence entry — it has no awareness of `segment_scripts` — so there's no code
+  path today where segment audio plays alongside the moving marker for a live
+  finish-time comparison. `ScriptTimingPanel`'s travel-vs-narration numbers are a
+  static WPM-formula estimate, not a measurement of real generated audio, and
+  aren't tied to an actual simulator run.
+- Smaller items in the full writeup: "Jump to location" only supports
+  `primary_start` (no segment-end equivalent); Auto-Speed toggle state isn't
+  persisted; `AudioTriggerFields` (radius/bearing/trigger-once) has no role
+  restriction; `getUserRole/entry.ts` is dead code, never called, and checks a role
+  value (`narrator`) that the `User` entity's own schema doesn't allow (harmless —
+  `AppUser.role` is the one actually used).
+
+No files changed. Enda is deciding what to action from the full writeup before
+anything gets built.
+
+---
+
 ## 2026-08-13 (later same day) — Offline-save safety requirement, complete: banner, Start gate for all 3 tour types, and reset-on-remove
 Scope: `src/components/walks/WalkDetail.jsx`, `src/lib/i18n/index.js`
 (+4 keys: `detail.offlineWarning`, `detail.offlineThankYou`,

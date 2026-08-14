@@ -30,23 +30,46 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
   const [walks, setWalks] = useState([]);
   const [walksLoading, setWalksLoading] = useState(true);
 
+  // Narr Studio sessions (real narrators, and admins wearing the Narr hat) carry
+  // no real Base44 identity of their own — every Walk-related call below has to
+  // prove who's asking by sending this along, the same way
+  // TranslationsManager.jsx already does for saveTranslation. A real Admin
+  // (authMode === 'base44') needs none of this — their Base44 session already
+  // speaks for itself server-side.
+  const narrAuth = authMode === 'narr' ? { email: user?.email, narrToken: user?.token } : {};
+
+  // All Walk reads/writes go through backend functions now, never the direct
+  // client SDK — see base44/shared/backendActor.ts for why: a Narr Studio
+  // session has no real Base44 auth to check, and some Admins are "promoted"
+  // (native Base44 role 'user', app-level AppUser.role 'admin'), so a plain
+  // entity-level permission rule can't correctly gate either case. The
+  // function is the actual boundary; it decides what this caller is allowed
+  // to see/change and does the filtering itself.
+  const callWalkFn = async (fnName, payload) => {
+    const res = await base44.functions.invoke(fnName, { ...payload, ...narrAuth });
+    const data = res?.data || {};
+    if (data.error) throw new Error(data.error);
+    return data;
+  };
+
   useEffect(() => {
     let cancelled = false;
-    base44.entities.Walk.list('-created_date').then((initial) => {
-      if (!cancelled) { setWalks(initial || []); setWalksLoading(false); }
+    callWalkFn('getWalksForBackend', {}).then((data) => {
+      if (!cancelled) { setWalks(data.walks || []); setWalksLoading(false); }
     }).catch((err) => {
       console.error('Failed to load walks:', err);
       if (!cancelled) setWalksLoading(false);
     });
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const refreshWalks = async () => {
     setWalksLoading(true);
     try {
-      const fresh = await base44.entities.Walk.list('-created_date');
-      setWalks(fresh || []);
-      toast({ title: 'Tours reloaded', description: `${(fresh || []).length} tours fetched fresh from the server.` });
+      const data = await callWalkFn('getWalksForBackend', {});
+      setWalks(data.walks || []);
+      toast({ title: 'Tours reloaded', description: `${(data.walks || []).length} tours fetched fresh from the server.` });
     } catch (err) {
       console.error('Failed to refresh walks:', err);
       toast({ variant: 'destructive', title: 'Refresh failed', description: err?.message || 'Could not reload the tour list.' });
@@ -54,80 +77,67 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
     setWalksLoading(false);
   };
 
+  // For a Narrator this only ever succeeds on their own clone, and only for a
+  // whitelisted set of fields (narration, audio triggers, segment scripts,
+  // finished) — enforced server-side in saveWalkForBackend, not here. For an
+  // Admin it's an unrestricted write, same as the old direct entities.Walk
+  // call. Either way, whatever `walkData` this screen builds is sent as-is;
+  // the function decides what actually gets kept.
   const handleSave = async (walkData) => {
-    let saved;
-    if (walkData.id) {
-      saved = await base44.entities.Walk.update(walkData.id, walkData);
-      setWalks((prev) => prev.map(w => w.id === walkData.id ? { ...w, ...walkData, ...saved } : w));
+    const { id, ...patch } = walkData;
+    const data = await callWalkFn('saveWalkForBackend', { id, patch });
+    const saved = data.walk;
+    if (id) {
+      setWalks((prev) => prev.map(w => w.id === id ? { ...w, ...walkData, ...saved } : w));
     } else {
-      saved = await base44.entities.Walk.create(walkData);
       setWalks((prev) => [{ ...walkData, ...saved }, ...prev]);
     }
     return saved;
   };
 
   const handleDelete = async (walkId) => {
-    const result = await base44.entities.Walk.delete(walkId);
-    if (result && result.success === false) throw new Error('The server did not confirm this delete.');
-    const fresh = await base44.entities.Walk.list('-created_date');
-    setWalks(fresh || []);
+    await callWalkFn('deleteWalkForBackend', { id: walkId });
+    const data = await callWalkFn('getWalksForBackend', {});
+    setWalks(data.walks || []);
   };
 
+  // Admin-only action (WalkAdminList only ever renders this button for
+  // isAdmin, and that whole screen is now admin-gated below) — routed through
+  // the same save function, which happily does an unrestricted write for an
+  // admin actor.
   const handleToggleFree = async (walkId, nextValue) => {
-    await base44.entities.Walk.update(walkId, { is_sample_walk: nextValue });
+    await callWalkFn('saveWalkForBackend', { id: walkId, patch: { is_sample_walk: nextValue } });
     setWalks((prev) => prev.map(w => w.id === walkId ? { ...w, is_sample_walk: nextValue } : w));
   };
 
   const handleMarkChecked = async (walkId) => {
     const checkedAt = new Date().toISOString();
-    await base44.entities.Walk.update(walkId, { announced_at: checkedAt });
+    await callWalkFn('saveWalkForBackend', { id: walkId, patch: { announced_at: checkedAt } });
     setWalks((prev) => prev.map(w => w.id === walkId ? { ...w, announced_at: checkedAt } : w));
   };
 
-  // Clone a tour into a private translation copy owned by this Narr. Masters are offered
-  // for cloning regardless of their own publish status (a narrator can translate a tour
-  // that isn't live yet) — what's actually restricted is the TARGET LANGUAGE: never clone
-  // into a language that already has a finished, published version of this same tour.
+  // Clone a tour into a private translation copy owned by this Narr. The checks
+  // below (one active clone per narrator, target language not already
+  // published) are kept here too so the UI can react instantly — but they are
+  // no longer the actual gate. cloneWalkForBackend re-derives clone_of /
+  // assigned_narrator_email / finished / approved server-side and re-runs both
+  // checks itself; a hand-crafted call that skips this client logic still gets
+  // rejected there.
   const handleCloneTour = async (original, targetLanguage) => {
     const lang = (targetLanguage || '').trim();
     if (!lang || !original) return null;
-    // Enforced here too, not just by hiding the "Clone a tour" section in the UI — a
-    // narrator (not an unrestricted admin) may only have one translation in progress at
-    // a time. This must block the actual clone action, not just the button that starts it.
     if (!unrestricted && hasActiveClone) {
-      toast({ variant: 'destructive', title: 'Finish your current translation first', description: 'You already have a clone in progress. It needs to be finished and published before you can start another.' });
+      toast({ variant: 'destructive', title: 'Finish your current translation first', description: 'You already have a clone in progress. It needs to be finished before you can start another.' });
       return null;
     }
-    // Never allow cloning into a language this tour already has a published version in —
-    // checked here too, not just filtered out of the language picker, so this can't be
-    // bypassed even if the dialog's own filtering is ever stale or skipped.
     const alreadyPublished = walks.some(w => w.clone_of === original.id && w.finished && w.approved && (w.target_language || '').toLowerCase() === lang.toLowerCase());
     if (alreadyPublished) {
       toast({ variant: 'destructive', title: 'Already published in this language', description: `“${original.name}” already has a finished, published ${lang} version — cloning it again would duplicate existing work.` });
       return null;
     }
-    const clone = {
-      ...original,
-      id: undefined,
-      created_date: undefined,
-      updated_date: undefined,
-      created_by_id: undefined,
-      code: `${original.code}-${lang}`,
-      name: `${original.name} (${lang})`,
-      clone_of: original.id,
-      target_language: lang,
-      assigned_narrator_email: (user.email || '').toLowerCase(),
-      finished: false,
-      approved: false,
-      requires_review: false,
-      is_sample_walk: false,
-      creem_product_id: undefined,
-      trail_path: (original.trail_path || []).map(p => ({ ...p })),
-      waypoints: (original.waypoints || []).map(w => ({ ...w })),
-      segment_scripts: (original.segment_scripts || []).map(s => ({ ...s })),
-    };
     try {
-      const saved = await base44.entities.Walk.create(clone);
+      const data = await callWalkFn('cloneWalkForBackend', { originalId: original.id, targetLanguage: lang });
+      const saved = data.walk;
       setWalks((prev) => [saved, ...prev]);
       toast({ title: 'Clone created', description: `Translating “${original.name}” into ${lang}.` });
       return saved;
@@ -138,8 +148,11 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
   };
 
   // Ticking "finished" on a clone sends it to admins for review (and back, if unticked).
+  // This is the moment the one-clone-in-progress lock releases for a narrator —
+  // immediately, not once an admin has also approved/published it (see
+  // myActiveClones below).
   const handleToggleFinished = async (walkId, finished) => {
-    await base44.entities.Walk.update(walkId, { finished });
+    await callWalkFn('saveWalkForBackend', { id: walkId, patch: { finished } });
     setWalks((prev) => prev.map(w => w.id === walkId ? { ...w, finished } : w));
     toast({
       title: finished ? 'Sent for review' : 'Reopened',
@@ -150,7 +163,7 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
   // Admin publishes a finished translation as its own standalone public tour. Also
   // clears any pushback reason — re-publishing confirms the correction was accepted.
   const handlePublishClone = async (walkId) => {
-    await base44.entities.Walk.update(walkId, { approved: true, finished: true, pushback_reason: '' });
+    await callWalkFn('saveWalkForBackend', { id: walkId, patch: { approved: true, finished: true, pushback_reason: '' } });
     setWalks((prev) => prev.map(w => w.id === walkId ? { ...w, approved: true, finished: true, pushback_reason: '' } : w));
     toast({ title: 'Published', description: 'The translation is now a standalone public tour.' });
   };
@@ -158,9 +171,9 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
   // Admin sends an already-published translation clone back to its narrator for
   // correction. Unpublishing and un-finishing it here is what naturally re-triggers the
   // existing "one clone in progress" limit — the narrator can't start anything new until
-  // this one is fixed and re-published, with no separate blocking logic needed for that.
+  // this one is fixed, with no separate blocking logic needed for that.
   const handlePushBackClone = async (walkId, reason) => {
-    await base44.entities.Walk.update(walkId, { approved: false, finished: false, pushback_reason: reason });
+    await callWalkFn('saveWalkForBackend', { id: walkId, patch: { approved: false, finished: false, pushback_reason: reason } });
     setWalks((prev) => prev.map(w => w.id === walkId ? { ...w, approved: false, finished: false, pushback_reason: reason } : w));
     toast({ title: 'Sent back for correction', description: 'The narrator will see this the next time they open the Narr Studio.' });
   };
@@ -184,19 +197,22 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
   const myClones = unrestricted
     ? walks.filter(w => w.clone_of)
     : walks.filter(w => w.clone_of && (w.assigned_narrator_email || '').toLowerCase() === (user.email || '').toLowerCase());
-  // A narrator's own view of "my clones" only shows active, unpublished work — once a
-  // clone is finished AND published, it's no longer theirs to manage; it's a live tour.
-  // (An unrestricted admin-as-narrator still sees everything, published or not, since
-  // they're the one doing the reviewing/publishing.)
-  const myActiveClones = unrestricted ? myClones : myClones.filter(w => !(w.finished && w.approved));
+  // A narrator's own view of "my clones" only shows active, in-progress work — once
+  // they've marked a clone finished, it's off their plate; it's in the Admin's hands
+  // for final check and final audio editing next, whether or not the Admin has
+  // actually reviewed/published it yet. (An unrestricted admin-as-narrator still sees
+  // everything, since they're the one doing the reviewing/publishing.)
+  const myActiveClones = unrestricted ? myClones : myClones.filter(w => !w.finished);
+  // NB: for a real (non-unrestricted) narrator session, `walks` only carries redacted
+  // metadata for clones that aren't their own (see getWalksForBackend) — this list is
+  // only ever displayed on the Admin side of AdminStartScreen, never the narrator side,
+  // so that's fine; don't start rendering it for narrators without revisiting the data
+  // this depends on (name/code/assigned_narrator_email aren't present on those rows).
   const reviewClones = walks.filter(w => w.clone_of && w.finished && !w.approved);
-  // Only one translation clone may be in progress at a time per narrator — once their
-  // current clone is finished AND published, they can start another, not before.
+  // Only one translation clone may be in progress at a time per narrator — the lock
+  // releases the moment they mark their current clone finished (see handleToggleFinished),
+  // not once an admin has also approved/published it.
   const hasActiveClone = !unrestricted && myActiveClones.length > 0;
-  // A pushback jumps the queue: it's an already-published, already-live tour with a known
-  // error in it, unlike an ordinary in-progress translation nobody's seen yet. If a
-  // narrator has one pending, it must take priority over whatever else they were working
-  // on — they get blocked from opening anything else until the pushback is fixed.
   // A pushback jumps the queue: it's an already-published, already-live tour with a known
   // error in it, unlike an ordinary in-progress translation nobody's seen yet. If a
   // narrator has one pending, it must take priority over whatever else they were working
@@ -266,7 +282,11 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
           <DisputesManager />
         ) : view === 'translations' ? (
           <TranslationsManager authMode={authMode} user={user} />
-        ) : view === 'walks' ? (
+        ) : view === 'walks' && isAdmin ? (
+          // Admin-only, both in the nav (AdminStartScreen never offers this button to a
+          // narrator) and here — this guard is the actual UI-level backstop for that;
+          // the real boundary is still deleteWalkForBackend/saveWalkForBackend rejecting
+          // a narrator actor outright, not this render check.
           <WalkAdminList
             walks={walks}
             isLoading={walksLoading}

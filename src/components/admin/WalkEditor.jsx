@@ -721,6 +721,12 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
         {activeTab === 'details' && (
           <div className="space-y-5">
 
+            {/* Route Type, Code, and GPX import are all structural/admin-only — a narrator
+                works inside a clone whose category and code are already set at cloning
+                time, and re-importing a GPX would replace the route itself. Enforced here
+                for the UI; the real boundary is saveWalkForBackend's field whitelist. */}
+            {!isNarrator && (
+            <>
             {/* Route Type — chosen first, since it decides Code/Name labels and the waypoint shape used on import */}
             <div>
               <Label className="text-slate-300 mb-1.5 block">Route Type *</Label>
@@ -749,33 +755,22 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
               </p>
             </div>
 
-            {/* Tour/Route Code & Name — required next, since waypoint IDs and segment IDs are built from the code */}
+            {/* Tour/Route Code — required next, since waypoint IDs and segment IDs are built from the code */}
             {!canImportGpx && (
               <div className="flex items-center gap-2 bg-amber-900/20 border border-amber-700/40 rounded-lg px-3 py-2">
                 <span className="flex items-center justify-center w-5 h-5 rounded-full bg-amber-500 text-slate-900 text-xs font-bold shrink-0">1</span>
                 <p className="text-amber-200 text-sm">Select a Route Type and enter a Code and Name below to unlock GPX/FIT import.</p>
               </div>
             )}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label className="text-slate-300 mb-1.5 block">{isDrivingAudioTour ? "Tour Code *" : "Route Code *"}</Label>
-                <Input
-                  value={form.code}
-                  onChange={e => set('code', e.target.value)}
-                  placeholder={isDrivingAudioTour ? "e.g. BOR" : "e.g. CRE-007"}
-                  className={`bg-slate-700 text-white font-mono ${!form.code?.trim() ? 'border-amber-500/70 focus-visible:ring-amber-500' : 'border-slate-600'}`}
-                />
-                <p className="text-xs text-slate-500 mt-1">{isDrivingAudioTour ? "Three-letter tour code, e.g. BOR" : "Unique identifier shown to users"}</p>
-              </div>
-              <div>
-                <Label className="text-slate-300 mb-1.5 block">{isDrivingAudioTour ? "Tour Name *" : "Route Name *"}</Label>
-                <Input
-                  value={form.name}
-                  onChange={e => set('name', e.target.value)}
-                  placeholder={isDrivingAudioTour ? "e.g. Battle of the Rivers" : "e.g. Balos Lagoon Trail"}
-                  className={`bg-slate-700 text-white ${!form.name?.trim() ? 'border-amber-500/70 focus-visible:ring-amber-500' : 'border-slate-600'}`}
-                />
-              </div>
+            <div>
+              <Label className="text-slate-300 mb-1.5 block">{isDrivingAudioTour ? "Tour Code *" : "Route Code *"}</Label>
+              <Input
+                value={form.code}
+                onChange={e => set('code', e.target.value)}
+                placeholder={isDrivingAudioTour ? "e.g. BOR" : "e.g. CRE-007"}
+                className={`bg-slate-700 text-white font-mono ${!form.code?.trim() ? 'border-amber-500/70 focus-visible:ring-amber-500' : 'border-slate-600'}`}
+              />
+              <p className="text-xs text-slate-500 mt-1">{isDrivingAudioTour ? "Three-letter tour code, e.g. BOR" : "Unique identifier shown to users"}</p>
             </div>
 
             {/* GPX Import */}
@@ -809,6 +804,20 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                    </label>
                 </>
               )}
+            </div>
+            </>
+            )}
+
+            {/* Tour/Route Name — the translated title itself, so this one stays editable
+                for a narrator too, unlike Code above it. */}
+            <div>
+              <Label className="text-slate-300 mb-1.5 block">{isDrivingAudioTour ? "Tour Name *" : "Route Name *"}</Label>
+              <Input
+                value={form.name}
+                onChange={e => set('name', e.target.value)}
+                placeholder={isDrivingAudioTour ? "e.g. Battle of the Rivers" : "e.g. Balos Lagoon Trail"}
+                className={`bg-slate-700 text-white ${!form.name?.trim() ? 'border-amber-500/70 focus-visible:ring-amber-500' : 'border-slate-600'}`}
+              />
             </div>
 
             {isDrivingAudioTour && (
@@ -848,6 +857,9 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
 
             )}
 
+            {/* Region/Province and Difficulty are structural/factual — shouldn't change
+                between language versions of the same tour, so admin-only. */}
+            {!isNarrator && (
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label className="text-slate-300 mb-1.5 block">{isDrivingAudioTour ? 'Province' : 'Region'}</Label>
@@ -878,10 +890,11 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
               </div>
               )}
             </div>
+            )}
 
-            {!isDrivingAudioTour && (
+            {!isDrivingAudioTour && !isNarrator && (
             <>
-            {/* Walk access */}
+            {/* Walk access — pricing/publishing configuration, admin-only */}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label className="text-slate-300 mb-1.5 block">Free sample</Label>
@@ -898,7 +911,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
               </div>
             </div>
 
-            {/* Main Interests */}
+            {/* Main Interests — tour categorisation/discovery metadata, admin-only */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <Label className="text-slate-300">
@@ -1004,7 +1017,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
             </>
             )}
 
-            {!isDrivingAudioTour && (
+            {!isDrivingAudioTour && !isNarrator && (
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <Label className="text-slate-300 mb-1.5 block">Approx. Distance (km)</Label>
@@ -1025,7 +1038,10 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
 
             )}
 
-            {isDrivingAudioTour && (
+            {/* Driving speed — Admin-set only, everywhere. Never editable by a Narrator,
+                here or anywhere else (see TourSimulator.jsx, which now only ever displays
+                whatever speed was set here, read-only). */}
+            {isDrivingAudioTour && !isNarrator && (
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label className="text-slate-300 mb-1.5 block">Default Average Driving Speed (km/h)</Label>
@@ -1036,11 +1052,12 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                     placeholder="e.g. 45"
                     className="bg-slate-700 border-slate-600 text-white"
                   />
-                  <p className="text-xs text-slate-500 mt-1">Used only as a helper value until each segment has its own speed in the waypoint editor.</p>
+                  <p className="text-xs text-slate-500 mt-1">Used as the segment speed until a Primary-Start waypoint sets its own in the Waypoints tab — see Average Segment Speed there.</p>
                 </div>
               </div>
             )}
 
+            {!isNarrator && (
             <div className="border-t border-slate-700 pt-5">
               <Label className="text-slate-300 mb-3 block font-semibold">Starting Point (GPS)</Label>
               <div className="grid grid-cols-2 gap-4">
@@ -1063,7 +1080,9 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 💡 Tip: Right-click any location on Google Maps and click the coordinates to copy them.
               </p>
             </div>
+            )}
 
+            {!isNarrator && (
             <div className="border-t border-slate-700 pt-5">
               <Label className="text-slate-300 mb-3 block font-semibold">Pricing &amp; Purchase</Label>
               <div className="grid grid-cols-2 gap-4">
@@ -1082,6 +1101,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 <p className="text-xs text-slate-500 mt-1">The product's checkout link at the MoR (Creem sandbox now). The in-app Buy button opens this. Swapping to Paddle later = paste the Paddle checkout link here.</p>
               </div>
             </div>
+            )}
 
             <SaveButton onSave={handleSave} saving={saving} canSave={canSave} />
           </div>
@@ -1126,6 +1146,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 trailPath={form.trail_path}
                 tourCode={form.code}
                 tourCategory={form.tour_category}
+                defaultDrivingSpeedKmh={form.default_driving_speed_kmh}
                 onSave={handleSave}
                 saving={saving}
                 userRole={userRole}
