@@ -17,6 +17,57 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-15 (later) — Route Path (GPS) map editor performance fix
+Scope: `src/components/admin/TrailPathMapEditor.jsx`.
+
+Enda reported the Route Path (GPS) editor on the real "BOR" (Battle of the
+Rivers) tour "zooms in extremely slow, if at all" — not missing, just
+unusable. Root cause: the editor rendered one full Leaflet `<Marker>` (a
+DOM-based `L.divIcon`) per trail point, and BOR's imported route has 4,809
+trail points. Leaflet has to reposition every mounted marker on every
+zoom/pan animation frame, so at that count zooming became effectively
+unusable.
+
+Fix: added a `POINT_MARKER_MIN_ZOOM = 15` constant and a new `PointMarkers`
+sub-component (using `useMap`/`useMapEvents` from react-leaflet) that only
+mounts point markers once zoomed to street level or closer, and only for
+points inside the current viewport (padded 30% so they don't pop in/out
+right at the edge while panning). Replaced the old unconditional
+`{trailPath.map(...)}` marker block with `<PointMarkers .../>`, and added a
+UI hint in the stats footer (shown when `trailPath.length > 500`) explaining
+why points appear only once zoomed in.
+
+Confirmed no functionality was lost: Add mode's click-to-insert, Delete
+mode's box-select, and Cut mode's segment-break are all position/geometry
+based (not marker-based), so all three still work fully zoomed out. Only
+per-point drag and per-point click-to-delete now require zooming in past
+level 15 — a direct, intentional tradeoff to fix the reported bug.
+
+Verified: `npm run build` clean (exit 0); `npm run lint` shows the same
+pre-existing 18-error baseline as before this change (all
+`unused-imports/no-unused-imports`, none in this file). Not yet visually
+verified against the live BOR tour in Base44 — Enda to confirm after
+redeploy.
+
+## 2026-08-15 — GPX/KML export locked to Admin only
+Scope: `src/components/admin/WalkEditor.jsx` (one line).
+
+Enda flagged that the "Export Driving Audio Tour" panel (GPX/KML download
+buttons, `DrivingTourExportPanel.jsx`) must never be reachable by any user —
+GPX/KML are for internal route editing and final tour production only. It was
+rendering for both Admin and Narrator roles in the Preview tab with no gate at
+all. Confirmed `generateGpx`/`generateKml`/`downloadTextFile`
+(`src/lib/routeExport.js`) are pure client-side — no backend function is
+involved (checked `base44/functions/` for anything gpx/kml/export-related:
+none exists), so there's no separate server endpoint to lock down; the only
+fix needed was the UI gate. Wrapped `<DrivingTourExportPanel>` in
+`{!isNarrator && (...)}`, matching the same admin-only pattern used for speed
+and pricing fields in the Phase 1 work above.
+
+Not yet done: build/lint verification for this change, and pushing to
+Base44 — Enda still needs to redeploy per the earlier per-file force-deploy
+workaround once this is confirmed.
+
 ## 2026-08-14 (later same day) — Phase 1: real backend access control, ownership, and speed lock-down for Walk
 Scope: implements the Phase 1 plan Enda approved off the Simulator audit below
 (access control + ownership + speed security first; the per-segment

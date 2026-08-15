@@ -124,6 +124,58 @@ const trailDot = (mode) => L.divIcon({
   iconAnchor: [6.5, 6.5],
 });
 
+// Below this zoom, individual GPS points are too close together to usefully click or
+// drag anyway, and long imports (a full driving route easily has several thousand raw
+// points) made zooming unusable when every single one was a real Leaflet marker —
+// Leaflet has to reposition every mounted marker on every zoom/pan frame. Point markers
+// only mount once you're zoomed in this far, and even then only for points inside the
+// current view (+30% padding so they don't pop in/out right at the edge while panning).
+// Add/Delete/Cut all still work fully zoomed out — click-to-add, box-delete and
+// segment-cut are all position/geometry-based, not marker-based.
+const POINT_MARKER_MIN_ZOOM = 15;
+
+function PointMarkers({ trailPath, mode, onMove, onDeleteClick }) {
+  const map = useMap();
+  const [view, setView] = useState(() => ({ zoom: map.getZoom(), bounds: map.getBounds() }));
+  useMapEvents({
+    zoomend: () => setView({ zoom: map.getZoom(), bounds: map.getBounds() }),
+    moveend: () => setView({ zoom: map.getZoom(), bounds: map.getBounds() }),
+  });
+
+  if (view.zoom < POINT_MARKER_MIN_ZOOM) return null;
+
+  const padded = view.bounds.pad(0.3);
+  const visibleIdx = [];
+  for (let i = 0; i < trailPath.length; i++) {
+    const p = trailPath[i];
+    if (padded.contains([p.lat, p.lng])) visibleIdx.push(i);
+  }
+
+  return visibleIdx.map((i) => {
+    const p = trailPath[i];
+    return (
+      <Marker
+        key={`pt-${i}`}
+        position={[p.lat, p.lng]}
+        icon={trailDot(mode)}
+        draggable={mode === 'add'}
+        eventHandlers={{
+          dragend: (e) => {
+            const ll = e.target.getLatLng();
+            onMove(i, { lat: ll.lat, lng: ll.lng });
+          },
+          click: (e) => {
+            if (mode === 'delete') {
+              e.originalEvent.stopPropagation?.();
+              onDeleteClick(i);
+            }
+          },
+        }}
+      />
+    );
+  });
+}
+
 export default function TrailPathMapEditor({ trailPath, onChange, trailBreaks = [], onBreaksChange, waypoints = [], initialMode = 'add' }) {
   const [mode, setMode] = useState(initialMode); // 'add' | 'delete' | 'cut'
 
@@ -308,34 +360,18 @@ export default function TrailPathMapEditor({ trailPath, onChange, trailBreaks = 
             );
           })()}
 
-          {/* Draggable trail points */}
-          {trailPath.map((p, i) => (
-            <Marker
-              key={`pt-${i}`}
-              position={[p.lat, p.lng]}
-              icon={trailDot(mode)}
-              draggable={mode === 'add'}
-              eventHandlers={{
-                dragend: (e) => {
-                  const ll = e.target.getLatLng();
-                  movePoint(i, { lat: ll.lat, lng: ll.lng });
-                },
-                click: (e) => {
-                  if (mode === 'delete') {
-                    e.originalEvent.stopPropagation?.();
-                    removePoint(i);
-                  }
-                },
-              }}
-            />
-          ))}
+          {/* Draggable trail points — only mounted once zoomed in enough, see PointMarkers */}
+          <PointMarkers trailPath={trailPath} mode={mode} onMove={movePoint} onDeleteClick={removePoint} />
         </MapContainer>
       </div>
 
-      <div className="flex items-center gap-4 text-xs text-slate-400">
+      <div className="flex items-center gap-4 text-xs text-slate-400 flex-wrap">
         <span className="flex items-center gap-1"><MapPin className="w-3 h-3 text-amber-400" /> Trail points: {trailPath.length}</span>
         <span className="flex items-center gap-1"><Scissors className="w-3 h-3 text-purple-400" /> Cuts: {(trailBreaks || []).filter(b => Number.isInteger(b) && b >= 0 && b < trailPath.length - 1).length}</span>
         <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full bg-blue-500" /> Waypoints: {waypoints.length}</span>
+        {trailPath.length > 500 && (
+          <span className="text-slate-500">Individual points appear once you zoom in closer — this keeps a {trailPath.length.toLocaleString()}-point route responsive.</span>
+        )}
       </div>
     </div>
   );
