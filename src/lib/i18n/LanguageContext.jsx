@@ -32,7 +32,8 @@ export function LanguageProvider({ children }) {
 
   const loadOverrides = useCallback(async () => {
     try {
-      const list = await base44.entities.Translation.list('-updated_date', 1000);
+      const res = await base44.functions.invoke('getTranslationOverrides', {});
+      const list = res?.data?.translations || [];
       const ov = {};
       for (const r of (list || [])) {
         if (!r || !r.key || !r.lang) continue;

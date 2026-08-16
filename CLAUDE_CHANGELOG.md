@@ -17,62 +17,46 @@ Pulled: 2026-08-03
 
 ---
 
-## 2026-08-15 (later) — Tour language swapping made fully opt-in — replaces the automatic version entirely
-Scope: new `base44/entities/TourLanguagePref.jsonc`, rewrote
-`base44/functions/getWalkCatalog/entry.ts`, new
-`base44/functions/setTourLanguagePref/entry.ts`, new
-`src/components/walks/LanguageSwapPrompt.jsx`, `src/pages/Home.jsx`,
-`src/pages/MyWalks.jsx`, `src/lib/i18n/index.js` (+4 keys:
-`swap.title`, `swap.body`, `swap.yes`, `swap.no`).
+## 2026-08-16 — Major finding: translation corrections likely never reached real customers at all — fixed in both places
+Scope: new `base44/functions/getTranslationOverrides/entry.ts`,
+`src/components/admin/TranslationsManager.jsx`,
+`src/lib/i18n/LanguageContext.jsx`.
 
-Enda's explicit, firm correction to an earlier decision: the previous
-system swapped a customer's tour language automatically and silently
-whenever a better-matching translation became available — built that
-way deliberately, on an earlier explicit request. Enda reversed that
-today: nothing may ever change what a customer already has without
-them actively opting in — never presented as a done deal, always a
-real yes/no they have to answer themselves.
+Started from Enda's German narrator reporting that a saved
+translation appeared to "flip back to English" immediately after
+saving. Traced precisely: the save itself was genuinely working —
+`saveTranslation` already correctly used `asServiceRole`, the write
+was real. The bug was in what happens immediately after: the reload
+that refreshes the screen to show the result used a *direct*
+client-side `base44.entities.Translation.list()` call — the one place
+in this whole narrator-editing flow that hadn't been routed through a
+dedicated backend function, the same reason every other piece of
+narrator functionality in this app needed one in the first place (a
+narrator has no genuine Base44 login session at all). Her save landed
+correctly in the database; the very next thing that happened, showing
+her the result, likely failed silently and fell back to the
+uncorrected baseline — making a working save look like it had done
+nothing.
 
-Rebuilt the mechanism from the ground up rather than patch the old
-one, since the two approaches are fundamentally different, not a
-tweak of each other:
+**Checked further and found the identical pattern in the live,
+customer-facing app itself** — `LanguageContext.jsx`'s own
+`loadOverrides`, the function responsible for showing every narrator's
+corrections to real customers, used the exact same direct client call,
+wrapped in a silent catch that would swallow any failure with zero
+indication anything was wrong. Regular customers don't have a genuine
+Base44 session either, for the same underlying reason. This raises a
+real possibility worth being direct about: corrections narrators have
+saved — not just today's German work, potentially the existing Dutch
+and Czech corrections too — may never have actually reached a real
+customer's screen, despite being genuinely saved and genuinely
+correct in the database the whole time.
 
-- **New `TourLanguagePref` record, per customer per tour.** The first
-  time a customer ever reaches a given tour, a sensible starting
-  language is picked (same priority as before — narration preference,
-  then English, then alphabetical) and locked in immediately. This
-  one-time pick isn't a "swap" needing consent — there's nothing
-  prior to override yet.
-- **After that, `getWalkCatalog` always honors the locked choice**,
-  regardless of narration preference, full stop — checked precisely:
-  the active version served is read from this record, not
-  recalculated fresh each time the way it was before.
-- **A better match becoming available is reported as an offer, never
-  applied.** The catalog response now carries `_swap_offer` on a tour
-  when a genuinely different, not-yet-declined language exists that
-  matches the customer's current preference — the front end surfaces
-  this as an actual dialog (new `LanguageSwapPrompt` component,
-  wired into both Home and My Library, shown one tour at a time so
-  nobody's asked to decide on several at once).
-- **A real "no" is recorded as a real no**, not just dismissed and
-  forgotten — declining (or closing the dialog any other way, which
-  behaves identically to Decline, never as a silent Accept) stores
-  that specific language as declined for that tour, so the same offer
-  isn't repeated, while `accepted_language` stays completely
-  untouched either way.
-- **New `setTourLanguagePref` function is the only place a locked
-  language can ever change post-setup** — real WP-token auth, and it
-  only ever runs from an explicit tap on Yes or No in the actual
-  prompt, never as a side effect of anything else.
-
-Checked one deliberate edge case directly: if a customer's already-
-accepted language is later unpublished again (temporarily paused for
-edits, say), the catalog quietly falls back to showing something else
-for that one load, but their actual stored preference is left
-completely alone — if their language comes back, they see it again
-automatically, since nothing about their real choice was ever changed
-in the first place. That's a temporary display gap, not a second
-consent event, and deliberately isn't offered as a "swap."
+Fixed at the root, not patched per-symptom: one new function,
+`getTranslationOverrides`, using `asServiceRole` so it works
+regardless of who's asking — reused in both places (the narrator's own
+editing tool, and the live app every customer actually uses). Swept
+the rest of the codebase directly afterward and confirmed these were
+the only two places this specific pattern existed anywhere.
 
 Built and verified clean.
 
