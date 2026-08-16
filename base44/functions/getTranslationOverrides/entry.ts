@@ -15,7 +15,9 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 // allows public read (the live customer-facing app relies on that same openness to show
 // corrected translations to everyone), so this just serves the same already-public data
 // through a path that actually works for a narrator's session too.
-export default async function(req) {
+export default async function(req) 
+
+{
   try {
     const base44 = createClientFromRequest(req);
     const list = await base44.asServiceRole.entities.Translation.list('-updated_date', 1000);
