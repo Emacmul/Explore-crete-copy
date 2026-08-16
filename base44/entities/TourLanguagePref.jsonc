@@ -1,0 +1,56 @@
+{
+  "name": "TourLanguagePref",
+  "type": "object",
+  "properties": {
+    "buyer_email": {
+      "type": "string",
+      "description": "Email of the customer this preference belongs to (lowercased)."
+    },
+    "walk_id": {
+      "type": "string",
+      "description": "The STABLE tour-family id (the original tour's own id — matches getWalkCatalog's _family_id/out.id, not any one language clone's own id)."
+    },
+    "accepted_language": {
+      "type": "string",
+      "description": "The language this customer's copy of the tour is currently locked to (e.g. \"English\", \"German\"). Set once, automatically, the first time they ever access the tour (their starting default) — after that, only ever changes when they explicitly accept a swap offer. Never changed silently."
+    },
+    "declined_languages": {
+      "type": "string",
+      "description": "Comma-separated list of languages this customer has been offered and said no to, for this specific tour — so the same offer isn't repeated once declined. Does not affect accepted_language."
+    }
+  },
+  "required": [
+    "buyer_email",
+    "walk_id",
+    "accepted_language"
+  ],
+  "rls": {
+    "read": {
+      "$or": [
+        {
+          "data.buyer_email": "{{user.email}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

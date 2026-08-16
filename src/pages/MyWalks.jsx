@@ -12,6 +12,7 @@ import WalkCard from '../components/walks/WalkCard';
 import WalkDetail from '../components/walks/WalkDetail';
 import OfflineBadge from '../components/walks/OfflineBadge';
 import DownloadButton from '../components/walks/DownloadButton';
+import LanguageSwapPrompt from '../components/walks/LanguageSwapPrompt';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 // Shows every tour the customer actually owns (purchased + free samples), regardless of
@@ -26,16 +27,24 @@ export default function MyWalks() {
 
   // Same query key as Home.jsx's catalog fetch, so this shares the same cached data
   // instead of re-fetching separately or risking the two screens disagreeing.
-  const { data: walks = [], isLoading } = useQuery({
+  const { data: walks = [], isLoading, refetch: refetchWalks } = useQuery({
     queryKey: ['walkCatalog', token, effectiveNarrationLang],
     queryFn: async () => (await base44.functions.invoke('getWalkCatalog', { token, narrationLang: effectiveNarrationLang })).data.walks || [],
     enabled: !!token,
   });
 
   const ownedWalks = walks.filter(w => w._accessible !== false);
+  const pendingSwap = ownedWalks.find(w => w._swap_offer);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-amber-50">
+      {pendingSwap && (
+        <LanguageSwapPrompt
+          walk={pendingSwap}
+          token={token}
+          onDone={refetchWalks}
+        />
+      )}
       <header className="bg-white/80 backdrop-blur-md border-b sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center gap-3">
           <Link to={createPageUrl('Home')}>

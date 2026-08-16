@@ -17,6 +17,67 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-15 (later) — Tour language swapping made fully opt-in — replaces the automatic version entirely
+Scope: new `base44/entities/TourLanguagePref.jsonc`, rewrote
+`base44/functions/getWalkCatalog/entry.ts`, new
+`base44/functions/setTourLanguagePref/entry.ts`, new
+`src/components/walks/LanguageSwapPrompt.jsx`, `src/pages/Home.jsx`,
+`src/pages/MyWalks.jsx`, `src/lib/i18n/index.js` (+4 keys:
+`swap.title`, `swap.body`, `swap.yes`, `swap.no`).
+
+Enda's explicit, firm correction to an earlier decision: the previous
+system swapped a customer's tour language automatically and silently
+whenever a better-matching translation became available — built that
+way deliberately, on an earlier explicit request. Enda reversed that
+today: nothing may ever change what a customer already has without
+them actively opting in — never presented as a done deal, always a
+real yes/no they have to answer themselves.
+
+Rebuilt the mechanism from the ground up rather than patch the old
+one, since the two approaches are fundamentally different, not a
+tweak of each other:
+
+- **New `TourLanguagePref` record, per customer per tour.** The first
+  time a customer ever reaches a given tour, a sensible starting
+  language is picked (same priority as before — narration preference,
+  then English, then alphabetical) and locked in immediately. This
+  one-time pick isn't a "swap" needing consent — there's nothing
+  prior to override yet.
+- **After that, `getWalkCatalog` always honors the locked choice**,
+  regardless of narration preference, full stop — checked precisely:
+  the active version served is read from this record, not
+  recalculated fresh each time the way it was before.
+- **A better match becoming available is reported as an offer, never
+  applied.** The catalog response now carries `_swap_offer` on a tour
+  when a genuinely different, not-yet-declined language exists that
+  matches the customer's current preference — the front end surfaces
+  this as an actual dialog (new `LanguageSwapPrompt` component,
+  wired into both Home and My Library, shown one tour at a time so
+  nobody's asked to decide on several at once).
+- **A real "no" is recorded as a real no**, not just dismissed and
+  forgotten — declining (or closing the dialog any other way, which
+  behaves identically to Decline, never as a silent Accept) stores
+  that specific language as declined for that tour, so the same offer
+  isn't repeated, while `accepted_language` stays completely
+  untouched either way.
+- **New `setTourLanguagePref` function is the only place a locked
+  language can ever change post-setup** — real WP-token auth, and it
+  only ever runs from an explicit tap on Yes or No in the actual
+  prompt, never as a side effect of anything else.
+
+Checked one deliberate edge case directly: if a customer's already-
+accepted language is later unpublished again (temporarily paused for
+edits, say), the catalog quietly falls back to showing something else
+for that one load, but their actual stored preference is left
+completely alone — if their language comes back, they see it again
+automatically, since nothing about their real choice was ever changed
+in the first place. That's a temporary display gap, not a second
+consent event, and deliberately isn't offered as a "swap."
+
+Built and verified clean.
+
+---
+
 ## 2026-08-15 (later) — Route Path (GPS) map editor performance fix
 Scope: `src/components/admin/TrailPathMapEditor.jsx`.
 

@@ -16,6 +16,7 @@ import SplashScreen from '../components/onboarding/SplashScreen';
 import { getTourCategory, TOUR_CATEGORIES } from '../lib/tourCategories';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@/components/ui/select';
 import InstallPrompt from '../components/InstallPrompt';
+import LanguageSwapPrompt from '../components/walks/LanguageSwapPrompt';
 import LanguagePicker from '@/components/ui/LanguagePicker';
 import NarrationLanguagePicker from '@/components/ui/NarrationLanguagePicker';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
@@ -87,6 +88,11 @@ export default function Home() {
     walks.forEach(w => (w._available_langs || []).forEach(l => set.add(l)));
     return [...set];
   }, [walks]);
+
+  // Any owned tour where a better-matching language has become available since the
+  // customer's language was locked in. Shown one at a time via LanguageSwapPrompt — never
+  // applied automatically, purely an offer the customer can accept or decline.
+  const pendingSwap = useMemo(() => walks.find(w => w._swap_offer), [walks]);
 
   useEffect(() => {
     if (!walks.length || updatingRef.current) return;
@@ -201,6 +207,13 @@ export default function Home() {
 
       <UpdateInProgressModal walkName={updatingWalkName} />
       <InstallPrompt />
+      {pendingSwap && (
+        <LanguageSwapPrompt
+          walk={pendingSwap}
+          token={token}
+          onDone={refetchWalks}
+        />
+      )}
 
       <header className="bg-white/80 backdrop-blur-md border-b sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-y-2">
