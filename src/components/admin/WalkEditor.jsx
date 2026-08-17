@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Save, Loader2, Pencil, Check, X, Upload, FileUp, CheckCircle2, Download, AlertTriangle, FileDown } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Pencil, Check, X, Upload, FileUp, CheckCircle2, Download, AlertTriangle, FileDown, RefreshCw } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import FitParser from 'fit-file-parser';
 import WaypointEditor from './WaypointEditor';
@@ -228,6 +228,29 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   const routeWaypoints = async (points, profile) => {
     const res = await base44.functions.invoke('routeWaypoints', { points, profile });
     return res.data.trail;
+  };
+
+  // Re-runs road routing on the waypoints already loaded in the form — for when the free
+  // routing service fails (a real, known possibility, not hypothetical — this hit twice in
+  // a row on a 124-point tour) and produces the straight-line fallback. Lets that be retried
+  // directly, without needing to re-import the whole GPX file from scratch.
+  const handleRetryRouting = async () => {
+    if (!form.waypoints || form.waypoints.length < 2) return;
+    setRouteFetching(true);
+    try {
+      const profile = form.tour_category === 'DDV' ? 'driving' : 'foot';
+      const ordered = form.waypoints.map(wp => ({ lat: wp.lat, lng: wp.lng }));
+      const routed = await routeWaypoints(ordered, profile);
+      if (routed && routed.length > 1) {
+        set('trail_path', routed);
+        toast({ title: 'Route rebuilt', description: 'The road-following path has been regenerated from the current waypoints.' });
+      } else {
+        toast({ variant: 'destructive', title: 'Road routing returned no path', description: 'Still falling back to straight lines. Try again in a moment.' });
+      }
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Road routing failed', description: err?.message || 'Could not reach the routing service. Try again in a moment.' });
+    }
+    setRouteFetching(false);
   };
 
   const handleGpxImport = (e) => {
@@ -802,6 +825,18 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                      {(gpxImporting || elevFetching || routeFetching) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                      {gpxImporting ? 'Reading…' : routeFetching ? 'Routing path…' : elevFetching ? 'Fetching elevation…' : 'Choose GPX / FIT'}
                    </label>
+
+                  {form.waypoints?.length >= 2 && (
+                    <button
+                      type="button"
+                      onClick={handleRetryRouting}
+                      disabled={gpxImporting || elevFetching || routeFetching}
+                      title="Regenerate the road-following path from the current waypoints — use this if road routing failed on import"
+                      className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium bg-slate-700 hover:bg-slate-600 text-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0"
+                    >
+                      <RefreshCw className="w-4 h-4" /> Retry routing
+                    </button>
+                  )}
                 </>
               )}
             </div>

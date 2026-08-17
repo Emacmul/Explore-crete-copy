@@ -17,6 +17,35 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-16 (later) — Road-routing 502 fixed at the cause, plus a real Retry button
+Scope: `base44/functions/routeWaypoints/entry.ts`,
+`src/components/admin/WalkEditor.jsx`.
+
+Enda's 124-point GPX import hit "Road routing failed — 502" twice in
+a row, falling back to straight lines connecting waypoints in import
+order rather than a real route. Confirmed his data was never at risk
+either time — the fallback only ever affects the trail LINE, the
+waypoints themselves were untouched.
+
+Traced the actual cause: the routing service is a free, public OSRM
+demo server, not a dedicated paid one, and the code fires off several
+batched requests to it back-to-back with no pause between them — this
+tour needed about 5 separate calls. That's exactly the request shape
+that trips a shared public server's own rate limiting, which fits two
+consecutive failures far better than one-off bad luck. Added a short
+pause between successive batches (not just the retry backoff that
+already existed within a single batch) specifically to avoid
+triggering that.
+
+Also added a genuine "Retry routing" button next to the GPX import
+control — re-runs road routing on whatever waypoints are already
+loaded in the editor, without needing to re-import the GPX file from
+scratch if this happens again in the future.
+
+Built and verified clean.
+
+---
+
 ## 2026-08-16 — Major finding: translation corrections likely never reached real customers at all — fixed in both places
 Scope: new `base44/functions/getTranslationOverrides/entry.ts`,
 `src/components/admin/TranslationsManager.jsx`,

@@ -42,12 +42,17 @@ Deno.serve(async (req) => {
       return Response.json({ trail, pointCount: trail.length });
     }
 
-    // Chunk with a 1-point overlap so consecutive segments connect smoothly.
+    // Chunk with a 1-point overlap so consecutive segments connect smoothly. A small pause
+    // between successive chunks — not just the existing retry backoff within one chunk —
+    // since firing several requests back-to-back in quick succession is exactly the pattern
+    // that trips this free public server's own rate limiting; this tour needed 5 separate
+    // chunk calls and hit it twice in a row.
     const trail = [];
     let first = true;
     for (let i = 0; i < points.length; i += BATCH - 1) {
       const chunk = points.slice(i, i + BATCH);
       if (chunk.length < 2) break;
+      if (!first) await new Promise(r => setTimeout(r, 400));
       const seg = await routeChunk(chunk, p);
       trail.push(...(first ? seg : seg.slice(1)));
       first = false;
