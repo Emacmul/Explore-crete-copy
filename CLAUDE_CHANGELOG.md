@@ -17,6 +17,36 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-17 — "Choose GPX / FIT" now accepts an Activity file and a Waypoints file together, merged automatically
+Scope: `src/components/admin/WalkEditor.jsx` only.
+
+Direct follow-up to today's manual merge (Ride with GPS attempt, then
+a chat-based merge as a workaround) — Enda asked for the actual fix:
+select both eTrex files at once, in the admin panel itself, no
+external tool or manual step needed ever again.
+
+Restructured `handleGpxImport` to accept one or two files instead of
+always exactly one. With two files, their track points and waypoints
+are combined in memory before anything else happens — everything
+after that point (sequence sorting, segment ID building, elevation
+fetching, applying the result to the form) is the exact same code
+that already ran for a single file, completely unchanged, so this
+carries zero new risk to the existing single-file import path. FIT
+files are unaffected — still exactly one at a time, since they need
+a different binary parser entirely and can't be combined with a GPX
+in the same pass; selecting a FIT alongside anything else now shows a
+clear message explaining that, rather than silently doing the wrong
+thing.
+
+The file picker itself now allows selecting two files (Ctrl/Cmd-click
+both in the file dialog), with the description text updated to
+explain this directly, since it's not an obvious capability of a
+plain file input otherwise.
+
+Built and verified clean.
+
+---
+
 ## 2026-08-16 (later) — Road-routing 502 fixed at the cause, plus a real Retry button
 Scope: `base44/functions/routeWaypoints/entry.ts`,
 `src/components/admin/WalkEditor.jsx`.

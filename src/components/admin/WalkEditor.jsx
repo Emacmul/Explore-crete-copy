@@ -253,19 +253,31 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
     setRouteFetching(false);
   };
 
-  const handleGpxImport = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+  // Accepts 1 or 2 GPX files. With 2 (an Activity file with the recorded track, and a
+  // separate Waypoints file with named points — exactly what an eTrex produces as two
+  // files), their track points and waypoints are combined before anything else happens,
+  // so the rest of this function — sorting, segment building, elevation, everything below
+  // — runs completely unchanged, exactly as it always has for a single file. This is what
+  // used to require manually merging the two files outside the app first.
+  const handleGpxImport = (files) => {
+    const fileList = Array.from(files).filter(Boolean);
+    if (fileList.length === 0) return;
     setGpxImporting(true);
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(ev.target.result, 'application/xml');
 
-      // Support track points, route points (Garmin Explore), or fall back to waypoints
-      const trkpts = Array.from(doc.querySelectorAll('trkpt'));
-      const rtepts = Array.from(doc.querySelectorAll('rtept'));
-      const wpts = Array.from(doc.querySelectorAll('wpt'));
+    Promise.all(fileList.map(file => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => resolve(ev.target.result);
+      reader.onerror = reject;
+      reader.readAsText(file);
+    }))).then(async (texts) => {
+      const parser = new DOMParser();
+      const docs = texts.map(text => parser.parseFromString(text, 'application/xml'));
+
+      // Combine across however many files were given — normally 1, or 2 when an eTrex's
+      // separate Activity and Waypoints files are both selected at once.
+      const trkpts = docs.flatMap(doc => Array.from(doc.querySelectorAll('trkpt')));
+      const rtepts = docs.flatMap(doc => Array.from(doc.querySelectorAll('rtept')));
+      const wpts = docs.flatMap(doc => Array.from(doc.querySelectorAll('wpt')));
 
       // Sort waypoints by naming convention (XXX<segment><letter>[-PS]) so that
       // BOTH the route line and the waypoint list follow the correct sequence
@@ -408,9 +420,11 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
       }
 
       applyImportedData(trailPath, waypoints, elevations);
-    };
-    reader.readAsText(file);
-    e.target.value = '';
+    }).catch((err) => {
+      console.error('GPX import failed:', err);
+      setGpxImporting(false);
+      toast({ variant: 'destructive', title: 'Could not read file(s)', description: err?.message || 'Please check the file(s) and try again.' });
+    });
   };
 
   const handleFitImport = (e) => {
@@ -542,12 +556,22 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
       e.target.value = '';
       return;
     }
-    const file = e.target.files[0];
-    if (!file) return;
-    if (file.name.toLowerCase().endsWith('.fit')) {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    // A FIT file needs its own binary parser and can't be combined with a GPX in the same
+    // pass — only supported one at a time, exactly as before.
+    if (files.length > 1 && files.some(f => f.name.toLowerCase().endsWith('.fit'))) {
+      toast({ variant: 'destructive', title: 'Cannot combine a FIT file with another file', description: 'Select either one FIT file, or one or two GPX files (an Activity file and a Waypoints file).' });
+      e.target.value = '';
+      return;
+    }
+
+    if (files.length === 1 && files[0].name.toLowerCase().endsWith('.fit')) {
       handleFitImport(e);
     } else {
-      handleGpxImport(e);
+      handleGpxImport(files);
+      e.target.value = '';
     }
   };
 
@@ -803,7 +827,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 <p className="text-blue-200 text-sm font-medium">Import from GPX or FIT</p>
                 <p className="text-blue-400 text-xs">
                   {canImportGpx
-                    ? 'Pre-fills start point, trail path, waypoints, distance & elevation from your eTrex GPX or FIT file'
+                    ? 'Pre-fills start point, trail path, waypoints, distance & elevation. Select one file, or select both your Activity GPX and Waypoints GPX together (Ctrl/Cmd-click both) and they\'ll be combined automatically — no need to merge them yourself first.'
                     : `Select Route Type and fill in the ${isDrivingAudioTour ? 'Tour' : 'Route'} Code and Name above first — waypoint IDs and shape are built from these`}
                 </p>
               </div>
@@ -813,7 +837,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 </span>
               ) : (
                 <>
-                  <input ref={gpxInputRef} id="gpx-input" type="file" accept=".gpx,.fit,application/gpx+xml" className="sr-only" disabled={!canImportGpx} onChange={(e) => { handleFileImport(e); }} />
+                  <input ref={gpxInputRef} id="gpx-input" type="file" accept=".gpx,.fit,application/gpx+xml" multiple className="sr-only" disabled={!canImportGpx} onChange={(e) => { handleFileImport(e); }} />
                   <label
                     htmlFor={canImportGpx ? "gpx-input" : undefined}
                     className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors shrink-0 ${
