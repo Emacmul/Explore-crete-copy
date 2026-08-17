@@ -27,7 +27,6 @@ async function routeChunk(coords, profile, attempt = 0) {
   return data.routes[0].geometry.coordinates.map(c => ({ lat: c[1], lng: c[0] }));
 }
 
-
 Deno.serve(async (req) => {
   // Unauthenticated: routing is a read-only call to the public OSRM router and holds no
   // sensitive data. Admin/narrator users sign in via WordPress (not Base44), so an auth
