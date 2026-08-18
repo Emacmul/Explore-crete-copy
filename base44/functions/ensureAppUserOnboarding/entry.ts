@@ -21,7 +21,7 @@ export default async function (req) {
     // trusted once WordPress itself has confirmed the token is genuine, since anyone could
     // otherwise hand-construct a fake token claiming to be any WordPress user.
     let wpId = null;
-    if (token && (await isTokenGenuine(token))) {
+    if (token && (await isTokenGenuine(token, Deno.env.get('WC_SITE_URL')))) {
       try {
         const parts = String(token).split('.');
         if (parts.length === 3) {

@@ -17,6 +17,38 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-18 (even later) — Fixed: previous security fix itself exposed a secret from the wrong location
+Scope: `base44/shared/wpToken.ts` (rewritten again),
+`base44/functions/getMembershipStatus/`, `getOwnedProductIds/`,
+`getWalkCatalog/`, `manageApiKeys/`, `setTourLanguagePref/`,
+`syncLibrary/`, `ensureAppUserOnboarding/` (all 7 updated).
+
+A re-run of Base44's security scan surfaced a new Critical finding
+directly caused by the previous entry's own fix: `Deno.env.get('WC_SITE_URL')`
+was being called inside `wpToken.ts`, a shared module — not an actual
+backend function file — which Base44 correctly flags as an exposed-
+secret pattern regardless of whether the value itself ever actually
+leaked anywhere.
+
+Fixed by moving the secret read to where it belongs: every one of the
+7 functions that calls the token-verification helpers now reads
+`Deno.env.get('WC_SITE_URL')` itself, inside its own real function
+file, and passes it in as a plain argument. The shared module no
+longer touches `Deno.env` at all — confirmed directly, not assumed.
+
+Also confirmed directly (not assumed) that the 4 entity RLS fixes and
+the identity-spoofing fix from the previous entry are genuinely live
+on GitHub right now — pulled the actual repository and checked both.
+The remaining items in that same scan screenshot showing as still
+open are very likely the scan reflecting a run from before this
+delivery's predecessor had fully landed, not real unresolved problems
+— worth re-running the scan fresh after this one lands to get an
+accurate, current picture.
+
+Built and verified clean.
+
+---
+
 ## 2026-08-18 (later still) — Security scan findings: all addressed, verified end to end
 Scope: `base44/shared/wpToken.ts` (rewritten), `base44/entities/ActiveSession.jsonc`,
 `Device.jsonc`, `DeviceChallenge.jsonc`, `Narrator.jsonc` (+admin-only read RLS),

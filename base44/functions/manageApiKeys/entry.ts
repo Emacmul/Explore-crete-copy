@@ -28,7 +28,7 @@ export default async function(req) {
     } catch { /* no Base44 session — try the narrator token path below */ }
 
     if (!email) {
-      email = await verifyEmailFromToken(token);
+      email = await verifyEmailFromToken(token, Deno.env.get('WC_SITE_URL'));
     }
     if (!email) {
       return Response.json({ error: 'Not authorized' }, { status: 403 });

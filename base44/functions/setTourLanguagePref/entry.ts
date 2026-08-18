@@ -14,7 +14,7 @@ export default async function(req) {
     const body = await req.json().catch(() => ({}));
     const { token, walkId, language, action } = body || {};
 
-    const email = await verifyEmailFromToken(token);
+    const email = await verifyEmailFromToken(token, Deno.env.get('WC_SITE_URL'));
     if (!email) {
       return Response.json({ error: 'Not authorized' }, { status: 403 });
     }

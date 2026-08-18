@@ -14,7 +14,7 @@ Deno.serve(async (req) => {
     // Confirm this token is genuinely real, issued by WordPress, before trusting anything
     // decoded from it below — without this, anyone could hand-construct a fake token
     // claiming to be any customer's WordPress user ID and email.
-    if (!(await isTokenGenuine(token))) {
+    if (!(await isTokenGenuine(token, Deno.env.get('WC_SITE_URL')))) {
       return Response.json({ error: 'Invalid or expired token' }, { status: 401 });
     }
 

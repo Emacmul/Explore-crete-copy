@@ -38,7 +38,7 @@ export default async function(req) {
   try {
     const base44 = createClientFromRequest(req);
     const body = await req.json().catch(() => ({}));
-    const email = await verifyEmailFromToken(body.token);
+    const email = await verifyEmailFromToken(body.token, Deno.env.get('WC_SITE_URL'));
     const narrationLang = body.narrationLang || 'English';
 
     // Owned product ids by email. Entitlement is decided HERE, by the ORIGINAL's product id

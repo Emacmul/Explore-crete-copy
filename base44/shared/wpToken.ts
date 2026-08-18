@@ -34,10 +34,13 @@ export function getEmailFromToken(token) {
 // pulling someone else's saved Google/Groq API keys out of manageApiKeys. Costs one extra
 // network call to WordPress per request; that's the correct tradeoff for genuine identity
 // verification, not a shortcut worth avoiding.
-export async function verifyEmailFromToken(token) {
-  if (!token) return null;
-  const siteUrl = Deno.env.get('WC_SITE_URL');
-  if (!siteUrl) return null; // server misconfigured — fail closed, never trust an unverified token
+//
+// `siteUrl` is passed in rather than read here directly — this file is a shared module,
+// not a backend function file, and secrets should only ever be read from within an actual
+// function's own entry point. Every caller reads Deno.env.get('WC_SITE_URL') itself and
+// passes it through.
+export async function verifyEmailFromToken(token, siteUrl) {
+  if (!token || !siteUrl) return null; // no site to verify against — fail closed
 
   try {
     const res = await fetch(`${siteUrl}/wp-json/jwt-auth/v1/token/validate`, {
@@ -56,11 +59,10 @@ export async function verifyEmailFromToken(token) {
 
 // For callers that need more than just the email out of the payload (a WordPress numeric
 // user ID, expiry, etc.) — confirms the token is genuine the same way verifyEmailFromToken
-// does, so the rest of the payload can then be safely decoded and trusted afterward.
-export async function isTokenGenuine(token) {
-  if (!token) return false;
-  const siteUrl = Deno.env.get('WC_SITE_URL');
-  if (!siteUrl) return false;
+// does, so the rest of the payload can then be safely decoded and trusted afterward. Same
+// siteUrl-passed-in reasoning as above.
+export async function isTokenGenuine(token, siteUrl) {
+  if (!token || !siteUrl) return false;
   try {
     const res = await fetch(`${siteUrl}/wp-json/jwt-auth/v1/token/validate`, {
       method: 'POST',
