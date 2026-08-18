@@ -17,6 +17,39 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-17 (later) — GPX/KML backup panel: real gap closed, narrators could reach it; buttons renamed "Back Up"
+Scope: `src/components/admin/WalkEditor.jsx`,
+`src/components/admin/DrivingTourExportPanel.jsx`.
+
+Enda asked for this to be admin-only. Checked directly rather than
+assume — unlike a couple of earlier "already restricted" checks this
+week, this one genuinely wasn't: the Preview tab has no narrator
+restriction on it at all (unlike the Route Path tab, which is removed
+from the tab bar entirely for a narrator), and the export panel
+rendered unconditionally whenever that tab was open. A narrator
+working on their own translated clone could have reached and used
+these buttons. Gated the panel itself specifically to admin — the map
+preview and simulator on that same tab stay available to narrators,
+since Enda's ask was about the backup files specifically, not the
+whole tab.
+
+Worth being precise about what this restriction actually is, rather
+than overstate it: unlike the segment-number fix earlier this week,
+this isn't a server-side write being blocked — generating a GPX/KML
+here is a purely client-side action, built entirely from route data
+the narrator's browser already has loaded to let them edit it in the
+first place. Hiding the button removes the easy, obvious path to grab
+a backup file; it doesn't add a new data boundary, since a narrator
+editing a clone already has legitimate access to everything in it.
+
+Also renamed every "Export" reference in this panel to "Back Up" —
+heading, description text, status message, and all three buttons —
+per Enda's request.
+
+Built and verified clean.
+
+---
+
 ## 2026-08-17 (later) — Driving tour waypoint "Description" field removed; stray "medium" pause button removed
 Scope: `src/components/admin/DrivingTourWaypointEditor.jsx`,
 `src/components/admin/NarrationTtsEditor.jsx`.

@@ -1244,7 +1244,12 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
             <AdminPreviewMap walk={form} />
             {isDrivingAudioTour && (
               <>
-                <DrivingTourExportPanel form={form} />
+                {/* Backup export is an Admin-only action — narrators can view/test the
+                    preview and simulator above, but never generate a GPX/KML backup file.
+                    This tab itself has no narrator restriction (unlike the Route Path tab,
+                    which is hidden from the tab bar entirely), so the gate has to live
+                    right here at the panel itself. */}
+                {!isNarrator && <DrivingTourExportPanel form={form} />}
                 <TourSimulator form={form} onWaypointUpdate={(index, field, value) => {
                   const updated = form.waypoints.map((wp, i) =>
                     i === index ? { ...wp, [field]: value } : wp

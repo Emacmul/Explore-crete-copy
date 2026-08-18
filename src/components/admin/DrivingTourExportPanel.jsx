@@ -49,11 +49,11 @@ export default function DrivingTourExportPanel({ form }) {
     <div className="bg-slate-700/50 rounded-xl border border-purple-600/40 p-4 space-y-4">
       <div className="flex items-center gap-2">
         <FileDown className="w-5 h-5 text-purple-400" />
-        <h3 className="text-white font-semibold">Export Driving Audio Tour</h3>
+        <h3 className="text-white font-semibold">Back Up Driving Audio Tour</h3>
       </div>
       <p className="text-slate-400 text-sm">
-        Generate GPX and KML files from this route. Both exports use the same
-        edited data — edit the route once, export both formats.
+        Generate GPX and KML backup files from this route. Both use the same
+        edited data — edit the route once, back up both formats.
       </p>
 
       {/* Validation status */}
@@ -74,29 +74,29 @@ export default function DrivingTourExportPanel({ form }) {
       {isValid && errors.length === 0 && (
         <div className="flex items-center gap-2 text-green-400 text-sm">
           <CheckCircle2 className="w-4 h-4" />
-          Route validated — ready to export.
+          Route validated — ready to back up.
         </div>
       )}
 
-      {/* Export buttons */}
+      {/* Backup buttons */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
         <Button
           onClick={handleExportGpx}
           className="bg-purple-600 hover:bg-purple-700 text-white gap-2"
         >
-          <Download className="w-4 h-4" /> Export GPX
+          <Download className="w-4 h-4" /> Back Up GPX
         </Button>
         <Button
           onClick={handleExportKml}
           className="bg-purple-600 hover:bg-purple-700 text-white gap-2"
         >
-          <Download className="w-4 h-4" /> Export KML
+          <Download className="w-4 h-4" /> Back Up KML
         </Button>
         <Button
           onClick={handleExportBoth}
           className="bg-amber-500 hover:bg-amber-600 text-white gap-2"
         >
-          <Download className="w-4 h-4" /> Export Both
+          <Download className="w-4 h-4" /> Back Up Both
         </Button>
       </div>
 
