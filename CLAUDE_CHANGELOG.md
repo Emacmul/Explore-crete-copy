@@ -17,6 +17,21 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-17 (later) — "Add New Waypoint" panel now starts closed
+Scope: `src/components/admin/DrivingTourWaypointEditor.jsx` only.
+
+Enda's ask: opening this form should be a deliberate choice, not the
+default state every time the waypoints tab loads. It was genuinely
+defaulting to open (`useState(true)`) — a one-line fix to start
+closed instead, same collapse/expand toggle already there, just not
+sprung open automatically. Checked the regular Walk/Hike waypoint
+editor for the same pattern — it doesn't build its add-waypoint UI
+this way at all, so nothing else needed the same fix.
+
+Built and verified clean.
+
+---
+
 ## 2026-08-17 (later) — GPX/KML backup panel: real gap closed, narrators could reach it; buttons renamed "Back Up"
 Scope: `src/components/admin/WalkEditor.jsx`,
 `src/components/admin/DrivingTourExportPanel.jsx`.

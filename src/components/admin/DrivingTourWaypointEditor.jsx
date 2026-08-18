@@ -198,7 +198,7 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
   const defaultSpeed = tourCategory === 'WBT' ? 3.5 : (defaultDrivingSpeedKmh || 50);
   const [expanded, setExpanded] = useState(focusWaypointIndex != null ? focusWaypointIndex : null);
   const [newWp, setNewWp] = useState({ ...EMPTY_WP, avg_segment_speed_kmh: defaultSpeed });
-  const [showAddForm, setShowAddForm] = useState(true);
+  const [showAddForm, setShowAddForm] = useState(false);
   const [addError, setAddError] = useState('');
   const [gpxImportResult, setGpxImportResult] = useState(null);
   const [testSegment, setTestSegment] = useState(null);
