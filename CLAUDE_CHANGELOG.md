@@ -24,6 +24,48 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-18 (security fix) — Base44 Security scan High finding: "Anyone can run this function" on ensureAppUserOnboarding
+Scope: `base44/functions/ensureAppUserOnboarding/entry.ts`
+**(backend function — needs manual redeploy in Base44, see standing rule above)**.
+
+Base44's own Security panel flagged this function High severity: "The function trusts
+client-supplied email addresses to query and update AppUser onboarding records without
+enforcing token verification when a token is missing or invalid."
+
+**Root cause:** the function derives `wpId` from the caller's WordPress JWT only after
+`isTokenGenuine()` confirms it with WordPress — that part was already correct. But when
+`token` was missing, invalid, or unverifiable, `wpId` just stayed `null` and the code fell
+straight through to trusting the client-supplied `email` field instead: looking a row up
+by that email, patching `registration_complete` on it, and even creating a brand-new
+AppUser row from it if none existed. Since this function's URL is public and requires no
+Base44 session (real customers have none), anyone could call it directly with an arbitrary
+email and read back that account's `role` (an admin/narrator oracle), flip its
+`registration_complete` flag, or spray junk rows into the table — with zero proof they
+were ever that person.
+
+**Fix:** the function now requires a genuine, WordPress-verified token before touching
+`AppUser` at all.
+- No `token`, or `isTokenGenuine(token, WC_SITE_URL)` returns false → immediate
+  `401 Not authorized`, no entity read or write of any kind.
+- Token verified but its payload carries no usable WordPress user id → also
+  `401 Not authorized` (fail closed rather than fall back to client email).
+- Only once a verified `wpId` is in hand does the existing lookup-by-id-then-by-email,
+  patch, and create logic run — the email fallback can now only ever affect the row
+  belonging to that one already-authenticated caller, never an arbitrary account.
+
+Confirmed the only caller (`src/pages/Home.jsx`, `checkRegistration()`) already always
+sends the real WordPress token alongside the email whenever it invokes this function (it
+only fires once `user` — the logged-in WP session — exists), so this tightening doesn't
+change behavior for any legitimate login; it only removes the unauthenticated path.
+
+**Verified:** `npx esbuild base44/functions/ensureAppUserOnboarding/entry.ts --format=esm`
+— syntax clean (Deno type-checking not available in this environment, same caveat as
+other backend function edits this session).
+**Not done:** Base44 manual redeploy (Enda's step) and re-running the Security scan to
+confirm the finding clears.
+
+---
+
 ## 2026-08-19 (narration editor fixes) — Five issues from live testing: dropped spaces on import, invalid-SSML combined audio, vanishing Stop button, scroll-heavy segment review, break duration floor
 Scope: `src/lib/fileTextExtractor.js`, `base44/functions/generateTts/entry.ts`
 **(backend function — needs manual redeploy in Base44, see standing rule above)**,

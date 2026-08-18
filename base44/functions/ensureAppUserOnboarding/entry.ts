@@ -17,30 +17,50 @@ export default async function (req) {
     const { token, display_name } = body;
     const clientEmail = String(body.email || '').toLowerCase().trim();
 
-    // WP user id from the token payload (same decode wpLogin uses client-side) — only
-    // trusted once WordPress itself has confirmed the token is genuine, since anyone could
-    // otherwise hand-construct a fake token claiming to be any WordPress user.
+    // SECURITY: this function reads/writes AppUser rows under the service role (bypassing
+    // Base44's own RLS), so it must never act on anything the client claims about its own
+    // identity until that claim is actually verified. Previously, a missing or invalid
+    // token simply left wpId null and fell through to trusting the client-supplied `email`
+    // to look up, mark-complete, or even create an AppUser row — meaning anyone on the
+    // internet could call this public function URL with an arbitrary email and get back
+    // that account's role, flip its registration_complete flag, or spray fake rows into the
+    // table. Flagged by Base44's own security scan as "Anyone can run this function" /
+    // "Unprotected backend functions." Fix: require a genuine, WordPress-verified token
+    // before touching AppUser at all — no valid token, no access, full stop.
+    const siteUrl = Deno.env.get('WC_SITE_URL');
+    if (!token || !(await isTokenGenuine(token, siteUrl))) {
+      return Response.json({ error: 'Not authorized' }, { status: 401 });
+    }
+
+    // WP user id from the token payload (same decode wpLogin uses client-side) — safe to
+    // read now that isTokenGenuine has confirmed WordPress itself issued this exact token.
     let wpId = null;
-    if (token && (await isTokenGenuine(token, Deno.env.get('WC_SITE_URL')))) {
-      try {
-        const parts = String(token).split('.');
-        if (parts.length === 3) {
-          const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
-          wpId = payload?.data?.user?.id || payload?.user_id || payload?.sub || null;
-        }
-      } catch {
-        // keep wpId null
+    try {
+      const parts = String(token).split('.');
+      if (parts.length === 3) {
+        const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+        wpId = payload?.data?.user?.id || payload?.user_id || payload?.sub || null;
       }
+    } catch {
+      // keep wpId null
+    }
+
+    if (!wpId) {
+      // Token was genuine but its payload carried no usable WordPress user id — nothing
+      // trustworthy left to identify the caller by. Fail closed instead of falling back
+      // to the client-supplied email, which is exactly the hole being closed here.
+      return Response.json({ error: 'Not authorized' }, { status: 401 });
     }
 
     const svc = createClientFromRequest(req).asServiceRole;
 
-    // Find the caller's row: by WP id (from the token) first, then by email.
-    let row = null;
-    if (wpId) {
-      const byId = await svc.entities.AppUser.filter({ user_id: String(wpId) });
-      row = Array.isArray(byId) ? byId[0] : null;
-    }
+    // Find the caller's row: by WP id (from the now-verified token) first, then by email.
+    // The email fallback only ever runs for a caller who has already proven a genuine
+    // WordPress login, so at worst it links/reads that one real caller's own pre-existing
+    // (pre-user_id-migration) record — it can no longer be reached by an unverified caller
+    // supplying an arbitrary email.
+    const byId = await svc.entities.AppUser.filter({ user_id: String(wpId) });
+    let row = Array.isArray(byId) ? byId[0] : null;
     if (!row && clientEmail) {
       const byEmail = await svc.entities.AppUser.filter({ email: clientEmail });
       row = Array.isArray(byEmail) ? byEmail[0] : null;
@@ -49,7 +69,7 @@ export default async function (req) {
     if (row) {
       // Link to this WP id + mark complete if not already. Role is never modified.
       const patch = {};
-      if (!row.user_id && wpId) patch.user_id = String(wpId);
+      if (!row.user_id) patch.user_id = String(wpId);
       if (!row.registration_complete) patch.registration_complete = true;
       if (Object.keys(patch).length) {
         await svc.entities.AppUser.update(row.id, patch);
@@ -59,10 +79,6 @@ export default async function (req) {
 
     // Brand-new customer — create their row. Email comes from the client (the
     // wpLogin response), since the token carries only the WP id, not the email.
-    if (!clientEmail && !wpId) {
-      return Response.json({ role: 'user' });
-    }
-
     let fn = '';
     let ln = '';
     if (display_name) {
@@ -73,7 +89,7 @@ export default async function (req) {
 
     await svc.entities.AppUser.create({
       email: clientEmail || '',
-      user_id: wpId ? String(wpId) : '',
+      user_id: String(wpId),
       first_name: fn,
       last_name: ln,
       role: 'user',
