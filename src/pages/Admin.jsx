@@ -23,6 +23,7 @@ export default function Admin() {
           return;
         }
 
+
         const userData = await base44.auth.me();
 
         let role = null;
