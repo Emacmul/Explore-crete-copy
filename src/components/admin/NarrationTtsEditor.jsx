@@ -274,11 +274,6 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
             <Pause className="w-3 h-3" /> {s}s
           </Button>
         ))}
-        <Button type="button" size="sm" variant="ghost"
-          onClick={() => insertBreakTag('<break strength="medium"/>')}
-          className="text-slate-400 hover:text-slate-200 h-7 px-2 text-xs">
-          medium
-        </Button>
       </div>
 
       {/* Editable script textarea */}

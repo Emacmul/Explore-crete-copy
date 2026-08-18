@@ -17,6 +17,34 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-17 (later) — Driving tour waypoint "Description" field removed; stray "medium" pause button removed
+Scope: `src/components/admin/DrivingTourWaypointEditor.jsx`,
+`src/components/admin/NarrationTtsEditor.jsx`.
+
+Two small admin-UI cleanups, per Enda's direct screenshot:
+
+- **Waypoint Description field**: removed from both the add-new-
+  waypoint form and the existing-waypoint edit panel in the driving
+  tour editor — redundant, since Location Title already covers it.
+  Checked first whether this field is used anywhere else before
+  touching it: it's read by the customer-facing map popup and the
+  tap-list on the walk detail page, so removing the input doesn't
+  delete any existing data on older waypoints — those displays are
+  already conditional on the field being present, so this fades out
+  naturally as new waypoints stop populating it, rather than needing
+  any data cleanup. Left the narrator's own read-only view of this
+  field alone for the same reason — harmless, and it'll simply have
+  nothing to show going forward.
+- **Stray "medium" pause button**: removed from the Narration Script
+  & TTS panel's "Insert pause" row — it used a different SSML syntax
+  (`strength="medium"`) than the four clearly-labeled duration
+  buttons next to it (0.5s/1s/2s/3s) and had no icon, standing out as
+  an orphaned, unexplained word rather than a real option.
+
+Built and verified clean.
+
+---
+
 ## 2026-08-17 — "Choose GPX / FIT" now accepts an Activity file and a Waypoints file together, merged automatically
 Scope: `src/components/admin/WalkEditor.jsx` only.
 

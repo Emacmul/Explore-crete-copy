@@ -638,16 +638,6 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                 />
               </div>
 
-              <div>
-                <Label className="text-slate-400 text-xs mb-1 block">Description (optional)</Label>
-                <Input
-                  value={newWp.description}
-                  onChange={e => setNewWp(p => ({ ...p, description: e.target.value }))}
-                  placeholder="Notes for this waypoint"
-                  className="bg-slate-700 border-slate-500 text-white"
-                />
-              </div>
-
               <div className="flex items-center gap-2 text-xs text-slate-400">
                 <span>Segment ID:</span>
                 <code className="bg-slate-800 px-2 py-0.5 rounded text-purple-300 font-mono">
@@ -871,14 +861,6 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                             type="number" step="0.1"
                             value={wp.avg_segment_speed_kmh ?? defaultSpeed}
                             onChange={e => updateWaypoint(index, 'avg_segment_speed_kmh', e.target.value === '' ? null : parseFloat(e.target.value))}
-                            className="bg-slate-700 border-slate-500 text-white h-8 text-sm"
-                          />
-                        </div>
-                        <div>
-                          <Label className="text-slate-400 text-xs mb-1 block">Description</Label>
-                          <Input
-                            value={wp.description || ''}
-                            onChange={e => updateWaypoint(index, 'description', e.target.value)}
                             className="bg-slate-700 border-slate-500 text-white h-8 text-sm"
                           />
                         </div>
