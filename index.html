@@ -20,13 +20,19 @@
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
           navigator.serviceWorker.register('/sw.js').then((reg) => {
-            // A single-page app never triggers the browser's own update check on its own —
-            // that normally only happens on a full page load. Poll for updates ourselves so a
-            // long-open admin session still notices when a new version has been deployed.
-            setInterval(() => reg.update().catch(() => {}), 60000);
-            document.addEventListener('visibilitychange', () => {
-              if (document.visibilityState === 'visible') reg.update().catch(() => {});
-            });
+            // Check exactly once, right when the app opens — this is the ONLY check that
+            // should ever surface the update banner, full stop. There used to also be a
+            // setInterval polling every 60 seconds (removed previously — that was the
+            // direct cause of the banner interrupting Enda mid-recording), AND a
+            // visibilitychange listener re-checking whenever the tab regained focus. That
+            // second one was reasoned as "a genuine reopen moment" — it isn't. Switching to
+            // another tab or app to check something (a reference doc, a script file) and
+            // coming back is completely ordinary mid-task behavior, not the same as closing
+            // and reopening the app, and could interrupt active work exactly the same way
+            // the 60-second poll did. Removed too. Nothing after this one call ever
+            // triggers another check for the rest of this page's lifetime — only an actual
+            // fresh load (a real reopen, or a normal browser refresh) checks again.
+            reg.update().catch(() => {});
           }).catch(() => {});
         });
         // A new service worker has activated in the background (see public/sw.js) — this

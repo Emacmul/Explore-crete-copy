@@ -17,6 +17,69 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-19 (update banner, fixed again) — Also removed the visibilitychange re-check; open-only really means open-only now
+Scope: `index.html`, `public/sw.js` (v6 → v7).
+
+Enda pushed back on the previous entry directly — asked why a tab-switch-and-back should
+re-check for updates at all. He's right, and the reasoning in that entry doesn't hold up:
+switching to another tab or app to check something (a reference doc, a source script)
+and coming back is completely ordinary mid-task behavior, not the same as closing and
+reopening the app. Keeping that check meant the exact interruption this whole feature
+was built to avoid could still happen — just through a different trigger than the
+60-second poll removed in the previous entry, not actually fixed.
+
+Removed the `visibilitychange` listener entirely. The update check in `index.html` now
+runs exactly once — right when `navigator.serviceWorker.register()` resolves after the
+app loads — and nothing else ever triggers it again for the lifetime of that page. A
+narrator can switch tabs, alt-tab to another app, walk away and come back, all without
+ever seeing the banner again once it's already been shown (or not shown) at open. Only
+an actual fresh load — closing and reopening the app, or a normal browser refresh —
+checks again.
+
+Bumped `CACHE_VERSION` again (v6 → v7) so this reaches Enda's current session: his
+currently-loaded v6 code still has the visibilitychange listener live, so one more
+tab-switch-and-back will catch v7 and show the banner one final time — after that
+reload, the fixed v7 code with no lingering re-check is what's actually running.
+
+**Verified:** `npx vite build` completes with no errors.
+
+---
+
+## 2026-08-19 (update banner, fixed) — Removed the 60-second background poll that was interrupting active work; check happens on open only
+Scope: `index.html`, `public/sw.js` (v5 → v6).
+
+Enda tested the update banner live and reported exactly the problem it was meant to
+avoid: it flashed up while he was mid-way through generating audio, not when he opened
+the app. Traced it to the periodic poll `index.html` was still running — a
+`setInterval(() => reg.update(), 60000)` that re-checked for a new version every 60
+seconds for as long as the tab stayed open, completely independent of whatever was
+actually happening in the app at that moment. That's exactly what could — and did — fire
+in the middle of an active task.
+
+Removed the interval entirely. The update check now only ever runs in two places: once,
+immediately, right when the app is opened (`reg.update()` called straight after
+registration succeeds), and again if someone switches away to another tab/app and comes
+back (the existing `visibilitychange` listener, kept as-is) — since that's a genuine
+"returning to the app" moment, not an interruption of continuous foreground work, as it
+can only ever fire at the instant visibility actually changes. Someone who opens the app
+and then works continuously in one tab for hours will correctly see nothing further
+until they either switch away and back, or close and reopen — which is the point.
+
+Bumped `CACHE_VERSION` again (v5 → v6, see the entry below for why this matters) so this
+fix itself reaches anyone who already has the app open, including from Enda's own test
+session just now.
+
+**Verified:** `npx vite build` completes with no errors.
+
+**Not done / worth knowing for next time:** the very first check (right after
+registration, on open) still has to actually complete before the banner can appear —
+there's no way to guarantee it lands before someone starts working, since it depends on
+a real network round-trip to fetch `sw.js`. In practice this is fast (well under a
+second on any reasonable connection), so it should reliably land before anyone's deep
+into a task, but it's not instantaneous by construction.
+
+---
+
 ## 2026-08-19 (update banner) — Narrators who already have the app open now get a real "update available" prompt instead of a silent forced reload
 Scope: `index.html`, `public/sw.js`, new `src/components/UpdateAvailableToast.jsx`,
 `src/App.jsx`.
