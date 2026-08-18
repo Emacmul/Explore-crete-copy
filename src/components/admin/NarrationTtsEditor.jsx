@@ -251,6 +251,44 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
 
   const hasSegmentAudios = Object.keys(segmentAudios).length > 0;
 
+  // Build & Play / Stop / Download, as a single reusable block — called multiple times
+  // below (see the segments list) rather than once at the very bottom, so it's always
+  // within reach without scrolling all the way down through a long segment list first.
+  // All calls share the exact same state/handlers, so they behave identically wherever
+  // they appear.
+  const renderBuildPlayControls = () => (
+    <div className="flex gap-2">
+      {playing ? (
+        <Button
+          type="button"
+          onClick={handleStopPlay}
+          className="flex-1 bg-red-600 hover:bg-red-700 gap-2 text-white"
+        >
+          <Square className="w-4 h-4" /> Stop
+        </Button>
+      ) : (
+        <Button
+          type="button"
+          onClick={handleBuildAndPlay}
+          disabled={generatingCombined || !hasSegmentAudios}
+          className="flex-1 bg-purple-600 hover:bg-purple-700 gap-2 text-white"
+        >
+          {generatingCombined ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+          {generatingCombined ? 'Building…' : 'Build & Play'}
+        </Button>
+      )}
+      <Button
+        type="button"
+        variant="outline"
+        onClick={handleDownload}
+        disabled={!hasSegmentAudios || playing}
+        className="border-slate-500 text-slate-300 gap-2"
+      >
+        <Download className="w-4 h-4" /> Download
+      </Button>
+    </div>
+  );
+
   return (
     <div className="bg-slate-800/50 rounded-lg border border-blue-600/30 p-3 space-y-3">
       <div className="flex items-center gap-2">
@@ -266,8 +304,15 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
       }} />
 
       {/* Insert break tags at cursor */}
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1 flex-wrap">
         <span className="text-xs text-slate-500">Insert pause:</span>
+        {/* 0.1s — a mid-sentence pause is often much shorter than half a second; 0.5s
+            alone made that impossible to express with a quick-insert button. */}
+        <Button type="button" size="sm" variant="ghost"
+          onClick={() => insertBreakTag('<break time="0.1s"/>')}
+          className="text-slate-400 hover:text-slate-200 h-7 px-2 text-xs gap-1">
+          <Pause className="w-3 h-3" /> 0.1s
+        </Button>
         <Button type="button" size="sm" variant="ghost"
           onClick={() => insertBreakTag('<break time="0.5s"/>')}
           className="text-slate-400 hover:text-slate-200 h-7 px-2 text-xs gap-1">
@@ -352,7 +397,9 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
         </div>
       )}
 
-      {/* Segments list */}
+      {/* Segments list, with Build & Play/Download repeated after every 3rd card (and
+          after the last one) rather than only once at the very bottom — a long segment
+          list previously meant scrolling all the way down just to hear/build the result. */}
       {segments && (
         <div className="space-y-2">
           <div className="flex items-center gap-3 text-xs text-slate-400 flex-wrap">
@@ -362,52 +409,28 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
             <span className="text-slate-600">Use &lt;break time="Xs"/&gt; for pauses</span>
           </div>
           {segments.map((seg, idx) => (
-            <TtsSegmentCard
-              key={seg.id}
-              segment={seg}
-              audioUrl={segmentAudios[seg.id]}
-              isGenerating={generatingSegmentId === seg.id}
-              isPlaying={currentPlayingIndex === idx}
-              onPlay={playSegment}
-              onDurationChange={handleDurationChange}
-            />
+            <React.Fragment key={seg.id}>
+              <TtsSegmentCard
+                segment={seg}
+                audioUrl={segmentAudios[seg.id]}
+                isGenerating={generatingSegmentId === seg.id}
+                isPlaying={currentPlayingIndex === idx}
+                onPlay={playSegment}
+                onDurationChange={handleDurationChange}
+              />
+              {((idx + 1) % 3 === 0 || idx === segments.length - 1) && renderBuildPlayControls()}
+            </React.Fragment>
           ))}
         </div>
       )}
 
-      {/* Build & Play + Download */}
-      {segments && (
-        <div className="flex gap-2">
-          {playing ? (
-            <Button
-              type="button"
-              onClick={handleStopPlay}
-              className="flex-1 bg-red-600 hover:bg-red-700 gap-2 text-white"
-            >
-              <Square className="w-4 h-4" /> Stop
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              onClick={handleBuildAndPlay}
-              disabled={generatingCombined || !hasSegmentAudios}
-              className="flex-1 bg-purple-600 hover:bg-purple-700 gap-2 text-white"
-            >
-              {generatingCombined ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-              {generatingCombined ? 'Building…' : 'Build & Play'}
-            </Button>
-          )}
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleDownload}
-            disabled={!hasSegmentAudios || playing}
-            className="border-slate-500 text-slate-300 gap-2"
-          >
-            <Download className="w-4 h-4" /> Download
-          </Button>
-        </div>
-      )}
+      {/* Fallback Stop bar for the case where segment-by-segment playback is still
+          actually running in the background even though `segments` just got reset (the
+          narrator edited the script mid-playback) — without this, the block above
+          disappears entirely along with it, leaving Stop unreachable while audio keeps
+          playing with no visible way to interrupt it. Editing mid-task is fine; losing
+          the ability to stop what's already running isn't. */}
+      {!segments && playing && renderBuildPlayControls()}
 
       {/* Current saved audio — always visible once something's been built, with clear
           instructions for how to change it, since it wasn't obvious before how to go back

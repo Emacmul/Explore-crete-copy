@@ -56,13 +56,13 @@ export default function TtsSegmentCard({
           </div>
           <Slider
             value={[segment.duration]}
-            min={0.5}
+            min={0.1}
             max={120}
-            step={0.5}
+            step={0.1}
             onValueChange={(val) => onDurationChange(segment.id, val[0])}
           />
           <div className="flex justify-between mt-0.5">
-            <span className="text-[10px] text-slate-600">0.5s</span>
+            <span className="text-[10px] text-slate-600">0.1s</span>
             <span className="text-[10px] text-slate-600">120s</span>
           </div>
         </div>

@@ -12,6 +12,97 @@ Pulled: 2026-08-03
 - After making any change, add a new dated entry below (newest at top)
   describing what changed, why, and which files were touched.
 - Keep entries short and factual — no need for prose, just the facts.
+- STANDING RULE — backend function changes: if any change touches a file
+  under `base44/functions/`, say so explicitly and plainly in the chat
+  reply itself (not just in this changelog), and name exactly which
+  function(s). Enda's deploy process needs a separate manual redeploy
+  step per backend function (add a blank line to that function's file
+  in Base44, which surfaces a redeploy command, then remove the blank
+  line and redeploy) — pushing the code alone does NOT make a backend
+  function change take effect. A frontend-only change needs no such
+  callout; a hard refresh + republish in Base44 is enough for those.
+
+---
+
+## 2026-08-19 (narration editor fixes) — Five issues from live testing: dropped spaces on import, invalid-SSML combined audio, vanishing Stop button, scroll-heavy segment review, break duration floor
+Scope: `src/lib/fileTextExtractor.js`, `base44/functions/generateTts/entry.ts`
+**(backend function — needs manual redeploy in Base44, see standing rule above)**,
+`src/components/admin/NarrationTtsEditor.jsx`, `src/components/admin/TtsSegmentCard.jsx`,
+`src/lib/ttsParser.js`.
+
+Enda reported five separate things from actually using the narration/TTS editor.
+Investigated each on its own rather than assuming they were related.
+
+**1. "Quite a few spaces between words get skipped" on import, master file confirmed
+clean.** Real bug, not the file: DOCX represents a Tab keypress (routinely used to nudge
+word spacing) as its own empty `<w:tab/>` element, completely separate from any `<w:t>`
+text — visually identical to a space in Word, so nothing would look wrong reviewing the
+document there. Extraction only ever read `<w:t>` content directly
+(`getElementsByTagName('w:t')`, flattened across the whole paragraph) and silently
+ignored everything else, so every one of these vanished on import with nothing left
+behind. ODT has the same gap for `<text:tab/>` AND a second, arguably more likely cause:
+consecutive spaces (e.g. double-spacing after a period) can't be written as literal
+repeated characters in ODF at all — it uses a dedicated `<text:s text:c="N"/>` element
+just to say "N spaces here," which a plain `.textContent` read never sees either. Fixed
+both extractors by walking each paragraph's actual child structure (recursing into runs/
+hyperlinks/etc.) instead of flattening straight to text, converting `w:tab`/`text:tab` to
+a space and `w:br`/`w:cr`/`text:line-break` to a newline, and expanding `text:s`'s count
+into that many real spaces. Verified against constructed test XML for both formats
+(Node + jsdom, not just read — actual extraction run against `<w:tab/>` and
+`<text:s text:c="3"/>` cases, confirmed correct output).
+
+**2. "Combined audio failed: Invalid SSML. Newer voices like Neural2 require valid
+SSML."** SSML is XML — a literal "&", "<", or ">" anywhere in ordinary narration text
+(e.g. "Fish & Chips") is completely normal writing but invalid unescaped inside XML, and
+`generateTts` was wrapping raw narration text in `<speak>...</speak>` with no escaping at
+all. Per Google's own error text, newer voices enforce this strictly where older ones may
+have tolerated it, which is why it surfaced now rather than always. Fixed with a new
+`escapeSsmlText()` in `generateTts/entry.ts`: splits on the real `<break time="Xs"/>` tag
+pattern first, escapes `&`/`<`/`>` only in the text between them, then rejoins — so actual
+SSML markup stays untouched (escaping it too would turn every pause into literal text,
+losing it entirely) while the narration text around it becomes valid XML. Verified with a
+standalone test: a string containing both "Fish & Chips" and real `<break>` tags produces
+zero remaining bare `&`/`<` after escaping, tags intact.
+
+**3. Stop button could vanish while audio was still actually playing.** The whole
+Build & Play/Stop block was gated on `segments` being non-null. Editing the script
+resets `segments` (expected, not a problem per Enda) — but if that edit happened WHILE
+segment-by-segment playback was still running, the block (Stop button included)
+disappeared from the screen entirely even though the playback loop — which captured its
+own `segments` reference when it started — kept running in the background with no way
+left to stop it. Extracted the Build & Play/Stop/Download block into one reusable
+`renderBuildPlayControls()` and added a fallback render of it (Stop only makes sense
+here) for exactly this case: `segments` is null but `playing` is still true.
+
+**4. Scrolling all the way down just to reach Build & Play after a long segment list.**
+`renderBuildPlayControls()` (same block as above) is now also interleaved after every
+3rd segment card, not just once at the very end — so it's always within a few segments'
+scroll of wherever someone's actually reviewing.
+
+**5. 0.5s minimum break duration too long for a mid-sentence pause.** Changed the floor
+in `parseScript` (was `Math.max(0.5, duration)`) and the per-segment slider's min/step in
+`TtsSegmentCard.jsx` (was min 0.5, step 0.5) to 0.1 throughout. Added a 0.1s quick-insert
+button next to the existing 0.5s/1s/2s/3s ones. Also rounds duration to 1 decimal place
+in `rebuildScript` before writing the `<break>` tag, since a 0.1 step can otherwise
+produce ordinary JS float noise like 0.30000000000000004 straight into the saved script.
+
+**Verified:** `npx vite build` and `npx eslint` (every file touched) both clean. The two
+new pieces of logic (`escapeSsmlText`, the DOCX/ODT paragraph walkers) were each tested
+standalone with constructed inputs before being counted as done, not just read over.
+
+**Not done / worth knowing for next time:**
+- None of this was tested live against Enda's actual master file/real Google TTS
+  account — worth re-importing that specific file and re-running Parse & Generate/
+  Build & Play once deployed (and remember: `generateTts` needs its manual Base44
+  redeploy for #2 to take effect).
+- `<w:noBreakHyphen/>`/`<w:softHyphen/>` and any other DOCX inline-content elements
+  beyond `w:t`/`w:tab`/`w:br`/`w:cr` are still not specifically handled — not reported
+  as a problem, just worth knowing the paragraph walker's element list isn't fully
+  exhaustive of every possible OOXML inline element.
+
+Also bumped `CACHE_VERSION` in `public/sw.js` (v7 → v8) so the update-available banner
+reaches anyone with the app already open, per the standing rule from that feature's own
+changelog entries.
 
 ---
 

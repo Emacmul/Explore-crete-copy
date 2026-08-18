@@ -111,6 +111,44 @@ async function extractZipEntry(arrayBuffer, targetName) {
   return null;
 }
 
+// Word represents a Tab keypress (routinely used to nudge word spacing, or just habit
+// from someone who normally aligns things in a table) as its own empty <w:tab/> element,
+// completely separate from any <w:t> text — visually it's just a gap, identical to a
+// space, so nobody reviewing the document in Word would ever notice anything's different
+// about it. The previous extraction only ever read <w:t> content (via
+// getElementsByTagName('w:t'), flattened across the whole paragraph) and silently
+// ignored everything else — so every one of these tab-gaps between words vanished
+// completely on import, with nothing left behind at all. This is the actual cause of
+// "quite a few spaces between words get skipped" even though the master file "does not
+// have those errors in it" — the file is genuinely fine; the extractor was dropping
+// real content it never looked for. Walking the paragraph's actual child structure
+// (recursing into runs, hyperlinks, etc.) instead of flattening straight to <w:t> is
+// what lets a <w:tab/> or <w:br/> sitting between two <w:t> elements get counted at all.
+function extractDocxParagraphText(paragraphEl) {
+  let text = '';
+  const visit = (node) => {
+    for (let i = 0; i < node.childNodes.length; i++) {
+      const child = node.childNodes[i];
+      const tag = child.nodeName;
+      if (tag === 'w:t') {
+        text += child.textContent;
+      } else if (tag === 'w:tab') {
+        text += ' ';
+      } else if (tag === 'w:br' || tag === 'w:cr') {
+        text += '\n';
+      } else if (child.childNodes && child.childNodes.length) {
+        // w:delText (track-changes deletions) is deliberately NOT matched above, so it
+        // falls through here — its child is a plain text node with no children of its
+        // own, so recursing into it contributes nothing, correctly excluding deleted text
+        // exactly as the original getElementsByTagName('w:t')-only approach did.
+        visit(child);
+      }
+    }
+  };
+  visit(paragraphEl);
+  return text;
+}
+
 function extractTextFromDocxXml(xml) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(sanitizeXmlEntities(xml), 'text/xml');
@@ -120,14 +158,43 @@ function extractTextFromDocxXml(xml) {
   const paragraphs = doc.getElementsByTagName('w:p');
   const lines = [];
   for (let i = 0; i < paragraphs.length; i++) {
-    const textNodes = paragraphs[i].getElementsByTagName('w:t');
-    let paraText = '';
-    for (let j = 0; j < textNodes.length; j++) {
-      paraText += textNodes[j].textContent;
-    }
+    const paraText = extractDocxParagraphText(paragraphs[i]);
     if (paraText.trim()) lines.push(paraText);
   }
   return lines.join('\n');
+}
+
+// ODF has the same tab/line-break gap as DOCX (<text:tab/>, <text:line-break/> are their
+// own empty elements, invisible to a plain .textContent read) — but it also has a second,
+// ODF-specific gap that's an even more likely cause of "quite a few spaces... skipped":
+// two or more CONSECUTIVE spaces can't be reliably represented as literal characters in
+// ODF's XML at all, so the format has a dedicated <text:s text:c="N"/> element just to
+// say "N spaces go here" (common after periods with double-spacing, or any deliberate
+// extra gap). The previous extraction used the whole paragraph's plain .textContent,
+// which — like the DOCX version — only ever sees real text nodes and completely misses
+// every one of these, dropping the gap entirely rather than shrinking it to one space.
+function extractOdtParagraphText(paragraphEl) {
+  let text = '';
+  const visit = (node) => {
+    for (let i = 0; i < node.childNodes.length; i++) {
+      const child = node.childNodes[i];
+      const tag = child.nodeName;
+      if (tag === '#text') {
+        text += child.textContent;
+      } else if (tag === 'text:tab') {
+        text += ' ';
+      } else if (tag === 'text:line-break') {
+        text += '\n';
+      } else if (tag === 'text:s') {
+        const count = parseInt(child.getAttribute('text:c') || '1', 10);
+        text += ' '.repeat(Number.isFinite(count) && count > 0 ? count : 1);
+      } else if (child.childNodes && child.childNodes.length) {
+        visit(child);
+      }
+    }
+  };
+  visit(paragraphEl);
+  return text;
 }
 
 function extractTextFromOdtXml(xml) {
@@ -139,7 +206,7 @@ function extractTextFromOdtXml(xml) {
   const paragraphs = [...doc.getElementsByTagName('text:p'), ...doc.getElementsByTagName('text:h')];
   const lines = [];
   for (let i = 0; i < paragraphs.length; i++) {
-    const text = paragraphs[i].textContent;
+    const text = extractOdtParagraphText(paragraphs[i]);
     if (text.trim()) lines.push(text);
   }
   return lines.join('\n');

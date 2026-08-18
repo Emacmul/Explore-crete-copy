@@ -17,7 +17,7 @@
  * for people already using it.
  */
 
-const CACHE_VERSION = 'explore-crete-v7';
+const CACHE_VERSION = 'explore-crete-v8';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 
 // Install: activate immediately, don't wait for old SW to release

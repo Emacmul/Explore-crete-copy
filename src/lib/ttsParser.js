@@ -25,7 +25,10 @@ export const parseScript = (text) => {
       const s = match[4].toLowerCase();
       duration = s === 'strong' ? 2 : s === 'weak' ? 0.5 : 1;
     }
-    duration = Math.max(0.5, duration);
+    // 0.1s minimum, not 0.5s — a mid-sentence pause often needs to be much shorter than
+    // half a second; 0.5 was an arbitrary floor that made short pauses impossible to
+    // express at all, even by typing the tag by hand.
+    duration = Math.max(0.1, duration);
 
     segments.push({ id: id++, type: 'pause', duration });
     lastIndex = breakRegex.lastIndex;
@@ -43,7 +46,11 @@ export const rebuildScript = (segments) => {
   return segments
     .map((seg) => {
       if (seg.type === 'text') return seg.content;
-      return `<break time="${seg.duration}s"/>`;
+      // Round to 1 decimal place — the slider's 0.1s step can otherwise produce a
+      // floating-point value like 0.30000000000000004 (ordinary JS float math, e.g.
+      // 0.1 + 0.2), which would get written into the actual <break> tag verbatim.
+      const cleanDuration = Math.round(seg.duration * 10) / 10;
+      return `<break time="${cleanDuration}s"/>`;
     })
     .join('\n\n');
 };

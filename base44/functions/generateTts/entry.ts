@@ -3,6 +3,31 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.38';
 import { resolveActor } from '../../shared/backendActor.ts';
 
+// SSML is XML — a literal "&", "<", or ">" in ordinary narration text (e.g. "Fish &
+// Chips", or any stray "<"/">") is completely normal writing but invalid unescaped
+// inside XML/SSML. This is exactly the "Combined audio failed: Invalid SSML" error:
+// the real narration text was never escaped before being wrapped in <speak>...</speak>,
+// so any of those characters anywhere in the script broke the whole request — and
+// per Google's own error text, newer voices (Neural2 etc.) enforce this strictly where
+// older ones may have been more forgiving, which is why it surfaced now.
+//
+// Can't just escape the whole string, though — the real <break time="Xs"/> tags in the
+// script are genuine SSML markup that must stay untouched, or they'd become literal text
+// (either read aloud as "break time" or silently dropped, either way losing every pause).
+// Splitting on that exact tag pattern and escaping only the text between the tags keeps
+// both things true at once.
+function escapeSsmlText(text: string): string {
+  const breakTagRegex = /<break\s+time="[\d.]+s"\s*\/>/gi;
+  const tags = text.match(breakTagRegex) || [];
+  const parts = text.split(breakTagRegex);
+  let result = '';
+  for (let i = 0; i < parts.length; i++) {
+    result += parts[i].replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    if (i < tags.length) result += tags[i];
+  }
+  return result;
+}
+
 Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
@@ -28,7 +53,7 @@ Deno.serve(async (req) => {
     }
 
     // Ensure SSML is wrapped in <speak> tags
-    let ssml = text.trim();
+    let ssml = escapeSsmlText(text.trim());
     if (!ssml.startsWith('<speak>')) {
       ssml = `<speak>${ssml}</speak>`;
     }
