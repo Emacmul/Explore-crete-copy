@@ -35,7 +35,6 @@ export default function Home() {
 
   const updatingRef = useRef(false);
 
-
   useEffect(() => {
     const checkRegistration = async () => {
       try {
