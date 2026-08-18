@@ -1,5 +1,5 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
-import { getEmailFromToken } from '../../shared/wpToken.ts';
+import { verifyEmailFromToken } from '../../shared/wpToken.ts';
 
 // Replaces browser-only localStorage for the Google TTS / Groq API keys with real,
 // permanent, server-side storage tied to whoever is actually calling — an admin's real
@@ -28,7 +28,7 @@ export default async function(req) {
     } catch { /* no Base44 session — try the narrator token path below */ }
 
     if (!email) {
-      email = getEmailFromToken(token);
+      email = await verifyEmailFromToken(token);
     }
     if (!email) {
       return Response.json({ error: 'Not authorized' }, { status: 403 });

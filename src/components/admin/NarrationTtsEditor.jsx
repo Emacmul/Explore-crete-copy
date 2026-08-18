@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { getNarratorAuthPayload } from '@/lib/useNarratorApiKeys';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -110,6 +111,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
           gender: selectedVoice,
           language_code: languageCode,
           apiKey: apiKeys.google_tts_api_key,
+          ...getNarratorAuthPayload(),
         });
         if (response.data?.url) {
           audios[seg.id] = response.data.url;
@@ -193,6 +195,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
         gender: selectedVoice,
         language_code: LANG_TO_CODE[selectedLanguage] || 'en-US',
         apiKey: apiKeys.google_tts_api_key,
+        ...getNarratorAuthPayload(),
       });
       if (response.data?.url) {
         onAudioChange(response.data.url);

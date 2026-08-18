@@ -29,5 +29,12 @@
     "name",
     "language",
     "words_per_minute"
-  ]
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
 }

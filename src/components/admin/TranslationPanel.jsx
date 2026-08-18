@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { getNarratorAuthPayload } from '@/lib/useNarratorApiKeys';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -58,6 +59,7 @@ export default function TranslationPanel({ onTranslated }) {
         text: importedText,
         target_language: targetLanguage,
         apiKey: apiKeys.groq_api_key,
+        ...getNarratorAuthPayload(),
       });
       if (response.data?.translated_text) {
         onTranslated(response.data.translated_text);

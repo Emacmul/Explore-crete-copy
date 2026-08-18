@@ -51,3 +51,20 @@ export function useNarratorApiKeys() {
 
   return { keys, loading, error, saveKeys, reload: load };
 }
+
+// Small helper reused by every admin/narrator tool that calls a backend function
+// requiring resolveActor()'s dual-path check (admin session, or narrator email+token).
+// An admin needs nothing extra here — their real Base44 session is what resolveActor
+// checks automatically. A narrator has no such session, so their identity has to be
+// included explicitly in the request body — read directly from the same sessionStorage
+// key Narr.jsx itself uses, the same approach already used for the API keys hook, so
+// nothing needs threading through as a prop just for this.
+export function getNarratorAuthPayload() {
+  try {
+    const sess = JSON.parse(sessionStorage.getItem('narr_session') || 'null');
+    if (sess?.email && sess?.token) {
+      return { email: sess.email, narrToken: sess.token };
+    }
+  } catch { /* not a narrator session — admin path needs nothing extra */ }
+  return {};
+}

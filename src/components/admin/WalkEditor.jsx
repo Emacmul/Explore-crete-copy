@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { getNarratorAuthPayload } from '@/lib/useNarratorApiKeys';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -219,14 +220,14 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   };
 
   const fetchElevations = async (points) => {
-    const res = await base44.functions.invoke('fetchElevations', { points });
+    const res = await base44.functions.invoke('fetchElevations', { points, ...getNarratorAuthPayload() });
     return res.data.elevations;
   };
 
   // Build a road-following polyline between ordered waypoints (OSRM) for driving tours
   // whose GPX import had no recorded track/route line.
   const routeWaypoints = async (points, profile) => {
-    const res = await base44.functions.invoke('routeWaypoints', { points, profile });
+    const res = await base44.functions.invoke('routeWaypoints', { points, profile, ...getNarratorAuthPayload() });
     return res.data.trail;
   };
 

@@ -1,4 +1,5 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
+import { isTokenGenuine } from '../../shared/wpToken.ts';
 
 // Customer onboarding — called from Home on login. Identifies the caller by the
 // WordPress user id carried inside their WP JWT (the tMeister token holds
@@ -16,9 +17,11 @@ export default async function (req) {
     const { token, display_name } = body;
     const clientEmail = String(body.email || '').toLowerCase().trim();
 
-    // WP user id from the token payload (same decode wpLogin uses client-side).
+    // WP user id from the token payload (same decode wpLogin uses client-side) — only
+    // trusted once WordPress itself has confirmed the token is genuine, since anyone could
+    // otherwise hand-construct a fake token claiming to be any WordPress user.
     let wpId = null;
-    if (token) {
+    if (token && (await isTokenGenuine(token))) {
       try {
         const parts = String(token).split('.');
         if (parts.length === 3) {

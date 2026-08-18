@@ -1,5 +1,5 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
-import { getEmailFromToken } from '../../shared/wpToken.ts';
+import { verifyEmailFromToken } from '../../shared/wpToken.ts';
 
 // The ONLY place a customer's locked tour language ever changes after their first-time
 // default is set. Called from a real "Do you want to swap?" prompt in the app — never
@@ -14,7 +14,7 @@ export default async function(req) {
     const body = await req.json().catch(() => ({}));
     const { token, walkId, language, action } = body || {};
 
-    const email = getEmailFromToken(token);
+    const email = await verifyEmailFromToken(token);
     if (!email) {
       return Response.json({ error: 'Not authorized' }, { status: 403 });
     }

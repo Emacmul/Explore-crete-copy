@@ -1,5 +1,5 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
-import { getEmailFromToken } from '../../shared/wpToken.ts';
+import { verifyEmailFromToken } from '../../shared/wpToken.ts';
 
 // Returns the set of Merchant-of-Record product IDs the calling customer has purchased.
 //
@@ -12,7 +12,7 @@ export default async function(req) {
   try {
     const base44 = createClientFromRequest(req);
     const body = await req.json().catch(() => ({}));
-    const email = getEmailFromToken(body.token);
+    const email = await verifyEmailFromToken(body.token);
     if (!email) return Response.json({ productIds: [] });
 
     // Service role: read this caller's Purchase records (the client only receives product

@@ -1,4 +1,5 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.38';
+import { isTokenGenuine } from '../../shared/wpToken.ts';
 
 Deno.serve(async (req) => {
   try {
@@ -10,7 +11,13 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'Authentication token required' }, { status: 401 });
     }
 
-    // --- Decode JWT (no signature verification — token was verified at login) ---
+    // Confirm this token is genuinely real, issued by WordPress, before trusting anything
+    // decoded from it below — without this, anyone could hand-construct a fake token
+    // claiming to be any customer's WordPress user ID and email.
+    if (!(await isTokenGenuine(token))) {
+      return Response.json({ error: 'Invalid or expired token' }, { status: 401 });
+    }
+
     const parts = token.split('.');
     if (parts.length !== 3) {
       return Response.json({ error: 'Invalid token format' }, { status: 401 });

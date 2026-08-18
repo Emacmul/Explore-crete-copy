@@ -2,6 +2,8 @@
 // recorded track/route line (a bare waypoint collection from a GPS device). Calls the
 // public OSRM driving router and returns a dense {lat,lng} polyline that follows real
 // roads. Mirrors fetchElevations (auth + external API + batched calls).
+import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
+import { resolveActor } from '../../shared/backendActor.ts';
 
 const OSRM_BASE = 'https://router.project-osrm.org';
 const BATCH = 25; // max waypoints per OSRM /route request (kept low for URL length + reliability)
@@ -28,10 +30,20 @@ async function routeChunk(coords, profile, attempt = 0) {
 }
 
 Deno.serve(async (req) => {
-  // Unauthenticated: routing is a read-only call to the public OSRM router and holds no
-  // sensitive data. Admin/narrator users sign in via WordPress (not Base44), so an auth
-  // check here would 401 them and silently drop the road line back to straight waypoints.
-  const { points, profile } = await req.json();
+  const base44 = createClientFromRequest(req);
+  const body = await req.json();
+  // Admin, or narrator via email+narrToken — same dual-path check used everywhere else
+  // in this app. Without this, anyone on the internet could call this function directly
+  // and repeatedly, running up usage against the routing service with no restriction —
+  // an earlier version of this file left it open specifically because narrators sign in
+  // via WordPress rather than Base44, but resolveActor's narrator-token path exists
+  // precisely to solve that, so that's no longer a real reason to leave this open.
+  const actor = await resolveActor(base44, body);
+  if (!actor) {
+    return Response.json({ error: 'Not authorized' }, { status: 403 });
+  }
+
+  const { points, profile } = body;
   if (!points || points.length < 2) return Response.json({ trail: [] });
 
   const p = profile === 'foot' ? 'foot' : 'driving';

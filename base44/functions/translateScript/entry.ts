@@ -1,4 +1,5 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.38';
+import { resolveActor } from '../../shared/backendActor.ts';
 
 Deno.serve(async (req) => {
   try {
@@ -6,6 +7,13 @@ Deno.serve(async (req) => {
 
     const body = await req.json();
     const { text, target_language, apiKey } = body;
+
+    // Admin, or narrator via email+narrToken — without this, this function was reachable
+    // by anyone at all, with no restriction on who could trigger a Groq call.
+    const actor = await resolveActor(base44, body);
+    if (!actor) {
+      return Response.json({ error: 'Not authorized' }, { status: 403 });
+    }
 
     if (!text || !text.trim()) {
       return Response.json({ error: 'Missing text to translate' }, { status: 400 });

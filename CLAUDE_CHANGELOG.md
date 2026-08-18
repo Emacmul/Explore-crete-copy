@@ -17,6 +17,74 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-18 (later still) — Security scan findings: all addressed, verified end to end
+Scope: `base44/shared/wpToken.ts` (rewritten), `base44/entities/ActiveSession.jsonc`,
+`Device.jsonc`, `DeviceChallenge.jsonc`, `Narrator.jsonc` (+admin-only read RLS),
+`base44/functions/getMembershipStatus/`, `getOwnedProductIds/`, `getWalkCatalog/`,
+`manageApiKeys/`, `setTourLanguagePref/`, `syncLibrary/`, `ensureAppUserOnboarding/`
+(token verification), `routeWaypoints/`, `generateTts/`, `translateScript/`
+(added resolveActor check), `src/components/admin/DrivingTourWaypointEditor.jsx`,
+`WalkEditor.jsx`, `NarrationTtsEditor.jsx`, `TranslationPanel.jsx` (send identity),
+`src/lib/useNarratorApiKeys.js` (+getNarratorAuthPayload helper),
+`src/pages/Login.jsx` (XSS fix).
+
+Enda ran Base44's own security scan. Went through every finding individually,
+verifying each directly rather than assuming the scanner's severity labels
+were all equally real — some were, one category turned out to be a false
+positive on closer inspection.
+
+**Critical — identity spoofing / API key theft, genuinely serious.**
+`getEmailFromToken` decoded a token's payload without ever checking the
+token was real — anyone could hand-construct a fake token claiming to be
+any customer or narrator's email, and every function using it would have
+simply believed them. This directly threatened the API key storage built
+earlier today: a forged token could have pulled someone else's saved
+Google/Groq keys straight out of `manageApiKeys`. Found this in **7**
+functions, not just the obvious ones. Fixed by adding real verification —
+asking WordPress's own token-validation endpoint to confirm a token is
+genuine before trusting anything in it — and applied consistently across
+all 7. The old unverified decoder still exists, narrowly, only for
+`wpLogin` reading a token immediately after WordPress itself just issued
+it in that same request, where there's nothing to forge.
+
+**Critical — 4 entities with no read restriction at all.** `ActiveSession`,
+`Device`, `DeviceChallenge`, `Narrator` had no explicit read rule, which
+on this platform apparently defaults to fully public. `DeviceChallenge`
+was the most serious — it holds verification codes. All four locked to
+admin-only read.
+
+**High — "anyone can run this function," checked individually rather than
+patched by list.** Cross-checked against the scanner's count: several
+functions were already properly protected under two different auth helper
+names (`isAppAdmin`, `resolveActor`) my first pass missed — false
+positives, left alone. A few more (`wpLogin`, `getUserRole`, the device-
+login functions) are legitimately meant to work before someone's
+identified. The three that were genuinely open — `generateTts`,
+`translateScript`, `routeWaypoints` — now require a real admin or narrator
+identity, using the same `resolveActor` check already proven correct
+elsewhere in this app. Updated all four frontend call sites (one of the
+three functions is called from two places) to actually send that identity,
+so narrators aren't locked out by a check that only expected an admin
+session.
+
+**Medium — XSS via unsanitized login error rendering, confirmed genuine.**
+The login page's error message was rendered as raw HTML rather than plain
+text — if any error message ever contained something script-like, it
+would have actually executed in a customer's browser. Fixed by rendering
+it as plain text, which is both the safe default and all an error message
+ever actually needs. Swept the rest of the app for the same pattern — one
+other instance exists, confirmed safe (standard chart-library code
+generating CSS from a fixed developer config, never from user or server
+input) and left untouched.
+
+Built and verified clean; re-checked every fix individually afterward —
+no leftover insecure token usage anywhere, all four entities carry valid
+RLS, all three tool functions have the real check, every frontend call
+site sends identity, and the XSS pattern is gone from Login.jsx with the
+one other, unrelated instance confirmed safe.
+
+---
+
 ## 2026-08-18 (later) — Google TTS / Groq API keys moved from browser-only storage to real, permanent server-side storage
 Scope: `base44/entities/AppUser.jsonc` (+`google_tts_api_key`,
 +`groq_api_key`), new `base44/functions/manageApiKeys/entry.ts`,

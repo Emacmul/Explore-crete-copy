@@ -29,5 +29,12 @@
   "required": [
     "user_email",
     "device_id"
-  ]
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
 }

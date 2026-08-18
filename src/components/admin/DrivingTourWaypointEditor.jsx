@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { getNarratorAuthPayload } from '@/lib/useNarratorApiKeys';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -185,7 +186,7 @@ function parseLocationPrefix(wp) {
 // Build a road-following polyline between ordered waypoints (OSRM) for a driving tour
 // whose GPX import had no recorded track/route line.
 const routeWaypoints = async (points) => {
-  const res = await base44.functions.invoke('routeWaypoints', { points });
+  const res = await base44.functions.invoke('routeWaypoints', { points, ...getNarratorAuthPayload() });
   return res.data.trail;
 };
 
