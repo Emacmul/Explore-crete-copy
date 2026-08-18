@@ -99,8 +99,8 @@ export default function TranslationPanel({ onTranslated }) {
       </div>
 
       {importedText && (
-        <div className="bg-slate-900/50 rounded-md border border-slate-700 p-2 max-h-20 overflow-y-auto">
-          <p className="text-xs text-slate-500 whitespace-pre-wrap">{importedText.slice(0, 250)}{importedText.length > 250 ? '…' : ''}</p>
+        <div className="bg-slate-900/50 rounded-md border border-slate-700 p-2 max-h-40 overflow-y-auto">
+          <p className="text-xs text-slate-500 whitespace-pre-wrap">{importedText}</p>
         </div>
       )}
 

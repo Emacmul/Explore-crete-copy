@@ -17,6 +17,38 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-19 (later) — Real, THIRD cause found: the preview box was hard-limited to 250 characters, unrelated to either earlier fix
+Scope: `src/components/admin/TranslationPanel.jsx` only.
+
+Enda reported the ampersand fix made no difference — tested this
+directly and precisely rather than guess again: uploaded his actual
+real BOR1 script file and ran the exact, current extraction code
+against it. It worked completely correctly — all 637 words extracted,
+ending exactly where his real document ends, no truncation anywhere
+in the extraction itself. That confirmed the two earlier fixes (ZIP
+Central Directory, bare-ampersand escaping) are both genuinely
+working and weren't the cause of what he was still seeing.
+
+Found the real, third, completely separate cause: `TranslationPanel.jsx`'s
+own preview box had a hard-coded `.slice(0, 250)` — deliberately
+showing only the first 250 characters (roughly 50 words, matching
+exactly what was reported) with a single, easy-to-miss "…" as the
+only sign there was more. Confirmed this was purely cosmetic, not
+data loss — the actual Translate action already used the full,
+untruncated text underneath, so nothing was ever being lost from
+translation itself, only from what was visibly shown.
+
+Removed the artificial cutoff — the preview now shows the complete
+imported text, in the same already-scrollable box (given slightly
+more height), so scrolling actually reveals more content this time
+instead of hitting a wall a fixed slice put there on purpose. Checked
+the rest of the codebase for the same slice pattern elsewhere — this
+was the only instance.
+
+Built and verified clean.
+
+---
+
 ## 2026-08-19 — Real, second bug found in the same import feature: a bare "&" anywhere in the document silently truncated it
 Scope: `src/lib/fileTextExtractor.js` only.
 
