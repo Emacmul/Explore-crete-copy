@@ -24,6 +24,18 @@ function readAsText(file) {
   });
 }
 
+// Word and LibreOffice both routinely produce document XML containing a bare "&" —
+// completely ordinary in real writing ("Fish & Chips", "Rest & Recharge") but invalid
+// on its own in XML, which requires it to be written as "&amp;". A single one of these,
+// anywhere in the whole document, makes the strict browser XML parser stop dead at that
+// exact point and silently discard everything after it — the actual cause of a script
+// that "imports fine, then just stops partway through with nothing further to scroll to."
+// Escapes only genuinely bare ampersands; entities already written correctly (&amp;,
+// &lt;, &#39;, etc.) are left completely alone, so nothing gets double-escaped.
+function sanitizeXmlEntities(xmlString) {
+  return xmlString.replace(/&(?!amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;)/g, '&amp;');
+}
+
 /**
  * Extract a single entry from a ZIP archive (stored or deflated).
  *
@@ -101,7 +113,10 @@ async function extractZipEntry(arrayBuffer, targetName) {
 
 function extractTextFromDocxXml(xml) {
   const parser = new DOMParser();
-  const doc = parser.parseFromString(xml, 'text/xml');
+  const doc = parser.parseFromString(sanitizeXmlEntities(xml), 'text/xml');
+  if (doc.getElementsByTagName('parsererror').length > 0) {
+    throw new Error('This .docx file contains something the browser\'s XML reader couldn\'t parse. Try re-saving it from Word as a plain .txt file instead.');
+  }
   const paragraphs = doc.getElementsByTagName('w:p');
   const lines = [];
   for (let i = 0; i < paragraphs.length; i++) {
@@ -117,7 +132,10 @@ function extractTextFromDocxXml(xml) {
 
 function extractTextFromOdtXml(xml) {
   const parser = new DOMParser();
-  const doc = parser.parseFromString(xml, 'text/xml');
+  const doc = parser.parseFromString(sanitizeXmlEntities(xml), 'text/xml');
+  if (doc.getElementsByTagName('parsererror').length > 0) {
+    throw new Error('This .odt file contains something the browser\'s XML reader couldn\'t parse. Try re-saving it as a plain .txt file instead.');
+  }
   const paragraphs = [...doc.getElementsByTagName('text:p'), ...doc.getElementsByTagName('text:h')];
   const lines = [];
   for (let i = 0; i < paragraphs.length; i++) {

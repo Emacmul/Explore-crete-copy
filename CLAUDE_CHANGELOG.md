@@ -17,6 +17,40 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-19 — Real, second bug found in the same import feature: a bare "&" anywhere in the document silently truncated it
+Scope: `src/lib/fileTextExtractor.js` only.
+
+Enda's earlier fix (the ZIP Central Directory one) was confirmed still
+correctly live — this was a genuinely different, second bug in the same
+feature, not a recurrence. Reproduced it directly before writing any
+fix: built a real, realistic test document containing an ordinary,
+completely normal sentence with a bare "&" in it ("Fish & Chips") —
+exactly the kind of thing that turns up constantly in real writing, tour
+descriptions especially. That single character made the browser's
+strict XML parser stop dead at that exact point and silently discard
+every paragraph after it, confirmed with a direct test: 0 paragraphs
+extracted, a parser error pointing at that exact line. This is the real
+cause of "imports fine for a bit, then just stops, nothing more to
+scroll to" — not a preview-box illusion this time, a genuine mid-
+document parse failure.
+
+Fixed by escaping any bare "&" in the extracted XML before parsing it —
+carefully checked to only touch genuinely bare ones; anything already
+correctly written (`&amp;`, `&#39;`, etc.) is left completely alone, so
+nothing gets double-escaped into garbage. Verified this precisely: ran
+the exact updated function, copied verbatim from the real file, against
+the same realistic test document — all three paragraphs now come
+through correctly, including the one with the ampersand, decoded back
+to a normal "&" in the final text. Applied to both the `.docx` and
+`.odt` extraction paths, since both were equally exposed to the same
+issue. Also added a safety net for anything else that might still
+break strict parsing — a clear error message pointing at re-saving as
+plain `.txt`, instead of silently truncating.
+
+Built and verified clean.
+
+---
+
 ## 2026-08-18 (final pass) — The actual last 3 security scan findings, identified by exact function name and fixed
 Scope: `base44/functions/getUserRole/entry.ts`,
 `base44/functions/sessionEnd/entry.ts`,
