@@ -17,6 +17,44 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-18 — Real bug fixed: .docx/.odt script import was silently truncating some files
+Scope: `src/lib/fileTextExtractor.js` only.
+
+Enda reported a script import for BOR1a that looked cut short — and
+crucially, tested it himself first: the scrollbar genuinely had
+nothing further to reach, ruling out "it's just a small preview box"
+before I even looked at the code.
+
+Found a real, concrete bug in the hand-written ZIP-archive reader
+this feature uses internally (`.docx` and `.odt` files are ZIP
+archives containing XML underneath). It was trusting the compressed-
+size field written in each entry's Local File Header — but some ZIP
+writers, including some LibreOffice `.odt` exports, don't reliably
+fill that field in; the real size only lives in a separate record
+written later, and in the Central Directory (a table of contents at
+the very end of the archive). Reading the unreliable field meant
+grabbing however many bytes it claimed, silently producing a partial
+read — exactly the "real beginning, cut off partway through, nothing
+more to scroll to" symptom described.
+
+Rewrote the reader to source the compressed size from the Central
+Directory instead, which is always authoritative regardless of how an
+entry was originally written — the same approach any correct ZIP
+reader actually uses, rather than trusting the shortcut that broke.
+
+Verified concretely, not just reasoned about: built an actual test
+`.odt`-shaped file reproducing the exact quirk (Local File Header
+size zeroed/wrong, real size only in the trailing descriptor and
+Central Directory), ran both the old and new extraction code directly
+against it in a real JS runtime. The old code failed outright on it;
+the new code correctly extracted the complete 8,647-character test
+document, all 40 paragraphs, ending exactly where the real content
+actually ends.
+
+Built and verified clean.
+
+---
+
 ## 2026-08-17 (later) — "Add New Waypoint" panel now starts closed
 Scope: `src/components/admin/DrivingTourWaypointEditor.jsx` only.
 
