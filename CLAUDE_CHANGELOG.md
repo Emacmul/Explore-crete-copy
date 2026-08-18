@@ -17,6 +17,49 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-18 (later) — Google TTS / Groq API keys moved from browser-only storage to real, permanent server-side storage
+Scope: `base44/entities/AppUser.jsonc` (+`google_tts_api_key`,
++`groq_api_key`), new `base44/functions/manageApiKeys/entry.ts`,
+`src/lib/useNarratorApiKeys.js` (full rewrite), `src/components/admin/ApiKeysDialog.jsx`
+(full rewrite).
+
+Enda hit the real cost of the old design directly: his Google TTS key
+showed empty despite having used it successfully before, and pasting
+a fresh Groq key wasn't working either. Traced it to the actual
+architecture — these keys were, by design, stored only in
+`localStorage` in one specific browser, explicitly never touching the
+server or any database record at all. Clearing that browser's site
+data (which happened during earlier splash-screen troubleshooting)
+silently wiped it, with no way to recover the original value from
+anywhere — confirmed directly, not assumed: the key genuinely never
+lived in the code or database at any point.
+
+Rebuilt properly per Enda's explicit ask, not patched: keys now live
+on the server, tied to whoever's account they belong to, via a new
+function that identifies the caller the same dual-auth way everything
+else in this app does — a real Base44 session for an admin, or a
+narrator's own email+token for a narrator — and only ever reads or
+writes that one caller's own record, never anyone else's. Read
+directly from the same session data Narr.jsx itself already uses, so
+no new props needed threading through the component tree just for
+this.
+
+The dialog itself needed a real rework too, not just a backend swap —
+values now arrive asynchronously from a network call instead of being
+instantly available from localStorage, so it shows a proper loading
+state and correctly syncs the editable fields once the real saved
+values actually arrive, rather than only ever capturing whatever was
+there on the very first render. Description text updated to describe
+what's actually true now — the old "stored only in this browser"
+line was the root of the confusion and is gone.
+
+Swept the codebase afterward and confirmed nothing else still
+references the old localStorage keys directly.
+
+Built and verified clean.
+
+---
+
 ## 2026-08-18 — Real bug fixed: .docx/.odt script import was silently truncating some files
 Scope: `src/lib/fileTextExtractor.js` only.
 

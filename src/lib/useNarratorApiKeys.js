@@ -1,42 +1,53 @@
-import { useState, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { base44 } from '@/api/base44Client';
 
-// Each narrator's own Google TTS and Groq API keys, stored ONLY in this browser's localStorage
-// — same as Enda's existing VoiceScript and TTS Studio tools. Keys never touch the server or any
-// database record; they only ever travel from this browser directly to Explore Crete's own
-// backend function (which needs the key to make the actual Google/Groq request on the
-// narrator's behalf), but are never saved there.
-const GOOGLE_KEY_STORAGE = 'explore_crete_google_tts_api_key';
-const GROQ_KEY_STORAGE = 'explore_crete_groq_api_key';
+// Each admin/narrator's own Google TTS and Groq API keys — stored server-side, tied to
+// their own account, via the manageApiKeys backend function. Previously lived only in
+// that one browser's localStorage, which meant clearing site data (or just opening the
+// app on a different browser or device) silently wiped it with no way to recover it.
+// Works for either caller: an admin identified by their real Base44 session, or a
+// narrator identified the same way every other narrator action in this app is — their
+// own email+token, read directly from the same sessionStorage key Narr.jsx itself uses,
+// so nothing needs threading through as a prop just for this.
+const NARR_SESSION_KEY = 'narr_session';
 
-function readKeys() {
-  let google = '';
-  let groq = '';
+function getNarratorToken() {
   try {
-    google = localStorage.getItem(GOOGLE_KEY_STORAGE) || '';
-    groq = localStorage.getItem(GROQ_KEY_STORAGE) || '';
-  } catch (err) {
-    // localStorage unavailable (private browsing, storage disabled) — keys just stay empty for
-    // this session rather than breaking the page.
+    const sess = JSON.parse(sessionStorage.getItem(NARR_SESSION_KEY) || 'null');
+    return sess?.token || null;
+  } catch {
+    return null;
   }
-  return { google_tts_api_key: google, groq_api_key: groq };
 }
 
 export function useNarratorApiKeys() {
-  const [keys, setKeys] = useState(readKeys);
+  const [keys, setKeys] = useState({ google_tts_api_key: '', groq_api_key: '' });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const saveKeys = useCallback((updates) => {
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
     try {
-      if (updates.google_tts_api_key !== undefined) {
-        localStorage.setItem(GOOGLE_KEY_STORAGE, updates.google_tts_api_key);
-      }
-      if (updates.groq_api_key !== undefined) {
-        localStorage.setItem(GROQ_KEY_STORAGE, updates.groq_api_key);
-      }
+      const res = await base44.functions.invoke('manageApiKeys', { action: 'get', token: getNarratorToken() });
+      if (res?.data?.error) throw new Error(res.data.error);
+      setKeys({
+        google_tts_api_key: res?.data?.google_tts_api_key || '',
+        groq_api_key: res?.data?.groq_api_key || '',
+      });
     } catch (err) {
-      throw new Error('Could not save to this browser\'s storage. Check your browser allows local storage (not in private/incognito mode).');
+      setError(err.message || 'Could not load your saved API keys.');
     }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const saveKeys = useCallback(async (updates) => {
+    const res = await base44.functions.invoke('manageApiKeys', { action: 'save', token: getNarratorToken(), ...updates });
+    if (res?.data?.error) throw new Error(res.data.error);
     setKeys((prev) => ({ ...prev, ...updates }));
   }, []);
 
-  return { keys, loading: false, saveKeys };
+  return { keys, loading, error, saveKeys, reload: load };
 }

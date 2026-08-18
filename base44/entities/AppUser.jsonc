@@ -49,6 +49,14 @@
       "type": "string",
       "description": "Random token issued at successful Narr Studio login, letting authenticated actions (like saving a UI translation) skip re-entering the password for the rest of that login — the password itself is genuinely verified once, at login, not bypassed."
     },
+    "google_tts_api_key": {
+      "type": "string",
+      "description": "This admin/narrator's own Google Cloud Text-to-Speech API key, used for narration audio generation. Kept separate per person so usage and any cost stays personal to them, not shared across everyone."
+    },
+    "groq_api_key": {
+      "type": "string",
+      "description": "This admin/narrator's own Groq API key, used for the script translation feature."
+    },
     "narr_session_expires_at": {
       "type": "string",
       "format": "date-time",
