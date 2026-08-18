@@ -29,10 +29,18 @@
             });
           }).catch(() => {});
         });
-        // Auto-reload when a new service worker takes over
+        // A new service worker has activated in the background (see public/sw.js) — this
+        // used to reload the page immediately and silently the instant that happened,
+        // with zero warning, which could land mid-task for anyone with the app left open
+        // (a narrator mid-recording, an admin mid-edit) and lose whatever wasn't saved
+        // yet. Now it just tells the React app a new version exists; the app decides when
+        // it's actually safe to reload (see src/components/UpdateAvailableToast.jsx),
+        // which for a first-time open or a normal closed-then-reopened app is a no-op
+        // anyway — navigation requests are network-first (see sw.js), so those already
+        // get the latest version automatically with nothing to click.
         navigator.serviceWorker.addEventListener('message', (event) => {
           if (event.data && event.data.type === 'SW_UPDATED') {
-            window.location.reload();
+            window.dispatchEvent(new CustomEvent('explore-crete:update-available'));
           }
         });
       }

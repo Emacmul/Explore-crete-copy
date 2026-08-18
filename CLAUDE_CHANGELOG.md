@@ -17,6 +17,249 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-19 (update banner) — Narrators who already have the app open now get a real "update available" prompt instead of a silent forced reload
+Scope: `index.html`, `public/sw.js`, new `src/components/UpdateAvailableToast.jsx`,
+`src/App.jsx`.
+
+Enda asked directly: do narrators who already installed the app automatically get all
+the changes made this session, or does something need to happen for them to update?
+
+**Short answer, and the important nuance:** closing the app and reopening it (or a plain
+browser refresh) already gets the latest version automatically, with nothing to click —
+navigation requests are network-first in `sw.js`, and Vite content-hashes every JS/CSS
+filename, so a stale cache can never serve old code on a real reload. That part needed
+no fix and was already working correctly.
+
+The real gap was the opposite case: someone who leaves the app open for a while — very
+plausible for a narrator mid-session — while a new version gets deployed underneath
+them. The service worker was already designed to detect and activate a new version in
+the background on its own (`skipWaiting`, `clients.claim`, polling `reg.update()` every
+60s and on tab focus — all pre-existing, all correct). But once it did, `index.html`'s
+message handler called `window.location.reload()` immediately and silently, with zero
+warning — genuinely risky mid-task, since it could wipe out an in-progress recording or
+an unsaved script edit with no notice at all.
+
+**Fixed** by turning that silent forced reload into an actual prompt, exactly as asked:
+- `index.html` now dispatches a `explore-crete:update-available` window event instead of
+  reloading directly.
+- New `UpdateAvailableToast.jsx` listens for it and shows a small dismissable banner —
+  "A new version is available" with an **Update** button that reloads when clicked, only
+  when clicked. Mounted once, globally, in `App.jsx`, so it's identical whether someone's
+  on the customer front end, the Admin Panel, or Narr Studio.
+- Bumped `CACHE_VERSION` in `public/sw.js` (v4 → v5) and added a comment explaining why
+  this matters: the browser only detects a service-worker update by diffing this file's
+  raw bytes, so **any deploy meant to show this banner to already-open sessions must bump
+  this version string** — otherwise the deploy still reaches everyone on their next
+  normal open, just without the banner for people already using it. This specific bump
+  is what makes today's whole batch of changes (this session) actually trigger the
+  banner for anyone who has the app open right now.
+
+**Verified:** `npx vite build` and `npx eslint` both clean.
+
+**Not done / worth knowing for next time:** the banner is plain English, matching the
+rest of the Admin Panel/Narr Studio (neither uses the customer-facing i18n system) — it
+will also appear on the customer front end (Home), which does have translations, so it's
+the one un-translated string there if that's ever noticed. Also worth remembering going
+forward: **any future deploy that should prompt already-open sessions needs a
+`CACHE_VERSION` bump in `public/sw.js`** — otherwise this specific banner just won't
+appear for them, even though the deploy still reaches everyone else fine.
+
+---
+
+## 2026-08-19 (no-op translate) — Skip the Groq call entirely when target language is the same as the imported master (English)
+Scope: `src/components/admin/TranslationPanel.jsx` only.
+
+Enda's example: importing the English master for a tour he's writing both the English
+and Dutch versions of himself — the Dutch version genuinely needs translating, but the
+English version doesn't, since the import already IS the English master script (this
+app's whole workflow starts from an English original — see `CLAUDE_CHANGELOG.md`
+history and `AGENTS`/project notes on the narration workflow). Previously "Translate &
+Load" always called `translateScript` regardless of the chosen target language, even
+when it was English — burning a real Groq call, real quota/time, and carrying a small
+but real risk of the model subtly rewording text that was already exactly right, for a
+translation that was never actually needed.
+
+Added `isNoOpTranslation` (`targetLanguage === 'English'`): when true, "Translate & Load"
+(now labelled "Load (already English)" in that state) calls `onTranslated(importedText)`
+directly and returns immediately — no network call, no Groq API key even required for
+this path. A small note appears under the button explaining why, so it's clear this
+isn't silently skipping something it shouldn't. Every other target language is
+completely unaffected — still goes through `translateScript` exactly as before.
+
+**Verified:** `npx vite build` and `npx eslint` both clean.
+
+**Not done / worth knowing for next time:** this assumes the imported file is always the
+English master, which matches how every tour in this app is actually built — there's no
+concept anywhere in the codebase of a non-English source import. If that ever changes
+(importing an already-non-English source script), this specific check would need to
+become a real "source language" selector instead of the current English-only assumption.
+
+---
+
+## 2026-08-19 (audit, corrected) — API key prompt upgraded from dismissable to a real hard lock, both keys required
+Scope: `src/components/admin/ApiKeysDialog.jsx`, `src/components/admin/BackendShell.jsx`.
+
+Correction to the entry directly below this one. That version made the key prompt
+dismissable, reasoned from a wrong assumption — that a "walk/hike-only narrator" might
+exist and genuinely never need a TTS/Groq key. Enda corrected this directly: there's no
+such role. Every narrator works across all three tour types, so every narrator needs
+both keys eventually regardless of what they're working on right this moment. He also
+confirmed it should be a hard lock, and that both keys are required, not just one.
+
+Rebuilt on that basis:
+- `ApiKeysDialog` now takes a `required` prop. When true: the X close button is hidden,
+  and clicking outside or pressing Escape are both suppressed (`onPointerDownOutside` /
+  `onEscapeKeyDown` on the underlying Radix content, checked directly — this is a real
+  dismiss-proof lock, not just hiding the visible close affordances). Save also stays
+  disabled until BOTH fields actually have something typed into them — a single key no
+  longer satisfies it.
+- `BackendShell` computes `needsApiKeySetup` from BOTH fields (`!google_tts_api_key ||
+  !groq_api_key`), not "neither" — genuinely requires both, not just one. While true, the
+  main content area renders a plain "add your keys to continue" placeholder instead of
+  the real tour list/editor (belt-and-braces: the modal's overlay already blocks
+  interaction with it, but there's no reason to have it silently sitting there either).
+  A brief loading state covers the moment before we even know the answer, so the real
+  content never flashes on screen before potentially locking straight back up.
+- Wired `onSaved` from `ApiKeysDialog` back to a `reload()` on `BackendShell`'s own
+  separate key-status check, so a successful save unlocks immediately — without this,
+  the dialog and the lock check are two independent hook instances that wouldn't
+  otherwise know about each other's state.
+
+**Worth knowing:** this is a genuine hard lock — while it's showing, the modal's overlay
+and Radix's focus trap mean nothing behind it is reachable, including Logout and Front
+End in the header. The only way out is entering both keys (or, if the initial load
+itself fails, the existing "Retry loading" button inside the dialog — that part still
+works exactly as before). If that turns out to be a problem in practice — someone
+genuinely stuck without a key handy and no way to even log out — worth revisiting
+whether Logout specifically should stay reachable as a deliberate, narrow exception.
+
+**Verified:** `npx vite build` and `npx eslint` (on every file touched this session)
+both come back clean.
+
+---
+
+## 2026-08-19 (audit, cont'd) — Narrators had no way to actually set their own key; forced one-time prompt added; real cause of the Translate 500 found and fixed (Groq model decommissioned)
+Scope: `base44/functions/translateScript/entry.ts`, `src/components/admin/BackendShell.jsx`,
+`src/components/admin/TranslationPanel.jsx`, `src/components/admin/NarrationTtsEditor.jsx`,
+`src/lib/utils.js` (new `getFnErrorMessage` helper).
+
+Follow-up to the API key audit above, from three things Enda asked for directly.
+
+**1. Confirmed per-person key isolation, found the narrator side was actually broken.**
+`manageApiKeys`/`translateScript`/`generateTts` already never fall back to a shared or
+admin key — each requires and uses only the caller's own saved key, checked directly.
+But the "API Keys" button in the header (`BackendShell.jsx`) was `{isAdmin && ...}` —
+real narrators (not admins wearing the Narr hat) never saw it at all, even though
+`manageApiKeys` and the TTS/Translate error messages ("Add your own key under 'API
+Keys'...") both assume they can. A plain narrator had no way to ever open that dialog.
+Fixed by showing the button to everyone in the backend shell, admin or narrator.
+
+**2. Added the one-time prompt Enda asked for.** `BackendShell` now checks, once per
+login, whether the signed-in admin/narrator has neither key saved yet, and if so opens
+the API Keys dialog for them automatically — so they're asked to set their own key up
+front instead of only discovering it's missing when a feature fails. Left dismissable,
+not a hard lock: walk/hike tours use no audio at all, so a walk/hike-only narrator may
+genuinely never need either key, and this is meant as a prompt, not a requirement.
+Because it only re-triggers when both keys are still genuinely empty, it naturally never
+asks again once either key has been saved — nothing extra needed to track "already
+asked" long-term.
+
+**3. Found the real cause of "Request failed with status code 500" on Translate.**
+Traced it properly instead of guessing: `base44.functions.invoke()` is a bare
+`axios.post()` under the hood (checked the actual SDK source in `node_modules`) — on
+any non-2xx response, axios's own `.message` is always that generic string, never the
+real reason from the response body (`err.response.data.error`). Every catch block in
+`TranslationPanel.jsx` and `NarrationTtsEditor.jsx` was reading `err.message` directly,
+so the true cause was always being hidden. Added `getFnErrorMessage()` in `src/lib/utils.js`
+and switched both files to use it — errors now show the actual reason.
+
+With that in place, the real reason was: Groq decommissioned `llama-3.3-70b-versatile`
+(the model `translateScript` was calling) on 2026-08-16 — two days before Enda hit this.
+Confirmed directly against Groq's current docs, not assumed: their live model list no
+longer includes it, and their deprecations page lists it as shut down that date, with
+`openai/gpt-oss-120b` or `qwen/qwen3.6-27b` as the named replacements. Switched to
+`openai/gpt-oss-120b` — the larger of the two, since this call has to translate into
+many different target languages (see `LANGUAGES`), where quality matters more than
+raw speed.
+
+**Verified:** `npx vite build` completes with no errors, twice (once after each group
+of changes above).
+
+**Not done / worth knowing for next time:**
+- Not tested live against a real Groq key — Enda should re-try Translate & Load once
+  this is deployed to confirm `openai/gpt-oss-120b` actually returns clean translations
+  with `<break>` tags preserved (the prompt's rules were left exactly as they were).
+- The `err.message`-hides-the-real-error pattern this fixed likely exists in other
+  places that call `base44.functions.invoke()` too — only the two files actually
+  involved in this bug report were swept and fixed. Worth a dedicated pass later to
+  apply `getFnErrorMessage()` everywhere else the same pattern shows up, so no future
+  bug report starts from a meaningless generic message again.
+- The one-time key prompt fires once per login per browser tab (component mount), not
+  once ever — logging out and back in will re-check, but that's deliberate: it re-asks
+  exactly when the check ("do they have a key yet?") could have a different answer.
+
+---
+
+## 2026-08-19 (audit) — API key persistence audit: confirmed the server-side fix holds, found and closed one real remaining gap
+Scope: `src/lib/useNarratorApiKeys.js`, `src/components/admin/ApiKeysDialog.jsx`.
+No backend files changed.
+
+Enda asked for an audit to make sure a narrator/admin's Google TTS /
+Groq API keys can't get deleted by an app update, or by a
+refresh/cookies-and-cache clear on their end.
+
+**Confirmed still solid:** the 2026-08-18 fix that moved these keys
+into the `AppUser` entity (server-side, keyed by the caller's own
+email) is genuinely still in place and correctly wired — checked
+directly, not assumed. Searched the whole codebase for every reference
+to `google_tts_api_key`/`groq_api_key`: the only function that ever
+writes them is `manageApiKeys`, and the only caller of that save path
+is `ApiKeysDialog`. No sync/update function (`syncAppUsersFromWordPress`,
+`ensureAppUserOnboarding`, `saveAppUserAdmin`) touches these two fields
+or does a blind full-row overwrite — each only patches the specific
+fields it owns. So neither a WordPress sync, an admin editing a user's
+role, nor a normal app update/republish can wipe a saved key. (The one
+way a key genuinely goes away is an admin explicitly deleting that
+person's whole `AppUser` row via `deleteAppUserAdmin` — that's
+intentional account removal, not the accidental loss being asked
+about here.)
+
+**Real gap found and fixed:** `ApiKeysDialog`'s Save button was never
+gated on the initial load actually succeeding. If the GET to fetch a
+person's existing keys failed for any reason — a network hiccup, or
+(plausibly, given the ask) a refresh landing a moment before the
+narrator/admin's session was fully re-established — the dialog showed
+an error banner but still left both fields blank *and the Save button
+fully clickable*. Since Save always sends both fields, clicking it in
+that state would write two empty strings over whatever was actually
+saved, silently deleting it. Reproduced this precisely by tracing the
+exact state path (load fails → `keys` stays at its blank initial value
+→ Save fires anyway), not guessed at.
+
+Fixed by adding a `loadedOk` flag in `useNarratorApiKeys`, reset to
+false at the start of every load attempt (including a retry) and only
+set true right after a load has actually confirmed real values from
+the server. `saveKeys` now refuses to run at all unless `loadedOk` is
+true — enforced inside the hook itself, not just as a UI nicety, so it
+can't be bypassed. `ApiKeysDialog` disables both key inputs and the
+Save button until a load has actually succeeded, and on a load error
+now shows a **Retry loading** button instead of a save action that
+could destroy data.
+
+**Verified:** `npx vite build` completes with no errors.
+
+**Not done / worth knowing for next time:**
+- Not tested live in the actual Base44 app — worth simulating a failed
+  load (e.g. toggling the browser to offline right as the dialog
+  opens) and confirming Save stays disabled, then going back online
+  and confirming a normal load/save still works exactly as before.
+- This only covers the two TTS/translation API keys. If any other
+  per-user setting gets added later that follows this same
+  load-then-save pattern, it should get the same `loadedOk`-style
+  guard.
+
+---
+
 ## 2026-08-19 (later) — Real, THIRD cause found: the preview box was hard-limited to 250 characters, unrelated to either earlier fix
 Scope: `src/components/admin/TranslationPanel.jsx` only.
 

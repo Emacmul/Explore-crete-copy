@@ -10,6 +10,7 @@ import WalksDashboard from './WalksDashboard';
 import AdminStartScreen from './AdminStartScreen';
 import UsersManager from './UsersManager';
 import ApiKeysDialog from './ApiKeysDialog';
+import { useNarratorApiKeys } from '@/lib/useNarratorApiKeys';
 import DisputesManager from './DisputesManager';
 import TranslationsManager from './TranslationsManager';
 import { getRouteTypeForCategory, defaultPriceForCategory } from '@/lib/tourCategories';
@@ -37,6 +38,22 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
   // (authMode === 'base44') needs none of this — their Base44 session already
   // speaks for itself server-side.
   const narrAuth = authMode === 'narr' ? { email: user?.email, narrToken: user?.token } : {};
+
+  // Every admin/narrator has their OWN Google TTS AND Groq keys (manageApiKeys is scoped
+  // to the caller's own AppUser row — see that function and useNarratorApiKeys.js), never
+  // a shared or fallback key, so nobody accidentally burns Enda's quota or a Base44 key.
+  // This is a genuine hard lock, not a dismissable reminder: every narrator works across
+  // all three tour types (walk/hike, WalkAbout, driving), so there's no "doesn't need a
+  // key" case here — both keys are mandatory before anyone can use anything else in the
+  // backend. `needsApiKeySetup` stays true until BOTH fields are actually saved; the
+  // dialog itself (see ApiKeysDialog's `required` prop) can't be closed by the X button,
+  // clicking outside, or Escape while it's true, and its own Save button won't submit
+  // unless both fields have something in them. `reloadMyApiKeys` is threaded into the
+  // dialog as `onSaved` so a successful save here unlocks the app immediately, with no
+  // reload needed — the dialog itself uses a separate hook instance, so without this it
+  // wouldn't know a save just happened.
+  const { keys: myApiKeys, loadedOk: apiKeysLoadedOk, reload: reloadMyApiKeys } = useNarratorApiKeys();
+  const needsApiKeySetup = apiKeysLoadedOk && (!myApiKeys.google_tts_api_key || !myApiKeys.groq_api_key);
 
   // All Walk reads/writes go through backend functions now, never the direct
   // client SDK — see base44/shared/backendActor.ts for why: a Narr Studio
@@ -247,11 +264,14 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
                 <ArrowLeft className="w-4 h-4" /> Start
               </Button>
             )}
-            {isAdmin && (
-              <Button variant="ghost" size="sm" onClick={() => setShowApiKeysDialog(true)} className="text-slate-300 hover:text-white gap-2">
-                <KeyRound className="w-4 h-4" /> API Keys
-              </Button>
-            )}
+            {/* Every admin AND narrator has their own keys to manage — this was previously
+                admin-only, which meant a real narrator had no way at all to open this
+                dialog, even though the backend (manageApiKeys) always supported them and
+                the TTS/Translate panels explicitly tell narrators to "Add your own key
+                under API Keys" when one's missing. */}
+            <Button variant="ghost" size="sm" onClick={() => setShowApiKeysDialog(true)} className="text-slate-300 hover:text-white gap-2">
+              <KeyRound className="w-4 h-4" /> API Keys
+            </Button>
             <Link to={createPageUrl('Home')}>
               <Button variant="ghost" size="sm" className="text-slate-300 hover:text-white gap-2">Front End</Button>
             </Link>
@@ -262,8 +282,32 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
         </div>
       </header>
 
-      <ApiKeysDialog open={showApiKeysDialog} onOpenChange={setShowApiKeysDialog} />
+      <ApiKeysDialog
+        open={needsApiKeySetup || showApiKeysDialog}
+        onOpenChange={setShowApiKeysDialog}
+        required={needsApiKeySetup}
+        onSaved={reloadMyApiKeys}
+      />
 
+      {!apiKeysLoadedOk ? (
+        // Don't know yet whether this person has both keys saved — avoid flashing the
+        // real tour list/editor for a moment before potentially locking it right back up.
+        <main className="max-w-6xl mx-auto p-4 flex items-center justify-center py-24">
+          <Loader2 className="w-6 h-6 animate-spin text-slate-500" />
+        </main>
+      ) : needsApiKeySetup ? (
+        // The dialog above is doing the actual locking (can't be closed while required) —
+        // this is just what sits behind it, so there's nothing real to interact with even
+        // if the modal's overlay were somehow bypassed.
+        <main className="max-w-6xl mx-auto p-4 flex flex-col items-center justify-center py-24 text-center gap-2">
+          <KeyRound className="w-8 h-8 text-amber-400" />
+          <p className="text-white font-medium">Add your API keys to continue</p>
+          <p className="text-slate-400 text-sm max-w-sm">
+            Every admin and narrator needs their own Google TTS and Groq keys before using
+            any tour tools. Enter both in the dialog above to unlock the rest of this panel.
+          </p>
+        </main>
+      ) : (
       <main className="max-w-6xl mx-auto p-4">
         {editingWalk !== null ? (
           <WalkEditor
@@ -349,6 +393,7 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
           />
         )}
       </main>
+      )}
     </div>
   );
 }

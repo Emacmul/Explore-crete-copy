@@ -24,10 +24,19 @@ export function useNarratorApiKeys() {
   const [keys, setKeys] = useState({ google_tts_api_key: '', groq_api_key: '' });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // True only in the instant right after a GET has actually confirmed what's on the
+  // server. Deliberately reset to false at the start of every load (including a retry),
+  // not just on the very first one — a save is only ever safe when what's on screen is
+  // known-fresh, not a stale or blank guess. This is what saveKeys below checks before
+  // writing anything, so a failed/slow load (a refresh landing before the session is
+  // fully re-established, a network hiccup, etc.) can never result in blank fields
+  // silently overwriting a real saved key.
+  const [loadedOk, setLoadedOk] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
+    setLoadedOk(false);
     try {
       const res = await base44.functions.invoke('manageApiKeys', { action: 'get', token: getNarratorToken() });
       if (res?.data?.error) throw new Error(res.data.error);
@@ -35,6 +44,7 @@ export function useNarratorApiKeys() {
         google_tts_api_key: res?.data?.google_tts_api_key || '',
         groq_api_key: res?.data?.groq_api_key || '',
       });
+      setLoadedOk(true);
     } catch (err) {
       setError(err.message || 'Could not load your saved API keys.');
     }
@@ -44,12 +54,19 @@ export function useNarratorApiKeys() {
   useEffect(() => { load(); }, [load]);
 
   const saveKeys = useCallback(async (updates) => {
+    // Refuse to save unless we've actually confirmed the current values from the server
+    // this session — otherwise a save right after a failed load would write blank/stale
+    // fields over a real, already-saved key. This is enforced here (not just by disabling
+    // the button in the UI) so it can't be bypassed.
+    if (!loadedOk) {
+      throw new Error('Your saved keys haven’t loaded yet — please retry loading before saving, so a real key isn’t overwritten by a blank one.');
+    }
     const res = await base44.functions.invoke('manageApiKeys', { action: 'save', token: getNarratorToken(), ...updates });
     if (res?.data?.error) throw new Error(res.data.error);
     setKeys((prev) => ({ ...prev, ...updates }));
-  }, []);
+  }, [loadedOk]);
 
-  return { keys, loading, error, saveKeys, reload: load };
+  return { keys, loading, error, loadedOk, saveKeys, reload: load };
 }
 
 // Small helper reused by every admin/narrator tool that calls a backend function

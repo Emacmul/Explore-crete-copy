@@ -13,6 +13,7 @@ import AudioPlayer from '@/components/ui/AudioPlayer';
 import { Loader2, Sparkles, Pause, Play, Download, Braces, FileText, Square } from 'lucide-react';
 import { downloadScriptAsDocx } from '@/lib/docxExporter';
 import { useNarratorApiKeys } from '@/lib/useNarratorApiKeys';
+import { getFnErrorMessage } from '@/lib/utils';
 
 const VOICES = [
   { value: 'NEUTRAL', label: 'Default voice (auto)' },
@@ -120,8 +121,9 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
           addLog(`Segment ${seg.id}: no URL returned`);
         }
       } catch (err) {
-        addLog(`Segment ${seg.id}: ERROR — ${err.message}`);
-        setError(`Segment ${seg.id} failed: ${err.message}`);
+        const msg = getFnErrorMessage(err);
+        addLog(`Segment ${seg.id}: ERROR — ${msg}`);
+        setError(`Segment ${seg.id} failed: ${msg}`);
       }
     }
 
@@ -202,8 +204,9 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
         addLog('Combined audio saved.');
       }
     } catch (err) {
-      addLog(`Combined audio ERROR: ${err.message}`);
-      setError(`Combined audio failed: ${err.message}`);
+      const msg = getFnErrorMessage(err);
+      addLog(`Combined audio ERROR: ${msg}`);
+      setError(`Combined audio failed: ${msg}`);
     }
     setGeneratingCombined(false);
   };

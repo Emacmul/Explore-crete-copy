@@ -8,6 +8,7 @@ import { base44 } from '@/api/base44Client';
 import { Upload, Loader2, Languages, FileText, ArrowRight } from 'lucide-react';
 import { extractTextFromFile } from '@/lib/fileTextExtractor';
 import { useNarratorApiKeys } from '@/lib/useNarratorApiKeys';
+import { getFnErrorMessage } from '@/lib/utils';
 
 export default function TranslationPanel({ onTranslated }) {
   const { keys: apiKeys } = useNarratorApiKeys();
@@ -43,9 +44,23 @@ export default function TranslationPanel({ onTranslated }) {
     e.target.value = '';
   };
 
+  // The imported file is always the English master script (see this app's workflow —
+  // narrators always start from an English original). If the chosen target language is
+  // English too — e.g. Enda writing the English version of a tour himself, alongside a
+  // Dutch one from the same import — there's genuinely nothing to translate. Skip the
+  // Groq call entirely rather than running a same-language "translation" through the
+  // model anyway: that would cost real API quota/time for a no-op, and risks the model
+  // subtly rewording text that was already exactly right, for no reason at all.
+  const isNoOpTranslation = targetLanguage === 'English';
+
   const handleTranslate = async () => {
     if (!importedText.trim()) {
       setError('Import a file first.');
+      return;
+    }
+    if (isNoOpTranslation) {
+      setError('');
+      onTranslated(importedText);
       return;
     }
     if (!apiKeys.groq_api_key) {
@@ -67,7 +82,7 @@ export default function TranslationPanel({ onTranslated }) {
         setError('Translation returned no text.');
       }
     } catch (err) {
-      setError(err.message || 'Translation failed.');
+      setError(getFnErrorMessage(err, 'Translation failed.'));
     }
     setTranslating(false);
   };
@@ -125,9 +140,16 @@ export default function TranslationPanel({ onTranslated }) {
           className="bg-amber-600 hover:bg-amber-700 gap-2 text-white"
         >
           {translating ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
-          {translating ? 'Translating…' : 'Translate & Load'}
+          {translating ? 'Translating…' : isNoOpTranslation ? 'Load (already English)' : 'Translate & Load'}
         </Button>
       </div>
+
+      {isNoOpTranslation && importedText && (
+        <p className="text-xs text-slate-500">
+          Target language is English, same as the imported master script — this will load
+          the text as-is, no translation step needed.
+        </p>
+      )}
 
       {error && (
         <div className="text-red-400 text-xs bg-red-900/30 border border-red-700/50 rounded-md px-2.5 py-1.5">

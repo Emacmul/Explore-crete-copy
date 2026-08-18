@@ -47,7 +47,13 @@ ${text}`;
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        // llama-3.3-70b-versatile was decommissioned by Groq on 2026-08-16 — every call
+        // using that model id now fails, which is exactly what surfaced as this endpoint's
+        // generic "Request failed with status code 500". Groq's own migration guidance for
+        // this exact model points to either openai/gpt-oss-120b or qwen/qwen3.6-27b; picked
+        // the larger of the two (120b vs 27b) since this call has to handle many different
+        // target languages (see LANGUAGES) and translation quality matters more than speed.
+        model: 'openai/gpt-oss-120b',
         messages: [
           {
             role: 'system',

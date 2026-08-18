@@ -9,6 +9,7 @@ import { LanguageProvider } from '@/lib/i18n/LanguageContext';
 import Login from './pages/Login';
 import Narr from './pages/Narr';
 import DebugConsoleOverlay from './components/DebugConsoleOverlay';
+import UpdateAvailableToast from './components/UpdateAvailableToast';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -83,6 +84,10 @@ function App() {
           </Router>
           <Toaster />
           <DebugConsoleOverlay />
+          {/* Global, not tied to any one route — a narrator/admin left in the Admin Panel
+              or Narr Studio for a while needs this exactly as much as a customer on the
+              front end does. See UpdateAvailableToast.jsx for the full explanation. */}
+          <UpdateAvailableToast />
         </QueryClientProvider>
       </AuthProvider>
     </LanguageProvider>
