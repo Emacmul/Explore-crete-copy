@@ -17,6 +17,40 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-18 (final pass) — The actual last 3 security scan findings, identified by exact function name and fixed
+Scope: `base44/functions/getUserRole/entry.ts`,
+`base44/functions/sessionEnd/entry.ts`,
+`base44/functions/sessionHeartbeat/entry.ts`.
+
+Earlier assessment of `getUserRole` as "legitimately safe, bootstrapping
+function" was too generous — Base44's own scan description made the real
+problem clear: it accepted *any* arbitrary email address, not necessarily
+the caller's own, and returned whether that email had an elevated role.
+That's a genuine information-disclosure issue — a way to check which
+accounts are worth targeting, with no login of any kind required to ask.
+`sessionEnd` and `sessionHeartbeat` had the same underlying flaw: an email
+and device ID with nothing confirming either belonged to whoever was
+actually asking, meaning anyone could end or reactivate any other
+customer's session on any device.
+
+Fixed all three the same way: they now require and verify a real
+WordPress token, and only ever act on the email that token genuinely
+belongs to — never an arbitrary caller-supplied value. Searched the
+frontend for any current caller of any of these three and found none at
+all, so this carries no risk of breaking an existing legitimate flow.
+
+Combined with the two earlier passes today, this closes every item from
+the original 12-issue scan: the identity-spoofing fix (7 functions), the
+4 entity RLS restrictions, the secret-exposure correction, the XSS fix,
+and now these final 3 — `generateTts`, `translateScript`, and
+`routeWaypoints` were fixed in an earlier pass and confirmed still live
+and correct; these three were the genuinely different, previously
+unidentified functions actually behind the last 3 open findings.
+
+Built and verified clean.
+
+---
+
 ## 2026-08-18 (even later) — Fixed: previous security fix itself exposed a secret from the wrong location
 Scope: `base44/shared/wpToken.ts` (rewritten again),
 `base44/functions/getMembershipStatus/`, `getOwnedProductIds/`,

@@ -1,4 +1,5 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.38';
+import { verifyEmailFromToken } from '../../shared/wpToken.ts';
 
 /**
  * Looks up whether a given email address belongs to a Base44 "User" record
@@ -16,22 +17,28 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.38';
  *
  * Deliberately returns only { role } — never the full User record — so a
  * WordPress login can never pull back anything more sensitive than that.
+ *
+ * SECURITY: only ever checks the role for the email a genuine WordPress
+ * token actually belongs to — never an arbitrary email passed in the
+ * request. Without this, anyone could ask "what role does X have" for any
+ * email they typed in, with no login of their own required — a way to scout
+ * which accounts are worth targeting, not something that needs a real
+ * WordPress session to do.
  */
 Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
     const body = await req.json();
-    const { email } = body;
+    const { token } = body;
 
+    const email = await verifyEmailFromToken(token, Deno.env.get('WC_SITE_URL'));
     if (!email) {
-      return Response.json({ error: 'Email is required' }, { status: 400 });
+      return Response.json({ error: 'Not authorized' }, { status: 403 });
     }
-
-    const normalizedEmail = String(email).trim().toLowerCase();
 
     // Service role: no Base44 user session exists for WordPress-authenticated
     // visitors, so this must run with elevated backend permissions.
-    const matches = await base44.asServiceRole.entities.User.filter({ email: normalizedEmail });
+    const matches = await base44.asServiceRole.entities.User.filter({ email });
 
     const match = Array.isArray(matches) ? matches[0] : null;
     const role = (match && (match.role === 'admin' || match.role === 'narrator'))
