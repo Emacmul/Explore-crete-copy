@@ -24,6 +24,65 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-19 (backup zip) — "Download all backups" button on a tour: every waypoint/segment script (.docx) + audio clip in one zip
+Scope: `src/lib/tourBackupZip.js` (NEW), `src/lib/docxExporter.js`,
+`src/components/admin/WalkEditor.jsx` (frontend only, no backend function touched).
+
+Context: discussed with Enda how the ElevenLabs production-audio workflow should
+actually work. Key finding from reading the code: the LIVE app only ever plays
+audio per waypoint (geofence-triggered `wp.audio_clip_url` in
+`DrivingTourPlayer.jsx`) — it never plays a continuous segment or tour-length file.
+Segment-level `combined_audio_url`/`final_audio_url`/`finished_audio_url` is purely
+an admin authoring/QA artifact (Segment Script Manager/Editor + the simulator);
+there is no code anywhere that splits one long file back into per-waypoint clips.
+Conclusion (Enda's, confirmed by the code): since ElevenLabs can export audio
+chapter-by-chapter (one file per waypoint) and the app already plays waypoint-by-
+waypoint, there's no need for a "combine everything into one master file" feature —
+that would just create a manual splitting step the app has no tooling for. What
+Enda actually wanted instead: a one-click safety backup of everything already in
+the app, per waypoint AND per segment, bundled as separate files (not merged) into
+one zip named after the tour.
+
+**What was built:**
+- `src/lib/docxExporter.js` — generalized the existing hand-rolled ZIP writer
+  (`createZip`, already used to build .docx files, itself a ZIP format) to accept
+  either string content (existing use) or a raw `Uint8Array` (for nesting binary
+  audio files), and exported it. Split the .docx-building logic out of
+  `downloadScriptAsDocx` into a new `buildScriptDocxBlob(script)` that returns a
+  Blob without triggering a download, so it can be reused to build many .docx files
+  for one outer zip instead of only ever downloading one at a time.
+- `src/lib/tourBackupZip.js` (new) — `buildTourBackupZip(walk, onProgress)` walks
+  every `waypoints[]` entry (script → `waypoints/<name>_script.docx`, audio →
+  `waypoints/<name>_audio.<ext>`) and every `segment_scripts[]` entry (script →
+  `segments/<segment_id>_script.docx` from `final_script || combined_script`, audio
+  → `segments/<segment_id>_audio-<tier>.<ext>` from `finished_audio_url ||
+  final_audio_url || combined_audio_url`, tier labelled in the filename so a draft
+  is never mistaken for the finished ElevenLabs version). A failed fetch (stale
+  URL, network hiccup) skips just that one file and is listed in a `skipped[]`
+  array — it doesn't abort the whole backup.
+- `src/components/admin/WalkEditor.jsx` — new "Download all backups" button in the
+  tour editor's top bar (shown once the tour has been saved), with a live
+  `n/total` progress label while zipping, downloads `<tour-name>-backup.zip`, and
+  toasts a summary including any skipped files.
+
+**Verified:** wrote standalone Node round-trip tests (outside the browser, using
+Node's built-in Blob/DecompressionStream) — (1) the generalized `createZip` with
+mixed string+binary entries, cross-checked by reading the output back with an
+independent ZIP-reader implementation (adapted from `fileTextExtractor.js`'s
+reader) and byte-comparing; confirmed a `.docx` nested inside the outer zip is
+itself a valid, readable inner ZIP. (2) A full `buildTourBackupZip` integration
+test against a mock walk with a mocked `fetch` (one waypoint's audio deliberately
+made to fail): confirmed correct file naming/contents for both waypoints and
+segments, the failed fetch produced exactly one `skipped` entry and didn't affect
+anything else, an empty waypoint (no script, no audio) was correctly excluded
+entirely, and the progress callback fired once per waypoint/segment processed. All
+tests passed. `npx vite build` and `npx eslint` clean (pre-existing unrelated
+unused-import warnings in `WalkEditor.jsx` predate this change — confirmed via
+`git stash` diff — and are not addressed here as out of scope).
+**Not done:** live click-test of the button in the actual app.
+
+---
+
 ## 2026-08-19 (pause timing fix, part 3) — 0.5s break measured as ~2s after part 2's fix; found the real reason parts 1-2 didn't show up in testing
 Scope: `src/lib/audioCombiner.js`, `src/components/admin/NarrationTtsEditor.jsx`
 (frontend only, no backend function touched this time).

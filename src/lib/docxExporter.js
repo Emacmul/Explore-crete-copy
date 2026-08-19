@@ -28,15 +28,21 @@ function crc32(bytes) {
 
 /**
  * Build a minimal ZIP archive (stored, no compression).
- * @param {Array<{name: string, content: string}>} files
+ * @param {Array<{name: string, content: string|Uint8Array}>} files  `content` may be
+ *   a plain string (encoded as UTF-8, e.g. an XML part of a .docx) or a Uint8Array
+ *   (used as-is, e.g. an already-binary audio file) — this dual support is what lets
+ *   src/lib/tourBackupZip.js nest binary audio and text-built .docx files side by
+ *   side in one outer ZIP, reusing this exact same writer for both.
+ * @param {string} [mimeType] — defaults to the .docx MIME type for backward
+ *   compatibility with the original single-purpose caller below.
  * @returns {Blob}
  */
-function createZip(files) {
+export function createZip(files, mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
   const encoder = new TextEncoder();
 
   const entries = files.map((f) => {
     const nameBytes = encoder.encode(f.name);
-    const contentBytes = encoder.encode(f.content);
+    const contentBytes = typeof f.content === 'string' ? encoder.encode(f.content) : f.content;
     return { name: f.name, nameBytes, contentBytes, crc: crc32(contentBytes) };
   });
 
@@ -108,7 +114,7 @@ function createZip(files) {
   view.setUint32(pos, centralDirOffset, true); pos += 4;
   view.setUint16(pos, 0, true); pos += 2;
 
-  return new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+  return new Blob([buf], { type: mimeType });
 }
 
 function escapeXml(text) {
@@ -119,11 +125,14 @@ function escapeXml(text) {
 }
 
 /**
- * Export a narration script as a .docx file, preserving <break> tags as text.
+ * Build a narration script as a .docx Blob, preserving <break> tags as text.
+ * Split out from downloadScriptAsDocx() so src/lib/tourBackupZip.js can build a
+ * .docx for every waypoint/segment and nest each one inside one outer backup ZIP,
+ * without triggering N separate individual downloads along the way.
  * @param {string} script  The full script text (may contain <break .../> tags)
- * @param {string} filename  Download filename
+ * @returns {Blob}
  */
-export function downloadScriptAsDocx(script, filename = 'narration_script.docx') {
+export function buildScriptDocxBlob(script) {
   const escaped = escapeXml(script || '');
 
   // Each line becomes a <w:p> paragraph; xml:space="preserve" keeps whitespace.
@@ -149,12 +158,20 @@ export function downloadScriptAsDocx(script, filename = 'narration_script.docx')
     + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'
     + '</Relationships>';
 
-  const blob = createZip([
+  return createZip([
     { name: '[Content_Types].xml', content: contentTypesXml },
     { name: '_rels/.rels', content: relsXml },
     { name: 'word/document.xml', content: documentXml },
   ]);
+}
 
+/**
+ * Export a narration script as a .docx file, preserving <break> tags as text.
+ * @param {string} script  The full script text (may contain <break .../> tags)
+ * @param {string} filename  Download filename
+ */
+export function downloadScriptAsDocx(script, filename = 'narration_script.docx') {
+  const blob = buildScriptDocxBlob(script);
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

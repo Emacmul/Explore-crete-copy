@@ -19,6 +19,7 @@ import { validateDrivingTour, generateGpx, generateWalkGpx, generateKml, downloa
 import { getRouteTypeForCategory, defaultPriceForCategory } from '@/lib/tourCategories';
 import { MAX_WAYPOINT_IMAGES } from '@/lib/waypointImages';
 import { toast } from '@/components/ui/use-toast';
+import { buildTourBackupZip } from '@/lib/tourBackupZip';
 
 const DEFAULT_INTERESTS = ['Wild Flowers', 'History', 'Mythology', 'Archaeology', 'Photography', 'Routes of Faith'];
 
@@ -679,6 +680,51 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   };
 
   const [downloadingGpx, setDownloadingGpx] = useState(false);
+  const [downloadingBackup, setDownloadingBackup] = useState(false);
+  const [backupProgress, setBackupProgress] = useState(null); // { done, total } while running
+
+  // Bundles every waypoint's and every segment's current script (.docx) and audio
+  // clip into one "<tour>-backup.zip", entirely client-side. Not a merge — every
+  // file stays exactly as separate as it already is on the tour, just gathered into
+  // one download instead of clicking through each waypoint/segment individually.
+  // Per Enda: with ElevenLabs producing audio per waypoint and the live app already
+  // playing per-waypoint clips, there's no production need for one combined file —
+  // this is purely a "grab everything, just in case" safety copy.
+  const handleDownloadBackup = async () => {
+    if (downloadingBackup) return;
+    setDownloadingBackup(true);
+    setBackupProgress({ done: 0, total: (form.waypoints?.length || 0) + (form.segment_scripts?.length || 0) });
+    try {
+      const { blob, includedCount, skipped } = await buildTourBackupZip(form, (done, total) => {
+        setBackupProgress({ done, total });
+      });
+
+      const safeName = (form.name || form.code || 'tour').trim().replace(/[\\/:*?"<>|]+/g, '-') || 'tour';
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${safeName}-backup.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      if (skipped.length > 0) {
+        toast({
+          variant: 'destructive',
+          title: `Backup downloaded with ${skipped.length} file(s) skipped`,
+          description: skipped.slice(0, 3).join('; ') + (skipped.length > 3 ? '…' : ''),
+        });
+      } else {
+        toast({ title: 'Backup downloaded', description: `${includedCount} file(s) zipped into ${safeName}-backup.zip.` });
+      }
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Backup failed', description: err?.message || 'Could not build the backup zip.' });
+    } finally {
+      setDownloadingBackup(false);
+      setBackupProgress(null);
+    }
+  };
 
   // Saves the whole tour first (same as the regular Save), then — only if that save
   // actually succeeded — builds a GPX file from the just-saved data and downloads it
@@ -745,6 +791,23 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
             </div>
           )}
         </div>
+        {form.id && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleDownloadBackup}
+            disabled={downloadingBackup}
+            title="Download every waypoint's and segment's current script (.docx) and audio clip as one zip, as a safety copy."
+            className="border-slate-500 text-slate-300 hover:text-white gap-2"
+          >
+            {downloadingBackup
+              ? <Loader2 className="w-4 h-4 animate-spin" />
+              : <FileDown className="w-4 h-4" />}
+            {downloadingBackup
+              ? (backupProgress ? `Zipping ${backupProgress.done}/${backupProgress.total}…` : 'Zipping…')
+              : 'Download all backups'}
+          </Button>
+        )}
       </div>
 
       {/* Tabs */}
