@@ -25,6 +25,7 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const { audioBase64, mimeType, filename } = body;
 
+
     const actor = await resolveActor(base44, body);
     if (!actor) {
       return Response.json({ error: 'Not authorized' }, { status: 403 });
