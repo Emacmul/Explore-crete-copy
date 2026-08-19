@@ -24,6 +24,45 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-19 (pause timing fix, part 2) — 0.5s break measured as 1.4s after part 1's fix
+Scope: `src/lib/audioCombiner.js` (frontend only, no backend function touched this time).
+
+Enda tested part 1's fix (below) and a `<break time="0.5s"/>` came out at 1.4 seconds —
+worse than before in absolute terms, though for a different reason than the original bug.
+
+**Root cause:** part 1 correctly stopped asking Google to render pauses via SSML, but
+introduced a NEW source of extra silence in the process. Every segment is synthesized
+as its own independent Google TTS request, and Google leaves a natural beat of silence
+at the very start and end of each one (normal for a standalone utterance — it's there
+so a single clip doesn't sound clipped on its own). Concatenating clips with our own
+exact pause in between STACKS our pause on top of each clip's own boundary silence
+instead of replacing it: roughly 0.45s of Google's own padding on the tail of the first
+clip, plus 0.45s on the lead of the second, plus our requested 0.5s gap, lands right
+around the reported 1.4s.
+
+**Fix:** `audioCombiner.js` now trims each decoded clip down to where the actual
+speech starts and ends (`findSoundBounds()`) before scheduling it, using a short
+5ms-window RMS scan inward from both edges against a fixed -50dB threshold — well
+below any synthesized speech level but safely above Google's near-zero silence
+padding — with 15ms kept on each side so a soft consonant at the very start/end of a
+word isn't clipped. `AudioBufferSourceNode.start(when, offset, duration)` is used to
+play only that trimmed range, so the untrimmed source clip itself never needs to be
+copied or modified. The scheduling logic (exact cumulative time offsets, pauses as
+pure gaps) is otherwise unchanged from part 1 — that part was already correct once
+each clip's own silence was accounted for.
+
+**Verified:** wrote a standalone Node test simulating a clip with 0.45s of silence
+padding on each side of 1.0s of real "sound" (a synthetic tone, since a real browser
+AudioContext isn't available outside a browser) and confirmed `findSoundBounds()`
+detects the true sound window to within ~15ms (the intentional pad) on both edges —
+i.e. the padding is trimmed away and only the deliberate pad remains. `npx vite
+build` and `npx eslint` clean.
+**Not done:** live re-test of pause accuracy in the actual narration editor after
+this deploy (frontend-only change — hard refresh + republish is enough, no backend
+redeploy needed for this part).
+
+---
+
 ## 2026-08-18 (pause timing fix) — TTS break durations always rendered longer than set, worse for longer pauses
 Scope: `src/lib/audioCombiner.js` (NEW), `src/components/admin/NarrationTtsEditor.jsx`,
 `base44/functions/uploadNarrationAudio/entry.ts` (NEW BACKEND FUNCTION)
