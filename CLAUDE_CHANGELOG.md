@@ -24,6 +24,58 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-18 (pause timing fix) — TTS break durations always rendered longer than set, worse for longer pauses
+Scope: `src/lib/audioCombiner.js` (NEW), `src/components/admin/NarrationTtsEditor.jsx`,
+`base44/functions/uploadNarrationAudio/entry.ts` (NEW BACKEND FUNCTION)
+**— NEW backend function, needs to be created in Base44 (not just redeployed), see
+callout in chat reply**.
+
+Enda reported the `<break>` pause durations (0.2s, 0.5s, etc.) always come out longer
+than set, and the longer the requested pause, the bigger the error.
+
+**Root cause:** the "combined audio" (the actual finished narration file saved to the
+walk) was built by sending the ENTIRE script — spoken text plus every
+`<break time="Xs"/>` tag — to Google Cloud TTS as one SSML request
+(`generateTts/entry.ts`, still used for individual segment previews, just not for
+the final combine anymore). Google's own docs describe SSML break timing as an
+approximation, not a guarantee, and in practice it renders pauses long, with the
+error growing with the requested duration — not something fixable by adjusting the
+request. Individual segment clips (from "Parse & Generate") were never affected —
+each one is sent as plain spoken text with no break tags in it at all, so the actual
+narration audio itself was always fine; only the silence between clips in the final
+combined file was wrong.
+
+**Fix:** the combined audio no longer asks Google to render any silence at all.
+`src/lib/audioCombiner.js` (new) takes the already-generated, already-correct
+per-segment speech clips and stitches them together in the browser via the Web
+Audio API: each clip is scheduled to start at an exact cumulative time offset
+(`AudioBufferSourceNode.start(seconds)`), and a pause is simply the gap between one
+clip's start and the next — silence by construction, not a duration handed to a
+black box. The result is rendered via `OfflineAudioContext` and encoded to a plain
+16-bit PCM WAV file (no new dependency — hand-written encoder) at the TTS clips'
+own sample rate, then uploaded through the new `uploadNarrationAudio` backend
+function (same auth pattern as `generateTts`: admin, or narrator via
+email+narrToken). `NarrationTtsEditor.jsx`'s `handleBuildAndPlay` now calls this
+instead of a second `generateTts` call with the full script; `handleDownload` now
+derives the downloaded file's extension from the actual saved URL instead of
+hardcoding `.mp3`, since combined audio is now `.wav` (older tours' previously-saved
+combined audio, still `.mp3`, downloads correctly too).
+
+**Note on file size:** combined audio is now a WAV file rather than an MP3, so it's
+larger per minute of narration than before (no MP3 encoder library is bundled in
+this project). Flagging this in case it matters for storage/offline download size —
+say the word if you'd like an MP3 encoder added instead, now that the timing itself
+is fixed.
+
+**Verified:** `npx vite build` and `npx eslint` clean on the changed frontend files;
+`npx esbuild base44/functions/uploadNarrationAudio/entry.ts --format=esm` — syntax
+clean (Deno type-checking not available in this environment, same caveat as other
+backend function edits this session).
+**Not done:** creating the new function in Base44 and redeploying it, and a live
+re-test of pause accuracy after deploy.
+
+---
+
 ## 2026-08-18 (security fix) — Base44 Security scan High finding: "Anyone can run this function" on ensureAppUserOnboarding
 Scope: `base44/functions/ensureAppUserOnboarding/entry.ts`
 **(backend function — needs manual redeploy in Base44, see standing rule above)**.

@@ -14,6 +14,7 @@ import { Loader2, Sparkles, Pause, Play, Download, Braces, FileText, Square } fr
 import { downloadScriptAsDocx } from '@/lib/docxExporter';
 import { useNarratorApiKeys } from '@/lib/useNarratorApiKeys';
 import { getFnErrorMessage } from '@/lib/utils';
+import { combineSegmentsToWav, blobToBase64 } from '@/lib/audioCombiner';
 
 const VOICES = [
   { value: 'NEUTRAL', label: 'Default voice (auto)' },
@@ -190,18 +191,30 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     if (stopRef.current) return;
 
     setGeneratingCombined(true);
-    addLog('Generating combined audio…');
+    addLog('Building combined audio (exact pause timing, no TTS round trip for silence)…');
     try {
-      const response = await base44.functions.invoke('generateTts', {
-        text: script,
-        gender: selectedVoice,
-        language_code: LANG_TO_CODE[selectedLanguage] || 'en-US',
-        apiKey: apiKeys.google_tts_api_key,
+      // Stitches the already-generated per-segment speech clips together with EXACT
+      // digital silence for every pause, entirely in the browser — see
+      // src/lib/audioCombiner.js for why: sending the whole script (with <break>
+      // pause tags) to Google TTS in one request, as this used to do, let Google's
+      // own SSML break rendering decide the pause lengths, and it was consistently
+      // rendering them longer than requested — worse the longer the pause. Silence
+      // built directly, sample-for-sample, can't drift like that.
+      const wavBlob = await combineSegmentsToWav(segments, segmentAudios);
+      addLog(`Combined audio rendered (${(wavBlob.size / 1024 / 1024).toFixed(2)} MB). Uploading…`);
+      const audioBase64 = await blobToBase64(wavBlob);
+      const response = await base44.functions.invoke('uploadNarrationAudio', {
+        audioBase64,
+        mimeType: 'audio/wav',
+        filename: `narration_${Date.now()}.wav`,
         ...getNarratorAuthPayload(),
       });
       if (response.data?.url) {
         onAudioChange(response.data.url);
         addLog('Combined audio saved.');
+      } else {
+        addLog('Combined audio: no URL returned from upload.');
+        setError('Combined audio failed: upload did not return a file URL.');
       }
     } catch (err) {
       const msg = getFnErrorMessage(err);
@@ -226,15 +239,22 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
       downloadScriptAsDocx(script, 'narration_script.docx');
     }
 
-    // Download the full combined audio as .mp3
+    // Download the full combined audio, keeping whatever extension it was actually
+    // saved with — combined audio built by the exact-silence combiner is a .wav file
+    // now (see audioCombiner.js), while any older tour's combined audio saved before
+    // this fix is still a real .mp3; hardcoding .mp3 here would mislabel the newer
+    // ones even though playback itself doesn't care about the extension.
     if (audioUrl) {
+      const extMatch = audioUrl.match(/\.([a-z0-9]+)(?:\?|#|$)/i);
+      const ext = extMatch ? extMatch[1] : 'mp3';
+      const downloadName = `narration_audio.${ext}`;
       try {
         const response = await fetch(audioUrl);
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'narration_audio.mp3';
+        a.download = downloadName;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -242,7 +262,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
       } catch {
         const a = document.createElement('a');
         a.href = audioUrl;
-        a.download = 'narration_audio.mp3';
+        a.download = downloadName;
         a.target = '_blank';
         a.click();
       }
