@@ -1,3 +1,4 @@
+// (cache-bust marker — forces Vite to re-evaluate this module after the GitHub syncs)
 /**
  * Builds the "combined" narration audio — and, critically, PREVIEWS it — by stitching
  * together the already-generated per-segment TTS clips with EXACT silence for every
