@@ -1,31 +1,43 @@
 /**
- * Builds the final "combined" narration audio by stitching together the already-
- * generated per-segment TTS clips with EXACT silence for every pause — entirely in
- * the browser, via the Web Audio API. No network round trip to a TTS engine is
- * involved in producing the pauses at all.
+ * Builds the "combined" narration audio — and, critically, PREVIEWS it — by stitching
+ * together the already-generated per-segment TTS clips with EXACT silence for every
+ * pause, entirely in the browser via the Web Audio API. No network round trip to a
+ * TTS engine is involved in producing the pauses at all, and the live preview a
+ * narrator listens to via "Build & Play" is now built from the EXACT SAME decoded
+ * clips and the EXACT SAME schedule math as the file that actually gets saved — see
+ * playSegmentsPrecisely() and combineSegmentsToWav() below, which share
+ * decodeAndBoundSegments()/buildSchedule() rather than each computing timing their
+ * own way. That parity is the fix for the third round of this bug (see below).
  *
- * WHY THIS EXISTS: the combined audio used to come from a single Google Cloud TTS
- * request containing the whole script, pauses written in as SSML `<break
- * time="Xs"/>` tags. Google's SSML break timing is documented as an approximation —
- * in practice it was consistently rendering every pause LONGER than requested, and
- * the gap grew the longer the requested pause was (0.2s/0.5s pauses coming out
- * noticeably long, worse for bigger values) — exactly what Enda reported from live
- * testing. That's a property of the TTS engine's own silence rendering, not
- * something fixable by adjusting the request.
+ * HISTORY — three rounds of the same underlying complaint ("pauses come out longer
+ * than set"), three different real causes:
  *
- * Individual segment clips (from "Parse & Generate") were never affected by the SSML
- * break bug — each one is sent to Google as plain spoken text with no break tags in
- * it at all. But stitching independently-synthesized clips together exposed a SECOND,
- * separate source of extra silence: Google's TTS naturally leaves a short pause of
- * its own at the very start and end of EVERY synthesized clip (audible as a beat of
- * silence before/after the speech in each segment's own preview) — normal for a
- * standalone utterance, but on top of our own inserted pause when two clips are
- * stitched with a gap between them, not instead of it. A requested 0.5s pause
- * measuring out at 1.4s (each clip contributing roughly another ~0.4-0.5s of its own
- * boundary silence) is exactly that stacking, not a second copy of the original bug.
- * findSoundBounds() below trims each clip down to where the actual speech starts and
- * ends before scheduling it, so the only silence between two clips is the pause we
- * asked for — nothing contributed by the clips themselves.
+ * 1. The combined audio used to come from a single Google Cloud TTS request
+ *    containing the whole script, pauses written in as SSML `<break time="Xs"/>`
+ *    tags. Google's SSML break timing is documented as an approximation, and in
+ *    practice rendered every pause longer than requested, worse for longer pauses.
+ *    Fixed by building pauses ourselves instead of asking Google to render them.
+ *
+ * 2. Once pauses were built from real per-segment clips stitched together, a SECOND
+ *    source of extra silence showed up: Google leaves a natural beat of silence at
+ *    the very start and end of every independently-synthesized clip (normal for a
+ *    standalone utterance). Stitching two clips with our own exact gap between them
+ *    STACKED our pause on top of both clips' own boundary silence instead of
+ *    replacing it. Fixed by findSoundBounds() below, trimming each clip down to its
+ *    real speech before scheduling it.
+ *
+ * 3. Round 2's trimming was only ever applied to the file that gets saved
+ *    (combineSegmentsToWav, called AFTER the "Build & Play" preview loop finishes) —
+ *    NOT to the actual live preview a narrator listens to and judges pause length
+ *    by, which was still playing each raw, untrimmed segment clip via a plain
+ *    <audio> element and waiting for it to fully end (including its own boundary
+ *    silence) before starting a setTimeout for the pause. So what narrators actually
+ *    heard while testing was never fixed by round 2 at all — the saved file may well
+ *    have been correct, but there was no way to tell without downloading and
+ *    measuring it separately from the app. Fixed by making the preview
+ *    (playSegmentsPrecisely) use this exact same decode/trim/schedule pipeline, so
+ *    there is only one implementation of "how long is this pause" in the whole
+ *    codebase, and what's heard live IS what gets saved, by construction.
  */
 
 // How quiet counts as "silence" when trimming a clip's own boundary padding, and how
@@ -33,6 +45,10 @@
 // a soft consonant at the very start of a word isn't clipped.
 const SILENCE_THRESHOLD_DB = -50;
 const SILENCE_PAD_SECONDS = 0.015;
+
+// Google's synthesized speech comes back mono at a modest sample rate. Only used if a
+// browser ever hands back a buffer with no sampleRate at all (shouldn't happen).
+const FALLBACK_SAMPLE_RATE = 24000;
 
 /**
  * Finds where actual sound starts and ends within a decoded clip, scanning inward
@@ -76,64 +92,140 @@ function findSoundBounds(buffer, thresholdDb = SILENCE_THRESHOLD_DB) {
   return { start: Math.max(0, start - pad), end: Math.min(length, end + pad) };
 }
 
-// Google's synthesized speech comes back mono at a modest sample rate. Rendering the
-// final file at that same rate (via OfflineAudioContext, which resamples automatically
-// as needed) — rather than the browser's own 44.1/48kHz default — keeps file size sane
-// for narrators on mobile data and for hikers pre-downloading tours for offline use,
-// with no audible loss for spoken narration.
-const FALLBACK_SAMPLE_RATE = 24000;
+// Decodes every text segment's clip once (via whichever AudioContext the caller is
+// already using) and trims each to its real speech bounds. Shared by both the live
+// preview and the final saved file so the two can never drift apart.
+async function decodeAndBoundSegments(segments, segmentAudioUrls, audioCtx) {
+  const decoded = {};
+  for (const seg of segments) {
+    if (seg.type !== 'text') continue;
+    const url = segmentAudioUrls[seg.id];
+    if (!url) {
+      throw new Error(`Segment ${seg.id} has no generated audio yet — click "Parse & Generate" again first.`);
+    }
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Could not fetch segment ${seg.id}'s audio (HTTP ${res.status}).`);
+    const arrayBuffer = await res.arrayBuffer();
+    decoded[seg.id] = await audioCtx.decodeAudioData(arrayBuffer);
+  }
+  if (Object.keys(decoded).length === 0) {
+    throw new Error('No generated segment audio to combine yet.');
+  }
 
-export async function combineSegmentsToWav(segments, segmentAudioUrls) {
+  const bounds = {};
+  for (const [id, buf] of Object.entries(decoded)) {
+    bounds[id] = findSoundBounds(buf);
+  }
+
+  return { decoded, bounds };
+}
+
+// Turns segments + decoded/bounds into a flat, ordered schedule of exact cumulative
+// start-time offsets (seconds, from the very beginning of the combined audio) — the
+// ONLY place pause timing is ever computed, used identically by both live playback
+// and file rendering below, so there is nothing for them to disagree about.
+function buildSchedule(segments, decoded, bounds) {
+  const items = [];
+  let cursor = 0;
+  for (const seg of segments) {
+    if (seg.type === 'text') {
+      const buf = decoded[seg.id];
+      const b = bounds[seg.id];
+      if (!buf || !b) continue;
+      const offsetSeconds = b.start / buf.sampleRate;
+      const durationSeconds = (b.end - b.start) / buf.sampleRate;
+      if (durationSeconds <= 0) continue;
+      items.push({ segId: seg.id, buffer: buf, startSeconds: cursor, offsetSeconds, durationSeconds });
+      cursor += durationSeconds;
+    } else if (seg.type === 'pause') {
+      cursor += seg.duration || 0;
+    }
+  }
+  return { items, totalSeconds: cursor };
+}
+
+/**
+ * Plays the segments back LIVE, in real time, through the speakers — used by "Build &
+ * Play" so what the narrator hears is built from the exact same trimmed clips and
+ * exact same pause gaps the saved file will have, not a separate approximation.
+ * Returns a controller: `stop()` to cut playback short, `done` resolves when playback
+ * finishes on its own, and `decoded`/`bounds` so a follow-up combineSegmentsToWav()
+ * call can reuse them instead of re-fetching and re-decoding every clip again.
+ */
+export async function playSegmentsPrecisely(segments, segmentAudioUrls, { onSegmentChange } = {}) {
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) {
+    throw new Error('This browser does not support the audio playback needed for an accurate preview.');
+  }
+
+  const ctx = new AudioContextClass();
+  const { decoded, bounds } = await decodeAndBoundSegments(segments, segmentAudioUrls, ctx);
+  const { items, totalSeconds } = buildSchedule(segments, decoded, bounds);
+
+  const leadIn = 0.05; // tiny safety margin so the very first source isn't scheduled in the past
+  const baseTime = ctx.currentTime + leadIn;
+  const sources = [];
+  const timers = [];
+
+  for (const item of items) {
+    const source = ctx.createBufferSource();
+    source.buffer = item.buffer;
+    source.connect(ctx.destination);
+    source.start(baseTime + item.startSeconds, item.offsetSeconds, item.durationSeconds);
+    sources.push(source);
+    if (onSegmentChange) {
+      const segIndex = segments.findIndex((s) => s.id === item.segId);
+      timers.push(setTimeout(() => onSegmentChange(segIndex), Math.max(0, item.startSeconds * 1000)));
+    }
+  }
+
+  let stopped = false;
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    sources.forEach((s) => { try { s.stop(); } catch { /* already ended */ } });
+    timers.forEach(clearTimeout);
+    ctx.close().catch(() => {});
+  };
+
+  const done = new Promise((resolve) => {
+    const doneTimer = setTimeout(() => {
+      if (!stopped) { stopped = true; ctx.close().catch(() => {}); resolve(); }
+    }, Math.ceil((leadIn + totalSeconds) * 1000) + 50);
+    timers.push(doneTimer);
+  });
+
+  return { stop, done, decoded, bounds, totalSeconds };
+}
+
+/**
+ * Renders the segments to a single WAV file for saving. Pass the object returned by
+ * playSegmentsPrecisely() as `precomputed` to reuse its already-decoded/trimmed clips
+ * (the normal path — preview runs first) so nothing is re-fetched or re-decoded;
+ * decodes fresh only if called on its own.
+ */
+export async function combineSegmentsToWav(segments, segmentAudioUrls, precomputed) {
   const OfflineAudioContextClass = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-  if (!AudioContextClass || !OfflineAudioContextClass) {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!OfflineAudioContextClass || !AudioContextClass) {
     throw new Error('This browser does not support the audio processing needed to build the combined file.');
   }
 
-  const probeCtx = new AudioContextClass();
+  let probeCtx = null;
   try {
-    // Decode every text segment's real, already-synthesized speech up front. This
-    // step is untouched by the bug being fixed here — only pause timing was ever
-    // wrong, never the spoken audio itself.
-    const decoded = {};
-    for (const seg of segments) {
-      if (seg.type !== 'text') continue;
-      const url = segmentAudioUrls[seg.id];
-      if (!url) {
-        throw new Error(`Segment ${seg.id} has no generated audio yet — click "Parse & Generate" again first.`);
-      }
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`Could not fetch segment ${seg.id}'s audio (HTTP ${res.status}).`);
-      const arrayBuffer = await res.arrayBuffer();
-      decoded[seg.id] = await probeCtx.decodeAudioData(arrayBuffer);
+    let decoded, bounds;
+    if (precomputed?.decoded && precomputed?.bounds) {
+      ({ decoded, bounds } = precomputed);
+    } else {
+      probeCtx = new AudioContextClass();
+      ({ decoded, bounds } = await decodeAndBoundSegments(segments, segmentAudioUrls, probeCtx));
     }
 
     const decodedBuffers = Object.values(decoded);
-    if (decodedBuffers.length === 0) {
-      throw new Error('No generated segment audio to combine yet.');
-    }
     const channelCount = Math.max(1, ...decodedBuffers.map((b) => b.numberOfChannels));
     const sampleRate = decodedBuffers[0]?.sampleRate || FALLBACK_SAMPLE_RATE;
 
-    // Trim each clip's own leading/trailing silence ONCE up front (start/end sample
-    // indices, in the clip's own native sample count — not yet converted to seconds)
-    // so both the total-length calculation below and the actual scheduling use the
-    // same trimmed bounds and can't disagree with each other.
-    const bounds = {};
-    for (const [id, buf] of Object.entries(decoded)) {
-      bounds[id] = findSoundBounds(buf);
-    }
-
-    let totalSeconds = 0;
-    for (const seg of segments) {
-      if (seg.type === 'text') {
-        const buf = decoded[seg.id];
-        const b = bounds[seg.id];
-        totalSeconds += buf && b ? (b.end - b.start) / buf.sampleRate : 0;
-      } else {
-        totalSeconds += seg.duration || 0;
-      }
-    }
+    const { items, totalSeconds } = buildSchedule(segments, decoded, bounds);
     if (totalSeconds <= 0) {
       throw new Error('Nothing to combine — the script has no generated audio.');
     }
@@ -144,37 +236,17 @@ export async function combineSegmentsToWav(segments, segmentAudioUrls) {
       sampleRate
     );
 
-    // Schedule each spoken clip — trimmed down to just its actual speech, see
-    // findSoundBounds() above — to start at an exact cumulative time offset. A pause
-    // is simply the gap between one clip's scheduled start and the next — nothing is
-    // scheduled inside it, so it's silence by construction, not a duration handed to
-    // the TTS engine (or left over from the TTS engine's own clip boundary padding)
-    // to approximate. start()'s offset/duration are floating-point seconds, so
-    // there's no per-segment sample rounding for drift to accumulate from across a
-    // long script.
-    let cursor = 0;
-    for (const seg of segments) {
-      if (seg.type === 'text') {
-        const buf = decoded[seg.id];
-        const b = bounds[seg.id];
-        if (!buf || !b) continue;
-        const offsetSeconds = b.start / buf.sampleRate;
-        const durationSeconds = (b.end - b.start) / buf.sampleRate;
-        if (durationSeconds <= 0) continue;
-        const source = offlineCtx.createBufferSource();
-        source.buffer = buf;
-        source.connect(offlineCtx.destination);
-        source.start(cursor, offsetSeconds, durationSeconds);
-        cursor += durationSeconds;
-      } else if (seg.type === 'pause') {
-        cursor += seg.duration || 0;
-      }
+    for (const item of items) {
+      const source = offlineCtx.createBufferSource();
+      source.buffer = item.buffer;
+      source.connect(offlineCtx.destination);
+      source.start(item.startSeconds, item.offsetSeconds, item.durationSeconds);
     }
 
     const rendered = await offlineCtx.startRendering();
     return audioBufferToWavBlob(rendered);
   } finally {
-    probeCtx.close();
+    if (probeCtx) probeCtx.close();
   }
 }
 

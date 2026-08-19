@@ -24,6 +24,47 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-19 (pause timing fix, part 3) — 0.5s break measured as ~2s after part 2's fix; found the real reason parts 1-2 didn't show up in testing
+Scope: `src/lib/audioCombiner.js`, `src/components/admin/NarrationTtsEditor.jsx`
+(frontend only, no backend function touched this time).
+
+Enda tested part 2's fix and a `<break time="0.5s"/>` measured at just under 2
+seconds — worse than part 2's 1.4s, understandably read as the fix not working.
+
+**Root cause — this is the important one:** parts 1 and 2 only ever touched
+`combineSegmentsToWav()`, which builds the audio FILE that gets saved. But that
+function only ever ran AFTER the "Build & Play" preview loop finished — and that
+preview loop (what Enda was actually listening to and judging pause length by, since
+that's the whole point of the button) had its own, completely separate, never-fixed
+implementation: it played each raw segment clip with a plain `<audio>` element,
+waited for it to fully end (which includes that clip's own boundary silence — see
+part 2), and only then started a `setTimeout` for the pause. Every previous round of
+this fix improved the saved file while leaving the thing being tested untouched, so
+from the testing side it looked like nothing had changed (and clip-boundary-silence
+variance between different test scripts is a plausible reason the exact number
+drifted between rounds rather than staying fixed at 1.4s).
+
+**Fix:** `audioCombiner.js` is restructured around two shared building blocks —
+`decodeAndBoundSegments()` (fetch + decode + trim each clip once) and
+`buildSchedule()` (turn segments into exact cumulative start-time offsets) — used
+identically by both a new `playSegmentsPrecisely()` (real-time playback via a live
+`AudioContext`, used by "Build & Play" for what Enda actually hears) and
+`combineSegmentsToWav()` (offline render to the saved file, now accepting the live
+playback's already-decoded/trimmed clips so nothing is fetched or decoded twice).
+There is now exactly one implementation of "how long is this pause" in the codebase;
+the preview and the saved file are built from the same decoded data by construction,
+so they cannot diverge again the way they did across parts 1-2.
+
+**Verified:** re-ran the same standalone silence-trim test from part 2 against the
+refactored (but logically unchanged) `findSoundBounds()` — still detects the true
+sound window to within the intentional ~15ms pad on both edges. `npx vite build` and
+`npx eslint` clean.
+**Not done:** live re-test in the actual narration editor — this is the one that
+matters, since "Build & Play" is now the accurate, real thing to judge pause length
+by (frontend-only change — hard refresh + republish is enough, no backend redeploy).
+
+---
+
 ## 2026-08-19 (pause timing fix, part 2) — 0.5s break measured as 1.4s after part 1's fix
 Scope: `src/lib/audioCombiner.js` (frontend only, no backend function touched this time).
 

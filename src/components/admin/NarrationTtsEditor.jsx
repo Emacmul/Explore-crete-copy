@@ -14,7 +14,7 @@ import { Loader2, Sparkles, Pause, Play, Download, Braces, FileText, Square } fr
 import { downloadScriptAsDocx } from '@/lib/docxExporter';
 import { useNarratorApiKeys } from '@/lib/useNarratorApiKeys';
 import { getFnErrorMessage } from '@/lib/utils';
-import { combineSegmentsToWav, blobToBase64 } from '@/lib/audioCombiner';
+import { playSegmentsPrecisely, combineSegmentsToWav, blobToBase64 } from '@/lib/audioCombiner';
 
 const VOICES = [
   { value: 'NEUTRAL', label: 'Default voice (auto)' },
@@ -46,6 +46,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   const textareaRef = useRef(null);
   const currentAudioRef = useRef(null);
   const stopRef = useRef(false);
+  const currentPlaybackRef = useRef(null);
 
   const charCount = (script || '').length;
   const overLimit = charCount > MAX_CHARS;
@@ -165,42 +166,47 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     setPlaying(true);
     setError('');
 
-    for (let i = 0; i < segments.length; i++) {
-      if (stopRef.current) break;
-      const seg = segments[i];
-      setCurrentPlayingIndex(i);
-
-      if (seg.type === 'text' && segmentAudios[seg.id]) {
-        await new Promise((resolve) => {
-          const audio = new Audio(segmentAudios[seg.id]);
-          currentAudioRef.current = audio;
-          audio.onended = resolve;
-          audio.onerror = resolve;
-          audio.play().catch(resolve);
-        });
-      } else if (seg.type === 'pause') {
-        await new Promise((resolve) => {
-          setTimeout(resolve, seg.duration * 1000);
-        });
+    // Live preview and the saved file are now built from the exact same engine (see
+    // src/lib/audioCombiner.js) — this used to play each raw segment clip with a
+    // plain <audio> element and wait for it to fully finish (including that clip's
+    // own boundary silence) before starting a separate setTimeout for the pause,
+    // which is NOT what the saved file did even after the previous fix. What's heard
+    // here now IS what gets saved, because it's literally the same decoded/trimmed
+    // clips and the same schedule.
+    let playback = null;
+    try {
+      playback = await playSegmentsPrecisely(segments, segmentAudios, {
+        onSegmentChange: (idx) => setCurrentPlayingIndex(idx),
+      });
+      currentPlaybackRef.current = playback;
+      if (stopRef.current) {
+        playback.stop();
+      } else {
+        await playback.done;
       }
+    } catch (err) {
+      const msg = getFnErrorMessage(err);
+      addLog(`Preview ERROR: ${msg}`);
+      setError(`Preview failed: ${msg}`);
+      setCurrentPlayingIndex(null);
+      setPlaying(false);
+      currentPlaybackRef.current = null;
+      return;
     }
 
+    currentPlaybackRef.current = null;
     setCurrentPlayingIndex(null);
     setPlaying(false);
 
     if (stopRef.current) return;
 
     setGeneratingCombined(true);
-    addLog('Building combined audio (exact pause timing, no TTS round trip for silence)…');
+    addLog('Rendering combined audio file (reusing the clips just previewed)…');
     try {
-      // Stitches the already-generated per-segment speech clips together with EXACT
-      // digital silence for every pause, entirely in the browser — see
-      // src/lib/audioCombiner.js for why: sending the whole script (with <break>
-      // pause tags) to Google TTS in one request, as this used to do, let Google's
-      // own SSML break rendering decide the pause lengths, and it was consistently
-      // rendering them longer than requested — worse the longer the pause. Silence
-      // built directly, sample-for-sample, can't drift like that.
-      const wavBlob = await combineSegmentsToWav(segments, segmentAudios);
+      // Reuses playback's already-decoded/trimmed clips instead of re-fetching and
+      // re-decoding everything a second time — also guarantees the saved file can't
+      // diverge from what was just heard, since it's the same decoded data.
+      const wavBlob = await combineSegmentsToWav(segments, segmentAudios, playback);
       addLog(`Combined audio rendered (${(wavBlob.size / 1024 / 1024).toFixed(2)} MB). Uploading…`);
       const audioBase64 = await blobToBase64(wavBlob);
       const response = await base44.functions.invoke('uploadNarrationAudio', {
@@ -226,6 +232,10 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
 
   const handleStopPlay = () => {
     stopRef.current = true;
+    if (currentPlaybackRef.current) {
+      currentPlaybackRef.current.stop();
+      currentPlaybackRef.current = null;
+    }
     if (currentAudioRef.current) {
       currentAudioRef.current.pause();
     }
