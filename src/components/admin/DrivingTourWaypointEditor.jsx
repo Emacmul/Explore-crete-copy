@@ -363,6 +363,14 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
       if (field === 'segment_title') {
         next.name = value;
       }
+      // Any audio_clip_url change made through the normal editing flow — a fresh
+      // TTS render, a manual re-upload, clearing it — means whatever is now
+      // attached is no longer the vetted PCV (Professional Cloned Voice) replacement. Only the
+      // Update Audio tool (a separate screen, outside this editor) is allowed
+      // to set final_audio_applied back to true.
+      if (field === 'audio_clip_url') {
+        next.final_audio_applied = false;
+      }
       return next;
     });
     onChange(updated);

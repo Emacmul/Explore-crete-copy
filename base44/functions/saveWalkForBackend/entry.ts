@@ -46,9 +46,9 @@ function mergeNarratorWaypoints(existingWaypoints: any[], incomingWaypoints: any
 // regenerate draft TTS, as many times as needed — but can never push a
 // segment straight to 'accepted', revert it FROM accepted, or attach
 // finished_audio_url themselves. Per Enda: accepting a segment and uploading
-// the final ElevenLabs audio is the Admin's "final check and final audio
-// editing" step, done once the whole clone is marked finished and handed
-// over — not something the narrator does themselves.
+// the final PCV (Professional Cloned Voice) audio is the Admin's "final check
+// and final audio editing" step, done once the whole clone is marked finished
+// and handed over — not something the narrator does themselves.
 function mergeNarratorSegmentScripts(existingScripts: any[], incomingScripts: any) {
   const existing = existingScripts || [];
   if (!Array.isArray(incomingScripts)) return existing;
@@ -103,11 +103,43 @@ export default async function(req) {
 
     // --- Admin: unrestricted, matches today's direct-SDK behaviour ---
     if (actor.kind === 'admin') {
+      // Per Enda: a tour must NEVER become publicly purchasable while any of its
+      // audio-triggered waypoints still carries the AI-generated draft narration —
+      // only the Update Audio tool (UpdateAudioTool.jsx) may set
+      // final_audio_applied:true, once the real PCV (Professional Cloned Voice)
+      // audio has replaced it. Applies to a Narrator's clone AND to a master tour
+      // an Admin builds directly — same rule, same check, both go through this one
+      // saveWalkForBackend admin branch either way.
       if (id) {
+        // This only fires on the actual false->true transition, so it never
+        // retroactively blocks editing an already-published tour (which predates
+        // this field and has no final_audio_applied stamps of its own) — it only
+        // gates the moment a tour is (re)approved.
+        if (patch.approved === true) {
+          const existing = await base44.asServiceRole.entities.Walk.get(String(id));
+          if (existing && existing.approved !== true) {
+            const waypoints = ('waypoints' in patch) ? patch.waypoints : existing.waypoints;
+            const notReady = (waypoints || []).filter((wp: any) => wp && wp.trigger_audio && !wp.final_audio_applied);
+            if (notReady.length > 0) {
+              return Response.json({
+                error: `Cannot publish — ${notReady.length} waypoint(s) still have the AI draft narration. Use "Update Audio" to replace them with the final PCV narration first.`,
+              }, { status: 400 });
+            }
+          }
+        }
         const saved = await base44.asServiceRole.entities.Walk.update(String(id), patch);
         return Response.json({ ok: true, walk: saved });
       }
-      const saved = await base44.asServiceRole.entities.Walk.create(patch);
+      // Brand-new tour (master or otherwise) — the entity schema itself still
+      // defaults `approved` to true, but a fresh tour has had no chance to run
+      // through the audio check above yet (there's nothing to check against
+      // before it exists). Default it to a draft here instead unless the caller
+      // explicitly set it, closing that gap: every new tour now needs an explicit
+      // Publish action once it's actually ready, same as a Narrator's clone always
+      // has. WalkEditor.jsx never sends `approved` on creation today, so this is
+      // the effective default for every new tour from here on.
+      const createPatch = ('approved' in patch) ? patch : { ...patch, approved: false };
+      const saved = await base44.asServiceRole.entities.Walk.create(createPatch);
       return Response.json({ ok: true, walk: saved });
     }
 

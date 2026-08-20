@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import {
   Footprints, MapPin, Car, ChevronRight, ShieldCheck, Mic,
   LayoutDashboard, List, Users, Plus, AlertCircle, Volume2,
-  Languages, CheckCircle2, Send, AlertTriangle,
+  Languages, CheckCircle2, Send, AlertTriangle, AudioLines,
 } from 'lucide-react';
 import { TOUR_CATEGORIES } from '@/lib/tourCategories';
 import CloneTourDialog from './CloneTourDialog';
@@ -149,6 +149,7 @@ export default function AdminStartScreen({
   publishedLanguagesByMaster = {},
   onManageDisputes,
   onManageTranslations,
+  onUpdateAudio,
   unrestricted = false,
 }) {
   const isNarrator = userRole === 'narrator';
@@ -306,6 +307,10 @@ export default function AdminStartScreen({
           <Button variant="outline" onClick={onManageTranslations} className="bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 gap-2 h-auto py-3 justify-start">
             <Languages className="w-5 h-5 text-purple-400 shrink-0" />
             <div className="text-left min-w-0 whitespace-normal"><p className="font-medium">Translations</p><p className="text-xs text-slate-400">Correct UI strings</p></div>
+          </Button>
+          <Button variant="outline" onClick={onUpdateAudio} className="bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 gap-2 h-auto py-3 justify-start">
+            <AudioLines className="w-5 h-5 text-amber-400 shrink-0" />
+            <div className="text-left min-w-0 whitespace-normal"><p className="font-medium">Update Audio</p><p className="text-xs text-slate-400">Swap in final PCV narration before publishing</p></div>
           </Button>
         </div>
       </div>

@@ -32,8 +32,103 @@ Pulled: 2026-08-03
   (e.g. "Import GPX Waypoints", "Import File"), amber text
   (`text-amber-400`, hover `text-amber-300`) when the action is
   confirm/complete-style (e.g. "Mark Waypoint as Done").
+- STANDING RULE — say "PCV audio", never a specific lab's name: the real
+  narration audio that replaces AI drafts is referred to as "PCV" / "PCV
+  (Professional Cloned Voice) audio" everywhere in this codebase's UI text
+  and comments — never "ElevenLabs" or any other specific vendor. Enda may
+  switch labs; PCV describes what the audio is, not who made it, so it
+  never needs revisiting if that happens.
 
 ---
+
+## 2026-08-20 — New Admin Tool: "Update Audio" (replace AI draft narration with final PCV audio)
+Scope: `base44/entities/Walk.jsonc`, `src/components/admin/UpdateAudioTool.jsx` (new),
+`src/components/admin/AdminStartScreen.jsx`, `src/components/admin/BackendShell.jsx`,
+`src/components/admin/DrivingTourWaypointEditor.jsx`,
+**`base44/functions/saveWalkForBackend/entry.ts` (BACKEND FUNCTION — needs the manual
+blank-line redeploy in Base44, pushing the code alone will NOT apply this).**
+
+Enda: once a Narrator finishes a tour and it's pushed back, an Admin checks it over —
+but the audio in it at that point is still the system/AI-generated draft. The Admin
+then gets real PCV (Professional Cloned Voice) audio for the same script, same
+duration, and needs a way to swap each waypoint's audio for the real thing.
+Critically: **a tour must never be published for purchase before every
+audio-triggered waypoint has had this done.**
+
+What was built:
+- New waypoint field `final_audio_applied` (boolean, default false) in `Walk.jsonc`.
+  True only once an Admin has replaced that waypoint's audio through the new tool.
+- New "Update Audio" button in Admin Tools (Admin Panel start screen). Opens a new
+  screen: pick a tour from the same "finished by a Narrator, reviewed, not yet
+  published" list already used by "Translations awaiting review" → see every
+  audio-triggered waypoint in it, each showing its current clip (playable), an
+  "AI draft — needs update" / "Final audio applied" badge, and a "Replace with
+  PCV audio" upload. Picking a file reads both the current clip's and the new
+  file's duration and shows the difference — if it's more than 1 second apart it's
+  flagged, but (per Enda) this never blocks the replace, it's just a heads-up.
+- `DrivingTourWaypointEditor.jsx`: any OTHER path that changes a waypoint's
+  `audio_clip_url` (regenerating TTS, a manual re-upload, clearing it) now
+  automatically resets `final_audio_applied` back to false — so a stale "done" stamp
+  can never survive the draft audio actually changing again.
+- **The actual "never before" rule is enforced twice:** client-side in
+  `handlePublishClone` (BackendShell.jsx) for a fast, clear error message, and —
+  the real, unbypassable boundary — server-side in `saveWalkForBackend`: any save
+  that would flip a walk from not-approved to approved is rejected outright if any
+  of its audio-triggered waypoints still has `final_audio_applied: false`. This only
+  fires on that specific false→true transition, so it does NOT retroactively touch
+  already-published tours (none of which have `final_audio_applied` stamps of their
+  own, since the field is brand new) — normal edits to a tour that's already live
+  keep working exactly as before.
+- A narrator can never set `final_audio_applied` themselves — it was deliberately
+  left out of `NARRATOR_WAYPOINT_FIELDS` in `saveWalkForBackend`, so even a
+  hand-crafted request from a narrator session can't mark their own AI draft as
+  "final."
+
+2026-08-20 follow-up #1 — terminology: renamed every "ElevenLabs" mention in this
+feature's UI text/comments to "PCV" / "PCV (Professional Cloned Voice) audio". Per
+Enda, the lab actually producing this audio could change; "PCV" describes what the
+audio IS (a professional cloned voice), not which vendor made it, so it stays
+correct regardless. Also swept the older pre-existing "ElevenLabs" mentions this
+same terminology applies to: `SegmentScriptEditor.jsx`, `SegmentScriptManager.jsx`,
+`WalkEditor.jsx`'s backup-zip comment, `tourBackupZip.js`, and the
+`finished_audio_url` field description in `Walk.jsonc`. Genuinely historical
+changelog entries above (predating this decision) were left as-is.
+**STANDING RULE — added above under "How to use this file": never hardcode a
+specific voice-cloning vendor's name in UI text or comments; always say "PCV audio"
+/ "PCV (Professional Cloned Voice)".**
+
+2026-08-20 follow-up #2 — closed the master-tour gap flagged below: this rule now
+also covers a master (English) tour an Admin builds directly, not just a Narrator's
+clone. What changed:
+- `saveWalkForBackend`: a brand-new tour (admin create, no `id`) now defaults to
+  `approved: false` unless the caller explicitly sets it — `WalkEditor.jsx` never
+  sends `approved` on creation today, so in practice every new tour now starts as
+  a draft. The existing false→true transition check (unchanged) then applies to it
+  exactly like it already did for a Narrator's clone.
+- New Publish/Unpublish control in `WalkEditor.jsx`'s top bar, admin-only, shown for
+  any non-clone tour that's already been saved once. Publishing runs the same audio
+  check (blocked client-side with a clear message, and unbypassably server-side);
+  unpublishing has no such check — hiding a tour is always safe.
+- `BackendShell.jsx`: new `handleTogglePublish`, and the audio-not-ready check was
+  pulled out of `handlePublishClone` into a shared `getAudioNotReadyWaypoints`
+  helper so both paths use the exact same logic. The Update Audio tool's tour list
+  (`audioUpdateTours`) was widened to also include draft master tours, not just
+  Narrator clones awaiting review.
+- Pre-existing, already-published tours (of any kind) are entirely unaffected —
+  none of this touches a walk whose `approved` is already `true`.
+
+~~Not done / deliberately out of scope~~ — superseded by follow-up #2 above,
+left struck through rather than deleted so the reasoning trail stays intact: this
+only covers the Narrator-clone review→publish workflow Enda described (tours that
+go through `finished`/`approved`/`reviewClones`). A master (English) tour created
+directly by an Admin defaults to `approved: true` immediately on creation with no
+equivalent gate — that's a separate, pre-existing lifecycle this change doesn't
+touch. Flagging this here in case it needs its own version of the same rule later.
+
+Verified: `npx vite build` clean; `npx eslint` on every changed frontend file shows
+only pre-existing, unrelated issues (confirmed against each file's state before this
+session's edits); `npx esbuild base44/functions/saveWalkForBackend/entry.ts
+--format=esm` compiles clean, both before and after follow-up #2's changes.
 
 ## 2026-08-20 — Admin panel Waypoints tab: "Done" tick box on each waypoint row
 Scope: `src/components/admin/DrivingTourWaypointEditor.jsx`, `base44/entities/Walk.jsonc`

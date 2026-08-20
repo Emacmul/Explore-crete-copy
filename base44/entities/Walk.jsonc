@@ -208,6 +208,11 @@
             "type": "string",
             "description": "URL of the audio clip to play when triggered"
           },
+          "final_audio_applied": {
+            "type": "boolean",
+            "default": false,
+            "description": "True only once an Admin has replaced this waypoint's AI-generated draft audio with the final PCV (Professional Cloned Voice) narration via the Update Audio tool. Reset to false automatically whenever audio_clip_url changes any other way (regenerated TTS, manual re-upload, removed). A tour cannot be published (approved) while any audio-triggered waypoint has this false — enforced in base44/functions/saveWalkForBackend."
+          },
           "trigger_radius_m": {
             "type": "number",
             "default": 150,
@@ -271,7 +276,7 @@
           },
           "finished_audio_url": {
             "type": "string",
-            "description": "Final production audio from ElevenLabs \u2014 only uploadable after the segment is tested and accepted in the simulator"
+            "description": "Final production PCV (Professional Cloned Voice) audio \u2014 only uploadable after the segment is tested and accepted in the simulator"
           },
           "status": {
             "type": "string",

@@ -152,7 +152,7 @@ export default function SegmentScriptManager({ waypoints, segmentScripts, onSegm
         Combines all waypoint narration scripts within each segment (sorted by waypoint
         code: a, b, c…) into a single segment script with break tags. Saved scripts can
         be recalled in the Simulator for break-tag timing adjustments, then downloaded
-        as the final script for ElevenLabs.
+        as the final script for PCV (Professional Cloned Voice) production.
       </p>
 
       <div className="space-y-2">

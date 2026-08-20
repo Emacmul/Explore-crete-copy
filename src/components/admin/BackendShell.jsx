@@ -13,6 +13,7 @@ import ApiKeysDialog from './ApiKeysDialog';
 import { useNarratorApiKeys } from '@/lib/useNarratorApiKeys';
 import DisputesManager from './DisputesManager';
 import TranslationsManager from './TranslationsManager';
+import UpdateAudioTool from './UpdateAudioTool';
 import { getRouteTypeForCategory, defaultPriceForCategory } from '@/lib/tourCategories';
 import { toast } from '@/components/ui/use-toast';
 
@@ -177,12 +178,85 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
     });
   };
 
+  // Shared by every "about to publish" action below. Per Enda: a tour — a
+  // Narrator's clone OR a master tour an Admin builds directly — must NEVER go
+  // live while its audio-triggered waypoints still carry the AI-drafted
+  // narration; each one has to have gone through the Update Audio tool
+  // (final_audio_applied: true) first. This is purely a fail-fast client-side
+  // check with a clear message; the real, unbypassable gate is the same check
+  // in saveWalkForBackend, which rejects any approved:true save that doesn't
+  // satisfy it, no matter where the request comes from.
+  const getAudioNotReadyWaypoints = (walkId) => {
+    const walk = walks.find(w => w.id === walkId);
+    return (walk?.waypoints || []).filter(wp => wp.trigger_audio && !wp.final_audio_applied);
+  };
+
   // Admin publishes a finished translation as its own standalone public tour. Also
   // clears any pushback reason — re-publishing confirms the correction was accepted.
   const handlePublishClone = async (walkId) => {
-    await callWalkFn('saveWalkForBackend', { id: walkId, patch: { approved: true, finished: true, pushback_reason: '' } });
-    setWalks((prev) => prev.map(w => w.id === walkId ? { ...w, approved: true, finished: true, pushback_reason: '' } : w));
-    toast({ title: 'Published', description: 'The translation is now a standalone public tour.' });
+    const notReady = getAudioNotReadyWaypoints(walkId);
+    if (notReady.length > 0) {
+      toast({
+        variant: 'destructive',
+        title: 'Final audio not applied yet',
+        description: `${notReady.length} waypoint${notReady.length === 1 ? '' : 's'} still ${notReady.length === 1 ? 'has' : 'have'} the AI draft narration. Use "Update Audio" to replace ${notReady.length === 1 ? 'it' : 'them'} with the final PCV narration before publishing.`,
+      });
+      return;
+    }
+    try {
+      await callWalkFn('saveWalkForBackend', { id: walkId, patch: { approved: true, finished: true, pushback_reason: '' } });
+      setWalks((prev) => prev.map(w => w.id === walkId ? { ...w, approved: true, finished: true, pushback_reason: '' } : w));
+      toast({ title: 'Published', description: 'The translation is now a standalone public tour.' });
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Publish failed', description: err?.message || 'Could not publish this tour.' });
+    }
+  };
+
+  // Publish/Unpublish for a master (non-clone) tour, from WalkEditor's top bar.
+  // Unpublishing is always allowed (no audio check needed to hide a tour);
+  // publishing runs the same check as handlePublishClone. Returns true only once
+  // the save has actually gone through, so WalkEditor doesn't flip its local
+  // badge until it's confirmed. Kept as a single toggle (rather than mirroring
+  // handlePublishClone's clone-only finished/pushback_reason fields, which have
+  // no meaning for a master tour).
+  const handleTogglePublish = async (walkId, nextApproved) => {
+    if (nextApproved) {
+      const notReady = getAudioNotReadyWaypoints(walkId);
+      if (notReady.length > 0) {
+        toast({
+          variant: 'destructive',
+          title: 'Final audio not applied yet',
+          description: `${notReady.length} waypoint${notReady.length === 1 ? '' : 's'} still ${notReady.length === 1 ? 'has' : 'have'} the AI draft narration. Use "Update Audio" to replace ${notReady.length === 1 ? 'it' : 'them'} with the final PCV narration before publishing.`,
+        });
+        return false;
+      }
+    }
+    try {
+      await callWalkFn('saveWalkForBackend', { id: walkId, patch: { approved: nextApproved } });
+      setWalks((prev) => prev.map(w => w.id === walkId ? { ...w, approved: nextApproved } : w));
+      toast({
+        title: nextApproved ? 'Published' : 'Unpublished',
+        description: nextApproved ? 'This tour is now visible to customers.' : 'This tour is now hidden from customers.',
+      });
+      return true;
+    } catch (err) {
+      toast({ variant: 'destructive', title: nextApproved ? 'Publish failed' : 'Unpublish failed', description: err?.message || 'Could not update this tour.' });
+      return false;
+    }
+  };
+
+  // Persists a single waypoint's replacement audio (Update Audio tool). Marking
+  // final_audio_applied true here is the only place in the whole app allowed to
+  // do that — see the reset in DrivingTourWaypointEditor.updateWaypoint, which
+  // flips it back to false the moment audio_clip_url changes any other way.
+  const handleUpdateWaypointAudio = async (walkId, waypointIndex, newAudioUrl) => {
+    const walk = walks.find(w => w.id === walkId);
+    if (!walk) throw new Error('Tour not found — try reloading.');
+    const updatedWaypoints = (walk.waypoints || []).map((wp, i) =>
+      i === waypointIndex ? { ...wp, audio_clip_url: newAudioUrl, final_audio_applied: true } : wp
+    );
+    await callWalkFn('saveWalkForBackend', { id: walkId, patch: { waypoints: updatedWaypoints } });
+    setWalks((prev) => prev.map(w => w.id === walkId ? { ...w, waypoints: updatedWaypoints } : w));
   };
 
   // Admin sends an already-published translation clone back to its narrator for
@@ -226,6 +300,12 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
   // so that's fine; don't start rendering it for narrators without revisiting the data
   // this depends on (name/code/assigned_narrator_email aren't present on those rows).
   const reviewClones = walks.filter(w => w.clone_of && w.finished && !w.approved);
+  // Same "not yet published" pool the Update Audio tool draws from, but widened
+  // to also include a master tour an Admin is building directly (no clone_of, no
+  // Narrator involved at all) — those never show up in reviewClones since that
+  // list is clone-specific, but they need the exact same audio check before they
+  // can go live. isAdmin-gated at the render site below, same as the tool itself.
+  const audioUpdateTours = [...reviewClones, ...walks.filter(w => !w.clone_of && w.approved === false)];
   // Only one translation clone may be in progress at a time per narrator — the lock
   // releases the moment they mark their current clone finished (see handleToggleFinished),
   // not once an admin has also approved/published it.
@@ -317,6 +397,7 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
             userRole={userRole}
             focusWaypointIndex={focusWaypointIndex}
             onToggleFinished={handleToggleFinished}
+            onTogglePublish={handleTogglePublish}
           />
         ) : view === 'users' ? (
           <UsersManager />
@@ -326,6 +407,14 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
           <DisputesManager />
         ) : view === 'translations' ? (
           <TranslationsManager authMode={authMode} user={user} />
+        ) : view === 'updateAudio' && isAdmin ? (
+          // Admin-only, same defense-in-depth pattern as the 'walks' guard just below —
+          // the real boundary is final_audio_applied never being a narrator-settable
+          // field in saveWalkForBackend, not this render check.
+          <UpdateAudioTool
+            tours={audioUpdateTours}
+            onReplaceAudio={handleUpdateWaypointAudio}
+          />
         ) : view === 'walks' && isAdmin ? (
           // Admin-only, both in the nav (AdminStartScreen never offers this button to a
           // narrator) and here — this guard is the actual UI-level backstop for that;
@@ -381,6 +470,7 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
             onDashboard={() => setView('dashboard')}
             onManageDisputes={() => setView('disputes')}
             onManageTranslations={() => setView('translations')}
+            onUpdateAudio={() => setView('updateAudio')}
             onManageWalks={() => setView('walks')}
             onCloneTour={handleCloneTour}
             onPublishClone={handlePublishClone}

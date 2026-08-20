@@ -7,10 +7,11 @@
  * artifacts, never played live, but still worth keeping a copy of).
  *
  * This is deliberately just a bundle of what already exists — no merging into one
- * script or one audio file. Per Enda: since ElevenLabs can be asked to produce audio
- * per waypoint, and the live app already plays per-waypoint clips, there's no
- * production need to combine everything into a single file; this is purely a
- * "grab everything in one click, in case I need it later" backup.
+ * script or one audio file. Per Enda: since the PCV (Professional Cloned Voice)
+ * production can be asked to produce audio per waypoint, and the live app already
+ * plays per-waypoint clips, there's no production need to combine everything into
+ * a single file; this is purely a "grab everything in one click, in case I need it
+ * later" backup.
  */
 
 import { createZip, buildScriptDocxBlob } from './docxExporter';
@@ -30,9 +31,9 @@ async function fetchAsUint8Array(url) {
 
 // Combined audio built by this app's own exact-silence pipeline (see
 // audioCombiner.js) is a .wav file; older recordings, and anything uploaded from
-// ElevenLabs, are typically .mp3 — keeping whatever extension the URL actually has
-// (rather than assuming one) means the backup's filenames always match what's really
-// inside them.
+// PCV production, are typically .mp3 — keeping whatever extension the URL actually
+// has (rather than assuming one) means the backup's filenames always match what's
+// really inside them.
 function extOf(url, fallback = 'mp3') {
   const m = String(url || '').match(/\.([a-z0-9]+)(?:\?|#|$)/i);
   return m ? m[1] : fallback;
@@ -107,9 +108,9 @@ export async function buildTourBackupZip(walk, onProgress) {
       }
     }
 
-    // Prefer the ElevenLabs "finished" production audio if it's been uploaded;
-    // otherwise fall back to whatever draft exists — labelling which tier it is in
-    // the filename so it's never mistaken for the finished version later.
+    // Prefer the PCV "finished" production audio if it's been uploaded; otherwise
+    // fall back to whatever draft exists — labelling which tier it is in the
+    // filename so it's never mistaken for the finished version later.
     const audioUrl = seg.finished_audio_url || seg.final_audio_url || seg.combined_audio_url;
     const tier = seg.finished_audio_url ? 'finished' : seg.final_audio_url ? 'draft-final' : 'draft-combined';
     if (audioUrl) {

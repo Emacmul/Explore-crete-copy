@@ -16,11 +16,11 @@ import { downloadScriptAsDocx } from '@/lib/docxExporter';
  *   3. Save Final Script & Draft Audio → status = finalized
  *   4. Test in the simulator above
  *   5. Accept Segment → status = accepted
- *   6. Download final .docx script → submit to ElevenLabs
- *   7. Upload the ElevenLabs MP3 as the Finished Audio (only possible after acceptance)
+ *   6. Download final .docx script → submit for PCV (Professional Cloned Voice) production
+ *   7. Upload the returned PCV MP3 as the Finished Audio (only possible after acceptance)
  *
- * The draft audio generated here is NOT the final audio. The final audio is
- * produced by ElevenLabs from the accepted script and uploaded only after
+ * The draft audio generated here is NOT the final audio. The final audio is the
+ * PCV production audio made from the accepted script and uploaded only after
  * the segment has been tested and accepted.
  */
 export default function SegmentScriptEditor({ segmentScripts, onSegmentScriptsChange, tourCode }) {
@@ -194,7 +194,7 @@ export default function SegmentScriptEditor({ segmentScripts, onSegmentScriptsCh
             </>
           )}
 
-          {/* Accepted: Download script for ElevenLabs + Upload finished audio */}
+          {/* Accepted: Download script for PCV production + Upload finished audio */}
           {isAccepted && (
             <div className="space-y-3">
               <div className="bg-green-900/20 border border-green-700/40 rounded-lg p-3 space-y-2">
@@ -203,7 +203,7 @@ export default function SegmentScriptEditor({ segmentScripts, onSegmentScriptsCh
                   <span className="text-green-300 text-sm font-medium">Step 1: Download Final Script</span>
                 </div>
                 <p className="text-xs text-slate-400">
-                  Download the final script with break tags and submit it to ElevenLabs for production voice generation.
+                  Download the final script with break tags and submit it for PCV (Professional Cloned Voice) production.
                 </p>
                 <Button
                   onClick={handleDownloadScript}
@@ -217,10 +217,10 @@ export default function SegmentScriptEditor({ segmentScripts, onSegmentScriptsCh
               <div className="bg-slate-800/50 rounded-lg border border-amber-600/40 p-3 space-y-2">
                 <div className="flex items-center gap-2">
                   <Volume2 className="w-4 h-4 text-amber-400" />
-                  <span className="text-amber-300 text-sm font-medium">Step 2: Upload Finished Audio (ElevenLabs MP3)</span>
+                  <span className="text-amber-300 text-sm font-medium">Step 2: Upload Finished Audio (PCV MP3)</span>
                 </div>
                 <p className="text-xs text-slate-400">
-                  Upload the MP3 returned by ElevenLabs. This is the audio users will hear during the tour.
+                  Upload the returned PCV MP3. This is the audio users will hear during the tour.
                 </p>
                 <SimpleAudioUpload
                   audioUrl={currentSeg?.finished_audio_url || ''}

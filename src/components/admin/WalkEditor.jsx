@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Save, Loader2, Pencil, Check, X, Upload, FileUp, CheckCircle2, Download, AlertTriangle, FileDown, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Pencil, Check, X, Upload, FileUp, CheckCircle2, Download, AlertTriangle, FileDown, RefreshCw, Send, EyeOff } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import FitParser from 'fit-file-parser';
 import WaypointEditor from './WaypointEditor';
@@ -58,7 +58,7 @@ function SaveButton({ onSave, saving, canSave }) {
   );
 }
 
-export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin', focusWaypointIndex, onToggleFinished }) {
+export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin', focusWaypointIndex, onToggleFinished, onTogglePublish }) {
   const isNarrator = userRole === 'narrator';
   console.log('WalkEditor mounted/rendering');
   const [form, setForm] = useState({ ...EMPTY_WALK, ...walk });
@@ -646,6 +646,13 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
       if (saved?.id && saved.id !== form.id) {
         setForm(prev => ({ ...prev, id: saved.id }));
       }
+      // A brand-new tour's `approved` isn't set locally at all until the server
+      // assigns its real default (see saveWalkForBackend) — pick that up now so
+      // the Publish/Unpublish control below reflects the tour's actual state
+      // instead of showing stale/undefined right after the first save.
+      if (typeof saved?.approved === 'boolean' && saved.approved !== form.approved) {
+        setForm(prev => ({ ...prev, approved: saved.approved }));
+      }
       if (recalculatedDistanceKm !== form.distance_km) {
         setForm(prev => ({ ...prev, distance_km: recalculatedDistanceKm }));
       }
@@ -679,6 +686,22 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
     }
   };
 
+  // Publish/Unpublish for a master (non-clone) tour — the same "must not go live
+  // with AI-drafted audio still in place" rule a Narrator's clone already gets via
+  // the Review/Publish flow, now applied to a tour an Admin builds directly too.
+  // onTogglePublish does the actual audio check + save (and its own error toast on
+  // failure) in BackendShell, returning true only once it's genuinely persisted —
+  // don't flip the local badge optimistically before that's confirmed.
+  const [togglingPublish, setTogglingPublish] = useState(false);
+  const handleTogglePublish = async () => {
+    if (!form.id || !onTogglePublish || togglingPublish) return;
+    const nextApproved = form.approved === false;
+    setTogglingPublish(true);
+    const ok = await onTogglePublish(form.id, nextApproved);
+    if (ok) setForm(prev => ({ ...prev, approved: nextApproved }));
+    setTogglingPublish(false);
+  };
+
   const [downloadingGpx, setDownloadingGpx] = useState(false);
   const [downloadingBackup, setDownloadingBackup] = useState(false);
   const [backupProgress, setBackupProgress] = useState(null); // { done, total } while running
@@ -687,9 +710,9 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   // clip into one "<tour>-backup.zip", entirely client-side. Not a merge — every
   // file stays exactly as separate as it already is on the tour, just gathered into
   // one download instead of clicking through each waypoint/segment individually.
-  // Per Enda: with ElevenLabs producing audio per waypoint and the live app already
-  // playing per-waypoint clips, there's no production need for one combined file —
-  // this is purely a "grab everything, just in case" safety copy.
+  // Per Enda: with the PCV (Professional Cloned Voice) audio produced per waypoint
+  // and the live app already playing per-waypoint clips, there's no production need
+  // for one combined file — this is purely a "grab everything, just in case" safety copy.
   const handleDownloadBackup = async () => {
     if (downloadingBackup) return;
     setDownloadingBackup(true);
@@ -791,23 +814,46 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
             </div>
           )}
         </div>
-        {form.id && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleDownloadBackup}
-            disabled={downloadingBackup}
-            title="Download every waypoint's and segment's current script (.docx) and audio clip as one zip, as a safety copy."
-            className="border-slate-500 text-slate-300 hover:text-white gap-2"
-          >
-            {downloadingBackup
-              ? <Loader2 className="w-4 h-4 animate-spin" />
-              : <FileDown className="w-4 h-4" />}
-            {downloadingBackup
-              ? (backupProgress ? `Zipping ${backupProgress.done}/${backupProgress.total}…` : 'Zipping…')
-              : 'Download all backups'}
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {!isNarrator && !form.clone_of && form.id && onTogglePublish && (
+            <div className="flex items-center gap-2 bg-slate-700/60 border border-slate-600 rounded-lg px-3 py-1.5">
+              <span className={`text-xs font-medium ${form.approved === false ? 'text-red-300' : 'text-emerald-300'}`}>
+                {form.approved === false ? 'Draft — not visible to customers' : 'Published'}
+              </span>
+              <Button
+                size="sm"
+                onClick={handleTogglePublish}
+                disabled={togglingPublish}
+                className={`h-7 text-xs gap-1.5 ${form.approved === false ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-slate-600 hover:bg-slate-500'}`}
+                title={form.approved === false
+                  ? 'Publish — blocked until every audio-triggered waypoint has its final PCV audio applied (see Update Audio).'
+                  : 'Unpublish — hides this tour from customers again.'}
+              >
+                {togglingPublish
+                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  : (form.approved === false ? <Send className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />)}
+                {form.approved === false ? 'Publish' : 'Unpublish'}
+              </Button>
+            </div>
+          )}
+          {form.id && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDownloadBackup}
+              disabled={downloadingBackup}
+              title="Download every waypoint's and segment's current script (.docx) and audio clip as one zip, as a safety copy."
+              className="border-slate-500 text-slate-300 hover:text-white gap-2"
+            >
+              {downloadingBackup
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : <FileDown className="w-4 h-4" />}
+              {downloadingBackup
+                ? (backupProgress ? `Zipping ${backupProgress.done}/${backupProgress.total}…` : 'Zipping…')
+                : 'Download all backups'}
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Tabs */}
