@@ -979,7 +979,7 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                           setExpanded(null);
                         }}
                         variant="outline"
-                        className="w-full border-amber-400 text-amber-400 hover:bg-amber-400 hover:text-slate-900 gap-2"
+                        className="w-full bg-blue-700/30 hover:bg-blue-700/50 border-blue-600/50 text-amber-400 hover:text-amber-300 gap-2"
                       >
                         <CheckCircle2 className="w-4 h-4" />
                         Mark Waypoint as Done

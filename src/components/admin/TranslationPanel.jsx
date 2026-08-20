@@ -101,7 +101,7 @@ export default function TranslationPanel({ onTranslated }) {
           type="button" size="sm" variant="outline"
           onClick={() => fileInputRef.current?.click()}
           disabled={translating || importing}
-          className="border-slate-500 text-slate-300 gap-1.5"
+          className="bg-blue-700/30 hover:bg-blue-700/50 border-blue-600/50 text-amber-400 hover:text-amber-300 gap-1.5"
         >
           {importing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
           {importing ? 'Reading…' : fileName ? 'Change File' : 'Import File'}

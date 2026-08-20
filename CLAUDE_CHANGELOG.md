@@ -21,6 +21,17 @@ Pulled: 2026-08-03
   line and redeploy) — pushing the code alone does NOT make a backend
   function change take effect. A frontend-only change needs no such
   callout; a hard refresh + republish in Base44 is enough for those.
+- STANDING RULE — never a white button background: this app's UI is dark
+  (slate/purple), and shadcn's `Button variant="outline"` defaults to a
+  white `bg-background` unless a `bg-*` class overrides it — several
+  older buttons in this codebase have that unfixed default and read as
+  jarringly bright against the dark panels. Never leave a button with
+  that default white background, on new buttons or when touching an old
+  one. House colour scheme so far: `bg-blue-700/30` (hover
+  `bg-blue-700/50`, `border-blue-600/50`) for a neutral/secondary action
+  (e.g. "Import GPX Waypoints", "Import File"), amber text
+  (`text-amber-400`, hover `text-amber-300`) when the action is
+  confirm/complete-style (e.g. "Mark Waypoint as Done").
 
 ---
 
@@ -42,17 +53,34 @@ item schema, defaults false).
   is only allowed from inside the editing panel (see below). When a waypoint is
   done, the chevron is replaced with a Lock icon and clicking the row no longer
   expands it — it's not until the tick box is cleared that it opens again.
-- Expanded panel: a new "Mark Waypoint as Done" button (outlined, amber) at the
-  bottom, above the existing Save Route button. Clicking it sets `waypoint_done`
-  true and collapses the panel. Present for both the admin and narrator branches
-  of the panel, same as the rest of the app treats waypoint editing.
+- Expanded panel: a new "Mark Waypoint as Done" button at the bottom, above the
+  existing Save Route button. Clicking it sets `waypoint_done` true and collapses
+  the panel. Present for both the admin and narrator branches of the panel, same
+  as the rest of the app treats waypoint editing.
 - Like every other waypoint field in this editor, ticking/unticking only updates
   local form state — it's written to the database when the existing "Save Route"
   button is pressed, same as editing a script or a role.
 
+2026-08-20 follow-up: the "Mark Waypoint as Done" button's first version used the
+shadcn `outline` variant, which defaults to a bright white background — Enda found
+it too harsh next to the rest of the dark panel. Changed its background to the same
+blue as the "Import GPX Waypoints" button (`bg-blue-700/30` / hover `bg-blue-700/50`
+/ `border-blue-600/50`), keeping the amber text colour as-is.
+
 Verified: `npx vite build` clean; `npx eslint` on the changed file shows only 2
 pre-existing issues (unused `Textarea` import, unused `segGroup` var) confirmed via
 `git stash` to predate this change — nothing introduced by this edit.
+
+## 2026-08-20 — Translation Panel "Import File" button: fix white background
+Scope: `src/components/admin/TranslationPanel.jsx` (frontend-only).
+
+Same issue Enda flagged on the "Mark Waypoint as Done" button: this button used
+`variant="outline"` with no `bg-*` override, so it defaulted to shadcn's white
+`bg-background`. Applied the same house colour scheme (see STANDING RULE above):
+`bg-blue-700/30` / hover `bg-blue-700/50` / `border-blue-600/50`, with
+`text-amber-400` / hover `text-amber-300` (was `text-slate-300`).
+
+Verified: `npx vite build` clean; `npx eslint` on the changed file shows no issues.
 
 ## 2026-08-19 (security scan — decided NOT to fix) — Base44 High finding on getTranslationOverrides: intentional, no code change
 Scope: none — no files touched. Recorded so a future session doesn't "fix" this again.
