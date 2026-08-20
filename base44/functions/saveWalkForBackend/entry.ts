@@ -21,7 +21,6 @@ const NARRATOR_WAYPOINT_FIELDS = [
   'bearing_direction', 'bearing_tolerance',
 ];
 
-
 // Narrators can't reorder/add/remove waypoints in the UI today (drag is
 // disabled, and the add/delete controls are admin-only) — so waypoint count
 // and order are safe invariants to enforce here, not just assume.
