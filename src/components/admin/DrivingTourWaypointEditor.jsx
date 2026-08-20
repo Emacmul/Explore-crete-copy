@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   Plus, Trash2, ChevronDown, ChevronUp, Info, Loader2,
   Upload, FileCheck, Save, Flag, Square, Circle, GripVertical, Play, Compass,
-  ImagePlus, X,
+  ImagePlus, X, Lock, CheckCircle2,
 } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { getRoleColour, getRoleLabel, buildSegmentId } from '@/lib/routeExport';
@@ -20,6 +20,7 @@ import TourSimulator from './TourSimulator';
 import SegmentScriptManager from './SegmentScriptManager';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
+import { Checkbox } from '@/components/ui/checkbox';
 
 const ROLES = [
   { value: 'primary_start', label: 'Primary-Start', icon: Flag },
@@ -30,6 +31,7 @@ const ROLES = [
 const EMPTY_WP = {
   lat: '',
   lng: '',
+  waypoint_done: false,
   waypoint_role: 'secondary',
   segment_number: '',
   segment_title: '',
@@ -691,8 +693,11 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                 className={`bg-slate-700/50 rounded-lg border border-slate-600 overflow-hidden ${snapshot.isDragging ? 'shadow-2xl shadow-purple-900/50 ring-2 ring-purple-500' : ''} ${focusWaypointIndex === index ? 'ring-2 ring-amber-500' : ''}`}
               >
                 <div
-                  className="flex items-center gap-3 px-3 py-3 cursor-pointer hover:bg-slate-700/80"
-                  onClick={() => setExpanded(expanded === index ? null : index)}
+                  className={`flex items-center gap-3 px-3 py-3 hover:bg-slate-700/80 ${wp.waypoint_done && expanded !== index ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                  onClick={() => {
+                    if (wp.waypoint_done && expanded !== index) return;
+                    setExpanded(expanded === index ? null : index);
+                  }}
                 >
                   {!isNarrator && (
                     <div
@@ -720,7 +725,23 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                     )}
                   </div>
                   <span className="text-xs text-slate-500">{getRoleLabel(wp.waypoint_role)}</span>
-                  {expanded === index ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+                  <span
+                    className="flex items-center gap-1 shrink-0"
+                    onClick={e => e.stopPropagation()}
+                    title={wp.waypoint_done ? 'Done — untick to edit again' : 'Mark as done from inside the waypoint editor'}
+                  >
+                    <Checkbox
+                      checked={!!wp.waypoint_done}
+                      disabled={!wp.waypoint_done}
+                      onCheckedChange={(checked) => {
+                        if (!checked) updateWaypoint(index, 'waypoint_done', false);
+                      }}
+                      className="border-amber-400 data-[state=checked]:bg-amber-400 data-[state=checked]:border-amber-400 data-[state=checked]:text-slate-900 disabled:opacity-100"
+                    />
+                  </span>
+                  {wp.waypoint_done && expanded !== index
+                    ? <Lock className="w-4 h-4 text-amber-400" />
+                    : (expanded === index ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />)}
                   {!isNarrator && (
                     <Button
                       variant="ghost" size="icon"
@@ -950,6 +971,20 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                         </div>
                       </>
                     )}
+
+                    <div className="pt-2 border-t border-slate-600">
+                      <Button
+                        onClick={() => {
+                          updateWaypoint(index, 'waypoint_done', true);
+                          setExpanded(null);
+                        }}
+                        variant="outline"
+                        className="w-full border-amber-400 text-amber-400 hover:bg-amber-400 hover:text-slate-900 gap-2"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        Mark Waypoint as Done
+                      </Button>
+                    </div>
 
                     {onSave && (
                       <div className="pt-2 border-t border-slate-600">

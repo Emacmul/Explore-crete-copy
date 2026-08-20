@@ -24,6 +24,65 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-20 — Admin panel Waypoints tab: "Done" tick box on each waypoint row
+Scope: `src/components/admin/DrivingTourWaypointEditor.jsx`, `base44/entities/Walk.jsonc`
+(frontend-only change — the entity file just declares the new field's schema, no
+backend function was touched, no separate redeploy step needed beyond the normal
+hard-refresh + republish for the frontend).
+
+Enda: admins/narrators return to editing a tour after a break (often the following
+weekend) and can't tell at a glance which waypoints they already finished. Added a
+`waypoint_done` boolean to each waypoint (new field in `Walk.jsonc`'s `waypoints[]`
+item schema, defaults false).
+
+- Collapsed row: an amber tick box (same `amber-400` colour as the elevation figure)
+  sits between the role label ("Primary-Start"/"Secondary") and the expand chevron.
+  It only works to UNTICK — while ticked it's the only interactive part of it
+  (clicking it clears `waypoint_done`); while unticked it's disabled, since ticking
+  is only allowed from inside the editing panel (see below). When a waypoint is
+  done, the chevron is replaced with a Lock icon and clicking the row no longer
+  expands it — it's not until the tick box is cleared that it opens again.
+- Expanded panel: a new "Mark Waypoint as Done" button (outlined, amber) at the
+  bottom, above the existing Save Route button. Clicking it sets `waypoint_done`
+  true and collapses the panel. Present for both the admin and narrator branches
+  of the panel, same as the rest of the app treats waypoint editing.
+- Like every other waypoint field in this editor, ticking/unticking only updates
+  local form state — it's written to the database when the existing "Save Route"
+  button is pressed, same as editing a script or a role.
+
+Verified: `npx vite build` clean; `npx eslint` on the changed file shows only 2
+pre-existing issues (unused `Textarea` import, unused `segGroup` var) confirmed via
+`git stash` to predate this change — nothing introduced by this edit.
+
+## 2026-08-19 (security scan — decided NOT to fix) — Base44 High finding on getTranslationOverrides: intentional, no code change
+Scope: none — no files touched. Recorded so a future session doesn't "fix" this again.
+
+Base44's Security scan flagged `base44/functions/getTranslationOverrides/entry.ts`
+High severity, same "Anyone can run this function" / unprotected-backend-function
+category as `ensureAppUserOnboarding` (fixed earlier — see that entry below).
+
+**Read the code and the entity RLS before doing anything, and concluded this one is
+a false positive, not a real hole:** `getTranslationOverrides` returns rows from the
+`Translation` entity, whose own RLS (`base44/entities/Translation.jsonc`) already
+sets `"read": {}` — fully public, by design, so the live customer-facing app can
+show corrected UI text to visitors who haven't logged in yet. The function ignores
+the request body entirely (no user-supplied input at all, so no injection/abuse
+surface), returns a fixed capped list, and exists purely so narrators — who have no
+real Base44 session — can reliably read this already-public data too. Nothing it
+returns (translation strings, which admin/narrator last edited one) is sensitive or
+goes beyond what a direct RLS-permitted read already exposes to everyone.
+
+Explained this to Enda in plain terms (the scanner can't tell "forgot to lock the
+door" apart from "left it open on purpose because it's a shop") and offered either
+adding a no-real-effect auth check just to silence the scanner, or leaving it as-is
+and dismissing the finding in Base44 if that's possible. **Enda's decision: ignore
+it, no code change.** If this finding resurfaces in a future scan or a future
+session considers "fixing" it, re-read this entry and the RLS file first — locking
+this endpoint down would break translation display for logged-out visitors, which
+would be a regression, not a fix.
+
+---
+
 ## 2026-08-19 (backup zip) — "Download all backups" button on a tour: every waypoint/segment script (.docx) + audio clip in one zip
 Scope: `src/lib/tourBackupZip.js` (NEW), `src/lib/docxExporter.js`,
 `src/components/admin/WalkEditor.jsx` (frontend only, no backend function touched).

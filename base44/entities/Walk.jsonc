@@ -174,6 +174,11 @@
             ],
             "description": "Driving tour waypoint role"
           },
+          "waypoint_done": {
+            "type": "boolean",
+            "default": false,
+            "description": "Admin/narrator-set flag marking this waypoint's editing as finished for this session. Ticked only from inside the waypoint's editing panel; while true, the row is locked from re-opening until unticked from the collapsed summary row."
+          },
           "segment_id": {
             "type": "string",
             "description": "Segment/waypoint code \u2014 e.g. BOR03 for driving/WalkAbout tour segments, or MXR14 for a plain walk/hike waypoint"
