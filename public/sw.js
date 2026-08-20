@@ -17,7 +17,7 @@
  * for people already using it.
  */
 
-const CACHE_VERSION = 'explore-crete-v8';
+const CACHE_VERSION = 'explore-crete-v9';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 
 // Install: activate immediately, don't wait for old SW to release
@@ -71,6 +71,19 @@ self.addEventListener('fetch', (event) => {
     );
     return;
   }
+
+  // Never cache-serve Vite dev artifacts. In dev these paths are rewritten in place on
+  // every HMR / re-optimization (stable filenames, changing contents), so a cached copy
+  // is stale by construction — serving it ships two copies of React (old + new) in one
+  // page and crashes with "Cannot read properties of null (reading 'useEffect')". Let the
+  // browser hit the network directly. Prod builds don't use these paths at all
+  // (everything is content-hashed under /assets/), so this only ever short-circuits dev.
+  const isDevArtifact =
+    url.pathname.startsWith('/src/') ||
+    url.pathname.startsWith('/node_modules/') ||
+    url.pathname.startsWith('/@vite') ||
+    url.pathname.startsWith('/@react-refresh');
+  if (isDevArtifact) return;
 
   // Stale-while-revalidate for same-origin static assets
   if (url.origin === self.location.origin) {
