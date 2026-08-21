@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { getNarratorAuthPayload } from '@/lib/useNarratorApiKeys';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -10,11 +10,19 @@ import { extractTextFromFile } from '@/lib/fileTextExtractor';
 import { useNarratorApiKeys } from '@/lib/useNarratorApiKeys';
 import { getFnErrorMessage } from '@/lib/utils';
 
-export default function TranslationPanel({ onTranslated }) {
+export default function TranslationPanel({ onTranslated, fixedLanguage }) {
   const { keys: apiKeys } = useNarratorApiKeys();
   const [importedText, setImportedText] = useState('');
   const [fileName, setFileName] = useState('');
-  const [targetLanguage, setTargetLanguage] = useState('English');
+  const [targetLanguage, setTargetLanguage] = useState(fixedLanguage || 'English');
+
+  // Per Enda: the language for a translation clone is fixed the moment it's cloned —
+  // a narrator must never be able to translate a waypoint's script into a different
+  // language than the clone was actually created for. Keeps this in sync if
+  // fixedLanguage arrives after the initial render.
+  useEffect(() => {
+    if (fixedLanguage) setTargetLanguage(fixedLanguage);
+  }, [fixedLanguage]);
   const [translating, setTranslating] = useState(false);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState('');
@@ -122,16 +130,22 @@ export default function TranslationPanel({ onTranslated }) {
       <div className="flex items-end gap-2">
         <div className="flex-1">
           <Label className="text-slate-400 text-xs mb-1 block">Translate to</Label>
-          <Select value={targetLanguage} onValueChange={setTargetLanguage} disabled={translating}>
-            <SelectTrigger className="bg-slate-700 border-slate-500 text-white h-8 text-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {LANGUAGES.map((lang) => (
-                <SelectItem key={lang} value={lang}>{lang}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {fixedLanguage ? (
+            <div className="h-8 flex items-center px-3 bg-slate-800 border border-slate-600 rounded-md text-slate-300 text-sm" title="Set when this clone was created — cannot be changed here.">
+              {fixedLanguage}
+            </div>
+          ) : (
+            <Select value={targetLanguage} onValueChange={setTargetLanguage} disabled={translating}>
+              <SelectTrigger className="bg-slate-700 border-slate-500 text-white h-8 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {LANGUAGES.map((lang) => (
+                  <SelectItem key={lang} value={lang}>{lang}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
         <Button
           type="button"

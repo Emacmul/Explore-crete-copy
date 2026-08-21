@@ -1322,6 +1322,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 focusWaypointIndex={focusWaypointIndex}
                 segmentScripts={form.segment_scripts || []}
                 onSegmentScriptsChange={(scripts) => set('segment_scripts', scripts)}
+                targetLanguage={form.target_language || ''}
               />
             ) : (
               <WaypointEditor

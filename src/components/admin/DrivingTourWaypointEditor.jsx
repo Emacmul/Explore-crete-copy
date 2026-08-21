@@ -192,7 +192,7 @@ const routeWaypoints = async (points) => {
   return res.data.trail;
 };
 
-export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCode, tourCategory, onSave, saving, userRole = 'admin', focusWaypointIndex, segmentScripts, onSegmentScriptsChange, onTrailPathChange, trailPath, defaultDrivingSpeedKmh }) {
+export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCode, tourCategory, onSave, saving, userRole = 'admin', focusWaypointIndex, segmentScripts, onSegmentScriptsChange, onTrailPathChange, trailPath, defaultDrivingSpeedKmh, targetLanguage }) {
   const isNarrator = userRole === 'narrator';
   // WBT is always fixed at 3.5 km/h. DDV falls back to the Admin-set default
   // driving speed from the Details tab (form.default_driving_speed_kmh) until a
@@ -814,6 +814,7 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                             updateWaypoint(index, 'audio_clip_url', val);
                             if (val) updateWaypoint(index, 'trigger_audio', true);
                           }}
+                          fixedLanguage={targetLanguage}
                         />
 
                         {/* Editable: Audio Trigger Fields */}
@@ -927,6 +928,7 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                             updateWaypoint(index, 'audio_clip_url', val);
                             if (val) updateWaypoint(index, 'trigger_audio', true);
                           }}
+                          fixedLanguage={targetLanguage}
                         />
 
                         {/* Audio activation radius and bearing */}

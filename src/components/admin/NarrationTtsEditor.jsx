@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { getNarratorAuthPayload } from '@/lib/useNarratorApiKeys';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -31,10 +31,10 @@ const LANG_TO_CODE = {
 
 const MAX_CHARS = 5000;
 
-export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, onAudioChange }) {
+export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, onAudioChange, fixedLanguage }) {
   const { keys: apiKeys } = useNarratorApiKeys();
   const [selectedVoice, setSelectedVoice] = useState('NEUTRAL');
-  const [selectedLanguage, setSelectedLanguage] = useState('English');
+  const [selectedLanguage, setSelectedLanguage] = useState(fixedLanguage || 'English');
   const [error, setError] = useState('');
   const [segments, setSegments] = useState(null);
   const [segmentAudios, setSegmentAudios] = useState({});
@@ -50,6 +50,16 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
 
   const charCount = (script || '').length;
   const overLimit = charCount > MAX_CHARS;
+
+  // Per Enda: the language for a translation clone is locked in the moment it's cloned
+  // (target_language on the walk) — a narrator must never be able to pick a different
+  // one here, or the script/TTS language could drift from what the clone actually is
+  // (e.g. translating into German while generating Arabic audio, on a Spanish clone).
+  // Keeps this in sync if fixedLanguage arrives after the initial render (e.g. the walk
+  // is still loading when this component first mounts).
+  useEffect(() => {
+    if (fixedLanguage) setSelectedLanguage(fixedLanguage);
+  }, [fixedLanguage]);
 
   const addLog = (msg) => setDebugLog((prev) => [...prev, msg]);
 
@@ -327,11 +337,14 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
         <span className="text-xs text-slate-400 ml-1">import, edit, generate audio</span>
       </div>
 
-      <TranslationPanel onTranslated={(text) => {
-        onScriptChange(text);
-        setSegments(null);
-        setSegmentAudios({});
-      }} />
+      <TranslationPanel
+        onTranslated={(text) => {
+          onScriptChange(text);
+          setSegments(null);
+          setSegmentAudios({});
+        }}
+        fixedLanguage={fixedLanguage}
+      />
 
       {/* Insert break tags at cursor */}
       <div className="flex items-center gap-1 flex-wrap">
@@ -392,14 +405,20 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
         </div>
         <div>
           <Label className="text-slate-400 text-xs mb-1 block">Language</Label>
-          <Select value={selectedLanguage} onValueChange={setSelectedLanguage}>
-            <SelectTrigger className="bg-slate-700 border-slate-500 text-white h-8 text-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {LANGUAGES.map((lang) => <SelectItem key={lang} value={lang}>{lang}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          {fixedLanguage ? (
+            <div className="h-8 flex items-center px-3 bg-slate-800 border border-slate-600 rounded-md text-slate-300 text-sm" title="Set when this clone was created — cannot be changed here.">
+              {fixedLanguage}
+            </div>
+          ) : (
+            <Select value={selectedLanguage} onValueChange={setSelectedLanguage}>
+              <SelectTrigger className="bg-slate-700 border-slate-500 text-white h-8 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {LANGUAGES.map((lang) => <SelectItem key={lang} value={lang}>{lang}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          )}
         </div>
       </div>
 

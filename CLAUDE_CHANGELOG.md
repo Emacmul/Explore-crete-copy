@@ -144,6 +144,50 @@ re-review A first.
 
 ---
 
+## 2026-08-21 — Waypoint editor: translation/TTS language now locked to the clone's own language
+Scope: `src/components/admin/TranslationPanel.jsx`, `src/components/admin/NarrationTtsEditor.jsx`,
+`src/components/admin/DrivingTourWaypointEditor.jsx`, `src/components/admin/WalkEditor.jsx`
+(frontend-only — no backend function touched).
+
+Enda: a narrator already picks the target language once, when cloning a tour. But the
+waypoint editor had two more language pickers further down — "Translate to" in the
+Translate Script panel, and "Language" in the Narration Script & TTS panel (used for
+the actual TTS voice) — both still fully open to any language in the list. Nothing
+stopped a narrator from, say, cloning a tour as Spanish, then translating a waypoint's
+script into German and generating the TTS audio in Arabic. Per Enda: the language
+chosen at clone time must be the only language available anywhere in that clone's
+editor — no choices left to make wrong.
+
+What changed:
+- `TranslationPanel.jsx` and `NarrationTtsEditor.jsx` both take a new `fixedLanguage`
+  prop. When it's set, the "Translate to" / "Language" picker is replaced with a
+  plain, non-interactive label showing that language — the underlying Select
+  component (and any way to change it) is gone entirely, not just disabled.
+- `DrivingTourWaypointEditor.jsx` takes a new `targetLanguage` prop and passes it as
+  `fixedLanguage` into every `NarrationTtsEditor` (both the narrator- and admin-facing
+  waypoint panels) and, through it, into the nested `TranslationPanel` too — so both
+  pickers lock together from the one value.
+- `WalkEditor.jsx` passes `form.target_language` down as that `targetLanguage` prop.
+  This is the walk's own `target_language` field, set once by `cloneWalkForBackend`
+  at clone time and never changed after — the exact same value already shown
+  read-only elsewhere in the app for a clone.
+- A master (English) tour built directly by an Admin has no `target_language` at all
+  (it isn't a clone), so `fixedLanguage` comes through empty and both pickers behave
+  exactly as before — this only locks down clones, where a fixed language actually
+  exists to lock to.
+
+Verified: `npx vite build` clean; `npx eslint` on all four changed files — the two
+newly-touched components (`TranslationPanel.jsx`, `NarrationTtsEditor.jsx`) show zero
+issues; `DrivingTourWaypointEditor.jsx` and `WalkEditor.jsx` show only the same
+pre-existing, unrelated issues already documented in earlier entries.
+
+**Not done / worth knowing for next time:** not tested live — worth opening a real
+clone's waypoint editor and confirming both language fields now show a fixed label
+matching the clone's language with no dropdown at all, while a master tour's editor
+still shows normal pickers.
+
+---
+
 ## 2026-08-20 — New Admin Tool: "Update Audio" (replace AI draft narration with final PCV audio)
 Scope: `base44/entities/Walk.jsonc`, `src/components/admin/UpdateAudioTool.jsx` (new),
 `src/components/admin/AdminStartScreen.jsx`, `src/components/admin/BackendShell.jsx`,
