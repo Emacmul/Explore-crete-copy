@@ -41,6 +41,74 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-21 — Narr Studio: "Clone in Progress" gate — Publish only appears once every waypoint is done, one clone per narrator at a time
+Scope: `src/components/admin/AdminStartScreen.jsx`, `src/components/admin/BackendShell.jsx`,
+**`base44/functions/saveWalkForBackend/entry.ts` (BACKEND FUNCTION — needs the manual
+blank-line redeploy in Base44, pushing the code alone will NOT apply this).**
+
+Enda: once a narrator clones a tour, the Narr Studio's "All translation clones" list
+showed a "Publish" button straight away. It should stay hidden/disabled until the
+narrator has actually marked every waypoint "Done" — that check should happen in the
+background, automatically, not rely on the narrator remembering. Once Publish is
+clicked the tour should sit with the Admin and show "Published" instead of a button.
+The section itself should be renamed "Clone in Progress", a narrator should only ever
+have one clone in progress at a time (can't start a second until this one is empty),
+and once cloned, a master tour shouldn't reappear in that narrator's "Clone a tour to
+translate" list. All of this is per-narrator — one narrator's state never affects
+another narrator's or the Admin's own view.
+
+What was built:
+- `AdminStartScreen.jsx`: new `isReadyToHandOff(walk)` helper — true once every
+  waypoint on a `driving_audio_tour` has `waypoint_done: true` (non-driving route
+  types, which have no waypoint_done concept at all, are treated as always ready).
+  `MyCloneRow` was restructured (the row's clickable area and its status/action area
+  are no longer nested inside one `<button>`, since a real `<Button>` needed to live
+  in the status area) and now shows: "In progress" (grey) while waypoints are still
+  open, a live green "Publish" button once `isReadyToHandOff` is true, and
+  "Published" once the Admin has actually approved it. The section heading is now
+  unconditionally "Clone in Progress" (was "All translation clones" for an admin
+  wearing the Narr hat, "My translation in progress" for a real narrator).
+- `BackendShell.jsx`: new `handleHandOffClone` (Publish button's action — same
+  underlying save as the existing "Translation finished" checkbox, just a second
+  entry point). `myClones` now filters out anything already `approved` — so a clone
+  stays listed (and keeps blocking a new clone) for its whole life, right up until
+  the Admin has actually published it, not just until the narrator hands it off. This
+  was a genuine gap: the old filter only excluded `finished` clones, so a
+  handed-off-but-not-yet-approved clone would have silently dropped off the "in
+  progress" list and unblocked a second clone before the Admin had actually reviewed
+  it. `hasActiveClone` (which already hides the entire "Clone a tour to translate"
+  list while true) now naturally covers the full lifecycle: still narrating, handed
+  off and awaiting Admin review, or sent back with a pushback to fix.
+- **Critical fix caught during this work:** `waypoint_done` was missing from
+  `NARRATOR_WAYPOINT_FIELDS` in `saveWalkForBackend/entry.ts`. Without it, a real
+  narrator's tick/untick of the "Done" checkbox was being silently dropped on every
+  save (an admin wearing the Narr hat wasn't affected, since that session saves
+  through the unrestricted admin branch with no field whitelist) — which would have
+  made the whole "Publish appears once every waypoint is done" gate never actually
+  trigger for a genuine narrator. Added `'waypoint_done'` to that whitelist;
+  `final_audio_applied` remains deliberately excluded — a narrator must never be able
+  to self-certify the final PCV audio.
+- The "shouldn't reappear in Clone a tour to translate" point didn't need a new code
+  change: `hasActiveClone` already empties that whole list while a clone is in
+  progress, and with `myClones` now correctly scoped to "not yet approved" (this
+  entry's main fix), that covers this tour for its entire in-progress life. Cloning
+  the exact same tour into the exact same language again after it's published is
+  separately blocked at clone-time (pre-existing `alreadyPublished` check).
+
+Verified: `npx vite build` clean; `npx eslint` on both changed frontend files shows
+only pre-existing, unrelated issues (same ones confirmed in earlier entries — unused
+`ShieldCheck` import and unused `user` arg in `AdminStartScreen.jsx`, an unused
+eslint-disable directive in `BackendShell.jsx`); `npx esbuild
+base44/functions/saveWalkForBackend/entry.ts --format=esm` compiles clean.
+
+**Not done / worth knowing for next time:**
+- Not tested live in Base44 — same caveat as always. Worth cloning a test tour as a
+  narrator, confirming Publish stays hidden until every waypoint is ticked Done, then
+  confirming it actually appears with the Admin and that a second clone is blocked
+  until the first is published.
+
+---
+
 ## 2026-08-20 — New Admin Tool: "Update Audio" (replace AI draft narration with final PCV audio)
 Scope: `base44/entities/Walk.jsonc`, `src/components/admin/UpdateAudioTool.jsx` (new),
 `src/components/admin/AdminStartScreen.jsx`, `src/components/admin/BackendShell.jsx`,

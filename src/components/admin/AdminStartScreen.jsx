@@ -70,22 +70,39 @@ function CloneableTourRow({ walk, onClone }) {
   );
 }
 
-function MyCloneRow({ walk, onContinue, onPublish, unrestricted, locked }) {
+// "Completion" for a Narrator's own hand-off is the same per-waypoint "Done"
+// tick box built for the Admin/Narrator Waypoints tab (DrivingTourWaypointEditor)
+// — every waypoint on the tour marked done. Only driving-audio tours (DDV/WBT)
+// have that concept at all; a plain Walk/Hike clone (WaypointEditor.jsx) has no
+// per-waypoint narration to finish, so there's nothing to gate there.
+function isReadyToHandOff(walk) {
+  if (walk.route_type !== 'driving_audio_tour') return true;
+  const wps = walk.waypoints || [];
+  return wps.length > 0 && wps.every(wp => wp.waypoint_done);
+}
+
+function MyCloneRow({ walk, onContinue, onPublish, onHandOff, unrestricted, locked }) {
+  const readyToHandOff = isReadyToHandOff(walk);
   return (
     <div className={`w-full bg-slate-800 border rounded-xl px-4 py-3 ${walk.pushback_reason ? 'border-red-600/60' : locked ? 'border-slate-800 opacity-50' : 'border-slate-700'}`}>
-      <button
-        onClick={() => !locked && onContinue(walk)}
-        disabled={locked}
-        className={`flex items-center gap-3 flex-1 min-w-0 text-left group w-full ${locked ? 'cursor-not-allowed' : ''}`}
-      >
-        <span className="font-mono text-xs bg-slate-700 text-purple-300 px-2 py-1 rounded font-bold shrink-0">{walk.code}</span>
-        <Badge className="text-xs bg-purple-900 text-purple-300 border-purple-700 shrink-0">{walk.target_language}</Badge>
-        <div className="flex-1 min-w-0">
-          <p className="font-medium text-white truncate">{walk.name}</p>
-          {unrestricted && walk.assigned_narrator_email && (
-            <p className="text-xs text-slate-500 truncate">By {walk.assigned_narrator_email}</p>
-          )}
-        </div>
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() => !locked && onContinue(walk)}
+          disabled={locked}
+          className={`flex items-center gap-3 flex-1 min-w-0 text-left group ${locked ? 'cursor-not-allowed' : ''}`}
+        >
+          <span className="font-mono text-xs bg-slate-700 text-purple-300 px-2 py-1 rounded font-bold shrink-0">{walk.code}</span>
+          <Badge className="text-xs bg-purple-900 text-purple-300 border-purple-700 shrink-0">{walk.target_language}</Badge>
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-white truncate">{walk.name}</p>
+            {unrestricted && walk.assigned_narrator_email && (
+              <p className="text-xs text-slate-500 truncate">By {walk.assigned_narrator_email}</p>
+            )}
+          </div>
+        </button>
+        {/* A live "Publish" Button can't sit inside the <button> above (invalid nested
+            buttons), so the whole status ladder lives here instead, as a sibling —
+            still visually on the same row. */}
         {walk.pushback_reason && walk.finished ? (
           <span className="flex items-center gap-1 text-xs text-emerald-300 bg-emerald-900/40 border border-emerald-700/50 px-2 py-1 rounded shrink-0">
             <CheckCircle2 className="w-3.5 h-3.5" /> Correction sent for review
@@ -98,13 +115,26 @@ function MyCloneRow({ walk, onContinue, onPublish, unrestricted, locked }) {
           <span className="text-xs text-slate-500 shrink-0">On hold — urgent fix pending</span>
         ) : walk.finished ? (
           <span className="flex items-center gap-1 text-xs text-emerald-300 bg-emerald-900/40 border border-emerald-700/50 px-2 py-1 rounded shrink-0">
-            <CheckCircle2 className="w-3.5 h-3.5" /> Sent for review
+            <CheckCircle2 className="w-3.5 h-3.5" /> Published
           </span>
+        ) : readyToHandOff && onHandOff ? (
+          <Button
+            size="sm"
+            onClick={() => onHandOff(walk.id)}
+            className="h-7 text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700 shrink-0"
+            title="Send this tour to the Admin — every waypoint is marked done."
+          >
+            <Send className="w-3.5 h-3.5" /> Publish
+          </Button>
         ) : (
           <span className="text-xs text-amber-300 shrink-0">In progress</span>
         )}
-        {!locked && <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-purple-400 transition-colors shrink-0" />}
-      </button>
+        {!locked && (
+          <button onClick={() => onContinue(walk)} className="shrink-0 text-slate-500 hover:text-purple-400 transition-colors p-0.5" title="Open">
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        )}
+      </div>
       {walk.pushback_reason && (
         <div className="mt-2 pt-2 border-t border-red-900/40 flex items-start gap-2 text-sm text-red-200">
           <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-red-400" />
@@ -143,7 +173,7 @@ function ReviewCloneRow({ walk, onReview, onPublish }) {
 
 export default function AdminStartScreen({
   userRole, user, works, onNewTour, onContinueTour, onManageUsers, onDashboard, onManageWalks,
-  onCloneTour, onPublishClone, cloneableTours = [], myClones = [], reviewClones = [],
+  onCloneTour, onPublishClone, onHandOffClone, cloneableTours = [], myClones = [], reviewClones = [],
   hasActiveClone = false,
   pendingPushbackId = null,
   publishedLanguagesByMaster = {},
@@ -202,8 +232,8 @@ export default function AdminStartScreen({
         </div>
 
         <div>
-          <h2 className="text-lg font-bold text-white mb-1">{unrestricted ? 'All translation clones' : 'My translation in progress'}</h2>
-          {!unrestricted && <p className="text-sm text-slate-400 mb-3">Once a translation is finished and published, it moves off this list — it's a live tour at that point, not a clone in progress.</p>}
+          <h2 className="text-lg font-bold text-white mb-1">Clone in Progress</h2>
+          <p className="text-sm text-slate-400 mb-3">Once every waypoint is marked done, Publish sends it to the Admin. It stays listed here — and you can't start another clone — until the Admin has fully published it as a live tour.</p>
           {myClones.length === 0 ? (
             <div className="text-center py-8 text-slate-500 border border-dashed border-slate-700 rounded-xl">
               <Mic className="w-10 h-10 mx-auto mb-2 opacity-30" />
@@ -211,7 +241,7 @@ export default function AdminStartScreen({
               <p className="text-sm">Clone a tour above to start a translation.</p>
             </div>
           ) : (
-            <div className="space-y-2">{myClones.map(walk => <MyCloneRow key={walk.id} walk={walk} onContinue={onContinueTour} onPublish={onPublishClone} unrestricted={unrestricted} locked={!!pendingPushbackId && walk.id !== pendingPushbackId} />)}</div>
+            <div className="space-y-2">{myClones.map(walk => <MyCloneRow key={walk.id} walk={walk} onContinue={onContinueTour} onPublish={onPublishClone} onHandOff={onHandOffClone} unrestricted={unrestricted} locked={!!pendingPushbackId && walk.id !== pendingPushbackId} />)}</div>
           )}
         </div>
       </div>

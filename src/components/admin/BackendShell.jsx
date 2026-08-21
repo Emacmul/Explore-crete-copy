@@ -166,17 +166,26 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
   };
 
   // Ticking "finished" on a clone sends it to admins for review (and back, if unticked).
-  // This is the moment the one-clone-in-progress lock releases for a narrator —
-  // immediately, not once an admin has also approved/published it (see
-  // myActiveClones below).
+  // Per Enda: the one-clone-in-progress lock now stays held through this whole step —
+  // it only releases once an Admin has actually published the clone (myClones below
+  // already excludes approved rows, so it naturally empties out at that point, not
+  // this one).
   const handleToggleFinished = async (walkId, finished) => {
     await callWalkFn('saveWalkForBackend', { id: walkId, patch: { finished } });
     setWalks((prev) => prev.map(w => w.id === walkId ? { ...w, finished } : w));
     toast({
-      title: finished ? 'Sent for review' : 'Reopened',
-      description: finished ? 'Admins can now see this translation.' : 'This clone is back in your hands.',
+      title: finished ? 'Published' : 'Reopened',
+      description: finished ? 'Sent to the Admin for final review and the final audio update.' : 'This clone is back in your hands.',
     });
   };
+
+  // The "Publish" button on a clone's row in the Narr Studio list (Clone in
+  // Progress) — same underlying action as the "Translation finished" checkbox
+  // inside the editor, just a second, more visible entry point for it. This is
+  // NOT the Admin's real approve/go-live action (handlePublishClone) — a
+  // Narrator hands off to the Admin here, nothing more; going live still needs
+  // the Admin's own review and the Update Audio step.
+  const handleHandOffClone = (walkId) => handleToggleFinished(walkId, true);
 
   // Shared by every "about to publish" action below. Per Enda: a tour — a
   // Narrator's clone OR a master tour an Admin builds directly — must NEVER go
@@ -285,15 +294,17 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
   }
   // An unrestricted (admin-wearing-Narr-hat) user sees every translation clone, not just
   // their own — and can publish any of them directly (see AdminStartScreen).
-  const myClones = unrestricted
+  //
+  // Per Enda: "Clone in Progress" means exactly that — a clone stays listed here (and
+  // keeps blocking a new clone, see hasActiveClone below) for its entire life, right up
+  // until an Admin has actually published it. Handing off to the Admin (finished:true,
+  // via handleHandOffClone) does NOT clear it — only real approval does, which is
+  // exactly what filtering on `!w.approved` gives for free: a clone drops off this list
+  // the moment (and only the moment) it goes live.
+  const myClones = (unrestricted
     ? walks.filter(w => w.clone_of)
-    : walks.filter(w => w.clone_of && (w.assigned_narrator_email || '').toLowerCase() === (user.email || '').toLowerCase());
-  // A narrator's own view of "my clones" only shows active, in-progress work — once
-  // they've marked a clone finished, it's off their plate; it's in the Admin's hands
-  // for final check and final audio editing next, whether or not the Admin has
-  // actually reviewed/published it yet. (An unrestricted admin-as-narrator still sees
-  // everything, since they're the one doing the reviewing/publishing.)
-  const myActiveClones = unrestricted ? myClones : myClones.filter(w => !w.finished);
+    : walks.filter(w => w.clone_of && (w.assigned_narrator_email || '').toLowerCase() === (user.email || '').toLowerCase())
+  ).filter(w => !w.approved);
   // NB: for a real (non-unrestricted) narrator session, `walks` only carries redacted
   // metadata for clones that aren't their own (see getWalksForBackend) — this list is
   // only ever displayed on the Admin side of AdminStartScreen, never the narrator side,
@@ -306,10 +317,12 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
   // list is clone-specific, but they need the exact same audio check before they
   // can go live. isAdmin-gated at the render site below, same as the tool itself.
   const audioUpdateTours = [...reviewClones, ...walks.filter(w => !w.clone_of && w.approved === false)];
-  // Only one translation clone may be in progress at a time per narrator — the lock
-  // releases the moment they mark their current clone finished (see handleToggleFinished),
-  // not once an admin has also approved/published it.
-  const hasActiveClone = !unrestricted && myActiveClones.length > 0;
+  // Only one translation clone may be in progress at a time per narrator — myClones
+  // is already scoped to "not yet approved" above, so this now naturally covers the
+  // whole lifecycle: still narrating, handed off and awaiting the Admin's review, or
+  // handed back with a pushback to fix. The lock only releases once the Admin has
+  // actually published it.
+  const hasActiveClone = !unrestricted && myClones.length > 0;
   // A pushback jumps the queue: it's an already-published, already-live tour with a known
   // error in it, unlike an ordinary in-progress translation nobody's seen yet. If a
   // narrator has one pending, it must take priority over whatever else they were working
@@ -320,7 +333,7 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
   // stays set until then (so the row still shows what was wrong), but that's an admin-side
   // detail — the narrator shouldn't be stuck unable to touch anything else just because
   // the admin hasn't reviewed their fix yet.
-  const pendingPushback = !unrestricted ? myActiveClones.find(w => w.pushback_reason && !w.finished) : null;
+  const pendingPushback = !unrestricted ? myClones.find(w => w.pushback_reason && !w.finished) : null;
 
   const isAdmin = userRole === 'admin';
   const showBackToStart = editingWalk !== null || view !== 'start';
@@ -474,11 +487,12 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
             onManageWalks={() => setView('walks')}
             onCloneTour={handleCloneTour}
             onPublishClone={handlePublishClone}
+            onHandOffClone={handleHandOffClone}
             cloneableTours={hasActiveClone ? [] : cloneableTours}
             publishedLanguagesByMaster={publishedLanguagesByMaster}
             hasActiveClone={hasActiveClone}
             pendingPushbackId={pendingPushback?.id || null}
-            myClones={unrestricted ? myClones : myActiveClones}
+            myClones={myClones}
             reviewClones={reviewClones}
           />
         )}

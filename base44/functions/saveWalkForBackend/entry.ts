@@ -15,10 +15,12 @@ const NARRATOR_WALK_FIELDS = ['name', 'description', 'safety_notes', 'finished']
 // segment_number, segment_title and avg_segment_speed_kmh always come from
 // the server's own copy of the waypoint, never the client's — speed in
 // particular must never be settable by anyone but an Admin, anywhere.
+// final_audio_applied is deliberately absent — see the comment on the admin
+// branch below; only the Update Audio tool (an admin-only action) may set it.
 const NARRATOR_WAYPOINT_FIELDS = [
   'narration_script', 'audio_clip_url', 'trigger_audio',
   'trigger_radius_m', 'trigger_once', 'use_bearing',
-  'bearing_direction', 'bearing_tolerance',
+  'bearing_direction', 'bearing_tolerance', 'waypoint_done',
 ];
 
 // Narrators can't reorder/add/remove waypoints in the UI today (drag is
