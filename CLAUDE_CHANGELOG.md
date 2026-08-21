@@ -144,6 +144,72 @@ re-review A first.
 
 ---
 
+## 2026-08-21 — Narration Script & TTS: debug box hidden, editable script now follows you down the segment list
+Scope: `src/components/admin/NarrationTtsEditor.jsx` only (frontend-only, no backend
+function touched).
+
+Enda: two complaints about the Narration Script & TTS panel. First, the box that
+appears under "Parse & Generate" (segment-by-segment "Generating…" / "Language: en-US"
+/ "OK" lines) serves no purpose for a narrator and just takes up space — hide it.
+Second, working through a long waypoint's segment list meant the editable script box
+at the top scrolled out of view, so fixing a typo further down meant scrolling all the
+way back up every time, breaking the flow.
+
+What was built:
+- The debug log box is gone from the render entirely. The underlying logging calls
+  were left in place (harmless, write-only now) rather than stripped from every call
+  site, in case a debug view is worth adding back for troubleshooting later — nothing
+  reads or shows that state today.
+- The segment cards are now grouped into "subsections" (Enda's term) — the same
+  grouping the Build & Play button already used (every 3rd card, plus the remainder at
+  the end) — and each subsection gets its own duplicate of the editable script
+  textarea, wired to the exact same script value/handler as the one at the top. Edit
+  in any of them (or the top box) and it's the same edit everywhere; no separate draft
+  state to lose track of.
+- Editing the script — anywhere, including mid-listen-through — no longer resets the
+  segments/generated audio the way it used to. It only actually changes anything the
+  next time "Parse & Generate" is clicked; a mid-pass fix doesn't interrupt what's
+  already been built and is being listened through.
+- The Build & Play button is now a real per-subsection play-then-pause: clicking the
+  first subsection's "Build & Play" plays just that subsection's audio, and stops on
+  its own once it's done — an "automatic pause" for exactly the reason Enda described:
+  a finite clip just naturally stops. From there, each subsequent subsection's button
+  reads "Continue" — clicking it plays that subsection and pauses again at its end,
+  chaining forward one subsection at a time. A subsection not yet reached is shown
+  locked/greyed; a subsection already played through shows "Played" with a "Replay"
+  option, for re-listening after fixing something there without disturbing where the
+  pass currently is.
+- The LAST subsection's button stays labeled "Build & Play" and does what the single
+  button used to do for the whole script: renders and uploads the combined audio file,
+  saves it, and — per Enda — sends the editor back to the beginning: segments and
+  generated audio are cleared, so "Parse & Generate" has to be clicked again to start a
+  fresh pass over whatever text was edited along the way. This repeats as many times as
+  needed until the narrator is happy and marks the waypoint Done.
+- The final combined-audio save now always decodes its own audio fresh rather than
+  reusing a previous subsection's already-decoded clips — each subsection plays via its
+  own independent `playSegmentsPrecisely` call now (rather than one call covering the
+  whole script), so there's no single "already decoded everything" object left to reuse
+  by the time the last button runs. Slightly more work at save time, but correctness
+  matters more here than shaving a re-fetch, and `combineSegmentsToWav` already
+  supported decoding on its own perfectly well.
+
+Verified: `npx vite build` clean; `npx eslint` on the changed file shows zero issues —
+no pre-existing ones either.
+
+**Not done / worth knowing for next time:**
+- Not tested live — this is a real rework of the play/pause/save flow, worth a careful
+  pass in the actual app: parse a script with more than 3 segments, play through a
+  couple of subsections, edit text in a lower duplicate box, Replay an earlier
+  subsection, then run all the way to the end and confirm the saved audio and the
+  "back to the beginning, click Parse & Generate again" reset both behave as expected.
+- The per-subsection Stop button interrupts whichever subsection is currently playing
+  (same underlying mechanism as before) and leaves the cursor exactly where it was —
+  it doesn't advance on a stop, and Web Audio can't resume mid-clip anyway — so its
+  button just goes back to being clickable, ready to play that same subsection again
+  from its start.
+
+---
+
 ## 2026-08-21 — Waypoint editor: translation/TTS language now locked to the clone's own language
 Scope: `src/components/admin/TranslationPanel.jsx`, `src/components/admin/NarrationTtsEditor.jsx`,
 `src/components/admin/DrivingTourWaypointEditor.jsx`, `src/components/admin/WalkEditor.jsx`

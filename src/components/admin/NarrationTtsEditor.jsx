@@ -10,7 +10,7 @@ import { parseScript, rebuildScript, countCharacters, countBreaks } from '@/lib/
 import TtsSegmentCard from './TtsSegmentCard';
 import TranslationPanel from './TranslationPanel';
 import AudioPlayer from '@/components/ui/AudioPlayer';
-import { Loader2, Sparkles, Pause, Play, Download, Braces, FileText, Square } from 'lucide-react';
+import { Loader2, Sparkles, Pause, Play, Download, Braces, FileText, Square, CheckCircle2 } from 'lucide-react';
 import { downloadScriptAsDocx } from '@/lib/docxExporter';
 import { useNarratorApiKeys } from '@/lib/useNarratorApiKeys';
 import { getFnErrorMessage } from '@/lib/utils';
@@ -31,6 +31,23 @@ const LANG_TO_CODE = {
 
 const MAX_CHARS = 5000;
 
+// A "subsection" (per Enda's term) is a run of segment cards ending at a Build & Play /
+// Continue control — the same grouping the old flat list already used (every 3rd card,
+// plus whatever's left over at the very end), just organized into real groups now
+// instead of a modulo check sprinkled through the render.
+function chunkIntoSubsections(segments) {
+  const subsections = [];
+  let current = [];
+  segments.forEach((seg, idx) => {
+    current.push(seg);
+    if ((idx + 1) % 3 === 0 || idx === segments.length - 1) {
+      subsections.push(current);
+      current = [];
+    }
+  });
+  return subsections;
+}
+
 export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, onAudioChange, fixedLanguage }) {
   const { keys: apiKeys } = useNarratorApiKeys();
   const [selectedVoice, setSelectedVoice] = useState('NEUTRAL');
@@ -42,7 +59,18 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   const [generatingCombined, setGeneratingCombined] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [currentPlayingIndex, setCurrentPlayingIndex] = useState(null);
-  const [debugLog, setDebugLog] = useState([]);
+  // The debug log used to render as a box under Parse & Generate — per Enda, it served
+  // no purpose for a narrator and just took up space, so it's no longer shown. Kept as
+  // write-only internal bookkeeping (addLog below) rather than ripped out everywhere it
+  // was called, in case it's ever useful again behind a future admin/debug view.
+  const [, setDebugLog] = useState([]);
+  // Which subsection the narrator has reached so far (0-based). Subsections before this
+  // one are "done" (with a Replay option); this one is the active Build & Play /
+  // Continue; anything after is locked until the narrator works through to it.
+  const [subsectionCursor, setSubsectionCursor] = useState(0);
+  // Which subsection is actively mid-playback right now, if any — used to show Stop in
+  // the right spot instead of a single global control.
+  const [activeSubsectionIndex, setActiveSubsectionIndex] = useState(null);
   const textareaRef = useRef(null);
   const currentAudioRef = useRef(null);
   const stopRef = useRef(false);
@@ -73,20 +101,20 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     const end = textarea.selectionEnd;
     const newScript = (script || '').slice(0, start) + tag + (script || '').slice(end);
     onScriptChange(newScript);
-    setSegments(null);
-    setSegmentAudios({});
     setTimeout(() => {
       textarea.focus();
       textarea.selectionStart = textarea.selectionEnd = start + tag.length;
     }, 0);
   };
 
-  const handleTextareaChange = (e) => {
+  // Shared by the top script box AND every duplicate copy of it shown further down
+  // (one per subsection — see the segments list below). Per Enda: editing the script
+  // anywhere, mid-pass, must NOT wipe out the segments/audio already generated — a
+  // narrator working through a long waypoint needs to keep listening/continuing through
+  // what's already built, fixing text as they go, without losing their place. The edit
+  // only actually changes anything the next time "Parse & Generate" is clicked.
+  const handleScriptEdit = (e) => {
     onScriptChange(e.target.value);
-    if (segments) {
-      setSegments(null);
-      setSegmentAudios({});
-    }
   };
 
   const handleParseAndGenerate = async () => {
@@ -108,6 +136,8 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     const parsed = parseScript(script);
     setSegments(parsed);
     setSegmentAudios({});
+    setSubsectionCursor(0);
+    setActiveSubsectionIndex(null);
 
     const languageCode = LANG_TO_CODE[selectedLanguage] || 'en-US';
     const audios = {};
@@ -170,23 +200,76 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     audio.play().catch(() => setCurrentPlayingIndex(null));
   };
 
-  const handleBuildAndPlay = async () => {
-    if (!segments || playing) return;
+  // Builds the final combined file and saves it — exactly what the single "Build &
+  // Play" button used to do at the very end. Only ever called once, when the LAST
+  // subsection finishes playing. Decodes fresh here (rather than reusing an earlier
+  // subsection's precomputed clips) since each subsection now plays with its own,
+  // separate playSegmentsPrecisely call — there's no single "precomputed" covering the
+  // whole script to reuse, and combineSegmentsToWav already supports decoding on its
+  // own perfectly well when nothing is passed.
+  const finalizeAndSave = async () => {
+    setGeneratingCombined(true);
+    addLog('Rendering combined audio file…');
+    try {
+      const wavBlob = await combineSegmentsToWav(segments, segmentAudios);
+      addLog(`Combined audio rendered (${(wavBlob.size / 1024 / 1024).toFixed(2)} MB). Uploading…`);
+      const audioBase64 = await blobToBase64(wavBlob);
+      const response = await base44.functions.invoke('uploadNarrationAudio', {
+        audioBase64,
+        mimeType: 'audio/wav',
+        filename: `narration_${Date.now()}.wav`,
+        ...getNarratorAuthPayload(),
+      });
+      if (response.data?.url) {
+        onAudioChange(response.data.url);
+        addLog('Combined audio saved.');
+        // Per Enda: once the final Build & Play has saved this pass, the editor goes
+        // back to the beginning — segments/audio cleared so "Parse & Generate" has to
+        // be clicked again to start a fresh pass over the (possibly just-edited)
+        // script. Only done on a successful save, so a failed upload doesn't lose the
+        // segments/audio the narrator would otherwise have to regenerate from scratch.
+        setSegments(null);
+        setSegmentAudios({});
+        setSubsectionCursor(0);
+      } else {
+        addLog('Combined audio: no URL returned from upload.');
+        setError('Combined audio failed: upload did not return a file URL.');
+      }
+    } catch (err) {
+      const msg = getFnErrorMessage(err);
+      addLog(`Combined audio ERROR: ${msg}`);
+      setError(`Combined audio failed: ${msg}`);
+    }
+    setGeneratingCombined(false);
+  };
+
+  // Plays a single subsection's slice of segments only, then either (a) advances the
+  // cursor to the next subsection — the "automatic pause" Enda described, since a
+  // finite clip simply stops on its own — or, if this was the last subsection, hands
+  // off to finalizeAndSave. Also used for "Replay" on an already-completed subsection
+  // (si !== subsectionCursor), in which case it's just a re-listen and doesn't touch
+  // the cursor or trigger a save, no matter where in the list it is.
+  const handlePlaySubsection = async (subsections, si) => {
+    const subsectionSegments = subsections[si];
+    if (!subsectionSegments || playing || generatingCombined) return;
+    const isReplay = si !== subsectionCursor;
+
     stopRef.current = false;
     setPlaying(true);
+    setActiveSubsectionIndex(si);
     setError('');
 
-    // Live preview and the saved file are now built from the exact same engine (see
-    // src/lib/audioCombiner.js) — this used to play each raw segment clip with a
-    // plain <audio> element and wait for it to fully finish (including that clip's
-    // own boundary silence) before starting a separate setTimeout for the pause,
-    // which is NOT what the saved file did even after the previous fix. What's heard
-    // here now IS what gets saved, because it's literally the same decoded/trimmed
-    // clips and the same schedule.
     let playback = null;
     try {
-      playback = await playSegmentsPrecisely(segments, segmentAudios, {
-        onSegmentChange: (idx) => setCurrentPlayingIndex(idx),
+      playback = await playSegmentsPrecisely(subsectionSegments, segmentAudios, {
+        // playSegmentsPrecisely reports an index into the slice we gave it, not the
+        // full segments list — map it back to the card that's actually showing that
+        // segment so highlighting lands on the right one.
+        onSegmentChange: (localIdx) => {
+          const seg = subsectionSegments[localIdx];
+          const globalIdx = seg ? segments.findIndex((s) => s.id === seg.id) : -1;
+          if (globalIdx >= 0) setCurrentPlayingIndex(globalIdx);
+        },
       });
       currentPlaybackRef.current = playback;
       if (stopRef.current) {
@@ -200,6 +283,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
       setError(`Preview failed: ${msg}`);
       setCurrentPlayingIndex(null);
       setPlaying(false);
+      setActiveSubsectionIndex(null);
       currentPlaybackRef.current = null;
       return;
     }
@@ -207,37 +291,20 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     currentPlaybackRef.current = null;
     setCurrentPlayingIndex(null);
     setPlaying(false);
+    setActiveSubsectionIndex(null);
 
-    if (stopRef.current) return;
-
-    setGeneratingCombined(true);
-    addLog('Rendering combined audio file (reusing the clips just previewed)…');
-    try {
-      // Reuses playback's already-decoded/trimmed clips instead of re-fetching and
-      // re-decoding everything a second time — also guarantees the saved file can't
-      // diverge from what was just heard, since it's the same decoded data.
-      const wavBlob = await combineSegmentsToWav(segments, segmentAudios, playback);
-      addLog(`Combined audio rendered (${(wavBlob.size / 1024 / 1024).toFixed(2)} MB). Uploading…`);
-      const audioBase64 = await blobToBase64(wavBlob);
-      const response = await base44.functions.invoke('uploadNarrationAudio', {
-        audioBase64,
-        mimeType: 'audio/wav',
-        filename: `narration_${Date.now()}.wav`,
-        ...getNarratorAuthPayload(),
-      });
-      if (response.data?.url) {
-        onAudioChange(response.data.url);
-        addLog('Combined audio saved.');
-      } else {
-        addLog('Combined audio: no URL returned from upload.');
-        setError('Combined audio failed: upload did not return a file URL.');
-      }
-    } catch (err) {
-      const msg = getFnErrorMessage(err);
-      addLog(`Combined audio ERROR: ${msg}`);
-      setError(`Combined audio failed: ${msg}`);
+    if (stopRef.current) {
+      stopRef.current = false;
+      return;
     }
-    setGeneratingCombined(false);
+    if (isReplay) return;
+
+    const isLast = si === subsections.length - 1;
+    if (isLast) {
+      await finalizeAndSave();
+    } else {
+      setSubsectionCursor(si + 1);
+    }
   };
 
   const handleStopPlay = () => {
@@ -250,6 +317,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
       currentAudioRef.current.pause();
     }
     setPlaying(false);
+    setActiveSubsectionIndex(null);
     setCurrentPlayingIndex(null);
   };
 
@@ -290,44 +358,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   };
 
   const hasSegmentAudios = Object.keys(segmentAudios).length > 0;
-
-  // Build & Play / Stop / Download, as a single reusable block — called multiple times
-  // below (see the segments list) rather than once at the very bottom, so it's always
-  // within reach without scrolling all the way down through a long segment list first.
-  // All calls share the exact same state/handlers, so they behave identically wherever
-  // they appear.
-  const renderBuildPlayControls = () => (
-    <div className="flex gap-2">
-      {playing ? (
-        <Button
-          type="button"
-          onClick={handleStopPlay}
-          className="flex-1 bg-red-600 hover:bg-red-700 gap-2 text-white"
-        >
-          <Square className="w-4 h-4" /> Stop
-        </Button>
-      ) : (
-        <Button
-          type="button"
-          onClick={handleBuildAndPlay}
-          disabled={generatingCombined || !hasSegmentAudios}
-          className="flex-1 bg-purple-600 hover:bg-purple-700 gap-2 text-white"
-        >
-          {generatingCombined ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-          {generatingCombined ? 'Building…' : 'Build & Play'}
-        </Button>
-      )}
-      <Button
-        type="button"
-        variant="outline"
-        onClick={handleDownload}
-        disabled={!hasSegmentAudios || playing}
-        className="border-slate-500 text-slate-300 gap-2"
-      >
-        <Download className="w-4 h-4" /> Download
-      </Button>
-    </div>
-  );
+  const subsections = segments ? chunkIntoSubsections(segments) : [];
 
   return (
     <div className="bg-slate-800/50 rounded-lg border border-blue-600/30 p-3 space-y-3">
@@ -342,6 +373,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
           onScriptChange(text);
           setSegments(null);
           setSegmentAudios({});
+          setSubsectionCursor(0);
         }}
         fixedLanguage={fixedLanguage}
       />
@@ -375,7 +407,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
         <Textarea
           ref={textareaRef}
           value={script || ''}
-          onChange={handleTextareaChange}
+          onChange={handleScriptEdit}
           placeholder={'Import a script file or write here...\n\nUse <break time="2s"/> for pauses.'}
           rows={6}
           className="bg-slate-700 border-slate-500 text-white text-sm font-mono resize-y"
@@ -439,47 +471,111 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
         </div>
       )}
 
-      {/* Debug log */}
-      {debugLog.length > 0 && (
-        <div className="bg-slate-900/60 rounded-lg p-2.5 text-xs text-slate-400 font-mono space-y-0.5 max-h-32 overflow-y-auto">
-          {debugLog.map((line, i) => <div key={i}>{line}</div>)}
-        </div>
-      )}
-
-      {/* Segments list, with Build & Play/Download repeated after every 3rd card (and
-          after the last one) rather than only once at the very bottom — a long segment
-          list previously meant scrolling all the way down just to hear/build the result. */}
+      {/* Segments list, grouped into subsections (every 3rd card, plus whatever's left
+          over at the end). Each subsection gets its own duplicate of the editable
+          script box — so a fix doesn't mean scrolling all the way back to the top —
+          and its own Build & Play / Continue control. Per Enda: only the very first
+          subsection's button is a real "Build & Play" (kicks off listening through the
+          whole pass); every one after that is "Continue" and just carries on playback
+          into the next subsection, auto-stopping at its end so there's a natural pause
+          to edit in; the LAST subsection's button is "Build & Play" again, since that's
+          the one that actually renders and saves the combined file, then sends the
+          editor back to the top for a fresh Parse & Generate pass. */}
       {segments && (
-        <div className="space-y-2">
+        <div className="space-y-3">
           <div className="flex items-center gap-3 text-xs text-slate-400 flex-wrap">
             <span>{countCharacters(segments)} characters</span>
             <span>·</span>
             <span>{countBreaks(segments)} breaks detected</span>
             <span className="text-slate-600">Use &lt;break time="Xs"/&gt; for pauses</span>
           </div>
-          {segments.map((seg, idx) => (
-            <React.Fragment key={seg.id}>
-              <TtsSegmentCard
-                segment={seg}
-                audioUrl={segmentAudios[seg.id]}
-                isGenerating={generatingSegmentId === seg.id}
-                isPlaying={currentPlayingIndex === idx}
-                onPlay={playSegment}
-                onDurationChange={handleDurationChange}
-              />
-              {((idx + 1) % 3 === 0 || idx === segments.length - 1) && renderBuildPlayControls()}
-            </React.Fragment>
-          ))}
+
+          {subsections.map((subsectionSegments, si) => {
+            const isLast = si === subsections.length - 1;
+            const status = si < subsectionCursor ? 'done' : si === subsectionCursor ? 'active' : 'locked';
+            const isPlayingThis = playing && activeSubsectionIndex === si;
+            const isSavingThis = generatingCombined && isLast && status !== 'locked';
+            const label = isLast ? 'Build & Play' : (si === 0 ? 'Build & Play' : 'Continue');
+
+            return (
+              <div key={`subsection-${si}`} className="space-y-2 pt-2 border-t border-slate-700/60 first:border-t-0 first:pt-0">
+                {subsectionSegments.map((seg) => {
+                  const globalIdx = segments.findIndex((s) => s.id === seg.id);
+                  return (
+                    <TtsSegmentCard
+                      key={seg.id}
+                      segment={seg}
+                      audioUrl={segmentAudios[seg.id]}
+                      isGenerating={generatingSegmentId === seg.id}
+                      isPlaying={currentPlayingIndex === globalIdx}
+                      onPlay={playSegment}
+                      onDurationChange={handleDurationChange}
+                    />
+                  );
+                })}
+
+                {/* Duplicate, editable script box — same text, same handler as the box
+                    at the top, so an edit made here is just as real. Kept editable
+                    regardless of this subsection's status, since a narrator may want to
+                    fix something in a subsection they've already played through. */}
+                <div>
+                  <Label className="text-slate-500 text-xs mb-1 block">Edit script (takes effect on the next Parse & Generate)</Label>
+                  <Textarea
+                    value={script || ''}
+                    onChange={handleScriptEdit}
+                    rows={4}
+                    className="bg-slate-700 border-slate-500 text-white text-sm font-mono resize-y"
+                  />
+                </div>
+
+                <div className="flex gap-2 items-center">
+                  {isPlayingThis ? (
+                    <Button type="button" onClick={handleStopPlay} className="flex-1 bg-red-600 hover:bg-red-700 gap-2 text-white">
+                      <Square className="w-4 h-4" /> Stop
+                    </Button>
+                  ) : status === 'done' ? (
+                    <>
+                      <span className="flex items-center gap-1.5 text-sm text-emerald-400 shrink-0">
+                        <CheckCircle2 className="w-4 h-4" /> Played
+                      </span>
+                      <Button
+                        type="button" variant="outline" size="sm"
+                        onClick={() => handlePlaySubsection(subsections, si)}
+                        disabled={playing || generatingCombined}
+                        className="border-slate-500 text-slate-300 gap-1.5"
+                      >
+                        <Play className="w-3.5 h-3.5" /> Replay
+                      </Button>
+                    </>
+                  ) : status === 'active' ? (
+                    <Button
+                      type="button"
+                      onClick={() => handlePlaySubsection(subsections, si)}
+                      disabled={playing || generatingCombined || !hasSegmentAudios}
+                      className="flex-1 bg-purple-600 hover:bg-purple-700 gap-2 text-white"
+                    >
+                      {isSavingThis ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                      {isSavingThis ? 'Saving…' : label}
+                    </Button>
+                  ) : (
+                    <Button type="button" disabled className="flex-1 bg-slate-700 text-slate-500 gap-2 cursor-not-allowed">
+                      <Play className="w-4 h-4" /> {label}
+                    </Button>
+                  )}
+                  <Button
+                    type="button" variant="outline"
+                    onClick={handleDownload}
+                    disabled={!hasSegmentAudios || playing}
+                    className="border-slate-500 text-slate-300 gap-2"
+                  >
+                    <Download className="w-4 h-4" /> Download
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
-
-      {/* Fallback Stop bar for the case where segment-by-segment playback is still
-          actually running in the background even though `segments` just got reset (the
-          narrator edited the script mid-playback) — without this, the block above
-          disappears entirely along with it, leaving Stop unreachable while audio keeps
-          playing with no visible way to interrupt it. Editing mid-task is fine; losing
-          the ability to stop what's already running isn't. */}
-      {!segments && playing && renderBuildPlayControls()}
 
       {/* Current saved audio — always visible once something's been built, with clear
           instructions for how to change it, since it wasn't obvious before how to go back
@@ -494,9 +590,10 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
           </div>
           <AudioPlayer src={audioUrl} className="w-full" />
           <p className="text-xs text-slate-500">
-            To change this: edit the script above, click <strong>Parse &amp; Generate</strong>, listen
-            to the segments, then click <strong>Build &amp; Play</strong> again to save a new version —
-            no need to leave this screen.
+            To change this: edit the script above, click <strong>Parse &amp; Generate</strong>, then work
+            through each section below — editing text and clicking <strong>Continue</strong> as needed —
+            until the final <strong>Build &amp; Play</strong> saves a new version. No need to leave this
+            screen.
           </p>
         </div>
       )}
