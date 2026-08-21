@@ -144,6 +144,48 @@ re-review A first.
 
 ---
 
+## 2026-08-21 (follow-up) — Subsection boundary never splits a pause from the line it leads into; editable box now visually distinct
+Scope: `src/components/admin/NarrationTtsEditor.jsx` only (frontend-only, no backend
+function touched).
+
+Enda spotted this straight after installing the previous entry's rework: the
+subsection boundary (and with it, the duplicated editable script box + Continue
+button) could land right after a pause card, wedging itself between that pause and
+the very narration line the pause was leading into — e.g. "...there are certain
+things we have no control over" → *pause 0.1s* → **[edit box / Continue button]** →
+"like mountains." Splitting a pause from its own continuation like that should never
+happen. Also asked for the editable box itself to look visually distinct from the
+dark narration cards around it, so it reads clearly as an editing tool, not another
+line of narration.
+
+What changed:
+- `chunkIntoSubsections` (added in the previous entry) now refuses to end a
+  subsection on a pause segment whenever a narration line still follows it — a
+  would-be boundary that lands on a pause is deferred until the next text segment,
+  so the pause always stays grouped with the line that comes after it. A boundary
+  can still land on a pause only when that pause is genuinely the last segment in
+  the whole script (nothing follows it to protect).
+- The duplicated "Edit script" textarea (the one repeated in each subsection, not
+  the main one at the top of the panel) now has its own look — a muted pastel
+  yellow background with black text — instead of matching the dark slate styling
+  used everywhere else, per Enda's exact request. The main script box at the top of
+  the panel is untouched; this distinction only matters for the copies interspersed
+  among the narration cards.
+
+Verified: `npx vite build` clean; `npx eslint` on the changed file shows zero
+issues; hand-traced the new chunking logic against a segment sequence matching the
+screenshot Enda sent (text → pause → text → pause → text → pause → text) and
+confirmed every subsection now ends on a text segment, never a pause, with the
+pause always kept together with the line right after it.
+
+**Not done / worth knowing for next time:** not tested live — worth generating a
+script with several short back-to-back pause/text pairs (the case that triggered
+this) and confirming visually that no subsection boundary lands mid pause-then-line
+anymore, and that the yellow box is easy to spot while scrolling past narration
+cards.
+
+---
+
 ## 2026-08-21 — Narration Script & TTS: debug box hidden, editable script now follows you down the segment list
 Scope: `src/components/admin/NarrationTtsEditor.jsx` only (frontend-only, no backend
 function touched).

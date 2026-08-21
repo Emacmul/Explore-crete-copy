@@ -35,16 +35,26 @@ const MAX_CHARS = 5000;
 // Continue control — the same grouping the old flat list already used (every 3rd card,
 // plus whatever's left over at the very end), just organized into real groups now
 // instead of a modulo check sprinkled through the render.
+//
+// Per Enda: a subsection must never end right on a pause when there's still a
+// narration line after it — a pause exists to lead into whatever comes next, so
+// splitting them apart (with the editable box + Continue/Build & Play controls
+// wedged in between) visually breaks that pair apart. So a would-be boundary lands
+// on a pause is deferred — the pause stays grouped with the text segment that
+// follows it — rather than closing the subsection right there.
 function chunkIntoSubsections(segments) {
   const subsections = [];
   let current = [];
   segments.forEach((seg, idx) => {
     current.push(seg);
-    if ((idx + 1) % 3 === 0 || idx === segments.length - 1) {
+    const isLastOverall = idx === segments.length - 1;
+    const endsOnDanglingPause = seg.type === 'pause' && !isLastOverall;
+    if (!endsOnDanglingPause && (current.length >= 3 || isLastOverall)) {
       subsections.push(current);
       current = [];
     }
   });
+  if (current.length > 0) subsections.push(current);
   return subsections;
 }
 
@@ -517,14 +527,17 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                 {/* Duplicate, editable script box — same text, same handler as the box
                     at the top, so an edit made here is just as real. Kept editable
                     regardless of this subsection's status, since a narrator may want to
-                    fix something in a subsection they've already played through. */}
+                    fix something in a subsection they've already played through.
+                    Deliberately styled unlike the dark narration cards around it (per
+                    Enda: a muted pastel yellow with black text) so it reads clearly as
+                    an editing tool wedged into the list, not another narration block. */}
                 <div>
-                  <Label className="text-slate-500 text-xs mb-1 block">Edit script (takes effect on the next Parse & Generate)</Label>
+                  <Label className="text-amber-200/80 text-xs mb-1 block">Edit script (takes effect on the next Parse & Generate)</Label>
                   <Textarea
                     value={script || ''}
                     onChange={handleScriptEdit}
                     rows={4}
-                    className="bg-slate-700 border-slate-500 text-white text-sm font-mono resize-y"
+                    className="bg-amber-100 border-amber-300 text-black placeholder:text-amber-900/50 text-sm font-mono resize-y focus-visible:ring-amber-400"
                   />
                 </div>
 
