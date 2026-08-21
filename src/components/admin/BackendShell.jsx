@@ -295,12 +295,11 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
   // An unrestricted (admin-wearing-Narr-hat) user sees every translation clone, not just
   // their own — and can publish any of them directly (see AdminStartScreen).
   //
-  // Per Enda: "Clone in Progress" means exactly that — a clone stays listed here (and
-  // keeps blocking a new clone, see hasActiveClone below) for its entire life, right up
-  // until an Admin has actually published it. Handing off to the Admin (finished:true,
-  // via handleHandOffClone) does NOT clear it — only real approval does, which is
-  // exactly what filtering on `!w.approved` gives for free: a clone drops off this list
-  // the moment (and only the moment) it goes live.
+  // "Clone in Progress" lists every clone that isn't live yet — still being narrated,
+  // handed off and sitting with the Admin for review, or sent back with a pushback to
+  // fix. It can hold more than one row at once (see hasActiveClone below): once a
+  // narrator hands a tour off, it stays here awaiting the Admin, but the narrator is
+  // free to start a new clone straight away rather than waiting on the Admin's review.
   const myClones = (unrestricted
     ? walks.filter(w => w.clone_of)
     : walks.filter(w => w.clone_of && (w.assigned_narrator_email || '').toLowerCase() === (user.email || '').toLowerCase())
@@ -317,16 +316,22 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
   // list is clone-specific, but they need the exact same audio check before they
   // can go live. isAdmin-gated at the render site below, same as the tool itself.
   const audioUpdateTours = [...reviewClones, ...walks.filter(w => !w.clone_of && w.approved === false)];
-  // Only one translation clone may be in progress at a time per narrator — myClones
-  // is already scoped to "not yet approved" above, so this now naturally covers the
-  // whole lifecycle: still narrating, handed off and awaiting the Admin's review, or
-  // handed back with a pushback to fix. The lock only releases once the Admin has
-  // actually published it.
-  const hasActiveClone = !unrestricted && myClones.length > 0;
-  // A pushback jumps the queue: it's an already-published, already-live tour with a known
-  // error in it, unlike an ordinary in-progress translation nobody's seen yet. If a
-  // narrator has one pending, it must take priority over whatever else they were working
-  // on — they get blocked from opening anything else until the pushback is fixed.
+  // Per Enda: once a narrator hands a tour off to the Admin (finished:true), it can sit
+  // with the Admin for however long — a week or more — without blocking the narrator
+  // from starting a new translation in the meantime. So the "one clone in progress"
+  // limit is scoped to UNFINISHED clones only, not every not-yet-approved one: a clone
+  // that's been handed off and is just waiting on the Admin's review doesn't count. A
+  // pushback (see pendingPushback below) flips finished back to false, so it correctly
+  // re-triggers this block — the narrator can't start a fresh clone while a pushback of
+  // theirs still needs fixing, same as while an ordinary translation is still underway.
+  const hasActiveClone = !unrestricted && myClones.some(w => !w.finished);
+  // A pushback jumps the queue: it's a tour the Admin has already looked at and found a
+  // problem with, unlike an ordinary in-progress translation nobody's reviewed yet. If a
+  // narrator has one pending, it must take priority over any OTHER in-progress work —
+  // per Enda, everything else they're mid-way through (any other unfinished clone) gets
+  // temporarily locked until this one's fixed and handed back. Already-handed-off clones
+  // sitting with the Admin for review aren't touched by this — there's nothing for the
+  // narrator to do on those right now regardless.
   // Critically, "fixed" means the narrator's own part is done — once they've corrected it
   // and marked it finished (sent back for review), the lock releases immediately. It does
   // NOT wait for the admin to actually re-review and re-publish; `pushback_reason` itself
@@ -469,11 +474,14 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
                 toast({ variant: 'destructive', title: 'Not allowed', description: 'Narrators can only work on a cloned translation, never the master tour directly.' });
                 return;
               }
-              // A pending pushback takes priority over anything else — it's a live,
-              // already-published tour with a known error, so it can't wait behind
-              // whatever else the narrator happens to be mid-way through.
-              if (pendingPushback && walk.id !== pendingPushback.id) {
-                toast({ variant: 'destructive', title: 'Fix your pushed-back translation first', description: `“${pendingPushback.name}” was already published and needs an urgent correction — it takes priority over everything else until it's fixed and re-published.` });
+              // A pending pushback takes priority over any OTHER unfinished work — it's
+              // a tour the Admin already reviewed and found a problem with, so it can't
+              // wait behind whatever else the narrator happens to be mid-way through. A
+              // clone that's already been handed off and is just sitting with the Admin
+              // for review isn't "in progress" work, so it's exempt from this block —
+              // there's nothing for the narrator to do differently on it right now.
+              if (pendingPushback && walk.id !== pendingPushback.id && !walk.finished) {
+                toast({ variant: 'destructive', title: 'Fix your pushed-back translation first', description: `“${pendingPushback.name}” needs an urgent correction — it takes priority over your other in-progress work until it's fixed and re-published.` });
                 return;
               }
               setEditingWalk(walk);

@@ -107,6 +107,41 @@ base44/functions/saveWalkForBackend/entry.ts --format=esm` compiles clean.
   confirming it actually appears with the Admin and that a second clone is blocked
   until the first is published.
 
+2026-08-21 follow-up — Enda revised the "one clone in progress" rule: a narrator
+should be able to start a brand-new clone the moment they hand one off (finished:true)
+— it can sit with the Admin for review for a week or more without blocking new work.
+BUT if the Admin sends a tour back with a pushback, ALL of that narrator's other
+in-progress work (any other unfinished clone) should be temporarily locked until the
+pushed-back one is fixed and re-handed-off — then it unlocks immediately, no waiting
+on the Admin to re-review. Frontend-only, no backend function touched this time.
+
+What changed (`src/components/admin/BackendShell.jsx`, `AdminStartScreen.jsx`):
+- `hasActiveClone` (the gate on starting a new clone) is now scoped to UNFINISHED
+  clones only (`myClones.some(w => !w.finished)`) instead of every not-yet-approved
+  one — a clone that's been handed off and is just waiting on the Admin's review no
+  longer counts. A pushback flips `finished` back to `false`, so it correctly
+  re-triggers this same gate; nothing extra was needed for that part.
+- The existing `pendingPushback` "lock everything else" mechanism (already built in
+  the previous entry) needed one exemption: a clone that's already been handed off
+  (`finished: true`) is no longer locked/blocked just because a *different* clone of
+  the same narrator's has a pushback — there's nothing in-progress on it to block.
+  Updated both the row-styling `locked` flag (`AdminStartScreen.jsx`) and the
+  click-to-open guard (`onContinueTour` in `BackendShell.jsx`) to add `&& !walk.finished`.
+- Updated the on-screen copy in `AdminStartScreen.jsx` to match: the "translation in
+  progress" empty-state message now says to hand it off (not "get it published")
+  before starting another, and the "Clone in Progress" section blurb now says a
+  narrator is free to start a new clone once they've handed one off, rather than
+  implying the whole section has to be empty first.
+
+Verified: `npx vite build` clean; `npx eslint` on both changed files shows the same
+pre-existing issues only, nothing new.
+
+**Not done / worth knowing for next time:** not tested live — worth checking, as a
+narrator: hand off tour A, immediately clone tour B, have the Admin push tour A back,
+confirm tour B locks (Publish/open both blocked) while A's pushback is outstanding,
+then re-finish A and confirm B unlocks immediately without needing the Admin to
+re-review A first.
+
 ---
 
 ## 2026-08-20 — New Admin Tool: "Update Audio" (replace AI draft narration with final PCV audio)

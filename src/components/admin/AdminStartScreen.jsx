@@ -217,7 +217,7 @@ export default function AdminStartScreen({
             <div className="text-center py-8 text-amber-300 border border-dashed border-amber-700/50 rounded-xl bg-amber-900/10">
               <Languages className="w-10 h-10 mx-auto mb-2 opacity-50" />
               <p className="font-medium">You have a translation in progress</p>
-              <p className="text-sm text-amber-400/80 mt-1">Finish it and get it published before starting another clone.</p>
+              <p className="text-sm text-amber-400/80 mt-1">Mark every waypoint done and hand it off to the Admin before starting another clone.</p>
             </div>
           ) : sortedCloneable.length === 0 ? (
             <div className="text-center py-8 text-slate-500 border border-dashed border-slate-700 rounded-xl">
@@ -233,7 +233,7 @@ export default function AdminStartScreen({
 
         <div>
           <h2 className="text-lg font-bold text-white mb-1">Clone in Progress</h2>
-          <p className="text-sm text-slate-400 mb-3">Once every waypoint is marked done, Publish sends it to the Admin. It stays listed here — and you can't start another clone — until the Admin has fully published it as a live tour.</p>
+          <p className="text-sm text-slate-400 mb-3">Once every waypoint is marked done, Publish sends it to the Admin — and you're free to start a new clone right away. Each one stays listed here until the Admin has fully published it as a live tour.</p>
           {myClones.length === 0 ? (
             <div className="text-center py-8 text-slate-500 border border-dashed border-slate-700 rounded-xl">
               <Mic className="w-10 h-10 mx-auto mb-2 opacity-30" />
@@ -241,7 +241,7 @@ export default function AdminStartScreen({
               <p className="text-sm">Clone a tour above to start a translation.</p>
             </div>
           ) : (
-            <div className="space-y-2">{myClones.map(walk => <MyCloneRow key={walk.id} walk={walk} onContinue={onContinueTour} onPublish={onPublishClone} onHandOff={onHandOffClone} unrestricted={unrestricted} locked={!!pendingPushbackId && walk.id !== pendingPushbackId} />)}</div>
+            <div className="space-y-2">{myClones.map(walk => <MyCloneRow key={walk.id} walk={walk} onContinue={onContinueTour} onPublish={onPublishClone} onHandOff={onHandOffClone} unrestricted={unrestricted} locked={!!pendingPushbackId && walk.id !== pendingPushbackId && !walk.finished} />)}</div>
           )}
         </div>
       </div>
