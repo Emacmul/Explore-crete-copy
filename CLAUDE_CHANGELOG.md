@@ -41,6 +41,53 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-22 (follow-up 14) — Fix: typing a new <break> into a box no longer reshuffles the cards until Parse & Generate is actually clicked
+Scope: `src/components/admin/NarrationTtsEditor.jsx`. (Frontend only —
+no backend function touched.)
+
+**What changed:**
+- Root cause of what Enda hit right after follow-up 13: the subsection
+  groupings used to lay out the segment cards (and to decide where each
+  edit box sits on the page) were being RE-DERIVED from the LIVE, still-
+  being-typed-into `subsectionTexts` on every single render — including
+  every keystroke, well before "Parse & Generate" was ever clicked. So
+  the instant a new `<break>` tag was typed into a box, the card layout
+  immediately tried to regroup using a segment count that didn't match
+  the actual (still-unparsed) segments yet — which is exactly why the
+  edit box appeared to jump to underneath a LATER card instead of
+  staying put and simply gaining the new split once actually applied.
+- Fixed by splitting this into two genuinely separate pieces of state:
+  `subsectionTexts` (what's shown/typed into each box — still updates
+  live on every keystroke, unchanged) and a new `subsectionSizes` (how
+  many segments each box's own cards actually claim for LAYOUT purposes
+  — now updated ONLY by the same effect that runs after a real Parse &
+  Generate, never while just typing). The segment cards and each box's
+  position on the page now stay completely frozen while typing, exactly
+  matching the "takes effect on the next Parse & Generate" label under
+  each box, and only regroup — correctly, per follow-up 13's fix — once
+  Parse & Generate is actually clicked again.
+
+**Why:** Enda reported that adding a `<break>` tag inside a box (right
+where "You don't even need to hit pause" was) didn't split that box's
+own cards in place — instead the whole edit box relocated to below the
+NEXT subsection's cards, before he'd even clicked Parse & Generate.
+
+**Verified:** `npx vite build` completes with no errors. `npx eslint` on
+the changed file reports zero errors and zero warnings. Ran a further
+standalone simulation of the exact sequence — parse, type a new
+mid-sentence `<break>` into one box WITHOUT re-parsing, confirm the card
+groupings are 100% unchanged while typing, THEN click Parse & Generate
+again and confirm the edited box's cards grow correctly (matching
+follow-up 13's already-verified behaviour) — confirmed both halves hold.
+
+**Not done / worth knowing for next time:**
+- Not tested live in the actual Base44 app — needs a real check: type a
+  new `<break>` into a box and confirm nothing on the page moves or
+  reshuffles until Parse & Generate is clicked, then confirm it correctly
+  splits in place at that point (per follow-up 13).
+
+---
+
 ## 2026-08-22 (follow-up 13) — Fix: inserting a new <break> inside one subsection's box no longer disturbs any other subsection
 Scope: `src/components/admin/NarrationTtsEditor.jsx`. (Frontend only —
 no backend function touched.)

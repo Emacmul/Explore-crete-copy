@@ -134,6 +134,15 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   // everywhere else, so it reconstructs identically to editing the full script by
   // hand — just without having to scroll through it to find the right part.
   const [subsectionTexts, setSubsectionTexts] = useState(null);
+  // How many segments each subsection currently CLAIMS, for grouping the actual
+  // TtsSegmentCard list/controls further down — deliberately a SEPARATE piece of state
+  // from subsectionTexts above, updated ONLY by the effect below (i.e. only on an
+  // actual Parse & Generate), never while a box is merely being typed into. Segment
+  // cards must stay exactly where they are — "takes effect on the next Parse &
+  // Generate" — while the box itself updates live on every keystroke; using the live
+  // subsectionTexts to size the card groups too would reshuffle cards mid-typing,
+  // before a re-parse has actually happened, which is the bug this fixes.
+  const [subsectionSizes, setSubsectionSizes] = useState(null);
   const textareaRef = useRef(null);
   const currentAudioRef = useRef(null);
   const stopRef = useRef(false);
@@ -152,13 +161,18 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     if (fixedLanguage) setSelectedLanguage(fixedLanguage);
   }, [fixedLanguage]);
 
-  // Keeps the per-subsection edit boxes in sync any time `segments` changes — a fresh
-  // Parse & Generate, or a pause-duration tweak via a slider — using deriveSubsections
-  // (see above) so each box's boundary is PRESERVED wherever possible instead of the
-  // whole document being re-flowed into fixed groups of 3 from scratch every time.
+  // Keeps the per-subsection edit boxes AND the frozen card-grouping sizes in sync any
+  // time `segments` actually changes — a fresh Parse & Generate, or a pause-duration
+  // tweak via a slider — using deriveSubsections (see above) so each box's boundary is
+  // PRESERVED wherever possible instead of the whole document being re-flowed into
+  // fixed groups of 3 from scratch every time. Reads `subsectionTexts` as it stood
+  // BEFORE this change (deliberately left out of the dependency array — this must only
+  // re-run when `segments` itself changes, never on every keystroke into a box).
   useEffect(() => {
-    if (!segments) { setSubsectionTexts(null); return; }
-    setSubsectionTexts((prevTexts) => deriveSubsections(segments, prevTexts).map(rebuildScript));
+    if (!segments) { setSubsectionTexts(null); setSubsectionSizes(null); return; }
+    const chunks = deriveSubsections(segments, subsectionTexts);
+    setSubsectionTexts(chunks.map(rebuildScript));
+    setSubsectionSizes(chunks.map((c) => c.length));
   }, [segments]);
 
   const addLog = (msg) => setDebugLog((prev) => [...prev, msg]);
@@ -478,7 +492,16 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   };
 
   const hasSegmentAudios = Object.keys(segmentAudios).length > 0;
-  const subsections = deriveSubsections(segments, subsectionTexts);
+  // Per Enda: this must stay frozen to whatever it was as of the LAST Parse & Generate
+  // — using the live subsectionTexts here (i.e. re-deriving on every keystroke) is
+  // exactly what caused a newly-typed <break> tag to reshuffle the segment cards and
+  // move the edit box's own position immediately, before the change had actually been
+  // applied. subsectionSizes only updates via the effect above, i.e. only on an actual
+  // re-parse, so the cards/boxes stay put while typing and only regroup on Parse &
+  // Generate.
+  const subsections = segments
+    ? (subsectionSizes ? chunkBySizes(segments, subsectionSizes) : chunkIntoSubsections(segments))
+    : [];
 
   return (
     <div className="bg-slate-800/50 rounded-lg border border-blue-600/30 p-3 space-y-3">
