@@ -41,6 +41,54 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-22 (follow-up 11) — Each subsection's edit box now shows/edits only its own text
+Scope: `src/components/admin/NarrationTtsEditor.jsx`. (Frontend only —
+no backend function touched.)
+
+**What changed:**
+- Every subsection's own "Edit script" box (the pastel-yellow duplicate
+  under each Continue/Save & Finish control) used to show and edit the
+  WHOLE document — the exact same text as the box at the very top. Past
+  12-13 subsections, finding the one passage that actually needed fixing
+  meant scrolling and hunting through the entire script inside a small
+  box every single time.
+- Each of those boxes now shows and edits ONLY the text belonging to its
+  own subsection. A new `subsectionTexts` array (one string per
+  subsection) is seeded fresh from the script every time a Parse &
+  Generate pass starts; editing one box only ever changes its own entry
+  in that array. Whatever gets sent up to the actual saved script is
+  still always the complete document — every subsection's text rejoined
+  in order — so nothing is lost or left out; it's just found and edited
+  without wading through everything else.
+- The label on each of these boxes now reads "Edit **this part's**
+  script…" (was just "Edit script…") to make clear it's scoped, not the
+  whole thing.
+- The box at the very top of the panel is unchanged — still the full
+  document, mainly used for pasting in/starting a fresh script before
+  the first Parse & Generate of a pass.
+
+**Why:** Enda flagged that with 12+ subsections it had become slow and
+error-prone to find the right passage to edit in a box that always
+showed the entire script.
+
+**Verified:** `npx vite build` completes with no errors. `npx eslint`
+on the changed file reports zero errors and zero warnings.
+
+**Not done / worth knowing for next time:**
+- Not tested live — needs a real check: run through Parse & Generate on
+  a script with several subsections, edit text in the 2nd or 3rd
+  subsection's own box, confirm the OTHER subsections' boxes are
+  untouched, then confirm the final saved/combined audio still reflects
+  that edit correctly after Save & Finish.
+- If the top box is edited WHILE a Parse & Generate pass is already
+  active (subsections showing), that edit reaches the saved script
+  correctly, but the per-subsection boxes won't visually pick it up
+  until the next Parse & Generate re-splits the script fresh — matches
+  the pre-existing rule that any edit "takes effect on the next Parse &
+  Generate," just worth knowing if it comes up.
+
+---
+
 ## 2026-08-22 (follow-up 10) — Fix: "Continue" freeze losing all edits; simulator now stops at a location's own end
 Scope: `src/lib/audioCombiner.js`, `src/lib/utils.js`,
 `src/components/admin/NarrationTtsEditor.jsx`,

@@ -81,6 +81,18 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   // Which subsection is actively mid-playback right now, if any — used to show Stop in
   // the right spot instead of a single global control.
   const [activeSubsectionIndex, setActiveSubsectionIndex] = useState(null);
+  // Per Enda: past 12-13 subsections it became hard to find the right passage to edit,
+  // because every duplicate "Edit script" box further down showed and edited the WHOLE
+  // document — so each one is now scoped to just its OWN subsection's own text instead.
+  // This holds that per-subsection breakdown as an editable array (one string per
+  // subsection, same order), reseeded fresh from `segments` any time a new Parse &
+  // Generate pass starts (see the effect below) — matching exactly how the document is
+  // currently broken into parts. Editing one subsection's box only ever changes its own
+  // slot in this array; the full script sent up via onScriptChange is always every
+  // slot rejoined in order with the same "\n\n" separator rebuildScript uses
+  // everywhere else, so it reconstructs identically to editing the full script by
+  // hand — just without having to scroll through it to find the right part.
+  const [subsectionTexts, setSubsectionTexts] = useState(null);
   const textareaRef = useRef(null);
   const currentAudioRef = useRef(null);
   const stopRef = useRef(false);
@@ -98,6 +110,14 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   useEffect(() => {
     if (fixedLanguage) setSelectedLanguage(fixedLanguage);
   }, [fixedLanguage]);
+
+  // Reseeds the per-subsection edit boxes every time a fresh Parse & Generate pass
+  // starts (segments goes from null to a real array, or gets replaced by a new parse)
+  // — each slot starts out as exactly that subsection's own text, read back out of the
+  // segments that were just parsed.
+  useEffect(() => {
+    setSubsectionTexts(segments ? chunkIntoSubsections(segments).map(rebuildScript) : null);
+  }, [segments]);
 
   const addLog = (msg) => setDebugLog((prev) => [...prev, msg]);
 
@@ -125,6 +145,20 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   // only actually changes anything the next time "Parse & Generate" is clicked.
   const handleScriptEdit = (e) => {
     onScriptChange(e.target.value);
+  };
+
+  // Edits ONE subsection's own box (further down the list) without touching any other
+  // part's text. Updates just that one slot in subsectionTexts, then sends the FULL
+  // script back up as every slot rejoined in order — so the parent's saved script is
+  // always the real, complete document, exactly as if the whole thing had been edited
+  // by hand, just found and changed without scrolling through everything else.
+  const handleSubsectionScriptEdit = (si, value) => {
+    setSubsectionTexts((prev) => {
+      const base = prev && prev.length === subsections.length ? prev : subsections.map(rebuildScript);
+      const updated = base.map((t, i) => (i === si ? value : t));
+      onScriptChange(updated.join('\n\n'));
+      return updated;
+    });
   };
 
   const handleParseAndGenerate = async () => {
@@ -606,8 +640,12 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                   );
                 })}
 
-                {/* Duplicate, editable script box — same text, same handler as the box
-                    at the top, so an edit made here is just as real. Per Enda: this is
+                {/* Per-subsection editable script box — shows and edits ONLY this
+                    block's own text (see subsectionTexts/handleSubsectionScriptEdit
+                    above), not the whole document, so it's never necessary to scroll
+                    through everything else to find the right passage. Still just as
+                    real an edit as the box at the top — it's sent up via the same
+                    onScriptChange, just scoped to this one part. Per Enda: this is
                     where you write down the changes needed after hearing THIS
                     subsection's audio (played by the control above this block, or by
                     the standalone Build & Play button for the very first one) — not a
@@ -616,10 +654,10 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                     it reads clearly as an editing tool wedged into the list, not another
                     narration block. */}
                 <div>
-                  <Label className="text-amber-200/80 text-xs mb-1 block">Edit script (takes effect on the next Parse & Generate)</Label>
+                  <Label className="text-amber-200/80 text-xs mb-1 block">Edit this part's script (takes effect on the next Parse & Generate)</Label>
                   <Textarea
-                    value={script || ''}
-                    onChange={handleScriptEdit}
+                    value={subsectionTexts?.[si] ?? rebuildScript(subsectionSegments)}
+                    onChange={(e) => handleSubsectionScriptEdit(si, e.target.value)}
                     rows={4}
                     className="bg-amber-100 border-amber-300 text-black placeholder:text-amber-900/50 text-sm font-mono resize-y focus-visible:ring-amber-400"
                   />
