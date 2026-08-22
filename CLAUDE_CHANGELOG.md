@@ -144,6 +144,60 @@ re-review A first.
 
 ---
 
+## 2026-08-21 — Route Path (GPS) tab: raw GPS points now locked behind an admin-only, conscious-unlock panel
+Scope: `src/components/admin/TrailPathEditor.jsx`, `src/components/admin/WalkEditor.jsx`
+(frontend-only, no backend function touched).
+
+Enda: the "Add GPS Point" form and the raw points list on the Route Path (GPS) tab
+should be admin-only, never in plain view, and only reachable through a deliberate
+action — ideally requiring the admin to log in again before any add/edit happens.
+
+What was found first: the whole "Route Path (GPS)" tab was already hidden from
+narrators (`showTrailTab = !isNarrator` in `WalkEditor.jsx`), so in practice only an
+admin could ever reach this component already. What genuinely didn't exist: any lock
+on it once an admin IS looking at the tab — the form and the full point list rendered
+immediately, always expanded, no confirmation of any kind.
+
+What changed in `TrailPathEditor.jsx`:
+- Takes a new `userRole` prop (passed from `WalkEditor.jsx`, same as every other
+  role-gated component in this codebase) and returns nothing at all if it isn't
+  `'admin'` — a second, explicit gate on the component itself, on top of the tab-level
+  one that already existed. Belt-and-suspenders, not a behaviour change today, but it
+  means this component can never leak GPS points to a non-admin even if the tab-level
+  gate is ever changed or bypassed some other way.
+- The whole thing (form + list) now lives inside its own locked container, collapsed
+  by default — genuinely not in plain view, not even the point count. Clicking it
+  reveals a plain-language warning ("this changes the live route customers are
+  following right now") with an explicit "Yes, I understand — unlock editing" button —
+  nothing editable renders until that's clicked. Collapsing the panel again clears
+  that confirmation, so reopening it later is always a fresh, conscious decision, not
+  a panel that's just been sitting open.
+
+**On "requiring the admin to log in again":** looked for any re-authentication /
+step-up-login mechanism already in this app to build on and found none — the Base44
+client here runs with `requiresAuth: false`, and there's no password-recheck endpoint
+anywhere in the backend functions. Building a real re-login flow blind, with nothing
+to call, risked shipping something that looks like security but isn't actually
+verifying anything. What's built instead is the strongest honest equivalent: real
+friction (locked by default, a warning screen, an explicit confirm click, re-locks on
+close) rather than a fake "type your password again" box with nothing behind it. If
+Enda can point to how Base44 exposes a genuine re-auth/step-up check, that's a
+follow-up worth doing properly rather than guessing at here.
+
+Verified: `npx vite build` clean; `npx eslint` on `TrailPathEditor.jsx` shows zero
+issues; `WalkEditor.jsx` shows only the same pre-existing, unrelated issues already
+documented in earlier entries.
+
+**Not done / worth knowing for next time:**
+- Not tested live — worth opening the Route Path (GPS) tab as Admin and confirming the
+  panel starts locked, the warning step appears before anything editable, and closing
+  it re-locks (no lingering "already unlocked" state).
+- The map-based route drawing tool above this panel (`TrailPathMapEditor.jsx`) is
+  untouched — Enda's request was specifically about the "Add GPS Point" form and the
+  raw points list, not the map tool, so it's left exactly as it was.
+
+---
+
 ## 2026-08-21 (follow-up) — Subsection boundary never splits a pause from the line it leads into; editable box now visually distinct
 Scope: `src/components/admin/NarrationTtsEditor.jsx` only (frontend-only, no backend
 function touched).

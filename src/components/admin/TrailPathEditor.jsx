@@ -2,16 +2,49 @@ import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Plus, Trash2, GripVertical, Info, Pencil, Check, X, Scissors } from 'lucide-react';
+import { Plus, Trash2, GripVertical, Info, Pencil, Check, X, Scissors, Lock, ChevronDown, ChevronRight, AlertTriangle, ShieldAlert } from 'lucide-react';
 import { reindexAfterInsert, reindexAfterDeleteOne, nearestInsertIndex } from '@/lib/trailBreaks';
 
-export default function TrailPathEditor({ trailPath, onChange, trailBreaks = [], onBreaksChange }) {
+// Per Enda: raw GPS points are the last thing anyone should be casually poking at —
+// editing one changes the live route for a tour people may be using on the ground
+// right now. This whole component (the "Add GPS Point" form AND the point list below
+// it) is therefore:
+//   1. Admin-only. `userRole` is checked here too, not just relied on at the tab level
+//      (WalkEditor.jsx already hides the whole "Route Path (GPS)" tab from narrators
+//      via showTrailTab — this is a second, explicit gate on the component itself, the
+//      same belt-and-suspenders approach used elsewhere in this codebase).
+//   2. Collapsed by default, inside its own locked container — never in plain view.
+//   3. Only reachable after a deliberate, explicit confirmation step every time it's
+//      opened (not just once per session) — collapsing it again re-locks it, so
+//      reopening is always a conscious decision, never a leftover expanded panel from
+//      five minutes ago.
+// A genuine "log in again" step (re-authenticating before editing) was asked for too,
+// but there's no re-auth/step-up-login mechanism anywhere in this app to hook into —
+// Base44's client here runs with requiresAuth: false and there's no password-recheck
+// endpoint on the backend. Building one blind, without a real API to call, risked
+// shipping something that looks like security but isn't. This is the strongest
+// equivalent achievable without that: real friction, not simulated.
+export default function TrailPathEditor({ trailPath, onChange, trailBreaks = [], onBreaksChange, userRole = 'admin' }) {
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
+
   const breakSet = new Set((trailBreaks || []).filter(b => Number.isInteger(b) && b >= 0 && b < trailPath.length - 1));
   const [newLat, setNewLat] = useState('');
   const [newLng, setNewLng] = useState('');
   const [editIndex, setEditIndex] = useState(null);
   const [editLat, setEditLat] = useState('');
   const [editLng, setEditLng] = useState('');
+
+  // Extra safety net even though only an admin session should ever mount this
+  // component at all (see the doc comment above) — if that ever changes upstream,
+  // this still can't render anything for anyone else.
+  if (userRole !== 'admin') return null;
+
+  const closePanel = () => {
+    setPanelOpen(false);
+    setConfirmed(false);
+    cancelEdit();
+  };
 
   const startEdit = (index) => {
     setEditIndex(index);
@@ -77,8 +110,71 @@ export default function TrailPathEditor({ trailPath, onChange, trailBreaks = [],
     }
   };
 
+  // Locked, collapsed state — this is what shows by default and every time the panel
+  // is closed again. Nothing about the points (not even the count) is revealed here.
+  if (!panelOpen) {
+    return (
+      <div className="rounded-lg border border-red-700/40 bg-red-950/20">
+        <button
+          type="button"
+          onClick={() => setPanelOpen(true)}
+          className="w-full flex items-center gap-3 px-4 py-3 text-left"
+        >
+          <Lock className="w-4 h-4 text-red-400 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-red-200">Raw GPS Points — locked (Admin only)</p>
+            <p className="text-xs text-red-300/70">Editing these changes the live route. Click to review and unlock.</p>
+          </div>
+          <ChevronRight className="w-4 h-4 text-red-400/70 shrink-0" />
+        </button>
+      </div>
+    );
+  }
+
+  // Opened, but not yet confirmed — the "conscious discussion" step Enda asked for.
+  // Nothing editable is shown until this is explicitly accepted.
+  if (!confirmed) {
+    return (
+      <div className="rounded-lg border border-red-700/40 bg-red-950/20 p-4 space-y-3">
+        <div className="flex items-start gap-2">
+          <ShieldAlert className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-red-200">This unlocks direct editing of the raw GPS route</p>
+            <p className="text-xs text-red-300/80 mt-1">
+              Adding, moving, or deleting a point here changes the exact line customers follow on a live
+              tour — including anyone using it right now. This should only be done in exceptional
+              circumstances, and only once you're sure it's the right fix. If you just need to add or cut
+              a section of the route, the map tool above already does that without touching raw points.
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-2 justify-end">
+          <Button type="button" variant="ghost" onClick={closePanel} className="text-slate-400 hover:text-slate-200">
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            onClick={() => setConfirmed(true)}
+            className="bg-red-700 hover:bg-red-800 text-white gap-2"
+          >
+            <AlertTriangle className="w-4 h-4" /> Yes, I understand — unlock editing
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-5">
+    <div className="rounded-lg border border-red-700/40 bg-red-950/10 p-4 space-y-5">
+      <button
+        type="button"
+        onClick={closePanel}
+        className="w-full flex items-center gap-2 text-left text-red-300 hover:text-red-200"
+      >
+        <ChevronDown className="w-4 h-4 shrink-0" />
+        <span className="text-xs font-medium">Editing unlocked — click to lock again</span>
+      </button>
+
       <div>
         <h3 className="text-white font-semibold mb-1">Trail Path GPS Points</h3>
         <div className="flex items-start gap-2 bg-blue-900/30 border border-blue-700/50 rounded-lg p-3 text-sm text-blue-300">

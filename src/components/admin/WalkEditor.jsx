@@ -1301,6 +1301,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
               onChange={path => set('trail_path', path)}
               trailBreaks={form.trail_breaks || []}
               onBreaksChange={breaks => set('trail_breaks', breaks)}
+              userRole={userRole}
             />
           </div>
         )}
