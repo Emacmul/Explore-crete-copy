@@ -63,7 +63,14 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   console.log('WalkEditor mounted/rendering');
   const [form, setForm] = useState({ ...EMPTY_WALK, ...walk });
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState(isNarrator ? 'waypoints' : (walk?.id ? 'waypoints' : 'details'));
+  // Per Enda: once a tour has been cloned for translation, opening it should land
+  // straight on "Narration & Simulate" — that's the working screen for the whole
+  // translation job — rather than anywhere else. Only applies to a driving tour clone;
+  // everything else keeps its previous default.
+  const isClonedDrivingTour = walk?.route_type === 'driving_audio_tour' && !!walk?.clone_of;
+  const [activeTab, setActiveTab] = useState(
+    isClonedDrivingTour ? 'narrate' : (isNarrator ? 'waypoints' : (walk?.id ? 'waypoints' : 'details'))
+  );
   const [interests, setInterests] = useState(DEFAULT_INTERESTS);
   const [editingInterests, setEditingInterests] = useState(false);
   const [newInterest, setNewInterest] = useState('');
@@ -85,6 +92,11 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
 
   const set = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
   const isDrivingAudioTour = form.route_type === 'driving_audio_tour';
+  // Per Enda: a soft heads-up only, not a hard block — "Translation finished" can still
+  // be ticked at any point even if some waypoints aren't marked done yet (useful for a
+  // demo, or a tour that's deliberately being sent for review early).
+  const doneWaypointCount = isDrivingAudioTour ? form.waypoints.filter(wp => wp.waypoint_done).length : 0;
+  const allWaypointsDone = isDrivingAudioTour && form.waypoints.length > 0 && doneWaypointCount === form.waypoints.length;
 
   const [gpxImporting, setGpxImporting] = useState(false);
   const [gpxImportDone, setGpxImportDone] = useState(false);
@@ -793,21 +805,29 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   // drawn straight across the gap. Admins don't trace DDV trails from scratch (those
   // come from the recorded drive), so the editor opens in Cut mode for DDV.
   const showTrailTab = !isNarrator;
+  // Per Enda: for a driving tour, "Narration & Simulate" (break-tag script editing next
+  // to the moving-marker map) is its own dedicated, full-width tab — separated from the
+  // Waypoints list and from the static Map Preview — since it's the screen a narrator
+  // (or an admin wearing the Narr hat) actually lives in once a tour has been cloned.
   const tabs = [
     { id: 'details', label: 'General' },
     ...(showTrailTab ? [{ id: 'trail', label: 'Route Path (GPS)' }] : []),
     { id: 'waypoints', label: `Waypoints${form.waypoints.length ? ` (${form.waypoints.length})` : ''}` },
+    ...(isDrivingAudioTour ? [{ id: 'narrate', label: 'Narration & Simulate' }] : []),
     { id: 'preview', label: 'Preview' },
   ];
+  const isFullWidthTab = activeTab === 'preview' || activeTab === 'narrate';
 
   return (
-    // Per Enda: the Preview tab (which holds the Simulate Tour map and the waypoint
-    // audio/break-tag editor next to it) needs the full width of a PC/laptop screen —
-    // it's never seen by a mobile customer, and admins/narrators only ever edit from a
-    // computer anyway, so there's no mobile layout being protected by keeping it narrow.
-    // Every other tab keeps the original, narrower reading width since ordinary form
-    // fields don't benefit from stretching that wide.
-    <div className={activeTab === 'preview' ? 'max-w-7xl mx-auto' : 'max-w-4xl mx-auto'}>
+    // Per Enda: the Preview tab (Map Preview) and the Narration & Simulate tab both need
+    // the full width of a PC/laptop screen, with no side-margin cap at all — neither is
+    // ever seen by a mobile customer, and admins/narrators only ever edit from a computer
+    // anyway, so there's no mobile layout being protected by keeping either one narrow.
+    // (The outer panel shell in BackendShell.jsx no longer imposes its own cap here
+    // either, once a walk is open for editing — see the comment there.) Every other tab
+    // keeps the original, narrower reading width since ordinary form fields don't
+    // benefit from stretching edge-to-edge.
+    <div className={isFullWidthTab ? 'w-full' : 'max-w-4xl mx-auto'}>
       {/* Top bar */}
       <div className="flex items-center justify-between mb-6 mt-2">
         <div className="flex items-center gap-3">
@@ -833,6 +853,11 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 Translation finished
               </label>
               <span className="hidden sm:inline text-xs text-slate-500">— sends this clone to admins for review</span>
+              {isDrivingAudioTour && !allWaypointsDone && (
+                <span className="hidden md:inline text-xs text-amber-400" title="Not every waypoint is marked Done yet — this can still be ticked, this is just a heads-up.">
+                  ⚠ {doneWaypointCount}/{form.waypoints.length} waypoints done
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -1395,23 +1420,25 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
         {activeTab === 'preview' && (
           <div className="space-y-4">
             <AdminPreviewMap walk={form} />
-            {isDrivingAudioTour && (
-              <>
-                {/* Backup export is an Admin-only action — narrators can view/test the
-                    preview and simulator above, but never generate a GPX/KML backup file.
-                    This tab itself has no narrator restriction (unlike the Route Path tab,
-                    which is hidden from the tab bar entirely), so the gate has to live
-                    right here at the panel itself. */}
-                {!isNarrator && <DrivingTourExportPanel form={form} />}
-                <TourSimulator form={form} onWaypointUpdate={(index, field, value) => {
-                  const updated = form.waypoints.map((wp, i) =>
-                    i === index ? { ...wp, [field]: value } : wp
-                  );
-                  set('waypoints', updated);
-                }} targetLanguage={form.target_language || ''} />
-              </>
-            )}
+            {/* Backup export is an Admin-only action — narrators can view/test the
+                preview and simulator, but never generate a GPX/KML backup file. This
+                tab itself has no narrator restriction (unlike the Route Path tab,
+                which is hidden from the tab bar entirely), so the gate has to live
+                right here at the panel itself. */}
+            {isDrivingAudioTour && !isNarrator && <DrivingTourExportPanel form={form} />}
           </div>
+        )}
+
+        {activeTab === 'narrate' && isDrivingAudioTour && (
+          // Per Enda: this is the actual working screen for translating/narrating a
+          // driving tour — full width, nothing else competing for space. The map and
+          // the script/break-tag editor sit side by side inside TourSimulator itself.
+          <TourSimulator form={form} onWaypointUpdate={(index, field, value) => {
+            const updated = form.waypoints.map((wp, i) =>
+              i === index ? { ...wp, [field]: value } : wp
+            );
+            set('waypoints', updated);
+          }} targetLanguage={form.target_language || ''} />
         )}
       </div>
     </div>

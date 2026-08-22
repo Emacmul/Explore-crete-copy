@@ -41,6 +41,61 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-22 (follow-up 7d) — "Narration & Simulate" is now its own dedicated, full-width tab
+Scope: `src/components/admin/WalkEditor.jsx`. (Frontend only — no backend function
+touched.)
+
+Enda clarified the actual workflow he wants: once a tour has been cloned for
+translation, the narration-script/break-tag editor next to the simulator map (built in
+follow-ups 7/7b/7c) IS the working screen — not something sharing space inside Preview
+alongside Map Preview and the backup panel. So it's been pulled out into its own tab,
+"Narration & Simulate", shown only for driving tours, using the full width of the
+screen with nothing else competing for space. Preview goes back to being just Map
+Preview + the backup panel, unchanged from before any of this week's work.
+
+Opening a walk that is itself a translation clone of a driving tour now lands directly
+on "Narration & Simulate" (nowhere else) — matches "once a clone has been generated,
+this screen becomes the working screen." Every other case (a brand-new tour, an
+existing master tour, a non-driving walk) keeps its previous default tab.
+
+Per Enda's explicit instruction (he needs to demo this tomorrow with an intentionally
+unfinished tour), the "Translation finished" checkbox that sends a clone to Admins for
+review is NOT locked — it can still be ticked at any time. It now shows a small amber
+"X/Y waypoints done" note next to it as a heads-up when some aren't marked done yet,
+nothing more. Marking a waypoint Done, and the simulator only meaningfully "activating"
+for a location once every waypoint in it has both a script and generated audio, already
+worked exactly as described before this change — no new code was needed for that part.
+
+Verified: `npx vite build` clean, `npx eslint` clean on all four touched files aside
+from the same pre-existing, unrelated warnings/errors already confirmed in earlier
+entries (none touched by this change).
+
+## 2026-08-22 (follow-up 7c) — Fix: Map Preview and Simulate Tour weren't actually side by side either
+Scope: `src/components/admin/BackendShell.jsx`, `src/components/admin/WalkEditor.jsx`.
+
+Enda's screenshot showed the Preview tab still narrow and stacked (Map Preview above,
+Simulate Tour below) even after follow-ups 7 and 7b. The real cause: `BackendShell.jsx`
+wraps EVERY screen of the Admin/Narr panel — the tour list, dashboard, and the tour
+editor alike — in its own `max-w-6xl` (~1152px) width cap, completely independent of
+whatever WalkEditor itself was set to. Widening WalkEditor's own wrapper (follow-up 7)
+never had a chance to take effect on the Preview tab, because this outer cap was
+clamping it down first.
+
+Fixed by dropping that outer cap entirely while a specific walk is open for editing
+(every other screen — the tour list, dashboard, etc. — keeps it unchanged), and
+rebuilding the Preview tab itself as two side-by-side columns exactly as specified: Map
+Preview (plus the admin-only backup panel below it) takes the left third of the screen,
+Simulate Tour takes the right two-thirds, sitting alongside it rather than underneath.
+Simulate Tour gets its own internal scrollbar capped to roughly the screen height, so
+scrolling through its controls/map/break-tag editor never pushes Map Preview out of
+view — both stay visible together the whole time. On non-driving tours (which have no
+Simulate Tour at all) the layout falls back to a plain single column, unchanged from
+before.
+
+Verified: `npx vite build` clean, `npx eslint` clean on both files aside from the same
+pre-existing, unrelated warnings/errors already confirmed in earlier entries (none
+touched by this change).
+
 ## 2026-08-22 (follow-up 7b) — Fix: map and break-tag editor weren't actually side by side
 Scope: `src/components/admin/TourSimulator.jsx`. Follow-up 7 (below) put the new
 "Waypoint Audio & Break Tags" editor in a right-hand column, but the left column had
