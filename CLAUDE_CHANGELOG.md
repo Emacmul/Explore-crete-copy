@@ -41,6 +41,73 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-22 (follow-up 13) — Fix: inserting a new <break> inside one subsection's box no longer disturbs any other subsection
+Scope: `src/components/admin/NarrationTtsEditor.jsx`. (Frontend only —
+no backend function touched.)
+
+**What changed:**
+- Root cause: follow-up 11 scoped each subsection's edit box to just its
+  own text, but the actual GROUPING of segments into subsections was
+  still recomputed from scratch on every Parse & Generate, using a fixed
+  "runs of up to 3 segments" rule applied to the WHOLE document. That
+  rule has no memory of where the narrator's existing boxes/boundaries
+  were — so typing a brand new `<break>` tag inside the middle of one
+  box's own text (splitting one passage into two, with a pause between)
+  added 2 new segments into the document, which shifted every later
+  group's boundary too. The result Enda hit directly: the tail half of
+  the sentence he'd just split off ("for as long as you like…") didn't
+  stay attached to the passage he was editing — it got pushed into a
+  completely different subsection block further down, breaking the
+  cadence he'd deliberately built.
+- Fixed by making subsection boundaries "sticky." A new
+  `deriveSubsections()` re-parses EACH existing box's own current text
+  (via `subsectionTexts` — which already reflects any edit typed into it,
+  even before Parse & Generate is clicked) to find out exactly how many
+  segments THAT box should now claim, then slices the freshly re-parsed
+  full document using those counts, in order — instead of re-flowing
+  everything from a fixed rule. A box that wasn't touched comes out
+  byte-for-byte identical to before; the ONE box that was edited grows or
+  shrinks by exactly however many segments the new/removed `<break>` tag
+  added or removed, and everything after it simply shifts later in
+  position, in the same order — never reshuffled into the wrong box. The
+  original fixed "groups of up to 3" rule is now used only once, on the
+  very first Parse & Generate of a fresh pass, to establish the starting
+  boundaries.
+- This also fixes the pause-duration sliders staying correctly grouped
+  the same way after any drag, since they change `segments` too and go
+  through the exact same logic.
+
+**Why:** Enda hit this directly while polishing BOR1a-PS's narration —
+inserting a `<break time="0.3s"/>` mid-sentence to fix the pacing ended
+up separating the two halves of that sentence into different boxes
+instead of just adding the one new pause between them in place.
+
+**Verified:** `npx vite build` completes with no errors. `npx eslint` on
+the changed file reports zero errors and zero warnings. Additionally ran
+a standalone simulation of the exact scenario reported (parse a script,
+chunk it, edit one subsection's text to insert a new mid-sentence
+`<break>`, re-parse, re-derive subsections) using the app's own
+`parseScript`/`rebuildScript` functions — confirmed the edited
+subsection correctly grew to include the new split (the two halves
+staying together, separated only by the new pause) while the other,
+untouched subsection came back byte-for-byte identical to before the
+edit.
+
+**Not done / worth knowing for next time:**
+- Not tested live in the actual Base44 app — needs a real check: run a
+  full pass with several subsections, insert a new `<break>` mid-sentence
+  in an early box, click Parse & Generate, and confirm the split stays
+  together in that same box while every later box's own content and
+  Continue/Save & Finish controls are unaffected (just positioned later
+  on the page).
+- If a narrator edits the TOP box (the one with the whole document, not
+  a per-subsection one) WHILE a pass is already active, that edit still
+  reaches the saved script correctly, but — as already noted in
+  follow-up 11 — the per-subsection boxes won't visually pick it up
+  until the next Parse & Generate re-derives everything fresh.
+
+---
+
 ## 2026-08-22 (follow-up 12) — Fix: simulator now stops at the NEXT location's start, not the current one's own end; waypoint picker shows each point's own code
 Scope: `src/components/admin/TourSimulator.jsx`. (Frontend only — no
 backend function touched.)

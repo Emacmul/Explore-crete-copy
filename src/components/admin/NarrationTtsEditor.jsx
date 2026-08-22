@@ -58,6 +58,47 @@ function chunkIntoSubsections(segments) {
   return subsections;
 }
 
+// Slices a flat, freshly re-parsed segments array back into subsections using a given
+// list of per-subsection segment counts, in order — used to PRESERVE existing
+// subsection boundaries across a re-parse (see deriveSubsections below), instead of
+// re-flowing the whole document into fresh groups of 3 every time. Any leftover (a
+// rare mismatch, e.g. editing a box in a way that doesn't cleanly reparse to the same
+// shape) is appended as one extra trailing subsection rather than silently dropped.
+function chunkBySizes(segments, sizes) {
+  const result = [];
+  let cursor = 0;
+  for (const size of sizes) {
+    if (size <= 0) continue;
+    result.push(segments.slice(cursor, cursor + size));
+    cursor += size;
+  }
+  if (cursor < segments.length) result.push(segments.slice(cursor));
+  return result;
+}
+
+// Per Enda: typing a new <break> tag INSIDE one subsection's own edit box must only
+// ever split that ONE box's own cards apart — every OTHER subsection needs to keep
+// exactly what it already had, just shifted later on the page in the same order, never
+// reshuffled into the wrong box. Re-flowing the whole document into fixed groups of 3
+// from scratch on every re-parse (the original chunkIntoSubsections behaviour) doesn't
+// do that — inserting segments anywhere shifts every later group's boundary too.
+//
+// Instead: `subsectionTexts` (see the effect below) already holds each box's OWN
+// current text — including any edit just typed into it, even before Parse & Generate
+// is clicked — so re-parsing EACH box's own text independently gives exactly how many
+// segments THAT box should claim now. Slicing the freshly re-parsed flat `segments`
+// list using those per-box counts, in order, reproduces every untouched box's exact
+// prior grouping and only changes the size of the one that was actually edited. Falls
+// back to the original fixed-grouping rule only when there's no established
+// breakdown yet (the very first Parse & Generate of a pass).
+function deriveSubsections(segments, subsectionTexts) {
+  if (!segments) return [];
+  if (subsectionTexts && subsectionTexts.length > 0) {
+    return chunkBySizes(segments, subsectionTexts.map((t) => parseScript(t).length));
+  }
+  return chunkIntoSubsections(segments);
+}
+
 export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, onAudioChange, fixedLanguage }) {
   const { keys: apiKeys } = useNarratorApiKeys();
   const [selectedVoice, setSelectedVoice] = useState('NEUTRAL');
@@ -111,12 +152,13 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     if (fixedLanguage) setSelectedLanguage(fixedLanguage);
   }, [fixedLanguage]);
 
-  // Reseeds the per-subsection edit boxes every time a fresh Parse & Generate pass
-  // starts (segments goes from null to a real array, or gets replaced by a new parse)
-  // — each slot starts out as exactly that subsection's own text, read back out of the
-  // segments that were just parsed.
+  // Keeps the per-subsection edit boxes in sync any time `segments` changes — a fresh
+  // Parse & Generate, or a pause-duration tweak via a slider — using deriveSubsections
+  // (see above) so each box's boundary is PRESERVED wherever possible instead of the
+  // whole document being re-flowed into fixed groups of 3 from scratch every time.
   useEffect(() => {
-    setSubsectionTexts(segments ? chunkIntoSubsections(segments).map(rebuildScript) : null);
+    if (!segments) { setSubsectionTexts(null); return; }
+    setSubsectionTexts((prevTexts) => deriveSubsections(segments, prevTexts).map(rebuildScript));
   }, [segments]);
 
   const addLog = (msg) => setDebugLog((prev) => [...prev, msg]);
@@ -436,7 +478,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   };
 
   const hasSegmentAudios = Object.keys(segmentAudios).length > 0;
-  const subsections = segments ? chunkIntoSubsections(segments) : [];
+  const subsections = deriveSubsections(segments, subsectionTexts);
 
   return (
     <div className="bg-slate-800/50 rounded-lg border border-blue-600/30 p-3 space-y-3">
