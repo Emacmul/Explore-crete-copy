@@ -143,6 +143,14 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   // subsectionTexts to size the card groups too would reshuffle cards mid-typing,
   // before a re-parse has actually happened, which is the bug this fixes.
   const [subsectionSizes, setSubsectionSizes] = useState(null);
+  // Per Enda: "Continue" (and "Save & Finish") must SAVE whatever's currently sitting in
+  // that subsection's own edit box — including a brand-new <break> tag just typed in —
+  // before moving on, not silently defer it until a full Parse & Generate is clicked
+  // again. This tracks which subsection index is mid-save right now (regenerating its
+  // audio and re-splitting its cards if the text actually changed), so that block's
+  // control can show "Saving…" and every other control on the panel can be disabled
+  // while it's in flight, rather than allowing a second click to race it.
+  const [committingIndex, setCommittingIndex] = useState(null);
   const textareaRef = useRef(null);
   const currentAudioRef = useRef(null);
   const stopRef = useRef(false);
@@ -215,6 +223,66 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
       onScriptChange(updated.join('\n\n'));
       return updated;
     });
+  };
+
+  // Commits ONE subsection's own edit box — regenerating audio for just that piece and
+  // re-splitting its cards if the text actually changed — WITHOUT touching any other
+  // subsection or requiring the global "Parse & Generate" button to be clicked again.
+  // Per Enda: "Continue" (and "Save & Finish") must save what was just typed before
+  // moving on, not silently ignore it until the next full re-parse.
+  //
+  // If the box's text is exactly what it already was (rebuildScript of its current
+  // cards), there's nothing to commit — skipped entirely so simply listening through
+  // without editing never costs an extra TTS API call. Otherwise: re-parses just this
+  // box's own text, generates fresh audio for every text piece in it (fresh ids so they
+  // never collide with anything elsewhere in the document), and splices the result into
+  // the full flat segments/segmentAudios in this subsection's exact position — leaving
+  // every other subsection's own cards/ids completely untouched, just shifted later in
+  // the array if this box grew or shrank.
+  //
+  // Returns the FRESH segments/segmentAudios directly (not relying on React state
+  // having flushed by the time the caller needs them) so callers — handleContinueClick,
+  // handleFinalizeClick — can use the up-to-date data immediately.
+  const commitSubsectionEdit = async (si) => {
+    const currentText = subsectionTexts?.[si];
+    const currentSegs = subsections[si];
+    if (currentText === undefined || !currentSegs) {
+      return { segments, segmentAudios };
+    }
+    if (rebuildScript(currentSegs) === currentText) {
+      return { segments, segmentAudios };
+    }
+    if (!apiKeys.google_tts_api_key) {
+      throw new Error('No Google TTS API key found for your account yet. Add your own key via "API Keys" in the header.');
+    }
+
+    const maxId = segments.reduce((m, s) => Math.max(m, s.id), -1);
+    const freshSegs = parseScript(currentText).map((seg, i) => ({ ...seg, id: maxId + 1 + i }));
+
+    const languageCode = LANG_TO_CODE[selectedLanguage] || 'en-US';
+    const newAudios = {};
+    for (const seg of freshSegs) {
+      if (seg.type !== 'text') continue;
+      const response = await base44.functions.invoke('generateTts', {
+        text: seg.content,
+        gender: selectedVoice,
+        language_code: languageCode,
+        apiKey: apiKeys.google_tts_api_key,
+        ...getNarratorAuthPayload(),
+      });
+      if (!response.data?.url) throw new Error('No audio URL returned for the edited text.');
+      newAudios[seg.id] = response.data.url;
+    }
+
+    const before = subsections.slice(0, si).flat();
+    const after = subsections.slice(si + 1).flat();
+    const newSegments = [...before, ...freshSegs, ...after];
+    const newSegmentAudios = { ...segmentAudios, ...newAudios };
+
+    setSegments(newSegments);
+    setSegmentAudios(newSegmentAudios);
+
+    return { segments: newSegments, segmentAudios: newSegmentAudios };
   };
 
   const handleParseAndGenerate = async () => {
@@ -307,11 +375,18 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   // separate playSegmentsPrecisely call — there's no single "precomputed" covering the
   // whole script to reuse, and combineSegmentsToWav already supports decoding on its
   // own perfectly well when nothing is passed.
-  const finalizeAndSave = async () => {
+  // Accepts optional fresh segments/segmentAudios (from a commitSubsectionEdit call
+  // that just ran moments before, in handleFinalizeClick) rather than always reading
+  // component state directly — state set via setSegments/setSegmentAudios hasn't
+  // necessarily flushed and re-rendered yet by the time this runs, so passing the
+  // freshly-committed values explicitly avoids finalizing against stale, pre-edit data.
+  const finalizeAndSave = async (segmentsOverride, segmentAudiosOverride) => {
+    const segsToUse = segmentsOverride || segments;
+    const audiosToUse = segmentAudiosOverride || segmentAudios;
     setGeneratingCombined(true);
     addLog('Rendering combined audio file…');
     try {
-      const wavBlob = await combineSegmentsToWav(segments, segmentAudios);
+      const wavBlob = await combineSegmentsToWav(segsToUse, audiosToUse);
       addLog(`Combined audio rendered (${(wavBlob.size / 1024 / 1024).toFixed(2)} MB). Uploading…`);
       const audioBase64 = await blobToBase64(wavBlob);
       const response = await base44.functions.invoke('uploadNarrationAudio', {
@@ -432,13 +507,54 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     setSubsectionCursor(targetIndex + 1);
   };
 
+  // "Continue" for every subsection except the last. Per Enda: clicking Continue must
+  // save whatever's in THIS subsection's own edit box first — regenerating its audio and
+  // re-splitting its cards if a <break> was added or removed — and only then play the
+  // NEXT subsection, instead of quietly ignoring the edit until a full re-parse. Safe to
+  // still hand handlePlayTarget the (technically stale, pre-commit) `subsections` closure
+  // here: committing subsection `si` only ever changes ITS OWN ids/boundary — every
+  // subsection after it keeps the exact same segment objects/ids, just shifted position
+  // in the flat array — so the NEXT subsection (targetIndex) that's about to play is
+  // completely unaffected by the edit just committed.
+  const handleContinueClick = async (si, targetIndex) => {
+    if (playing || generatingCombined || committingIndex !== null) return;
+    setError('');
+    setCommittingIndex(si);
+    try {
+      await commitSubsectionEdit(si);
+    } catch (err) {
+      setCommittingIndex(null);
+      setError(`Could not save your edit: ${getFnErrorMessage(err)}`);
+      return;
+    }
+    setCommittingIndex(null);
+    handlePlayTarget(subsections, targetIndex);
+  };
+
   // The very last subsection has nothing after it to "Continue" into — its control is
   // "Save & Finish" instead, and only renders/uploads/saves (no playback of its own,
   // since its audio was already played by the Continue button before it). Kept separate
   // from handlePlayTarget so a click here can never accidentally play anything.
-  const handleFinalizeClick = async () => {
-    if (playing || generatingCombined) return;
-    await finalizeAndSave();
+  //
+  // Per Enda: exactly like Continue, Save & Finish must also save whatever's currently in
+  // the LAST subsection's own edit box before finalizing — this is the one place where
+  // the freshly-committed segments/audio (not the stale closure) actually matter, since
+  // finalizeAndSave is rendering and uploading THIS possibly-just-edited subsection's own
+  // audio, not just about to play some later, unaffected one.
+  const handleFinalizeClick = async (si) => {
+    if (playing || generatingCombined || committingIndex !== null) return;
+    setError('');
+    setCommittingIndex(si);
+    let fresh;
+    try {
+      fresh = await commitSubsectionEdit(si);
+    } catch (err) {
+      setCommittingIndex(null);
+      setError(`Could not save your edit: ${getFnErrorMessage(err)}`);
+      return;
+    }
+    setCommittingIndex(null);
+    await finalizeAndSave(fresh.segments, fresh.segmentAudios);
   };
 
   const handleStopPlay = () => {
@@ -660,7 +776,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                   <Button
                     type="button" variant="outline" size="sm"
                     onClick={() => handlePlayTarget(subsections, 0)}
-                    disabled={playing || generatingCombined}
+                    disabled={playing || generatingCombined || committingIndex !== null}
                     className="border-slate-500 text-slate-300 gap-1.5"
                   >
                     <Play className="w-3.5 h-3.5" /> Replay
@@ -672,7 +788,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
               <Button
                 type="button"
                 onClick={() => handlePlayTarget(subsections, 0)}
-                disabled={playing || generatingCombined || !hasSegmentAudios}
+                disabled={playing || generatingCombined || committingIndex !== null || !hasSegmentAudios}
                 className="w-full bg-purple-600 hover:bg-purple-700 gap-2 text-white"
               >
                 <Play className="w-4 h-4" /> Build & Play
@@ -687,6 +803,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
             const status = subsectionCursor > targetIndex ? 'done' : subsectionCursor === targetIndex ? 'active' : 'locked';
             const finalizeReady = subsectionCursor >= subsections.length;
             const isSavingThis = generatingCombined && isLastBlock;
+            const isCommittingThis = committingIndex === si;
 
             return (
               <div key={`subsection-${si}`} className="space-y-2 pt-2 border-t border-slate-700/60 first:border-t-0 first:pt-0">
@@ -719,7 +836,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                     it reads clearly as an editing tool wedged into the list, not another
                     narration block. */}
                 <div>
-                  <Label className="text-amber-200/80 text-xs mb-1 block">Edit this part's script (takes effect on the next Parse & Generate)</Label>
+                  <Label className="text-amber-200/80 text-xs mb-1 block">Edit this part's script (saved when you click Continue / Save &amp; Finish below)</Label>
                   <Textarea
                     value={subsectionTexts?.[si] ?? rebuildScript(subsectionSegments)}
                     onChange={(e) => handleSubsectionScriptEdit(si, e.target.value)}
@@ -733,12 +850,12 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                     finalizeReady ? (
                       <Button
                         type="button"
-                        onClick={handleFinalizeClick}
-                        disabled={playing || generatingCombined}
+                        onClick={() => handleFinalizeClick(si)}
+                        disabled={playing || generatingCombined || committingIndex !== null}
                         className="flex-1 bg-purple-600 hover:bg-purple-700 gap-2 text-white"
                       >
-                        {isSavingThis ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                        {isSavingThis ? 'Saving…' : 'Save & Finish'}
+                        {(isSavingThis || isCommittingThis) ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                        {isCommittingThis ? 'Saving your edit…' : isSavingThis ? 'Saving…' : 'Save & Finish'}
                       </Button>
                     ) : (
                       <Button type="button" disabled className="flex-1 bg-slate-700 text-slate-500 gap-2 cursor-not-allowed">
@@ -757,7 +874,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                       <Button
                         type="button" variant="outline" size="sm"
                         onClick={() => handlePlayTarget(subsections, targetIndex)}
-                        disabled={playing || generatingCombined}
+                        disabled={playing || generatingCombined || committingIndex !== null}
                         className="border-slate-500 text-slate-300 gap-1.5"
                       >
                         <Play className="w-3.5 h-3.5" /> Replay
@@ -766,11 +883,12 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                   ) : status === 'active' ? (
                     <Button
                       type="button"
-                      onClick={() => handlePlayTarget(subsections, targetIndex)}
-                      disabled={playing || generatingCombined || !hasSegmentAudios}
+                      onClick={() => handleContinueClick(si, targetIndex)}
+                      disabled={playing || generatingCombined || committingIndex !== null || !hasSegmentAudios}
                       className="flex-1 bg-purple-600 hover:bg-purple-700 gap-2 text-white"
                     >
-                      <Play className="w-4 h-4" /> Continue
+                      {isCommittingThis ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                      {isCommittingThis ? 'Saving your edit…' : 'Continue'}
                     </Button>
                   ) : (
                     <Button type="button" disabled className="flex-1 bg-slate-700 text-slate-500 gap-2 cursor-not-allowed">
@@ -780,7 +898,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                   <Button
                     type="button" variant="outline"
                     onClick={handleDownload}
-                    disabled={!hasSegmentAudios || playing}
+                    disabled={!hasSegmentAudios || playing || committingIndex !== null}
                     className="border-slate-500 text-slate-300 gap-2"
                   >
                     <Download className="w-4 h-4" /> Download

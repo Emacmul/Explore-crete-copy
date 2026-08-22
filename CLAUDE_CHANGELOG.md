@@ -41,6 +41,70 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-22 (follow-up 15) — Feature fix: "Continue" and "Save & Finish" now save each box's own edit immediately, instead of ignoring it until the next Parse & Generate
+Scope: `src/components/admin/NarrationTtsEditor.jsx`. (Frontend only —
+no backend function touched.)
+
+**What changed:**
+- Follow-ups 11/13/14 fixed how the per-subsection edit boxes and card
+  groupings behaved AROUND a re-parse, but they never questioned the
+  underlying design those fixes were built on top of: that an edit
+  typed into a subsection's own box only ever took effect the next time
+  the big "Parse & Generate" button at the top was clicked. Enda's real
+  workflow is different — Parse & Generate is only ever clicked ONCE, at
+  the very start of a pass; from there the narrator works straight down
+  the list purely by clicking "Continue" on each part in turn, editing
+  that part's own box (including adding a brand-new `<break>` tag)
+  right before clicking Continue for it. Under the old design, that
+  edit was silently thrown away — Continue just played the next part
+  and moved on, leaving the edit sitting unapplied in the box, with no
+  error and no indication anything had gone wrong, which looked exactly
+  like a bug rather than "working as designed".
+- "Continue" and "Save & Finish" now actively SAVE whatever is
+  currently in that subsection's own edit box before doing anything
+  else: if the box's text has actually changed, its text is re-parsed,
+  fresh audio is generated for it via the same TTS call Parse &
+  Generate uses, and the result is spliced into the full segment/audio
+  list in that box's exact position — regrouping just that one box's
+  own cards if a `<break>` was added or removed, and leaving every
+  other subsection's cards, ids, and audio completely untouched. If the
+  box's text is unchanged (the narrator only listened, didn't edit),
+  nothing is regenerated and no extra TTS call is made. Only once that
+  save has finished does Continue play the next part, or Save & Finish
+  render/upload the combined file — so what plays and what gets saved
+  always matches what's actually sitting in the box, with no need to
+  ever go back and click Parse & Generate again mid-pass.
+- While a box's edit is being saved this way, its Continue / Save &
+  Finish button shows a spinner and "Saving your edit…", and every
+  other control on the panel (Replay, Download, the other subsection's
+  buttons) is disabled until it finishes, so two saves can never race
+  each other. The per-box edit label was also corrected from "takes
+  effect on the next Parse & Generate" to "saved when you click
+  Continue / Save & Finish below", since that's no longer just aspirational.
+
+**Why:** Enda's own words: "When I click the continue button... it
+should save what I did before the continue button, and not merge the
+subsequent sub segment with the one just worked on and then ignore it
+until I parse and generate again... It needs to save what I do, not
+start doing its own thing and confusing people." This is a genuine
+workflow/feature change, not a bug fix on top of follow-ups 11–14 — the
+chunking/boundary logic those fixes built was correct all along, it was
+just being applied at the wrong moment (a re-parse) instead of the
+moment Enda actually needed it (each Continue click).
+
+**Verified:** `npx vite build` completes with no errors. `npx eslint`
+on the changed file reports zero errors and zero warnings. Traced the
+new `commitSubsectionEdit` / `handleContinueClick` / `handleFinalizeClick`
+flow by hand against the existing sticky-boundary chunking (follow-up
+13) and frozen-sizes state (follow-up 14): committing one box only ever
+reassigns that box's own segment ids and re-slices its own portion of
+the flat segments array — every other subsection's cards, ids, and
+audio URLs are provably untouched, so the next part Continue plays
+right after a save is never affected by the edit that was just
+committed.
+
+---
+
 ## 2026-08-22 (follow-up 14) — Fix: typing a new <break> into a box no longer reshuffles the cards until Parse & Generate is actually clicked
 Scope: `src/components/admin/NarrationTtsEditor.jsx`. (Frontend only —
 no backend function touched.)
