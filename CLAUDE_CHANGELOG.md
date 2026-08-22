@@ -41,6 +41,25 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-22 (follow-up 4) — Admin's own "Map Preview" now also shows the plain customer view (no code, no "Start" badge)
+Scope: `src/components/admin/AdminPreviewMap.jsx` (frontend only — no backend function
+touched, a hard refresh + republish in Base44 is enough for this one).
+
+Correction to the previous "Map popup" change (follow-up 2 below): that change kept the
+Admin's own "Map Preview" panel (inside a tour's own editor) showing the full waypoint
+code and the coloured "Start" badge, on the reasoning that this panel is the Admin's own
+working view. Enda tested it and confirmed that's wrong — this panel's own caption reads
+"This is how the walk will appear to users", and it needs to actually show that, not a
+separate admin-only version. Removed the `showInternalLabels` override here, so this
+panel now uses WalkDetailMap's plain, customer-safe popup by default — the same one the
+real customer-facing map already used. No other screen was showing the internal
+code/badge, so nothing else needed changing.
+
+Verified: `npx vite build` clean, `npx eslint src/components/admin/AdminPreviewMap.jsx`
+clean.
+
+---
+
 ## 2026-08-22 (follow-up 3) — A narrator (or admin wearing the Narr hat) can now only clone a given tour ONCE, ever
 Scope: **`base44/functions/cloneWalkForBackend/entry.ts` (BACKEND FUNCTION — needs the
 manual blank-line redeploy in Base44, pushing the code alone will NOT apply this)**,

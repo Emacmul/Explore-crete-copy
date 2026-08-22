@@ -35,13 +35,13 @@ export default function AdminPreviewMap({ walk }) {
         <p className="text-slate-400 text-sm">This is how the walk will appear to users.</p>
       </div>
       <div className="h-96 rounded-xl overflow-hidden border border-slate-600">
-        {/* Per Enda: this panel is the admin/narrator's own working preview while editing
-            a tour, so it keeps showing the waypoint code and the coloured "Start" (etc.)
-            badge in the popup — genuinely useful detail here. A real customer opening the
-            actual tour sees a plain waypoint name only, with no code and no badge — that's
-            WalkDetailMap's default (showInternalLabels is false unless explicitly turned
-            on, which only this admin preview does). */}
-        <WalkDetailMap walk={previewWalk} showInternalLabels={true} />
+        {/* Per Enda: this panel's whole job is to show exactly what a real customer will
+            see ("This is how the walk will appear to users" above isn't decorative — it's
+            a promise this map has to actually keep), so it deliberately does NOT turn on
+            showInternalLabels here — no waypoint code, no coloured "Start" (etc.) badge in
+            the popup, same as the real customer-facing map. That's WalkDetailMap's default
+            already, so nothing extra needs passing here. */}
+        <WalkDetailMap walk={previewWalk} />
       </div>
       <div className="bg-slate-700/50 rounded-lg p-3 border border-slate-600 text-sm text-slate-400">
         <span className="text-slate-300 font-medium">Trail points: </span>{(walk.trail_path || []).length} · 
