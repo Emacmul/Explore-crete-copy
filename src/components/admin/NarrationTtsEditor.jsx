@@ -253,30 +253,32 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     setGeneratingCombined(false);
   };
 
-  // Plays a single subsection's slice of segments only, then either (a) advances the
-  // cursor to the next subsection — the "automatic pause" Enda described, since a
-  // finite clip simply stops on its own — or, if this was the last subsection, hands
-  // off to finalizeAndSave. Also used for "Replay" on an already-completed subsection
-  // (si !== subsectionCursor), in which case it's just a re-listen and doesn't touch
-  // the cursor or trigger a save, no matter where in the list it is.
-  const handlePlaySubsection = async (subsections, si) => {
-    const subsectionSegments = subsections[si];
-    if (!subsectionSegments || playing || generatingCombined) return;
-    const isReplay = si !== subsectionCursor;
+  // Plays ONE subsection's audio on demand — used both by the standalone "Build & Play"
+  // button under Parse & Generate (which always plays the very first subsection) and by
+  // every "Continue" button further down the list. Per Enda: pressing a control must
+  // play the audio that comes AFTER it, never the text already shown above it — so the
+  // narrator hears each part fresh, edits the text box that belongs to that part to
+  // reflect what needs to change, then presses Continue to move on. Also doubles as
+  // "Replay" for a part that's already been heard (targetIndex !== subsectionCursor),
+  // which just plays it again without moving the narrator's place forward.
+  const handlePlayTarget = async (subsections, targetIndex) => {
+    const targetSegments = subsections[targetIndex];
+    if (!targetSegments || playing || generatingCombined) return;
+    const isReplay = targetIndex !== subsectionCursor;
 
     stopRef.current = false;
     setPlaying(true);
-    setActiveSubsectionIndex(si);
+    setActiveSubsectionIndex(targetIndex);
     setError('');
 
     let playback = null;
     try {
-      playback = await playSegmentsPrecisely(subsectionSegments, segmentAudios, {
+      playback = await playSegmentsPrecisely(targetSegments, segmentAudios, {
         // playSegmentsPrecisely reports an index into the slice we gave it, not the
         // full segments list — map it back to the card that's actually showing that
         // segment so highlighting lands on the right one.
         onSegmentChange: (localIdx) => {
-          const seg = subsectionSegments[localIdx];
+          const seg = targetSegments[localIdx];
           const globalIdx = seg ? segments.findIndex((s) => s.id === seg.id) : -1;
           if (globalIdx >= 0) setCurrentPlayingIndex(globalIdx);
         },
@@ -309,12 +311,22 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     }
     if (isReplay) return;
 
-    const isLast = si === subsections.length - 1;
-    if (isLast) {
-      await finalizeAndSave();
-    } else {
-      setSubsectionCursor(si + 1);
-    }
+    // Not a replay — this was the next part the narrator hadn't heard yet, so move the
+    // marker forward. Once every subsection has been played this way, the LAST
+    // subsection's own "Save & Finish" control lights up (see the render below) —
+    // finalizing is now always a deliberate, separate click, never bundled into a play
+    // action, so there's always a chance to edit the last bit of text after hearing it
+    // and before it gets saved.
+    setSubsectionCursor(targetIndex + 1);
+  };
+
+  // The very last subsection has nothing after it to "Continue" into — its control is
+  // "Save & Finish" instead, and only renders/uploads/saves (no playback of its own,
+  // since its audio was already played by the Continue button before it). Kept separate
+  // from handlePlayTarget so a click here can never accidentally play anything.
+  const handleFinalizeClick = async () => {
+    if (playing || generatingCombined) return;
+    await finalizeAndSave();
   };
 
   const handleStopPlay = () => {
@@ -483,17 +495,20 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
         </div>
       )}
 
-      {/* Segments list, grouped into subsections (every 3rd card, plus whatever's left
-          over at the end). Each subsection gets its own duplicate of the editable
-          script box — so a fix doesn't mean scrolling all the way back to the top —
-          and its own Build & Play / Continue control. Per Enda: only the very first
-          subsection's button is a real "Build & Play" (kicks off listening through the
-          whole pass); every one after that is "Continue" and just carries on playback
-          into the next subsection, auto-stopping at its end so there's a natural pause
-          to edit in; the LAST subsection's button is "Build & Play" again, since that's
-          the one that actually renders and saves the combined file, then sends the
-          editor back to the top for a fresh Parse & Generate pass. */}
-      {segments && (
+      {/* Segments list, grouped into subsections (a run of up to 3 cards, kept intact
+          around pauses — see chunkIntoSubsections above). Per Enda: a control must
+          always play the audio that comes AFTER it, never the part already shown above
+          it — the narrator should hear a part fresh, THEN read/edit its text, not the
+          other way round. That means the very first part needs its own standalone
+          "Build & Play" button positioned right under Parse & Generate below, since
+          there's no earlier control to have played it. From there, the "Continue"
+          button at the end of each subsection's block plays the NEXT subsection down;
+          the narrator listens, edits that subsection's own text box to reflect what
+          they just heard, then presses Continue again. The very last subsection has
+          nothing left to Continue into, so its control is "Save & Finish" instead — it
+          renders and saves the combined file and sends the editor back to the top for a
+          fresh Parse & Generate pass. */}
+      {segments && subsections.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center gap-3 text-xs text-slate-400 flex-wrap">
             <span>{countCharacters(segments)} characters</span>
@@ -502,12 +517,55 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
             <span className="text-slate-600">Use &lt;break time="Xs"/&gt; for pauses</span>
           </div>
 
+          {/* Standalone starter control — plays the very first subsection's audio.
+              Nothing comes before this one, so it's always "Build & Play", never
+              "Continue". */}
+          {(() => {
+            const topIsPlayingThis = playing && activeSubsectionIndex === 0;
+            const topAlreadyPlayed = subsectionCursor > 0;
+            if (topIsPlayingThis) {
+              return (
+                <Button type="button" onClick={handleStopPlay} className="w-full bg-red-600 hover:bg-red-700 gap-2 text-white">
+                  <Square className="w-4 h-4" /> Stop
+                </Button>
+              );
+            }
+            if (topAlreadyPlayed) {
+              return (
+                <div className="flex gap-2 items-center">
+                  <span className="flex items-center gap-1.5 text-sm text-emerald-400 shrink-0">
+                    <CheckCircle2 className="w-4 h-4" /> Played
+                  </span>
+                  <Button
+                    type="button" variant="outline" size="sm"
+                    onClick={() => handlePlayTarget(subsections, 0)}
+                    disabled={playing || generatingCombined}
+                    className="border-slate-500 text-slate-300 gap-1.5"
+                  >
+                    <Play className="w-3.5 h-3.5" /> Replay
+                  </Button>
+                </div>
+              );
+            }
+            return (
+              <Button
+                type="button"
+                onClick={() => handlePlayTarget(subsections, 0)}
+                disabled={playing || generatingCombined || !hasSegmentAudios}
+                className="w-full bg-purple-600 hover:bg-purple-700 gap-2 text-white"
+              >
+                <Play className="w-4 h-4" /> Build & Play
+              </Button>
+            );
+          })()}
+
           {subsections.map((subsectionSegments, si) => {
-            const isLast = si === subsections.length - 1;
-            const status = si < subsectionCursor ? 'done' : si === subsectionCursor ? 'active' : 'locked';
-            const isPlayingThis = playing && activeSubsectionIndex === si;
-            const isSavingThis = generatingCombined && isLast && status !== 'locked';
-            const label = isLast ? 'Build & Play' : (si === 0 ? 'Build & Play' : 'Continue');
+            const isLastBlock = si === subsections.length - 1;
+            const targetIndex = si + 1; // the NEXT subsection this block's control plays
+            const isPlayingThis = playing && activeSubsectionIndex === targetIndex;
+            const status = subsectionCursor > targetIndex ? 'done' : subsectionCursor === targetIndex ? 'active' : 'locked';
+            const finalizeReady = subsectionCursor >= subsections.length;
+            const isSavingThis = generatingCombined && isLastBlock;
 
             return (
               <div key={`subsection-${si}`} className="space-y-2 pt-2 border-t border-slate-700/60 first:border-t-0 first:pt-0">
@@ -527,12 +585,14 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                 })}
 
                 {/* Duplicate, editable script box — same text, same handler as the box
-                    at the top, so an edit made here is just as real. Kept editable
-                    regardless of this subsection's status, since a narrator may want to
-                    fix something in a subsection they've already played through.
-                    Deliberately styled unlike the dark narration cards around it (per
-                    Enda: a muted pastel yellow with black text) so it reads clearly as
-                    an editing tool wedged into the list, not another narration block. */}
+                    at the top, so an edit made here is just as real. Per Enda: this is
+                    where you write down the changes needed after hearing THIS
+                    subsection's audio (played by the control above this block, or by
+                    the standalone Build & Play button for the very first one) — not a
+                    box you fill in before listening. Deliberately styled unlike the dark
+                    narration cards around it (a muted pastel yellow with black text) so
+                    it reads clearly as an editing tool wedged into the list, not another
+                    narration block. */}
                 <div>
                   <Label className="text-amber-200/80 text-xs mb-1 block">Edit script (takes effect on the next Parse & Generate)</Label>
                   <Textarea
@@ -544,7 +604,23 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                 </div>
 
                 <div className="flex gap-2 items-center">
-                  {isPlayingThis ? (
+                  {isLastBlock ? (
+                    finalizeReady ? (
+                      <Button
+                        type="button"
+                        onClick={handleFinalizeClick}
+                        disabled={playing || generatingCombined}
+                        className="flex-1 bg-purple-600 hover:bg-purple-700 gap-2 text-white"
+                      >
+                        {isSavingThis ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                        {isSavingThis ? 'Saving…' : 'Save & Finish'}
+                      </Button>
+                    ) : (
+                      <Button type="button" disabled className="flex-1 bg-slate-700 text-slate-500 gap-2 cursor-not-allowed">
+                        <CheckCircle2 className="w-4 h-4" /> Save & Finish
+                      </Button>
+                    )
+                  ) : isPlayingThis ? (
                     <Button type="button" onClick={handleStopPlay} className="flex-1 bg-red-600 hover:bg-red-700 gap-2 text-white">
                       <Square className="w-4 h-4" /> Stop
                     </Button>
@@ -555,7 +631,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                       </span>
                       <Button
                         type="button" variant="outline" size="sm"
-                        onClick={() => handlePlaySubsection(subsections, si)}
+                        onClick={() => handlePlayTarget(subsections, targetIndex)}
                         disabled={playing || generatingCombined}
                         className="border-slate-500 text-slate-300 gap-1.5"
                       >
@@ -565,16 +641,15 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                   ) : status === 'active' ? (
                     <Button
                       type="button"
-                      onClick={() => handlePlaySubsection(subsections, si)}
+                      onClick={() => handlePlayTarget(subsections, targetIndex)}
                       disabled={playing || generatingCombined || !hasSegmentAudios}
                       className="flex-1 bg-purple-600 hover:bg-purple-700 gap-2 text-white"
                     >
-                      {isSavingThis ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-                      {isSavingThis ? 'Saving…' : label}
+                      <Play className="w-4 h-4" /> Continue
                     </Button>
                   ) : (
                     <Button type="button" disabled className="flex-1 bg-slate-700 text-slate-500 gap-2 cursor-not-allowed">
-                      <Play className="w-4 h-4" /> {label}
+                      <Play className="w-4 h-4" /> Continue
                     </Button>
                   )}
                   <Button
@@ -605,10 +680,11 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
           </div>
           <AudioPlayer src={audioUrl} className="w-full" />
           <p className="text-xs text-slate-500">
-            To change this: edit the script above, click <strong>Parse &amp; Generate</strong>, then work
-            through each section below — editing text and clicking <strong>Continue</strong> as needed —
-            until the final <strong>Build &amp; Play</strong> saves a new version. No need to leave this
-            screen.
+            To change this: edit the script above, click <strong>Parse &amp; Generate</strong>, then click
+            <strong> Build &amp; Play</strong> to hear the first part. Edit the yellow text box under it to
+            reflect what you just heard, then click <strong>Continue</strong> to hear the next part — repeat
+            down the list. Once you have heard and adjusted every part, <strong>Save &amp; Finish</strong>
+            saves the new version. No need to leave this screen.
           </p>
         </div>
       )}

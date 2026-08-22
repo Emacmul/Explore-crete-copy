@@ -41,6 +41,33 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-22 (follow-up) — Narration Script & TTS: Build & Play / Continue now play the audio AHEAD of you, not the audio you just read
+Scope: `src/components/admin/NarrationTtsEditor.jsx` (frontend only — no backend function
+touched, a hard refresh + republish in Base44 is enough for this one).
+
+Enda: the previous version had each subsection's "Build & Play" / "Continue" button
+play the narration cards shown ABOVE it — text the narrator had already read before
+pressing play. That's backwards: the whole point of this screen is to listen first and
+then fix the wording to suit what's heard, not what's already been read on the page.
+
+Changed so a button always plays the part that comes AFTER it, never the part above it:
+- A new standalone "Build & Play" button now sits right under "Parse & Generate". This
+  is the only button with nothing before it, so it always plays the very first part.
+- Every "Continue" button further down now plays the NEXT part down the list (not the
+  part shown in the cards directly above it). Listen to that part, then use the yellow
+  edit box in that same block to note the change needed, then press Continue again.
+- The very last part has nothing left to Continue into, so its button is now labelled
+  "Save & Finish" — it only saves (it doesn't play anything, since its audio was already
+  played by the Continue button before it) and sends the editor back to the top for a
+  fresh Parse & Generate pass, exactly as before.
+- "Replay" still works on any part already heard, and never disturbs your place in the
+  list.
+
+Verified: `npx vite build` clean, `npx eslint src/components/admin/NarrationTtsEditor.jsx`
+clean.
+
+---
+
 ## 2026-08-21 — Narr Studio: "Clone in Progress" gate — Publish only appears once every waypoint is done, one clone per narrator at a time
 Scope: `src/components/admin/AdminStartScreen.jsx`, `src/components/admin/BackendShell.jsx`,
 **`base44/functions/saveWalkForBackend/entry.ts` (BACKEND FUNCTION — needs the manual
