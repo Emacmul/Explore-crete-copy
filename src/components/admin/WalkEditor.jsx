@@ -58,7 +58,7 @@ function SaveButton({ onSave, saving, canSave }) {
   );
 }
 
-export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin', focusWaypointIndex, onToggleFinished, onTogglePublish }) {
+export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin', focusWaypointIndex, onToggleFinished, onTogglePublish, onToggleAdminCompleted }) {
   const isNarrator = userRole === 'narrator';
   console.log('WalkEditor mounted/rendering');
   const [form, setForm] = useState({ ...EMPTY_WALK, ...walk });
@@ -702,6 +702,22 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
     setTogglingPublish(false);
   };
 
+  // "Admin Completed" — a master tour is ready for a narrator to clone and translate.
+  // Deliberately separate from Publish/Unpublish above: per Enda, finishing the
+  // English edit and going live for customer purchase are two different moments, and
+  // this one has to come first (narrators can only clone tours marked this way — see
+  // cloneableTours in BackendShell.jsx). No audio-readiness check here — that only
+  // matters for actually going live.
+  const [togglingAdminCompleted, setTogglingAdminCompleted] = useState(false);
+  const handleToggleAdminCompleted = async () => {
+    if (!form.id || !onToggleAdminCompleted || togglingAdminCompleted) return;
+    const nextCompleted = !form.admin_completed;
+    setTogglingAdminCompleted(true);
+    const ok = await onToggleAdminCompleted(form.id, nextCompleted);
+    if (ok) setForm(prev => ({ ...prev, admin_completed: nextCompleted }));
+    setTogglingAdminCompleted(false);
+  };
+
   const [downloadingGpx, setDownloadingGpx] = useState(false);
   const [downloadingBackup, setDownloadingBackup] = useState(false);
   const [backupProgress, setBackupProgress] = useState(null); // { done, total } while running
@@ -815,6 +831,27 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
           )}
         </div>
         <div className="flex items-center gap-2">
+          {!isNarrator && !form.clone_of && form.id && onToggleAdminCompleted && (
+            <div className="flex items-center gap-2 bg-slate-700/60 border border-slate-600 rounded-lg px-3 py-1.5">
+              <span className={`text-xs font-medium ${form.admin_completed ? 'text-emerald-300' : 'text-amber-300'}`}>
+                {form.admin_completed ? 'Admin Completed' : 'Still in edit'}
+              </span>
+              <Button
+                size="sm"
+                onClick={handleToggleAdminCompleted}
+                disabled={togglingAdminCompleted}
+                className={`h-7 text-xs gap-1.5 ${form.admin_completed ? 'bg-slate-600 hover:bg-slate-500' : 'bg-emerald-600 hover:bg-emerald-700'}`}
+                title={form.admin_completed
+                  ? 'Mark back as still in edit — hides this tour from narrators’ "Clone a tour to translate" list again.'
+                  : 'Mark admin completed — makes this tour available for narrators to clone and translate. Does NOT publish it for customer purchase; that’s the separate Publish action.'}
+              >
+                {togglingAdminCompleted
+                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  : <CheckCircle2 className="w-3.5 h-3.5" />}
+                {form.admin_completed ? 'Mark In Edit' : 'Mark Admin Completed'}
+              </Button>
+            </div>
+          )}
           {!isNarrator && !form.clone_of && form.id && onTogglePublish && (
             <div className="flex items-center gap-2 bg-slate-700/60 border border-slate-600 rounded-lg px-3 py-1.5">
               <span className={`text-xs font-medium ${form.approved === false ? 'text-red-300' : 'text-emerald-300'}`}>

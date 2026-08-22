@@ -1013,7 +1013,13 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
               </div>
                 )}
               </Draggable>
-              {isLastOfLocation && !isNarrator && locGroup && (
+              {/* Per Enda: a narrator needs the exact same "test in simulator" access an
+                  Admin has, to fit break-tag pause durations to their own recorded
+                  speech pace — the only thing they still can't touch is the tour's
+                  average driving speed, which TourSimulator already treats as
+                  read-only/display-only for absolutely everyone (see its own
+                  comments), so no separate gate is needed for that here. */}
+              {isLastOfLocation && locGroup && (
                 <div className="pl-1 pr-1 pb-1 pt-1">
                   <Button
                     disabled={!isLocationTestable(locGroup)}

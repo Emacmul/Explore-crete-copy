@@ -144,6 +144,79 @@ re-review A first.
 
 ---
 
+## 2026-08-22 — Narrators get simulator access on the waypoint "Test in Simulator" button; new "Admin Completed" gate on which tours narrators can clone
+Scope: `src/components/admin/DrivingTourWaypointEditor.jsx`, `src/components/admin/BackendShell.jsx`,
+`src/components/admin/WalkEditor.jsx`, `base44/entities/Walk.jsonc`,
+**`base44/functions/cloneWalkForBackend/entry.ts` (BACKEND FUNCTION — needs the manual
+blank-line redeploy in Base44, pushing the code alone will NOT apply this).**
+
+Two separate requests from Enda, both about the Narr Studio workflow.
+
+**1. Narrators had no quick way to test their own waypoints in the simulator.**
+Turned out narrators already had the FULL simulator (including break-tag duration
+editing) via the Preview tab — that part was never gated. What actually was admin-only
+was the convenient "Test Location X in Simulator" button right inside the Waypoints
+tab, next to the waypoints it tests — the one someone would actually reach for while
+mid-edit rather than switching tabs. That's the one Enda meant. Removed its
+`!isNarrator` gate — a narrator now gets the exact same button, same simulator, same
+break-tag editing an Admin has. The average driving speed shown in the simulator was
+already read-only for absolutely everyone (Admin included) before this change — it's
+only ever set once on the master tour — so no separate lock was needed for that part.
+
+**2. No way for an Admin to mark a master tour "ready for narrators" separately from
+"published for customers."** Per Enda: those are two different moments — a tour can be
+fully edited and ready to hand to a narrator long before it's ready to go live, and
+"live for purchase" is always a separate, later, deliberate Admin action.
+
+What was built:
+- New Walk field `admin_completed` (boolean, default **false**) in `Walk.jsonc`.
+  Master (non-clone) tours only. **Every existing master tour starts as `false`** —
+  this is a deliberate, not accidental, consequence of the default: it means no
+  existing tour will show up as cloneable to narrators until an Admin goes through and
+  marks each one "Admin Completed." See the callout at the end of this entry — this
+  needs a one-time pass over your current tours after this ships.
+- New "Admin Completed" toggle pill in `WalkEditor.jsx`'s top bar (master tours only,
+  admin-only, right next to the existing Publish/Unpublish pill but functioning
+  entirely independently of it — no audio-readiness check, since that only matters for
+  going live, not for handing a tour to a narrator).
+- `BackendShell.jsx`: `cloneableTours` (the list behind "Clone a tour to translate")
+  now filters on `admin_completed`, on top of the existing "not a clone itself" filter.
+  New `handleToggleAdminCompleted` wired through to `WalkEditor.jsx`.
+- **The real, unbypassable gate is server-side**, in `cloneWalkForBackend`: a narrator
+  attempting to clone a master tour that isn't `admin_completed` is rejected outright,
+  same pattern as the existing active-clone-limit check in that same function. Admins
+  (native, promoted, or wearing the Narr hat) are exempt from this check, same as
+  they're exempt from the active-clone limit — an Admin can always clone a tour to test
+  it, whether or not it's marked ready yet. A clone itself always gets
+  `admin_completed: false` on creation (the field has no meaning on a clone).
+- `admin_completed` was deliberately left out of `NARRATOR_WALK_FIELDS` in
+  `saveWalkForBackend` (unchanged, not touched this entry) — a narrator was never able
+  to set this field anyway; only the Admin branch of that function can.
+
+**⚠️ Operational note, not just a code note:** because `admin_completed` defaults to
+false, every tour you've already built will disappear from narrators' "Clone a tour to
+translate" list the moment this ships, until you open each one and click "Mark Admin
+Completed." This is the intended behaviour Enda asked for (a real gate, not automatic
+grandfathering) but it needs a deliberate pass over existing tours right after
+deploying, or narrators will find nothing to clone.
+
+Verified: `npx vite build` clean; `npx eslint` on all three changed frontend files
+shows only pre-existing, unrelated issues already documented in earlier entries
+(nothing new); `npx esbuild base44/functions/cloneWalkForBackend/entry.ts --format=esm`
+compiles clean; confirmed `admin_completed` is absent from `NARRATOR_WALK_FIELDS`.
+
+**Not done / worth knowing for next time:**
+- Not tested live — worth marking a real tour "Admin Completed," confirming it appears
+  in Narr Studio's cloneable list and a narrator can clone it, then unmarking it and
+  confirming a fresh clone attempt is rejected (both client-side and by hand-crafting a
+  request past the client, to prove the server-side gate actually holds).
+- No visual indicator of `admin_completed` status was added to the master tours list
+  screen (`WalkAdminList.jsx`) — right now the only place to see or change it is inside
+  each tour's own editor. Worth adding a small badge there later if hunting through
+  tours one by one to find which still need marking becomes tedious.
+
+---
+
 ## 2026-08-21 — Route Path (GPS) tab: raw GPS points now locked behind an admin-only, conscious-unlock panel
 Scope: `src/components/admin/TrailPathEditor.jsx`, `src/components/admin/WalkEditor.jsx`
 (frontend-only, no backend function touched).

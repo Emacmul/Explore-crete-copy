@@ -36,6 +36,19 @@ export default async function(req) {
       return Response.json({ error: 'This tour is itself a translation — clone the original instead.' }, { status: 400 });
     }
 
+    // Per Enda: a narrator may only clone a master tour the Admin has explicitly
+    // marked "admin completed" — fully finished editing, ready to hand to a
+    // narrator. This is deliberately unrelated to `approved` (published/live for
+    // customers) — a tour can be ready for translation long before it's ready to
+    // go live. cloneableTours in BackendShell.jsx already keeps an unmarked tour
+    // out of the "Clone a tour to translate" list; this is the real, unbypassable
+    // gate behind that. Admins (native, promoted, or wearing the Narr hat) are
+    // exempt, same as the active-clone-limit check below — an Admin may always
+    // clone anything, e.g. to test a tour before marking it ready.
+    if (actor.kind === 'narrator' && !original.admin_completed) {
+      return Response.json({ error: 'This tour is not marked "Admin Completed" yet — ask an Admin to finish editing and mark it ready before it can be translated.' }, { status: 409 });
+    }
+
     // Who does this clone belong to? Prefer the Narr Studio session email
     // (covers both real narrators and admin-wearing-the-Narr-hat); fall back
     // to the caller's real Base44 identity for a native admin.
@@ -82,6 +95,7 @@ export default async function(req) {
       assigned_narrator_email: ownerEmail || undefined,
       finished: false,
       approved: false,
+      admin_completed: false,
       requires_review: false,
       is_sample_walk: false,
       creem_product_id: undefined,

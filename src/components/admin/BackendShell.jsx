@@ -278,11 +278,35 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
     toast({ title: 'Sent back for correction', description: 'The narrator will see this the next time they open the Narr Studio.' });
   };
 
-  // Every master is offered for cloning regardless of its OWN publish status — a
-  // narrator can translate a tour that isn't published yet. Nothing here restricts by
-  // whether the English master is approved; the restriction lives entirely on the
-  // target-language side, handled in handleCloneTour and passed to CloneTourDialog.
-  const cloneableTours = walks.filter(w => !w.clone_of);
+  // Marks (or unmarks) a master tour as ready for narrators to clone — deliberately
+  // separate from handleTogglePublish/approved: per Enda, "fully edited by the Admin"
+  // and "live for customer purchase" are two different moments, and a tour can be one
+  // without the other in either direction. No audio-readiness check here (unlike
+  // publish) — that gate only matters for going live, not for handing a tour to a
+  // narrator to start translating.
+  const handleToggleAdminCompleted = async (walkId, nextCompleted) => {
+    try {
+      await callWalkFn('saveWalkForBackend', { id: walkId, patch: { admin_completed: nextCompleted } });
+      setWalks((prev) => prev.map(w => w.id === walkId ? { ...w, admin_completed: nextCompleted } : w));
+      toast({
+        title: nextCompleted ? 'Marked admin completed' : 'Marked back to in-progress',
+        description: nextCompleted
+          ? 'Narrators can now clone this tour to translate. It is NOT published for customer purchase — that’s a separate action.'
+          : 'Hidden from narrators’ "Clone a tour to translate" list again until re-marked.',
+      });
+      return true;
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Could not update', description: err?.message || 'Try again.' });
+      return false;
+    }
+  };
+
+  // Per Enda: only a master tour the Admin has explicitly marked "admin completed" —
+  // i.e. fully finished editing, ready for a narrator to work from — should ever be
+  // offered for cloning. This is deliberately unrelated to `approved` (published for
+  // customer purchase): a tour can be ready for narrators long before it's ready to go
+  // live, and going live is a separate, later Admin action (see handleTogglePublish).
+  const cloneableTours = walks.filter(w => !w.clone_of && w.admin_completed);
   // For each master, the set of languages that already have a finished, published clone
   // — passed to the clone dialog so it can't even be selected there, not just blocked
   // after the fact.
@@ -416,6 +440,7 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
             focusWaypointIndex={focusWaypointIndex}
             onToggleFinished={handleToggleFinished}
             onTogglePublish={handleTogglePublish}
+            onToggleAdminCompleted={handleToggleAdminCompleted}
           />
         ) : view === 'users' ? (
           <UsersManager />

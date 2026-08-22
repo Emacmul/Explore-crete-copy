@@ -103,6 +103,11 @@
       "default": true,
       "description": "Whether the walk is publicly visible"
     },
+    "admin_completed": {
+      "type": "boolean",
+      "default": false,
+      "description": "Master (non-clone) tour only: true once an Admin has fully finished editing the English original and it's ready for narrators to clone and translate. Separate from 'approved' — a tour can be admin_completed but not yet approved (not published for customer purchase), or approved without ever needing this flag touched again. Only master tours use this; a translation clone doesn't have its own meaning for it. Defaults false, so every existing and future master tour starts hidden from narrators' \"Clone a tour to translate\" list until an Admin explicitly marks it ready."
+    },
     "default_driving_speed_kmh": {
       "type": "number",
       "description": "Default average driving speed for audio tours (helper only)"
