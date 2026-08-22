@@ -12,8 +12,14 @@ import { resolveActor } from '../../shared/backendActor.ts';
 // lock releases the moment they mark their clone finished and send it to an
 // Admin, not only once an Admin has also approved/published it.
 //
-// Admins (native, promoted, or wearing the Narr hat) are exempt from that
-// limit entirely and may clone at any time.
+// Separately (and unlike that limit), a narrator — or an admin wearing the
+// Narr hat — may only ever clone a given master tour ONCE, ever, regardless
+// of finished/published state. See the narrSessionEmail check below.
+//
+// Admins (native or promoted) using their real Admin panel are exempt from
+// both of the above — that panel has no cloning action in the first place.
+// An admin wearing the Narr hat (logged into Narr Studio itself) is NOT
+// exempt from the once-per-tour rule, only from the one-active-clone limit.
 export default async function(req) {
   try {
     const base44 = createClientFromRequest(req);
@@ -61,6 +67,27 @@ export default async function(req) {
     }
 
     const allClonesOfThis = await base44.asServiceRole.entities.Walk.filter({ clone_of: original.id });
+
+    // Per Enda: a narrator — or an admin working through Narr Studio under their own
+    // narrator-style login ("wearing the narrator hat") — may only ever clone THIS
+    // master tour once. Not once per language: once, full stop, in whichever single
+    // language they pick that one time. Once cloned, this master drops out of that
+    // same person's own "Clone a tour to translate" list for good (see cloneableTours
+    // in BackendShell.jsx) — no matter whether that clone later gets finished,
+    // published, or is still untouched. This only ever looks at a Narr Studio session
+    // email (body.email, sent by narrAuth in BackendShell.jsx) — a genuine native
+    // Admin working through the real Admin panel never sends one, since that panel has
+    // no cloning action at all, so this never touches that case; a different narrator
+    // cloning this same master is completely unaffected too.
+    const narrSessionEmail = (body?.email ? String(body.email) : '').trim().toLowerCase();
+    if (narrSessionEmail) {
+      const alreadyClonedByThisIdentity = allClonesOfThis.some(
+        (w: any) => (w.assigned_narrator_email || '').toLowerCase() === narrSessionEmail
+      );
+      if (alreadyClonedByThisIdentity) {
+        return Response.json({ error: 'You have already cloned this tour once — it can only be translated by you into a single language.' }, { status: 409 });
+      }
+    }
 
     if (actor.kind === 'narrator') {
       // Per narrator, across ANY master — not just this one. A different

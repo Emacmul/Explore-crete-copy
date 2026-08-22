@@ -148,6 +148,20 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
       toast({ variant: 'destructive', title: 'Finish your current translation first', description: 'You already have a clone in progress. It needs to be finished before you can start another.' });
       return null;
     }
+    // Per Enda: a narrator — or an admin wearing the Narr hat — may only ever clone a
+    // given master tour ONCE, no matter the language, and no matter whether an earlier
+    // clone of it is finished or still in progress. Checked here too (client-side, so
+    // the toast is instant) as well as being the real, unbypassable gate inside
+    // cloneWalkForBackend — deliberately NOT skipped for `unrestricted`, unlike the
+    // active-clone check above: "wearing the Narr hat" is exactly who this applies to.
+    const myEmail = (user.email || '').toLowerCase();
+    const alreadyClonedByMe = myEmail && walks.some(
+      w => w.clone_of === original.id && (w.assigned_narrator_email || '').toLowerCase() === myEmail
+    );
+    if (alreadyClonedByMe) {
+      toast({ variant: 'destructive', title: 'Already cloned', description: `You've already cloned “${original.name}” once — it can only be translated by you into a single language.` });
+      return null;
+    }
     const alreadyPublished = walks.some(w => w.clone_of === original.id && w.finished && w.approved && (w.target_language || '').toLowerCase() === lang.toLowerCase());
     if (alreadyPublished) {
       toast({ variant: 'destructive', title: 'Already published in this language', description: `“${original.name}” already has a finished, published ${lang} version — cloning it again would duplicate existing work.` });
@@ -306,7 +320,16 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
   // offered for cloning. This is deliberately unrelated to `approved` (published for
   // customer purchase): a tour can be ready for narrators long before it's ready to go
   // live, and going live is a separate, later Admin action (see handleTogglePublish).
-  const cloneableTours = walks.filter(w => !w.clone_of && w.admin_completed);
+  // Per Enda: once this narrator (or admin-wearing-the-Narr-hat) identity has cloned a
+  // master tour, it must never show up in their own "Clone a tour to translate" list
+  // again — regardless of whether that clone is finished, published, or still
+  // untouched. A different narrator cloning the same master doesn't affect this list
+  // for anyone else. See the matching, unbypassable check in cloneWalkForBackend.
+  const myClonedMasterIds = new Set(
+    walks.filter(w => w.clone_of && (w.assigned_narrator_email || '').toLowerCase() === (user.email || '').toLowerCase())
+      .map(w => w.clone_of)
+  );
+  const cloneableTours = walks.filter(w => !w.clone_of && w.admin_completed && !myClonedMasterIds.has(w.id));
   // For each master, the set of languages that already have a finished, published clone
   // — passed to the clone dialog so it can't even be selected there, not just blocked
   // after the fact.

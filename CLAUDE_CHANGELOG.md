@@ -41,6 +41,45 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-22 (follow-up 3) — A narrator (or admin wearing the Narr hat) can now only clone a given tour ONCE, ever
+Scope: **`base44/functions/cloneWalkForBackend/entry.ts` (BACKEND FUNCTION — needs the
+manual blank-line redeploy in Base44, pushing the code alone will NOT apply this)**,
+**`base44/functions/getWalksForBackend/entry.ts` (BACKEND FUNCTION — same, needs its own
+separate manual redeploy)**, `src/components/admin/BackendShell.jsx`.
+
+Enda found he could clone "The Battle of the Rivers" into German, Dutch, AND Czech, one
+after another, using his own admin-wearing-the-Narr-hat login — the tour never left the
+"Clone a tour to translate" list, and stayed clonable indefinitely. The earlier
+"one clone in progress at a time" limit (still there, unchanged) only ever stopped
+starting a THIRD unrelated tour while a first one was still unfinished — it never stopped
+re-cloning the very same tour once that first clone had been finished and handed off, and
+it deliberately exempted an admin using the Narr hat entirely.
+
+Added a separate, new rule on top of that one: whoever's doing the cloning — a real
+narrator, or an admin logged into Narr Studio under their own narrator-style login — may
+now only ever clone one specific master tour ONCE, full stop, in whichever single
+language they choose that one time. It doesn't matter if that clone is later finished,
+published, or still sitting untouched — trying to clone that same master again is
+rejected with a clear message, and the master itself disappears from that person's own
+"Clone a tour to translate" list for good. A genuine Admin working in the real Admin
+Panel is untouched by this — that screen has no cloning action on it at all, so nothing
+here applies there; different narrators cloning the same master are unaffected by each
+other too.
+
+Also fixed a real bug found while working on this: `getWalksForBackend` was stripping the
+"admin completed" flag off every master tour shown to a genuine (non-admin) narrator,
+which meant a real narrator's "Clone a tour to translate" list was silently ALWAYS empty
+— every tour looked un-clonable to them, even ones an Admin had properly marked ready.
+This never affected an admin-wearing-the-Narr-hat session (which gets the full,
+unredacted tour list a different way), which is why it went unnoticed until now.
+
+Verified: `npx esbuild` clean on both backend functions, `npx vite build` clean,
+`npx eslint src/components/admin/BackendShell.jsx` clean (one pre-existing, unrelated
+warning about an eslint-disable comment elsewhere in the file, confirmed against the last
+commit — not touched by this change).
+
+---
+
 ## 2026-08-22 (follow-up 2) — Map popup: code and "Start" badge now hidden from real customers; driving tours remember your last known position
 Scope: `src/components/map/WalkDetailMap.jsx`, `src/components/admin/AdminPreviewMap.jsx`,
 `src/components/walks/DrivingTourPlayer.jsx`, `src/lib/i18n/index.js` (frontend only — no

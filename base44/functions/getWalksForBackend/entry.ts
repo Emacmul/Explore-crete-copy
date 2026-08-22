@@ -44,6 +44,14 @@ export default async function(req) {
         name: w.name,
         tour_category: w.tour_category,
         region: w.region,
+        // Without this, a narrator's own "Clone a tour to translate" list
+        // (cloneableTours in BackendShell.jsx, which filters on this field) would
+        // always come back empty — every master tour would look un-clonable to
+        // every real narrator, even one an Admin has genuinely marked ready. An
+        // admin-wearing-the-Narr-hat session never hit this bug, since it takes
+        // the `actor.kind === 'admin'` branch above and gets the full,
+        // unredacted `all` list instead.
+        admin_completed: w.admin_completed,
       }));
 
     const ownClones = all.filter(
