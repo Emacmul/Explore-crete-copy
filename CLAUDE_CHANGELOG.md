@@ -41,6 +41,24 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-22 (follow-up 7f) — Removed the Script Timing table entirely
+Scope: `src/components/admin/TourSimulator.jsx`. (Frontend only — no backend function
+touched.)
+
+Enda's question was fair: the "Script Timing" table (per-location Distance/Speed/
+Travel/Narration estimate, built from word count and typed break-tag durations) was a
+paper guess from before the visual map + break-tag editor existed. Now that there's a
+real simulator playing real generated audio next to a live editor, an estimate is
+pointless — the simulator gives the exact, ground-truth answer instead. Removed the
+`ScriptTimingPanel` import and its render from the Narration & Simulate screen entirely
+(it was already tucked inside the collapsed "Simulation details" section from follow-up
+7e, so this also shrinks that section). The `ScriptTimingPanel.jsx` component file
+itself is left untouched in case it's ever wanted elsewhere — it's just no longer shown
+on this screen, its only usage site.
+
+Verified: `npx vite build` clean, `npx eslint` clean (only the same pre-existing
+unrelated warning already noted in earlier entries).
+
 ## 2026-08-22 (follow-up 7e) — Narration & Simulate: everything but the map + editor is now collapsed out of the way
 Scope: `src/components/admin/TourSimulator.jsx`. (Frontend only — no backend function
 touched.)

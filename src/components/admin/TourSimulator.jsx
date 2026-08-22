@@ -5,7 +5,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Play, Pause, Square, Gauge, Clock, Volume2, AlertTriangle, CheckCircle2, MapPin, Radio, Flag, ChevronDown, ChevronUp } from 'lucide-react';
 import { calculateBearing, isBearingInRange } from '@/lib/routeExport';
 import TourSimulatorMap from './TourSimulatorMap';
-import ScriptTimingPanel from './ScriptTimingPanel';
 import NarrationTtsEditor from './NarrationTtsEditor';
 
 const ROLE_LABEL = { primary_start: 'Start', primary_stop: 'Stop', secondary: 'Point' };
@@ -579,9 +578,6 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
                 ))}
               </div>
             </div>
-
-            {/* Script Timing */}
-            <ScriptTimingPanel trailPath={trailPath} waypoints={waypoints} tourCategory={form.tour_category} breaks={form.trail_breaks} />
 
             {/* Trigger log */}
             {triggerLog.length > 0 && (
