@@ -41,6 +41,31 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-22 (follow-up 5) — Reverted follow-up 4: Admin's "Map Preview" keeps the code + "Start" badge after all
+Scope: `src/components/admin/AdminPreviewMap.jsx` (frontend only — no backend function
+touched, a hard refresh + republish in Base44 is enough for this one).
+
+Follow-up 4 (below) stripped the code and badge out of the Admin's own "Map Preview"
+panel too, on the reasoning that its caption promised "how the walk will appear to
+users". Enda tested and clarified: this screen only ever opens inside the tour editor —
+an Admin or Narrator's own working view — a real customer never sees this exact screen at
+all, so keeping the code + badge there is correct and useful. Reverted
+`showInternalLabels` back to `true` here. The actual customer-facing map (a different
+screen entirely, opened from the tour's own page in the customer-facing part of the app)
+was never touched by any of this and has shown the plain, stripped popup since follow-up
+2 below.
+
+Also reworded this panel's own caption, since "This is how the walk will appear to users"
+is what caused this back-and-forth in the first place (it read as a promise this exact
+popup keeps, when it doesn't) — now reads "Route and waypoints preview for editing —
+codes and badges here are for your own reference. A real customer's popup just shows the
+plain waypoint name."
+
+Verified: `npx vite build` clean, `npx eslint src/components/admin/AdminPreviewMap.jsx`
+clean.
+
+---
+
 ## 2026-08-22 (follow-up 4) — Admin's own "Map Preview" now also shows the plain customer view (no code, no "Start" badge)
 Scope: `src/components/admin/AdminPreviewMap.jsx` (frontend only — no backend function
 touched, a hard refresh + republish in Base44 is enough for this one).
