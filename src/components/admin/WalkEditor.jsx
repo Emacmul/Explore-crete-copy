@@ -801,7 +801,13 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   ];
 
   return (
-    <div className="max-w-4xl mx-auto">
+    // Per Enda: the Preview tab (which holds the Simulate Tour map and the waypoint
+    // audio/break-tag editor next to it) needs the full width of a PC/laptop screen —
+    // it's never seen by a mobile customer, and admins/narrators only ever edit from a
+    // computer anyway, so there's no mobile layout being protected by keeping it narrow.
+    // Every other tab keeps the original, narrower reading width since ordinary form
+    // fields don't benefit from stretching that wide.
+    <div className={activeTab === 'preview' ? 'max-w-7xl mx-auto' : 'max-w-4xl mx-auto'}>
       {/* Top bar */}
       <div className="flex items-center justify-between mb-6 mt-2">
         <div className="flex items-center gap-3">
@@ -1358,8 +1364,6 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 saving={saving}
                 userRole={userRole}
                 focusWaypointIndex={focusWaypointIndex}
-                segmentScripts={form.segment_scripts || []}
-                onSegmentScriptsChange={(scripts) => set('segment_scripts', scripts)}
                 targetLanguage={form.target_language || ''}
               />
             ) : (
@@ -1404,7 +1408,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                     i === index ? { ...wp, [field]: value } : wp
                   );
                   set('waypoints', updated);
-                }} segmentScripts={form.segment_scripts || []} onSegmentScriptsChange={(scripts) => set('segment_scripts', scripts)} />
+                }} targetLanguage={form.target_language || ''} />
               </>
             )}
           </div>

@@ -1,11 +1,14 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Play, Pause, Square, Gauge, Clock, Volume2, AlertTriangle, CheckCircle2, MapPin, Radio, Flag } from 'lucide-react';
 import { calculateBearing, isBearingInRange } from '@/lib/routeExport';
 import TourSimulatorMap from './TourSimulatorMap';
 import ScriptTimingPanel from './ScriptTimingPanel';
-import SegmentScriptEditor from './SegmentScriptEditor';
+import NarrationTtsEditor from './NarrationTtsEditor';
+
+const ROLE_LABEL = { primary_start: 'Start', primary_stop: 'Stop', secondary: 'Point' };
 
 const R_EARTH = 6371000;
 const TICK_MS = 100;
@@ -58,10 +61,19 @@ function fmtTime(ms) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
-export default function TourSimulator({ form, onWaypointUpdate, segmentScripts, onSegmentScriptsChange }) {
+export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }) {
   const trailPath = form.trail_path || [];
   const waypoints = (form.waypoints || []).filter(wp => wp.lat && wp.lng);
   const isWalkingTour = form.tour_category !== 'DDV';
+
+  // Which waypoint's own script/audio is currently open in the editor beside the map.
+  // Defaults to the first waypoint so there's always something to work with as soon as
+  // the panel appears.
+  const [selectedWpIndex, setSelectedWpIndex] = useState(0);
+  useEffect(() => {
+    if (selectedWpIndex >= waypoints.length) setSelectedWpIndex(0);
+  }, [waypoints.length, selectedWpIndex]);
+  const selectedWp = waypoints[selectedWpIndex] || null;
 
   // Speed is never user-editable here — an Admin sets it at tour creation, and the
   // Simulator only ever displays whatever's been set. WBT is always fixed at
@@ -370,6 +382,14 @@ export default function TourSimulator({ form, onWaypointUpdate, segmentScripts, 
         on a real tour, at the speed an Admin set for this tour{isWalkingTour ? '' : ', advancing automatically through each segment\'s own speed'}.
       </p>
 
+      {/* Per Enda: the map and its controls sit on the left, and the waypoint audio /
+          break-tag editor sits directly beside it on the right (on a PC/laptop-width
+          screen) instead of underneath everything else — so a break tag can be
+          adjusted and re-tested against the moving marker without scrolling back and
+          forth. On a narrower window the two simply stack, which never applies to a
+          real customer and is not something admins/narrators use anyway. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+      <div className="space-y-4">
       {/* Speed — read-only. Set by an Admin at tour creation; never editable here or
           by a Narrator anywhere. WBT is always fixed at 3.5 km/h; DDV auto-advances
           through each segment's own avg_segment_speed_kmh as the marker reaches it. */}
@@ -566,13 +586,57 @@ export default function TourSimulator({ form, onWaypointUpdate, segmentScripts, 
           </div>
         </div>
       )}
+      </div>
 
-      {/* Segment Script Editor — edit combined segment scripts with break-tag timing */}
-      <SegmentScriptEditor
-        segmentScripts={segmentScripts || []}
-        onSegmentScriptsChange={onSegmentScriptsChange}
-        tourCode={form.code}
-      />
+      {/* Waypoint Audio & Break Tags — the same script/audio editor used elsewhere on a
+          waypoint, opened right here beside the map. Whatever is generated here is
+          saved straight onto that waypoint's own audio file (audio_clip_url) — the
+          exact file both this simulator and the real, live tour play — so a break tag
+          can be lengthened, shortened, removed, or added, and the result re-tested
+          against the moving marker immediately, with no limit on how many rounds of
+          editing it takes to match the driving time. */}
+      <div className="space-y-3">
+        {waypoints.length > 0 && onWaypointUpdate && (
+          <div className="bg-slate-800/60 rounded-lg border border-blue-700/40 p-3 space-y-3">
+            <div className="flex items-center gap-2">
+              <Volume2 className="w-4 h-4 text-blue-400" />
+              <Label className="text-slate-300 text-sm font-medium">Waypoint Audio &amp; Break Tags</Label>
+            </div>
+            <Select
+              value={String(selectedWpIndex)}
+              onValueChange={(v) => setSelectedWpIndex(Number(v))}
+            >
+              <SelectTrigger className="bg-slate-700 border-slate-500 text-white h-9">
+                <SelectValue placeholder="Select a waypoint…" />
+              </SelectTrigger>
+              <SelectContent>
+                {waypoints.map((wp, i) => (
+                  <SelectItem key={i} value={String(i)}>
+                    {wp.segment_id || wp.name || `Waypoint ${i + 1}`}
+                    {' — '}{ROLE_LABEL[wp.waypoint_role] || 'Point'}
+                    {wp.audio_clip_url ? ' 🔊' : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {selectedWp && (
+              <NarrationTtsEditor
+                key={selectedWpIndex}
+                script={selectedWp.narration_script || ''}
+                audioUrl={selectedWp.audio_clip_url || ''}
+                onScriptChange={(val) => onWaypointUpdate(selectedWpIndex, 'narration_script', val)}
+                onAudioChange={(val) => {
+                  onWaypointUpdate(selectedWpIndex, 'audio_clip_url', val);
+                  if (val) onWaypointUpdate(selectedWpIndex, 'trigger_audio', true);
+                }}
+                fixedLanguage={targetLanguage}
+              />
+            )}
+          </div>
+        )}
+      </div>
+      </div>
 
       {/* Hidden audio element */}
       <audio ref={audioRef} />

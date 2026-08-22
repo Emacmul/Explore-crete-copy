@@ -41,6 +41,49 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-22 (follow-up 7) — Simulate Tour: full-width screen, break-tag editor moved beside the map, unlimited re-testing
+Scope (frontend only — no backend function touched): `src/components/admin/WalkEditor.jsx`,
+`src/components/admin/TourSimulator.jsx`, `src/components/admin/DrivingTourWaypointEditor.jsx`.
+
+Enda audited the "Simulate Tour" screen and found three problems: (1) the whole tour
+editor — every tab, not just Preview — was capped at a fixed ~896px width and centred,
+on every screen size including a large desktop monitor (nothing to do with mobile at
+all, despite how it looked); (2) the break-tag/script editor that sat on the Simulate
+Tour screen itself (the old "Segment Script Editor", combining several waypoints'
+scripts into one) was never actually wired back onto any waypoint's own audio — editing
+break tags there and generating draft audio changed nothing about what the simulator's
+moving marker (or the real, live tour) actually played, because both of those only ever
+read a waypoint's own individual `audio_clip_url`; (3) as a result there was no reliable
+way to repeat the edit → test → adjust cycle against something that actually mattered.
+
+Fixes:
+- The Preview tab (which holds Map Preview and Simulate Tour) now uses the full width of
+  a desktop screen instead of the ~896px cap; every other tab (General, Route Path,
+  Waypoints) keeps the original width, since ordinary form fields don't need to stretch
+  that wide.
+- Inside the Simulate Tour panel, the map and its controls now sit on the left and a new
+  "Waypoint Audio & Break Tags" editor sits directly beside it on the right (stacking
+  only on a narrow window, which never applies to a real customer and isn't how
+  admins/narrators work anyway per company policy). Pick any waypoint from the dropdown
+  and the same script/break-tag editor used elsewhere in the app opens right there —
+  except this one writes straight onto that waypoint's own `audio_clip_url`, the exact
+  file both the simulator and the real tour play. Build, listen, tweak a break tag,
+  rebuild, and re-test against the moving marker as many times as needed — there's no
+  cap on how many rounds this can be repeated. The same change applies inside "Test
+  Location in Simulator" (the per-location test dialog), which was also widened.
+- Removed the old, disconnected "Segment Script Editor" from the Simulate Tour screen,
+  and the "Segment Script Manager" ("Combine & Save") step from the Waypoints tab that
+  only ever fed it — neither one changed what actually played, and leaving the Manager
+  in place after removing the Editor would have made it a dead end that looked like it
+  did something. The underlying `segment_scripts` data on the Walk record is left alone
+  (still used by the offline tour-backup export), just no longer editable from the UI.
+
+Verified: `npx vite build` clean, `npx eslint` clean on all three changed files aside
+from pre-existing, unrelated warnings already present before this change (confirmed via
+`git stash` comparison) — an unused `Textarea` import and unused `segGroup` var in
+DrivingTourWaypointEditor.jsx, and several pre-existing unused imports/vars in
+WalkEditor.jsx, none touched by this change.
+
 ## 2026-08-22 (follow-up 6) — A narrator can now delete their own in-progress clone and start over
 Scope: **`base44/functions/deleteWalkForBackend/entry.ts` (BACKEND FUNCTION — needs the
 manual blank-line redeploy in Base44, pushing the code alone will NOT apply this)**,

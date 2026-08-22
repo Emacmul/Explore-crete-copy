@@ -17,7 +17,6 @@ import { base44 } from '@/api/base44Client';
 import AudioTriggerFields from './AudioTriggerFields';
 import NarrationTtsEditor from './NarrationTtsEditor';
 import TourSimulator from './TourSimulator';
-import SegmentScriptManager from './SegmentScriptManager';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -192,7 +191,7 @@ const routeWaypoints = async (points) => {
   return res.data.trail;
 };
 
-export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCode, tourCategory, onSave, saving, userRole = 'admin', focusWaypointIndex, segmentScripts, onSegmentScriptsChange, onTrailPathChange, trailPath, defaultDrivingSpeedKmh, targetLanguage }) {
+export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCode, tourCategory, onSave, saving, userRole = 'admin', focusWaypointIndex, onTrailPathChange, trailPath, defaultDrivingSpeedKmh, targetLanguage }) {
   const isNarrator = userRole === 'narrator';
   // WBT is always fixed at 3.5 km/h. DDV falls back to the Admin-set default
   // driving speed from the Details tab (form.default_driving_speed_kmh) until a
@@ -1056,19 +1055,18 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
               </DragDropContext>
               )}
 
-              {waypoints.length > 0 && (
-                <SegmentScriptManager
-                  waypoints={waypoints}
-                  segmentScripts={segmentScripts || []}
-                  onSegmentScriptsChange={onSegmentScriptsChange}
-                  onSave={onSave}
-                  saving={saving}
-                />
-              )}
+              {/* Per Enda: the old Segment Script Manager/Editor combined several waypoints'
+                  scripts into one script that was never actually wired back onto any
+                  waypoint's own audio — editing break tags there didn't change what the
+                  simulator or the real tour played. It's been removed from here. Break
+                  tags and audio are now edited directly per waypoint above (or via "Test
+                  Location in Simulator" below), which already writes straight onto the
+                  same audio_clip_url field the simulator and the live tour actually play,
+                  with no limit on how many times it can be edited and re-tested. */}
 
               {testSegment && (
                 <Dialog open={!!testSegment} onOpenChange={() => setTestSegment(null)}>
-                  <DialogContent className="max-w-4xl bg-slate-900 border-slate-700 max-h-[90vh] overflow-y-auto">
+                  <DialogContent className="max-w-6xl bg-slate-900 border-slate-700 max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
                       <DialogTitle className="text-white">Location Simulator — {testSegment.title}</DialogTitle>
                     </DialogHeader>
@@ -1080,7 +1078,7 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                     }} onWaypointUpdate={(idx, field, value) => {
                       const origIdx = (testSegment.startIndex || 0) + idx;
                       updateWaypoint(origIdx, field, value);
-                    }} />
+                    }} targetLanguage={targetLanguage} />
                   </DialogContent>
                 </Dialog>
               )}
