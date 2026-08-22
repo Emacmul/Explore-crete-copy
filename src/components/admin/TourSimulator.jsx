@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Play, Pause, Square, Gauge, Clock, Volume2, AlertTriangle, CheckCircle2, MapPin, Radio, Flag } from 'lucide-react';
+import { Play, Pause, Square, Gauge, Clock, Volume2, AlertTriangle, CheckCircle2, MapPin, Radio, Flag, ChevronDown, ChevronUp } from 'lucide-react';
 import { calculateBearing, isBearingInRange } from '@/lib/routeExport';
 import TourSimulatorMap from './TourSimulatorMap';
 import ScriptTimingPanel from './ScriptTimingPanel';
@@ -74,6 +74,12 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
     if (selectedWpIndex >= waypoints.length) setSelectedWpIndex(0);
   }, [waypoints.length, selectedWpIndex]);
   const selectedWp = waypoints[selectedWpIndex] || null;
+
+  // Per Enda: the map + break-tag editor is THE working screen — everything else
+  // (stats, the driving-time progress bar, the script-timing estimate, the trigger
+  // log) is secondary, reference-only information, tucked away collapsed by default
+  // so it never sits above, or otherwise crowds, the actual workspace.
+  const [showDetails, setShowDetails] = useState(false);
 
   // Speed is never user-editable here — an Admin sets it at tour creation, and the
   // Simulator only ever displays whatever's been set. WBT is always fixed at
@@ -367,148 +373,63 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
   }
 
   return (
-    <div className="bg-slate-700/50 rounded-xl border border-purple-600/40 p-4 space-y-4">
-      <div className="flex items-center gap-2">
-        <Gauge className="w-5 h-5 text-purple-400" />
-        <h3 className="text-white font-semibold">Simulate Tour</h3>
+    <div className="bg-slate-700/50 rounded-xl border border-purple-600/40 p-4 space-y-3">
+      {/* Per Enda: this compact bar is the ONLY thing shown above the map/editor —
+          everything needed to actually run a test (start/pause/reset, the read-only
+          speed, jumping to a location) in one line, so nothing pushes the real
+          workspace down the page or requires scrolling to reach it. */}
+      <div className="flex flex-wrap items-center gap-2">
+        {!isPlaying ? (
+          <Button onClick={startSim} size="sm" className="bg-green-600 hover:bg-green-700 text-white gap-2">
+            <Play className="w-4 h-4" /> {tourComplete ? 'Replay' : distTraveled > 0 ? 'Resume' : 'Start'}
+          </Button>
+        ) : (
+          <Button onClick={pauseSim} size="sm" className="bg-amber-500 hover:bg-amber-600 text-white gap-2">
+            <Pause className="w-4 h-4" /> Pause
+          </Button>
+        )}
+        <Button onClick={stopSim} size="sm" variant="outline" className="border-slate-500 text-slate-300 gap-2">
+          <Square className="w-4 h-4" /> Reset
+        </Button>
+        <span className="flex items-center gap-1.5 text-slate-200 text-sm bg-slate-800/60 rounded-lg border border-slate-600 px-2.5 h-8" title={form.tour_category === 'WBT' ? 'Fixed walking speed' : 'Set by an Admin — never editable here'}>
+          <Flag className="w-3.5 h-3.5 text-blue-400" /> {speed} km/h
+          {currentSegment && (
+            <span className="text-slate-500 text-xs">— {currentSegment.wp.segment_id || currentSegment.wp.segment_title || `Segment ${currentSegment.index + 1}`}</span>
+          )}
+        </span>
+        {locationTargets.length > 0 && (
+          <div className="flex items-center gap-1.5">
+            <select
+              value={jumpTargetIndex}
+              onChange={(e) => setJumpTargetIndex(e.target.value === '' ? '' : Number(e.target.value))}
+              className="bg-slate-700 border border-slate-500 text-white text-sm rounded px-2 h-8 min-w-0"
+            >
+              <option value="">Jump to location…</option>
+              {locationTargets.map(t => (
+                <option key={t.index} value={t.index}>{t.label}</option>
+              ))}
+            </select>
+            <Button
+              size="sm"
+              onClick={() => jumpToLocation(jumpTargetIndex)}
+              disabled={jumpTargetIndex === ''}
+              className="bg-blue-600 hover:bg-blue-500 text-white shrink-0"
+            >
+              Jump
+            </Button>
+          </div>
+        )}
+        {tourComplete && (
+          <span className="flex items-center gap-1.5 text-green-400 text-sm">
+            <CheckCircle2 className="w-4 h-4" /> Complete
+          </span>
+        )}
         {audioTriggerCount > 0 && (
           <span className="ml-auto flex items-center gap-1 text-xs text-purple-300 bg-purple-900/40 px-2 py-1 rounded-full">
             <Radio className="w-3 h-3" /> {audioTriggerCount} audio trigger{audioTriggerCount !== 1 ? 's' : ''}
           </span>
         )}
       </div>
-      <p className="text-slate-400 text-sm">
-        {isWalkingTour ? 'Walk' : 'Drive'} a virtual marker along the route. Audio triggers fire exactly as they would
-        on a real tour, at the speed an Admin set for this tour{isWalkingTour ? '' : ', advancing automatically through each segment\'s own speed'}.
-      </p>
-
-      {/* Speed — read-only. Set by an Admin at tour creation; never editable here or
-          by a Narrator anywhere. WBT is always fixed at 3.5 km/h; DDV auto-advances
-          through each segment's own avg_segment_speed_kmh as the marker reaches it. */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div>
-          <Label className="text-slate-400 text-xs mb-1.5 block">
-            {form.tour_category === 'WBT' ? 'Walking Speed (km/h)' : 'Driving Speed (km/h)'}
-          </Label>
-          <div className="flex items-center gap-2 bg-slate-800/60 rounded-lg border border-slate-600 px-3 h-9">
-            <Flag className="w-4 h-4 text-blue-400 shrink-0" />
-            <span className="text-white text-sm font-medium">{speed} km/h</span>
-            <span className="text-slate-500 text-xs">
-              {form.tour_category === 'WBT'
-                ? '— fixed'
-                : currentSegment
-                  ? `— ${currentSegment.wp.segment_id || currentSegment.wp.segment_title || 'Segment ' + (currentSegment.index + 1)}`
-                  : '— default, until first segment'}
-            </span>
-          </div>
-        </div>
-        <div>
-          <Label className="text-slate-400 text-xs mb-1.5 block">Simulation Speed</Label>
-          <div className="flex gap-2">
-            {[1, 2, 5, 10].map(m => (
-              <Button
-                key={m}
-                size="sm"
-                variant={simMult === m ? 'default' : 'outline'}
-                onClick={() => setSimMult(m)}
-                className={simMult === m ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'border-slate-500 text-slate-300'}
-              >
-                {m}×
-              </Button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-slate-800 rounded-lg p-2.5 text-center">
-          <Gauge className="w-4 h-4 text-blue-400 mx-auto mb-1" />
-          <div className="text-white text-sm font-semibold">{speed} km/h</div>
-          <div className="text-slate-500 text-xs">{form.tour_category === 'WBT' ? 'Fixed' : 'Set by Admin'}</div>
-        </div>
-        <div className="bg-slate-800 rounded-lg p-2.5 text-center">
-          <Clock className="w-4 h-4 text-amber-400 mx-auto mb-1" />
-          <div className="text-white text-sm font-semibold">{fmtTime(simTime)}</div>
-          <div className="text-slate-500 text-xs">Sim Time</div>
-        </div>
-        <div className="bg-slate-800 rounded-lg p-2.5 text-center">
-          <MapPin className="w-4 h-4 text-purple-400 mx-auto mb-1" />
-          <div className="text-white text-sm font-semibold">{fmtDist(distTraveled)}</div>
-          <div className="text-slate-500 text-xs">of {fmtDist(pathData.total)}</div>
-        </div>
-        <div className="bg-slate-800 rounded-lg p-2.5 text-center">
-          <Volume2 className="w-4 h-4 text-green-400 mx-auto mb-1" />
-          <div className="text-white text-sm font-semibold">
-            {Object.keys(triggered).length}/{audioTriggerCount}
-          </div>
-          <div className="text-slate-500 text-xs">Triggered</div>
-        </div>
-      </div>
-
-      {/* Progress bar */}
-      <div>
-        <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-          <div
-            className="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all"
-            style={{ width: `${progressPct}%` }}
-          />
-        </div>
-        <div className="flex justify-between text-xs text-slate-500 mt-1">
-          <span>~{fmtTime(realDurationSec * 1000)} real time</span>
-          <span>~{fmtTime(simDurationSec * 1000)} sim time at {simMult}×</span>
-        </div>
-      </div>
-
-      {/* Jump to Location — test one location's audio without playing through everything before it */}
-      {locationTargets.length > 0 && (
-        <div className="flex items-center gap-2 bg-slate-800/60 rounded-lg border border-slate-600 px-3 py-2.5">
-          <MapPin className="w-4 h-4 text-blue-400 shrink-0" />
-          <Label className="text-slate-300 text-xs shrink-0">Jump to location</Label>
-          <select
-            value={jumpTargetIndex}
-            onChange={(e) => setJumpTargetIndex(e.target.value === '' ? '' : Number(e.target.value))}
-            className="flex-1 bg-slate-700 border border-slate-500 text-white text-sm rounded px-2 h-8 min-w-0"
-          >
-            <option value="">Select a location…</option>
-            {locationTargets.map(t => (
-              <option key={t.index} value={t.index}>{t.label}</option>
-            ))}
-          </select>
-          <Button
-            size="sm"
-            onClick={() => jumpToLocation(jumpTargetIndex)}
-            disabled={jumpTargetIndex === ''}
-            className="bg-blue-600 hover:bg-blue-500 text-white shrink-0"
-          >
-            Jump
-          </Button>
-        </div>
-      )}
-
-      {/* Playback controls */}
-      <div className="flex items-center gap-2">
-        {!isPlaying ? (
-          <Button onClick={startSim} className="bg-green-600 hover:bg-green-700 text-white gap-2">
-            <Play className="w-4 h-4" /> {tourComplete ? 'Replay' : distTraveled > 0 ? 'Resume' : 'Start'}
-          </Button>
-        ) : (
-          <Button onClick={pauseSim} className="bg-amber-500 hover:bg-amber-600 text-white gap-2">
-            <Pause className="w-4 h-4" /> Pause
-          </Button>
-        )}
-        <Button onClick={stopSim} variant="outline" className="border-slate-500 text-slate-300 gap-2">
-          <Square className="w-4 h-4" /> Reset
-        </Button>
-        {tourComplete && (
-          <span className="flex items-center gap-1.5 text-green-400 text-sm ml-auto">
-            <CheckCircle2 className="w-4 h-4" /> Tour complete
-          </span>
-        )}
-      </div>
-
-      {/* Script Timing */}
-      <ScriptTimingPanel trailPath={trailPath} waypoints={waypoints} tourCategory={form.tour_category} breaks={form.trail_breaks} />
 
       {/* Per Enda: the map sits on the left and the waypoint audio / break-tag editor
           sits directly beside it on the right, at the SAME scroll position — not just
@@ -586,60 +507,139 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
         </div>
       </div>
 
-      {/* Trigger log */}
-      {triggerLog.length > 0 && (
-        <div className="bg-slate-800 rounded-lg border border-slate-600 p-3">
-          <div className="flex items-center gap-2 mb-2">
-            <Radio className="w-4 h-4 text-purple-400" />
-            <span className="text-slate-300 font-medium text-sm">Trigger Log</span>
-          </div>
-          <div className="space-y-2 max-h-48 overflow-y-auto">
-            {triggerLog.map((entry, i) => {
-              const isSpeed = entry.type === 'speed';
-              return (
-              <div
-                key={i}
-                className={`flex items-start gap-2 text-xs rounded px-2 py-1.5 ${isSpeed ? 'bg-blue-900/30 border border-blue-700/40' : entry.overlap ? 'bg-red-900/30 border border-red-700/40' : 'bg-slate-700/50'}`}
-              >
-                <span className="text-slate-500 font-mono shrink-0">{fmtTime(entry.simTime)}</span>
-                <div className="flex-1 min-w-0">
-                  {isSpeed ? (
-                    <>
-                      <span className="text-blue-300 font-medium flex items-center gap-1">
-                        <Flag className="w-3 h-3" /> Speed → {entry.newSpeed} km/h
-                      </span>
-                      <div className="text-slate-500 mt-0.5">
-                        {entry.wp.segment_id || entry.wp.name || `Segment ${entry.index + 1}`}
-                        {entry.wp.segment_title && ` — ${entry.wp.segment_title}`}
-                        {' · '}{fmtDist(entry.distance)}
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <span className="text-slate-200 font-medium">
-                        {entry.wp.segment_id || entry.wp.name || `Waypoint ${entry.index + 1}`}
-                      </span>
-                      {entry.wp.segment_title && (
-                        <span className="text-slate-400"> — {entry.wp.segment_title}</span>
-                      )}
-                      <div className="text-slate-500 mt-0.5">
-                        Triggered at {fmtDist(entry.distance)} · {Math.round(entry.distFromCenter)}m from centre
-                        {entry.wp.use_bearing && ' · bearing ✓'}
-                      </div>
-                    </>
-                  )}
-                </div>
-                {!isSpeed && entry.overlap && (
-                  <span className="flex items-center gap-1 text-red-400 shrink-0" title="Audio was still playing from previous trigger">
-                    <AlertTriangle className="w-3.5 h-3.5" /> Overlap
-                  </span>
-                )}
+      {/* Per Enda: everything below here is reference-only — not needed for the
+          actual edit/test/re-test loop — so it's collapsed by default and never
+          pushes the map/editor pairing above down the page. */}
+      <div>
+        <button
+          type="button"
+          onClick={() => setShowDetails(s => !s)}
+          className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200"
+        >
+          {showDetails ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          Simulation details (stats, timing estimate, trigger log)
+        </button>
+
+        {showDetails && (
+          <div className="space-y-4 mt-3">
+            {/* Stats */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-slate-800 rounded-lg p-2.5 text-center">
+                <Gauge className="w-4 h-4 text-blue-400 mx-auto mb-1" />
+                <div className="text-white text-sm font-semibold">{speed} km/h</div>
+                <div className="text-slate-500 text-xs">{form.tour_category === 'WBT' ? 'Fixed' : 'Set by Admin'}</div>
               </div>
-              );
-            })}
+              <div className="bg-slate-800 rounded-lg p-2.5 text-center">
+                <Clock className="w-4 h-4 text-amber-400 mx-auto mb-1" />
+                <div className="text-white text-sm font-semibold">{fmtTime(simTime)}</div>
+                <div className="text-slate-500 text-xs">Sim Time</div>
+              </div>
+              <div className="bg-slate-800 rounded-lg p-2.5 text-center">
+                <MapPin className="w-4 h-4 text-purple-400 mx-auto mb-1" />
+                <div className="text-white text-sm font-semibold">{fmtDist(distTraveled)}</div>
+                <div className="text-slate-500 text-xs">of {fmtDist(pathData.total)}</div>
+              </div>
+              <div className="bg-slate-800 rounded-lg p-2.5 text-center">
+                <Volume2 className="w-4 h-4 text-green-400 mx-auto mb-1" />
+                <div className="text-white text-sm font-semibold">
+                  {Object.keys(triggered).length}/{audioTriggerCount}
+                </div>
+                <div className="text-slate-500 text-xs">Triggered</div>
+              </div>
+            </div>
+
+            {/* Progress bar */}
+            <div>
+              <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all"
+                  style={{ width: `${progressPct}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-xs text-slate-500 mt-1">
+                <span>~{fmtTime(realDurationSec * 1000)} real time</span>
+                <span>~{fmtTime(simDurationSec * 1000)} sim time at {simMult}×</span>
+              </div>
+            </div>
+
+            {/* Simulation speed multiplier — how fast the marker itself moves */}
+            <div>
+              <Label className="text-slate-400 text-xs mb-1.5 block">Simulation Speed</Label>
+              <div className="flex gap-2">
+                {[1, 2, 5, 10].map(m => (
+                  <Button
+                    key={m}
+                    size="sm"
+                    variant={simMult === m ? 'default' : 'outline'}
+                    onClick={() => setSimMult(m)}
+                    className={simMult === m ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'border-slate-500 text-slate-300'}
+                  >
+                    {m}×
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            {/* Script Timing */}
+            <ScriptTimingPanel trailPath={trailPath} waypoints={waypoints} tourCategory={form.tour_category} breaks={form.trail_breaks} />
+
+            {/* Trigger log */}
+            {triggerLog.length > 0 && (
+              <div className="bg-slate-800 rounded-lg border border-slate-600 p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <Radio className="w-4 h-4 text-purple-400" />
+                  <span className="text-slate-300 font-medium text-sm">Trigger Log</span>
+                </div>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {triggerLog.map((entry, i) => {
+                    const isSpeed = entry.type === 'speed';
+                    return (
+                    <div
+                      key={i}
+                      className={`flex items-start gap-2 text-xs rounded px-2 py-1.5 ${isSpeed ? 'bg-blue-900/30 border border-blue-700/40' : entry.overlap ? 'bg-red-900/30 border border-red-700/40' : 'bg-slate-700/50'}`}
+                    >
+                      <span className="text-slate-500 font-mono shrink-0">{fmtTime(entry.simTime)}</span>
+                      <div className="flex-1 min-w-0">
+                        {isSpeed ? (
+                          <>
+                            <span className="text-blue-300 font-medium flex items-center gap-1">
+                              <Flag className="w-3 h-3" /> Speed → {entry.newSpeed} km/h
+                            </span>
+                            <div className="text-slate-500 mt-0.5">
+                              {entry.wp.segment_id || entry.wp.name || `Segment ${entry.index + 1}`}
+                              {entry.wp.segment_title && ` — ${entry.wp.segment_title}`}
+                              {' · '}{fmtDist(entry.distance)}
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-slate-200 font-medium">
+                              {entry.wp.segment_id || entry.wp.name || `Waypoint ${entry.index + 1}`}
+                            </span>
+                            {entry.wp.segment_title && (
+                              <span className="text-slate-400"> — {entry.wp.segment_title}</span>
+                            )}
+                            <div className="text-slate-500 mt-0.5">
+                              Triggered at {fmtDist(entry.distance)} · {Math.round(entry.distFromCenter)}m from centre
+                              {entry.wp.use_bearing && ' · bearing ✓'}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                      {!isSpeed && entry.overlap && (
+                        <span className="flex items-center gap-1 text-red-400 shrink-0" title="Audio was still playing from previous trigger">
+                          <AlertTriangle className="w-3.5 h-3.5" /> Overlap
+                        </span>
+                      )}
+                    </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Hidden audio element */}
       <audio ref={audioRef} />

@@ -41,6 +41,31 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-22 (follow-up 7e) — Narration & Simulate: everything but the map + editor is now collapsed out of the way
+Scope: `src/components/admin/TourSimulator.jsx`. (Frontend only — no backend function
+touched.)
+
+Enda was still landing on a screen where the map + break-tag editor (the actual thing
+he needs to work in) was pushed down below a title, a description paragraph, a
+speed/simulation-speed grid, a 4-tile stats block, a progress bar, and a jump-to-location
+selector. Restructured so the ONLY thing shown above the map/editor pairing is a single
+compact toolbar: Start/Pause, Reset, the read-only speed, and jump-to-location — enough
+to actually run a test, nothing else. Everything else that was there before (the stats
+tiles, the progress bar, the simulation-speed ×1/×2/×5/×10 buttons, the script-timing
+estimate panel, the trigger log) still exists, just moved below the map/editor pairing
+behind a collapsed-by-default "Simulation details" toggle, so none of it is visible
+unless deliberately opened.
+
+Also flagged directly to Enda (not a code change): re-verified `BackendShell.jsx`'s
+`<main>` wrapper and `WalkEditor.jsx`'s own width class are both genuinely uncapped
+(`w-full` / no `max-w-*`) for this tab now — if the working area still isn't filling the
+screen after this update, the most likely explanation is Base44's own in-editor preview
+pane (which is commonly narrower than the actual published app on purpose), not
+something the app's own code can control from inside a page.
+
+Verified: `npx vite build` clean, `npx eslint` clean (only the same pre-existing
+unrelated warning already noted in earlier entries).
+
 ## 2026-08-22 (follow-up 7d) — "Narration & Simulate" is now its own dedicated, full-width tab
 Scope: `src/components/admin/WalkEditor.jsx`. (Frontend only — no backend function
 touched.)
