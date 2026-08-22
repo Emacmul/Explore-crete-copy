@@ -41,6 +41,19 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-22 (follow-up 7b) — Fix: map and break-tag editor weren't actually side by side
+Scope: `src/components/admin/TourSimulator.jsx`. Follow-up 7 (below) put the new
+"Waypoint Audio & Break Tags" editor in a right-hand column, but the left column had
+several tall blocks (speed/stats, progress bar, jump-to-location, playback controls,
+script timing) stacked above the map — so the editor ended up sitting next to those,
+not next to the map itself, and Enda still had to scroll to see both together. Moved
+those controls to sit full-width above, and now ONLY the map and the editor share a
+row, at matching height (with the editor's own content scrolling internally if it runs
+long) — so both are visible together at the same scroll position, with no scrolling
+back and forth between editing a break tag and watching its effect on the map.
+Verified: `npx vite build` clean, `npx eslint` clean (only the same pre-existing
+unrelated warning noted below).
+
 ## 2026-08-22 (follow-up 7) — Simulate Tour: full-width screen, break-tag editor moved beside the map, unlimited re-testing
 Scope (frontend only — no backend function touched): `src/components/admin/WalkEditor.jsx`,
 `src/components/admin/TourSimulator.jsx`, `src/components/admin/DrivingTourWaypointEditor.jsx`.
