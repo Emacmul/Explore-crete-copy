@@ -35,6 +35,18 @@ function destinationPoint(lat, lng, bearingDeg, distanceM) {
 
 function FitBounds({ trailPath, waypoints }) {
   const map = useMap();
+  // Per Enda: this used to re-fit (and so re-zoom/re-centre) the map on every single
+  // render of the parent TourSimulator, because `waypoints` was in the dependency
+  // array below and TourSimulator passes a freshly-filtered (i.e. a brand new,
+  // never-the-same-object) waypoints array on every render — which happens on every
+  // simulation tick while playing. That's why zooming in to fine-tune a waypoint and
+  // then pressing Start immediately snapped the map back out to fit the whole trail:
+  // this effect was firing again the instant the first tick's re-render happened.
+  // `waypoints` is only needed as a fallback source of points when there's no trail
+  // path at all yet, so it's read directly inside the effect (not via a dependency)
+  // and the effect itself now only re-runs when the map instance or the trail path
+  // itself actually changes — never on a normal playback tick — so a manual zoom/pan
+  // is preserved through Start/Pause/Reset.
   useEffect(() => {
     const pts = trailPath?.length > 0
       ? trailPath.map(p => [p.lat, p.lng])
@@ -42,7 +54,7 @@ function FitBounds({ trailPath, waypoints }) {
     if (pts?.length > 0) {
       map.fitBounds(L.latLngBounds(pts), { padding: [50, 50] });
     }
-  }, [map, trailPath, waypoints]);
+  }, [map, trailPath]);
   return null;
 }
 

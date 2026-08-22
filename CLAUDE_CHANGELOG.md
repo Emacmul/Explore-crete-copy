@@ -41,6 +41,75 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-22 (follow-up 9) — Fix: simulator map snapped back out of a manual zoom on Start; added per-waypoint audio testing
+Scope: `src/components/admin/TourSimulatorMap.jsx`,
+`src/components/admin/TourSimulator.jsx`. (Frontend only — no backend
+function touched.)
+
+**What changed:**
+- **Bug fix — zoom reset on Start.** `TourSimulatorMap.jsx`'s `FitBounds`
+  sub-component was re-fitting (re-zooming/re-centring) the map every
+  time it re-rendered, because its `useEffect` had `waypoints` in its
+  dependency array, and `TourSimulator.jsx` builds that `waypoints` array
+  with `.filter()` — a brand new array object on every single render,
+  including every simulation tick while playing. So the instant Start was
+  pressed and the first tick's re-render happened, the map snapped back
+  out to fit the whole trail, undoing any manual zoom. Fixed by dropping
+  `waypoints` from that effect's dependency list — it's still read inside
+  the effect (as a fallback source of points when there's no trail path
+  yet), just no longer watched for re-fit purposes. The effect now only
+  re-fits when the map instance is first created or the trail path itself
+  changes, never on a normal playback tick, so a manual zoom/pan now
+  survives Start/Pause/Reset.
+- **New: "Test this waypoint" button.** In the "Waypoint Audio & Break
+  Tags" panel (the map + editor screen), there's now a button next to the
+  waypoint picker that jumps the simulated position to whichever waypoint
+  is currently selected and immediately plays that waypoint's own saved
+  audio — so an admin/narrator can zoom in on one waypoint, click "Test
+  this waypoint", and watch/listen to that waypoint's speech play out
+  against the moving marker at the set driving/walking speed, to check
+  the `<break>` pauses match. This works for the CURRENTLY SELECTED
+  waypoint in the dropdown — any role (start, stop, or a point in
+  between), not just a location's first point — so it can be repeated for
+  every waypoint in a location, one at a time. It's disabled when the
+  selected waypoint has no saved audio yet (nothing to test). Under the
+  hood this generalises the existing "Jump to location" button (which
+  only worked for a location's own first waypoint) into a shared
+  `jumpToWaypoint()` function that both buttons now use — "Jump to
+  location" behaves exactly as before, it's just implemented via the same
+  general function now.
+- **Confirmed, not changed: testing a whole location in one pass.**
+  Enda asked separately for a way to re-verify speech/speed across a
+  full location in one continuous pass, once every one of its waypoints
+  has been checked individually. This already works with existing
+  functionality and needed no new code: "Jump to location…" + Start
+  marks only the waypoints BEFORE that location as already-triggered,
+  so every waypoint belonging to that location (and anything after it,
+  until paused) plays its own audio in sequence, back to back, exactly
+  as the real tour would, as the marker passes each one in turn.
+
+**Why:** Enda's actual workflow is to zoom in on one waypoint on the
+simulator map, fine-tune its `<break>` pauses, and check the timing
+against that waypoint's own audio and the set speed — repeated for every
+waypoint, then once more as a full run-through per location. The zoom
+snapping back out on every Start broke the "zoom in and watch closely"
+part of that; there was also no direct way to jump straight to and hear
+a single non-start waypoint without first playing through everything
+before it.
+
+**Verified:** `npx vite build` completes with no errors. `npx eslint` on
+both changed files reports zero errors (one pre-existing, unrelated
+warning remains in `TourSimulator.jsx`, present before this change).
+
+**Not done / worth knowing for next time:**
+- Not tested live in the Base44 app itself — needs a real check:
+  zoom in on the map, press "Test this waypoint" on a couple of
+  different waypoints, confirm the zoom holds and the right audio plays
+  each time, then try "Jump to location" + Start through a whole
+  location to confirm the multi-waypoint run-through sounds right.
+
+---
+
 ## 2026-08-22 (follow-up 8) — Fix: the "X" on toast notifications (e.g. "Clone created") didn't close them
 Scope: `src/components/ui/toast.jsx`. (Frontend only — no backend function touched.)
 

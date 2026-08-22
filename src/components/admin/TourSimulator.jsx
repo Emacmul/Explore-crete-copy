@@ -135,28 +135,36 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
       .filter(({ wp }) => wp.waypoint_role === 'primary_start' && Number(wp.avg_segment_speed_kmh) > 0);
   }, [waypoints]);
 
+  // How far along the trail a given waypoint sits — the nearest trail_path point to it,
+  // walked forward from the start (same approach ScriptTimingPanel used for its
+  // per-segment stats). Shared by the "Jump to location" list below and by the
+  // per-waypoint "Test this waypoint" button, so both jump using the exact same logic.
+  const cumDistForWaypoint = (wp) => {
+    let nearestIdx = 0, minD = Infinity;
+    trailPath.forEach((pt, i) => {
+      const d = haversine(wp.lat, wp.lng, pt.lat, pt.lng);
+      if (d < minD) { minD = d; nearestIdx = i; }
+    });
+    let cumDist = 0;
+    for (let i = 1; i <= nearestIdx; i++) {
+      if (breakSet.has(i - 1)) continue; // cut segment — not driven, skip its distance
+      cumDist += haversine(trailPath[i - 1].lat, trailPath[i - 1].lng, trailPath[i].lat, trailPath[i].lng);
+    }
+    return cumDist;
+  };
+
   // Every primary_start location, with how far along the trail it sits — lets the narrator jump
   // the simulation straight to their own location instead of always having to play through
-  // every location before it first. Cumulative distance is found via the nearest trail_path
-  // point to each waypoint (same approach ScriptTimingPanel uses for its per-segment stats).
+  // every location before it first.
   const locationTargets = useMemo(() => {
     if (trailPath.length < 2) return [];
     return waypoints
       .map((wp, index) => ({ wp, index }))
       .filter(({ wp }) => wp.waypoint_role === 'primary_start')
-      .map(({ wp, index }) => {
-        let nearestIdx = 0, minD = Infinity;
-        trailPath.forEach((pt, i) => {
-          const d = haversine(wp.lat, wp.lng, pt.lat, pt.lng);
-          if (d < minD) { minD = d; nearestIdx = i; }
-        });
-        let cumDist = 0;
-        for (let i = 1; i <= nearestIdx; i++) {
-          if (breakSet.has(i - 1)) continue; // cut segment — not driven, skip its distance
-          cumDist += haversine(trailPath[i - 1].lat, trailPath[i - 1].lng, trailPath[i].lat, trailPath[i].lng);
-        }
-        return { wp, index, cumDist, label: wp.segment_id || wp.segment_title || wp.name || `Location ${index + 1}` };
-      });
+      .map(({ wp, index }) => ({
+        wp, index, cumDist: cumDistForWaypoint(wp),
+        label: wp.segment_id || wp.segment_title || wp.name || `Location ${index + 1}`,
+      }));
   }, [waypoints, trailPath, breakSet]);
   const [jumpTargetIndex, setJumpTargetIndex] = useState('');
 
@@ -193,28 +201,37 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
     if (startPos) { setCurrentPos(startPos); prevPosRef.current = startPos; }
   };
 
-  // Jump the simulation straight to a chosen location, marking every waypoint before it as
-  // already-triggered (so earlier locations' audio doesn't fire again) — the narrator can press
-  // Play immediately afterwards to test just this one location, without touching the whole tour.
-  const jumpToLocation = (targetIndex) => {
-    const target = locationTargets.find(t => t.index === targetIndex);
-    if (!target) return;
+  // Jump the simulation straight to any single waypoint — not just a location's own
+  // primary_start point — marking every waypoint before it as already-triggered (so
+  // earlier waypoints' audio doesn't fire again). The map's own zoom/pan is left
+  // completely alone (FitBounds, in TourSimulatorMap.jsx, no longer reacts to a
+  // moving/re-rendering waypoints list), so an admin/narrator can zoom right in on one
+  // waypoint, jump to it, and press Start to hear exactly that waypoint's own saved
+  // audio play out against the moving marker — repeatable for every waypoint in turn.
+  // Jumping to a location's start (from the "Jump to location…" list) is just this
+  // same function called on that location's own primary_start waypoint.
+  const jumpToWaypoint = (targetIndex, { autoplay = false } = {}) => {
+    const wp = waypoints[targetIndex];
+    if (!wp) return;
     pauseSim();
-    const newPos = posAtDistance(pathData.segments, pathData.total, target.cumDist);
-    distRef.current = target.cumDist;
+    const cumDist = cumDistForWaypoint(wp);
+    const newPos = posAtDistance(pathData.segments, pathData.total, cumDist);
+    distRef.current = cumDist;
     simTimeRef.current = 0;
     triggeredRef.current = {};
-    waypoints.forEach((wp, i) => { if (i < target.index) triggeredRef.current[i] = true; });
+    waypoints.forEach((w, i) => { if (i < targetIndex) triggeredRef.current[i] = true; });
     passedSegmentsRef.current = new Set();
     audioQueueRef.current = [];
     if (audioRef.current) audioRef.current.pause();
-    setDistTraveled(target.cumDist);
+    setDistTraveled(cumDist);
     setSimTime(0);
     setTriggered({ ...triggeredRef.current });
     setTriggerLog([]);
     setTourComplete(false);
     if (newPos) { setCurrentPos(newPos); prevPosRef.current = newPos; }
+    if (autoplay) startSim();
   };
+  const jumpToLocation = (targetIndex) => jumpToWaypoint(targetIndex);
 
   // Reset when trail path changes
   useEffect(() => {
@@ -466,23 +483,39 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
                 <Volume2 className="w-4 h-4 text-blue-400" />
                 <Label className="text-slate-300 text-sm font-medium">Waypoint Audio &amp; Break Tags</Label>
               </div>
-              <Select
-                value={String(selectedWpIndex)}
-                onValueChange={(v) => setSelectedWpIndex(Number(v))}
-              >
-                <SelectTrigger className="bg-slate-700 border-slate-500 text-white h-9">
-                  <SelectValue placeholder="Select a waypoint…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {waypoints.map((wp, i) => (
-                    <SelectItem key={i} value={String(i)}>
-                      {wp.segment_id || wp.name || `Waypoint ${i + 1}`}
-                      {' — '}{ROLE_LABEL[wp.waypoint_role] || 'Point'}
-                      {wp.audio_clip_url ? ' 🔊' : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex items-center gap-2">
+                <Select
+                  value={String(selectedWpIndex)}
+                  onValueChange={(v) => setSelectedWpIndex(Number(v))}
+                >
+                  <SelectTrigger className="bg-slate-700 border-slate-500 text-white h-9">
+                    <SelectValue placeholder="Select a waypoint…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {waypoints.map((wp, i) => (
+                      <SelectItem key={i} value={String(i)}>
+                        {wp.segment_id || wp.name || `Waypoint ${i + 1}`}
+                        {' — '}{ROLE_LABEL[wp.waypoint_role] || 'Point'}
+                        {wp.audio_clip_url ? ' 🔊' : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {/* Per Enda: jumps the marker to just this waypoint and immediately plays
+                    its own saved audio, so speech length can be checked against driving
+                    speed one waypoint at a time — zoom in on the map first, this never
+                    resets that zoom. Repeat for each waypoint in turn. Disabled when this
+                    waypoint has no saved audio yet, since there'd be nothing to test. */}
+                <Button
+                  size="sm"
+                  onClick={() => jumpToWaypoint(selectedWpIndex, { autoplay: true })}
+                  disabled={!selectedWp?.audio_clip_url}
+                  className="bg-blue-700/30 hover:bg-blue-700/50 border border-blue-600/50 text-white shrink-0 whitespace-nowrap"
+                  title="Jump to this waypoint and play its saved audio, without resetting the map zoom"
+                >
+                  Test this waypoint
+                </Button>
+              </div>
 
               {selectedWp && (
                 <NarrationTtsEditor
