@@ -173,17 +173,21 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
     return cumDist;
   };
 
-  // How far along the trail a location (all waypoints sharing one segment_number) ENDS
-  // — its own primary_stop waypoint if it has one, otherwise its last waypoint in
-  // segment_number order as a fallback. Used so a jump/test scoped to one location
-  // (see jumpToWaypoint below) auto-pauses there instead of driving on into whatever
-  // location comes right after it.
-  const segmentBoundaryDist = (segmentNumber) => {
-    if (segmentNumber === undefined || segmentNumber === null) return null;
-    const group = waypoints.filter(w => w.segment_number === segmentNumber);
-    if (group.length === 0) return null;
-    const stopWp = group.find(w => w.waypoint_role === 'primary_stop');
-    return cumDistForWaypoint(stopWp || group[group.length - 1]);
+  // Where a location scoped jump/test (see jumpToWaypoint below) should auto-pause: the
+  // very next primary_start waypoint AFTER the one being tested — per Enda, that point
+  // is where the next location starts, which is exactly where the current one ends (a
+  // primary_stop role exists but isn't reliably placed at the end of every location in
+  // real data, so it's not used for this). Returns null when there's no primary_start
+  // left after this point — i.e. this is the LAST location in the tour — in which case
+  // there's no such boundary and the ordinary "reached the very end of the trail" check
+  // elsewhere in this file is what stops it.
+  const nextLocationBoundary = (targetIndex) => {
+    for (let i = targetIndex + 1; i < waypoints.length; i++) {
+      if (waypoints[i].waypoint_role === 'primary_start') {
+        return { dist: cumDistForWaypoint(waypoints[i]), waypointIndex: i };
+      }
+    }
+    return null;
   };
 
   // Every primary_start location, with how far along the trail it sits — lets the narrator jump
@@ -246,11 +250,15 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
   // Jumping to a location's start (from the "Jump to location…" list) is just this
   // same function called on that location's own primary_start waypoint.
   //
-  // Every jump is scoped to the target waypoint's own location (segment_number): the
-  // tick loop below auto-pauses once the marker reaches that location's own end
-  // (primary_stop), rather than driving on uncontrolled into whatever location comes
-  // next. `scopeToThisWaypoint` narrows that further, for "Test this waypoint": the
-  // run ALSO auto-pauses the instant that one waypoint's own audio has finished, so a
+  // Every jump is scoped to the target waypoint's own location: the tick loop below
+  // auto-pauses once the marker reaches the very next primary_start waypoint after this
+  // one (see nextLocationBoundary above) — that's where the NEXT location starts, so
+  // it's also exactly where this one ends — rather than driving on uncontrolled into
+  // whatever location comes next. That next-location waypoint is also excluded from
+  // triggering its own audio during this run (see the geofence check further down), so
+  // testing one location can never bleed into the next one starting to play too early.
+  // `scopeToThisWaypoint` narrows this further, for "Test this waypoint": the run ALSO
+  // auto-pauses the instant that one waypoint's own audio has finished, so a
   // single-waypoint test stays about just that waypoint rather than rolling on to the
   // next thing that triggers within the same location.
   const jumpToWaypoint = (targetIndex, { autoplay = false, scopeToThisWaypoint = false } = {}) => {
@@ -266,8 +274,10 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
     passedSegmentsRef.current = new Set();
     audioQueueRef.current = [];
     activeAudioWpIndexRef.current = null;
+    const boundary = nextLocationBoundary(targetIndex);
     scopedTestRef.current = {
-      segmentEndDist: segmentBoundaryDist(wp.segment_number),
+      segmentEndDist: boundary?.dist ?? null,
+      excludeWaypointIndex: boundary?.waypointIndex ?? null,
       singleWaypointIndex: scopeToThisWaypoint ? targetIndex : null,
     };
     if (audioRef.current) audioRef.current.pause();
@@ -338,6 +348,10 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
     waypoints.forEach((wp, i) => {
       if (!wp.trigger_audio || !wp.audio_clip_url) return;
       if (wp.trigger_once !== false && triggeredRef.current[i]) return;
+      // Belongs to the NEXT location, not the one currently being tested (see
+      // nextLocationBoundary) — don't let it start playing early, before the boundary
+      // check above has actually paused there.
+      if (scopedTestRef.current?.excludeWaypointIndex === i) return;
 
       const d = haversine(newPos.lat, newPos.lng, wp.lat, wp.lng);
       const radius = Number(wp.trigger_radius_m) || 30;
@@ -559,7 +573,13 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
                   <SelectContent>
                     {waypoints.map((wp, i) => (
                       <SelectItem key={i} value={String(i)}>
-                        {wp.segment_id || wp.name || `Waypoint ${i + 1}`}
+                        {/* Per Enda: segment_id alone (e.g. "BOR1") is shared by every
+                            point in a whole location, so a list of secondary points all
+                            showed the exact same label. wp.name carries each point's own
+                            proper code (e.g. "BOR1b"), plus its own name/title where one
+                            was given — that's what actually tells one point apart from
+                            another. */}
+                        {wp.name || wp.segment_id || `Waypoint ${i + 1}`}
                         {' — '}{ROLE_LABEL[wp.waypoint_role] || 'Point'}
                         {wp.audio_clip_url ? ' 🔊' : ''}
                       </SelectItem>
@@ -708,7 +728,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
                         ) : (
                           <>
                             <span className="text-slate-200 font-medium">
-                              {entry.wp.segment_id || entry.wp.name || `Waypoint ${entry.index + 1}`}
+                              {entry.wp.name || entry.wp.segment_id || `Waypoint ${entry.index + 1}`}
                             </span>
                             {entry.wp.segment_title && (
                               <span className="text-slate-400"> — {entry.wp.segment_title}</span>

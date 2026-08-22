@@ -41,6 +41,62 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-22 (follow-up 12) — Fix: simulator now stops at the NEXT location's start, not the current one's own end; waypoint picker shows each point's own code
+Scope: `src/components/admin/TourSimulator.jsx`. (Frontend only — no
+backend function touched.)
+
+**What changed:**
+- Corrected follow-up 10's location-boundary fix. It had the vehicle
+  auto-pausing at the CURRENT location's own `primary_stop` waypoint (or
+  its last waypoint, as a fallback) — but Enda pointed out that role
+  isn't reliably placed at the end of every real location, and what
+  actually marks a location's end, in practice, is the very next
+  location's OWN `primary_start` point (e.g. the next "BORxa-PS"). The
+  simulator now looks for that instead — the next `primary_start`
+  waypoint after the one being tested — and auto-pauses right there. If
+  there's no such point (this is the last location in the whole tour),
+  there's no boundary and the ordinary "reached the very end of the
+  trail" behaviour applies, same as always.
+- That next-location waypoint is now also excluded from triggering its
+  own audio while the current location is being tested, so a scoped run
+  can never accidentally start playing the NEXT location's own audio
+  early, before the vehicle has actually reached and paused at that
+  boundary.
+- The waypoint picker in "Waypoint Audio & Break Tags" (and the Trigger
+  Log below it) was showing every point in a location with the exact
+  same label — e.g. a whole list of "BOR1 — Point" entries with nothing
+  to tell one apart from another — because it was reading `segment_id`,
+  which is shared by every point in one location, rather than each
+  point's own name. Both now read the waypoint's own `name` first (its
+  proper individual code, e.g. "BOR1b", plus its own title if one was
+  given), falling back to the shared code only if a point genuinely has
+  no name of its own.
+
+**Why:** Enda tested the previous fix directly: the map now holds its
+zoom correctly, but the simulated vehicle kept driving straight through
+where the location under test actually ends, making a location-scoped
+speech/speed check inaccurate — and separately, the picker listing every
+point as indistinguishable "BOR1 — Point" entries made it impossible to
+tell which one was actually selected.
+
+**Verified:** `npx vite build` completes with no errors. `npx eslint` on
+the changed file reports zero errors (the one pre-existing, unrelated
+warning noted in follow-up 9 remains).
+
+**Not done / worth knowing for next time:**
+- Not tested live — needs a real check: jump to or "Test" a waypoint
+  partway through a multi-point location, press Start, and confirm the
+  vehicle now stops right at the next location's own `-PS` starting
+  point rather than driving through it; also confirm the waypoint picker
+  now shows each point's own distinct code.
+- This assumes waypoints are stored in physical trail order (the same
+  assumption the rest of this file already makes elsewhere, e.g. for
+  marking earlier waypoints as already-triggered on a jump) — if a
+  tour's waypoints are ever out of that order, the "next primary_start"
+  search could pick the wrong point.
+
+---
+
 ## 2026-08-22 (follow-up 11) — Each subsection's edit box now shows/edits only its own text
 Scope: `src/components/admin/NarrationTtsEditor.jsx`. (Frontend only —
 no backend function touched.)
