@@ -41,6 +41,30 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-22 (follow-up 8) — Fix: the "X" on toast notifications (e.g. "Clone created") didn't close them
+Scope: `src/components/ui/toast.jsx`. (Frontend only — no backend function touched.)
+
+Enda reported the small popup notification that appears bottom-right after an action
+(e.g. "Clone created — Translating 'The Battle of the Rivers' into Dutch") has an "X"
+button that does nothing when clicked. Cause: this file was built from plain `<div>`/
+`<button>` elements instead of the real Radix toast library
+(`@radix-ui/react-toast`) — which was already installed as a dependency and used
+correctly by `use-toast.jsx`, but never actually wired into this file. The "X" button
+rendered, but had no click handler behind it at all, so clicking it did nothing; the
+open/close slide-and-fade animation classes already in this file never worked either,
+for the same reason (nothing was driving the `data-state`/`data-swipe` attributes they
+depend on).
+
+Restored the standard Radix-backed implementation of this file — the same one used by
+every other shadcn/ui toast setup — which wires up click-to-close, swipe-to-dismiss,
+and the animations correctly, using the `open`/`onOpenChange` props `use-toast.jsx`
+was already passing through. No changes needed anywhere else; every place in the app
+that calls `toast({...})` is unaffected and works exactly as before, just with a
+working close button now.
+
+Verified: `npx vite build` clean; `@radix-ui/react-toast` confirmed genuinely
+installed in `node_modules` (not just listed in package.json).
+
 ## 2026-08-22 (follow-up 7f) — Removed the Script Timing table entirely
 Scope: `src/components/admin/TourSimulator.jsx`. (Frontend only — no backend function
 touched.)
