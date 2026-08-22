@@ -241,10 +241,14 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
     return groups;
   }, [waypoints]);
 
-  // A location is testable when every waypoint in it has an audio clip
+  // A location is testable once every waypoint in it has been marked Done — per Enda,
+  // that's the real "I'm finished with this one" signal, not just having some audio
+  // attached (an early AI draft counts as audio but isn't necessarily ready to test
+  // against). Applies identically for an Admin and a Narrator; nothing here is
+  // role-gated.
   const isLocationTestable = (group) => {
     if (!group || group.waypoints.length === 0) return false;
-    return group.waypoints.every(wp => wp.audio_clip_url);
+    return group.waypoints.every(wp => wp.waypoint_done);
   };
 
   useEffect(() => {
@@ -1031,13 +1035,13 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                      })}
                     title={isLocationTestable(locGroup)
                       ? `Test all ${locGroup.waypoints.length} waypoints in location ${locGroup.location} in the simulator`
-                      : `Location ${locGroup.location} needs audio on every waypoint before testing`}
+                      : `Location ${locGroup.location} needs every waypoint marked Done before testing`}
                     className="w-full bg-emerald-600 hover:bg-emerald-700 gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <Play className="w-4 h-4" />
                     Test Location {locGroup.location} in Simulator
                     <span className="ml-1 text-emerald-200 text-xs">
-                      ({locGroup.waypoints.filter(w => w.audio_clip_url).length}/{locGroup.waypoints.length} audio)
+                      ({locGroup.waypoints.filter(w => w.waypoint_done).length}/{locGroup.waypoints.length} done)
                     </span>
                   </Button>
                 </div>

@@ -144,6 +144,46 @@ re-review A first.
 
 ---
 
+## 2026-08-22 (follow-up) — "Test in Simulator" button now gates on Done, not just audio; troubleshooting notes for narrator visibility
+Scope: `src/components/admin/DrivingTourWaypointEditor.jsx` only (frontend-only, no
+backend function touched).
+
+Two things from Enda right after the previous entry shipped.
+
+**First — the button still wasn't showing up for a real narrator.** Re-checked the
+code and the fix from the previous entry (removing the `!isNarrator` gate on this
+exact button) is genuinely in place — nothing role-gates it any more, and it isn't
+nested inside any other admin-only block. The most likely explanation is simply that
+this specific change hadn't been redeployed yet in Base44 when the narrator screenshot
+was taken (this is a frontend-only file — needs a hard refresh + republish, same as
+any other frontend change, no special extra step). Re-verified and re-packaged this
+file alone below so it's trivial to re-apply and confirm.
+
+**Second, and a genuine behaviour change — Enda clarified what "active" should mean:**
+the button should only become clickable once every waypoint in that location has been
+marked **Done**, not merely once each has some audio attached. An early AI-draft clip
+counts as "has audio" but isn't necessarily the narrator's real, finished take — Done
+is the actual "I'm finished with this one" signal.
+
+What changed:
+- `isLocationTestable(group)` now checks `wp.waypoint_done` for every waypoint in the
+  location, instead of `wp.audio_clip_url`. Not role-gated — behaves identically for
+  an Admin and a Narrator, matching Enda's "exactly the same as the admin edit panel"
+  screenshot.
+- The button's progress counter and disabled-state tooltip now say "done" instead of
+  "audio" (e.g. "(3/8 done)"), so what's displayed matches what's actually gating it.
+
+Verified: `npx vite build` clean; `npx eslint` on the changed file shows only the same
+two pre-existing, unrelated issues already documented in earlier entries (nothing new).
+
+**Not done / worth knowing for next time:** please confirm after redeploying that (a)
+the button now appears for a real narrator session between each location's waypoints,
+and (b) it stays disabled/greyed until every waypoint in that location is ticked Done,
+then becomes clickable — both need a live check, this was only re-verified by reading
+the code.
+
+---
+
 ## 2026-08-22 — Narrators get simulator access on the waypoint "Test in Simulator" button; new "Admin Completed" gate on which tours narrators can clone
 Scope: `src/components/admin/DrivingTourWaypointEditor.jsx`, `src/components/admin/BackendShell.jsx`,
 `src/components/admin/WalkEditor.jsx`, `base44/entities/Walk.jsonc`,
