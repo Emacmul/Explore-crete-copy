@@ -113,6 +113,11 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
     return saved;
   };
 
+  // Shared by the Admin's own tour list (any tour) AND, now, a Narrator/admin-wearing-
+  // the-Narr-hat abandoning their own translation clone to start it over from scratch
+  // (see the "Clone in Progress" delete button in AdminStartScreen) — deleteWalkForBackend
+  // itself is what actually restricts a narrator actor to their own, not-yet-approved
+  // clone, so this one function safely covers both callers.
   const handleDelete = async (walkId) => {
     await callWalkFn('deleteWalkForBackend', { id: walkId });
     const data = await callWalkFn('getWalksForBackend', {});
@@ -544,6 +549,7 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
             onCloneTour={handleCloneTour}
             onPublishClone={handlePublishClone}
             onHandOffClone={handleHandOffClone}
+            onDeleteClone={handleDelete}
             cloneableTours={hasActiveClone ? [] : cloneableTours}
             publishedLanguagesByMaster={publishedLanguagesByMaster}
             hasActiveClone={hasActiveClone}

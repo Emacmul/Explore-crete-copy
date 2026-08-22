@@ -41,6 +41,34 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-22 (follow-up 6) — A narrator can now delete their own in-progress clone and start over
+Scope: **`base44/functions/deleteWalkForBackend/entry.ts` (BACKEND FUNCTION — needs the
+manual blank-line redeploy in Base44, pushing the code alone will NOT apply this)**,
+`src/components/admin/AdminStartScreen.jsx`, `src/components/admin/BackendShell.jsx`.
+
+Enda: if a narrator makes a bad mistake, or something else goes wrong, they had no way to
+scrap their in-progress translation clone and start fresh — there was no delete option
+anywhere in Narr Studio. Added a small trash icon on each row in "Clone in Progress"; it
+opens an "Are you sure?" confirmation (matching the same confirm dialog already used for
+deleting a tour in the Admin's own tour list) before anything is actually removed. Once
+confirmed, that clone — every waypoint, script edit, and audio on it — is gone for good,
+and (as a natural side effect of last follow-up's "clone once" limit, which only ever
+looks at clones that still exist) the master tour becomes clonable again straight away,
+no separate step needed.
+
+`deleteWalkForBackend` was previously Admin-only outright. It now also allows a narrator
+(or an admin wearing the Narr hat, who already had full delete rights) to delete — but
+ONLY their own translation clone, and ONLY while it hasn't gone live yet: never a master
+tour, never someone else's clone, never a tour a customer might already be relying on.
+
+Verified: `npx esbuild` clean on the backend function, `npx vite build` clean, `npx eslint`
+clean on both frontend files (two pre-existing, unrelated warnings confirmed against the
+last commit — an unused `ShieldCheck` import and unused `user` prop in
+AdminStartScreen.jsx, and an unused eslint-disable comment in BackendShell.jsx — none
+touched by this change).
+
+---
+
 ## 2026-08-22 (follow-up 5) — Reverted follow-up 4: Admin's "Map Preview" keeps the code + "Start" badge after all
 Scope: `src/components/admin/AdminPreviewMap.jsx` (frontend only — no backend function
 touched, a hard refresh + republish in Base44 is enough for this one).

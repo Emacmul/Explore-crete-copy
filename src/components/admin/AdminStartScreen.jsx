@@ -5,8 +5,10 @@ import { motion } from 'framer-motion';
 import {
   Footprints, MapPin, Car, ChevronRight, ShieldCheck, Mic,
   LayoutDashboard, List, Users, Plus, AlertCircle, Volume2,
-  Languages, CheckCircle2, Send, AlertTriangle, AudioLines,
+  Languages, CheckCircle2, Send, AlertTriangle, AudioLines, Trash2, Loader2,
 } from 'lucide-react';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { toast } from '@/components/ui/use-toast';
 import { TOUR_CATEGORIES } from '@/lib/tourCategories';
 import CloneTourDialog from './CloneTourDialog';
 
@@ -81,7 +83,7 @@ function isReadyToHandOff(walk) {
   return wps.length > 0 && wps.every(wp => wp.waypoint_done);
 }
 
-function MyCloneRow({ walk, onContinue, onPublish, onHandOff, unrestricted, locked }) {
+function MyCloneRow({ walk, onContinue, onPublish, onHandOff, onRequestDelete, unrestricted, locked }) {
   const readyToHandOff = isReadyToHandOff(walk);
   return (
     <div className={`w-full bg-slate-800 border rounded-xl px-4 py-3 ${walk.pushback_reason ? 'border-red-600/60' : locked ? 'border-slate-800 opacity-50' : 'border-slate-700'}`}>
@@ -100,6 +102,22 @@ function MyCloneRow({ walk, onContinue, onPublish, onHandOff, unrestricted, lock
             )}
           </div>
         </button>
+        {/* Per Enda: if something goes badly wrong on a translation — a bad mistake, or
+            anything else that means starting over is easier than fixing it in place —
+            there needs to be a way to abandon this clone entirely, not just keep editing
+            it. Deleting it also frees the master tour up to be cloned again (see the
+            "clone once" limit elsewhere), since that limit only ever looks at clones that
+            still exist. Available regardless of `locked` — abandoning a blocked clone is
+            a valid way to deal with it, same as fixing it would be. */}
+        {onRequestDelete && (
+          <button
+            onClick={() => onRequestDelete(walk)}
+            title="Delete this clone and start over"
+            className="shrink-0 p-1.5 text-slate-500 hover:text-red-400 transition-colors"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        )}
         {/* A live "Publish" Button can't sit inside the <button> above (invalid nested
             buttons), so the whole status ladder lives here instead, as a sibling —
             still visually on the same row. */}
@@ -173,7 +191,7 @@ function ReviewCloneRow({ walk, onReview, onPublish }) {
 
 export default function AdminStartScreen({
   userRole, user, works, onNewTour, onContinueTour, onManageUsers, onDashboard, onManageWalks,
-  onCloneTour, onPublishClone, onHandOffClone, cloneableTours = [], myClones = [], reviewClones = [],
+  onCloneTour, onPublishClone, onHandOffClone, onDeleteClone, cloneableTours = [], myClones = [], reviewClones = [],
   hasActiveClone = false,
   pendingPushbackId = null,
   publishedLanguagesByMaster = {},
@@ -184,6 +202,23 @@ export default function AdminStartScreen({
 }) {
   const isNarrator = userRole === 'narrator';
   const [cloneTarget, setCloneTarget] = useState(null);
+  // "Delete this clone" confirmation — holds the walk object being considered for
+  // deletion, same pattern WalkAdminList.jsx already uses for deleting a whole tour.
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [isDeletingClone, setIsDeletingClone] = useState(false);
+
+  const confirmDeleteClone = async () => {
+    if (!deleteTarget) return;
+    setIsDeletingClone(true);
+    try {
+      await onDeleteClone(deleteTarget.id);
+      toast({ title: 'Clone deleted', description: `“${deleteTarget.name}” has been removed. You can clone that tour again whenever you're ready.` });
+      setDeleteTarget(null);
+    } catch (e) {
+      toast({ variant: 'destructive', title: 'Delete failed — nothing was removed', description: e?.message || 'An unexpected error occurred while deleting. Please try again.' });
+    }
+    setIsDeletingClone(false);
+  };
 
   // ----- Narrator view: clone a tour + my clones -----
   if (isNarrator) {
@@ -241,9 +276,34 @@ export default function AdminStartScreen({
               <p className="text-sm">Clone a tour above to start a translation.</p>
             </div>
           ) : (
-            <div className="space-y-2">{myClones.map(walk => <MyCloneRow key={walk.id} walk={walk} onContinue={onContinueTour} onPublish={onPublishClone} onHandOff={onHandOffClone} unrestricted={unrestricted} locked={!!pendingPushbackId && walk.id !== pendingPushbackId && !walk.finished} />)}</div>
+            <div className="space-y-2">{myClones.map(walk => <MyCloneRow key={walk.id} walk={walk} onContinue={onContinueTour} onPublish={onPublishClone} onHandOff={onHandOffClone} onRequestDelete={onDeleteClone ? setDeleteTarget : null} unrestricted={unrestricted} locked={!!pendingPushbackId && walk.id !== pendingPushbackId && !walk.finished} />)}</div>
           )}
         </div>
+
+        <AlertDialog open={!!deleteTarget} onOpenChange={open => !open && !isDeletingClone && setDeleteTarget(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete this clone?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will permanently delete your <strong>{deleteTarget?.target_language}</strong> translation of
+                “<strong>{deleteTarget?.name}</strong>” — every waypoint, script edit, and audio you've done on it
+                so far. This can't be undone. Once it's deleted, that tour becomes available to clone again,
+                so you can start over from scratch.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isDeletingClone}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => { e.preventDefault(); confirmDeleteClone(); }}
+                disabled={isDeletingClone}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                {isDeletingClone ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+                Yes, delete this clone
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     );
   }
