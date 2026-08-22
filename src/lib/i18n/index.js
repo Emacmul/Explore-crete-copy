@@ -246,6 +246,8 @@ export const translations = {
     'player.stop': "Stop",
     'player.resume': "Resume",
     'player.toggleLog': "Toggle audit log",
+    'player.lastKnownPosition': "This was your last known position",
+    'player.restartFromHere': "Restart tour from here",
 
     'download.savingPct': "Saving {n}%",
     'download.removing': "Removing…",

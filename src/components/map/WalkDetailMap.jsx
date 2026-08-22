@@ -57,7 +57,7 @@ const drivingRoleConfig = {
   secondary: { color: '#3b82f6', icon: '📍', label: 'Point' },
 };
 
-export default function WalkDetailMap({ walk, followGps = false }) {
+export default function WalkDetailMap({ walk, followGps = false, showInternalLabels = false }) {
   const trailPath = walk.trail_path || [];
   const isDrivingTour = walk.route_type === 'driving_audio_tour';
 
@@ -116,15 +116,21 @@ export default function WalkDetailMap({ walk, followGps = false }) {
         });
         const wpLabel = roleConfig ? roleConfig.label : (waypointConfig[wp.type]?.label || wp.type);
         const wpColor = iconConfig.color;
-        // Customers (and this same component doubles as the admin's own "what will the
-        // customer see" preview) should only ever see the plain landmark name here — the
-        // internal waypoint code (e.g. "BOR1a-PS") is a working reference for whoever's
-        // editing the tour, not something a customer has any use for or should have to
-        // parse. The admin's own hands-on editing map is a separate component and still
-        // shows the code there, where it actually helps.
-        const wpName = isDrivingTour
+        let wpName = isDrivingTour
           ? (wp.segment_title || wp.name)
           : (wp.name || wp.segment_id);
+        // Per Enda: a real customer should only ever see the plain waypoint name here —
+        // not the small coloured badge above it ("Start", "Point", etc.) and not the
+        // internal waypoint code. Some driving-tour titles were typed/imported with the
+        // code stuck on the front of the text itself (e.g. "BOR1a-PS Start at Lidl car
+        // park Tsesmes", from the GPX file's raw point name) — strip that exact code off
+        // the front when it's there, using the code we already have on the waypoint
+        // record rather than guessing at a pattern. showInternalLabels=true (the admin's
+        // own "Map Preview" while editing) keeps showing the full code + badge + title
+        // exactly as it does today, since that detail is genuinely useful there.
+        if (!showInternalLabels && wp.segment_id && wpName?.startsWith(wp.segment_id)) {
+          wpName = wpName.slice(wp.segment_id.length).trim();
+        }
 
         return (
         <Marker
@@ -134,21 +140,23 @@ export default function WalkDetailMap({ walk, followGps = false }) {
         >
           <Popup minWidth={160} maxWidth={220}>
             <div style={{ textAlign: 'center', padding: '4px' }}>
-              <span
-                style={{
-                  display: 'inline-block',
-                  fontSize: '11px',
-                  fontWeight: '600',
-                  padding: '2px 8px',
-                  borderRadius: '9999px',
-                  color: 'white',
-                  backgroundColor: wpColor,
-                }}
-              >
-                {wpLabel}
-              </span>
+              {showInternalLabels && (
+                <span
+                  style={{
+                    display: 'inline-block',
+                    fontSize: '11px',
+                    fontWeight: '600',
+                    padding: '2px 8px',
+                    borderRadius: '9999px',
+                    color: 'white',
+                    backgroundColor: wpColor,
+                  }}
+                >
+                  {wpLabel}
+                </span>
+              )}
 
-              <p style={{ fontWeight: '600', marginTop: '6px', marginBottom: 0 }}>
+              <p style={{ fontWeight: '600', marginTop: showInternalLabels ? '6px' : 0, marginBottom: 0 }}>
                 {wpName}
               </p>
 

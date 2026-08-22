@@ -20,6 +20,45 @@ function haversine(lat1, lng1, lat2, lng2) {
   return 2 * R_EARTH * Math.asin(Math.sqrt(a));
 }
 
+// The same stable per-waypoint key used everywhere below — segment_id when there is one,
+// falling back to name or raw coordinates so nothing ever collides or goes untracked.
+function wpKeyFor(wp) {
+  return wp.segment_id || wp.name || `${wp.lat},${wp.lng}`;
+}
+
+// "Last known position" tracking — per Enda: while driving, the app should quietly
+// remember the most recent secondary waypoint (a point along the route, not the segment
+// start/stop markers) the driver has actually reached, so that if the phone loses signal,
+// gets closed by accident, or overheats and switches itself off, reopening the tour still
+// shows where they got to and offers to pick back up from there — without ever showing
+// the driver a list of every point, just that one. Saved to this device so it survives
+// closing the app. If it's more than 18 hours old, treat it as stale (a different day's
+// drive) and start fresh, the same rule already used for the walk/hike "you were last
+// here" feature.
+const LAST_POSITION_STALE_MS = 18 * 60 * 60 * 1000;
+
+function lastPositionStorageKey(walkId) {
+  return `explore_crete_driving_last_position__${walkId}`;
+}
+
+function loadPassedSecondaryIds(walkId) {
+  if (!walkId) return new Set();
+  try {
+    const raw = localStorage.getItem(lastPositionStorageKey(walkId));
+    if (!raw) return new Set();
+    const saved = JSON.parse(raw);
+    if (!saved || !Array.isArray(saved.ids)) return new Set();
+    const age = Date.now() - (saved.updatedAt || 0);
+    if (age > LAST_POSITION_STALE_MS) {
+      localStorage.removeItem(lastPositionStorageKey(walkId));
+      return new Set();
+    }
+    return new Set(saved.ids);
+  } catch {
+    return new Set();
+  }
+}
+
 export default function DrivingTourPlayer({ walk }) {
   const { t } = useLanguage();
   const { isDownloaded } = useOfflineWalks();
@@ -35,19 +74,50 @@ export default function DrivingTourPlayer({ walk }) {
   const [lastTriggered, setLastTriggered] = useState(null);
   const [showDebug, setShowDebug] = useState(false);
   const [gpsAccuracy, setGpsAccuracy] = useState(null);
+  // Every secondary waypoint the driver has actually reached so far this drive (see the
+  // "last known position" comment above) — restored from this device's storage on open,
+  // so it survives the app being closed and reopened.
+  const [passedSecondaryIds, setPassedSecondaryIds] = useState(() => loadPassedSecondaryIds(walk.id));
 
   const watchIdRef = useRef(null);
   const prevPosRef = useRef(null);
   const playerRef = useRef(null);
   const triggeredRef = useRef(new Set());
   const statusRef = useRef('idle');
+  const passedSecondaryRef = useRef(passedSecondaryIds);
 
   // Trigger waypoints that have audio enabled
   const triggerWaypoints = (walk.waypoints || []).filter(wp => wp.trigger_audio && wp.lat && wp.lng);
+  // Every secondary waypoint on the route (not the segment start/stop markers) with a real
+  // GPS position — the candidates for "last known position", tracked regardless of whether
+  // that particular point has audio of its own.
+  const secondaryWaypoints = (walk.waypoints || []).filter(wp => wp.waypoint_role === 'secondary' && wp.lat && wp.lng);
+  // The furthest-along secondary waypoint reached so far — same "keep the last one in route
+  // order" approach as the walk/hike version of this feature.
+  const lastKnownWaypoint = secondaryWaypoints.reduce((last, wp) => (
+    passedSecondaryIds.has(wpKeyFor(wp)) ? wp : last
+  ), null);
 
   useEffect(() => {
     statusRef.current = status;
   }, [status]);
+
+  useEffect(() => {
+    passedSecondaryRef.current = passedSecondaryIds;
+  }, [passedSecondaryIds]);
+
+  const persistPassedSecondary = useCallback((nextSet) => {
+    if (!walk.id) return;
+    try {
+      localStorage.setItem(
+        lastPositionStorageKey(walk.id),
+        JSON.stringify({ ids: Array.from(nextSet), updatedAt: Date.now() })
+      );
+    } catch {
+      // Storage full or unavailable — not fatal, "last known position" just won't survive
+      // closing the app this time; live tracking during this session still works fine.
+    }
+  }, [walk.id]);
 
   const evaluateTriggers = useCallback((lat, lng, accuracy) => {
     tourLogService.logGpsFix(lat, lng, accuracy);
@@ -75,7 +145,7 @@ export default function DrivingTourPlayer({ walk }) {
         bearingInfo.ok = bearingOk;
       }
 
-      const wpKey = wp.segment_id || wp.name || `${wp.lat},${wp.lng}`;
+      const wpKey = wpKeyFor(wp);
       const alreadyTriggered = triggeredRef.current.has(wpKey);
 
       let result;
@@ -98,8 +168,30 @@ export default function DrivingTourPlayer({ walk }) {
       }
     }
 
+    // "Last known position" — separate from the audio triggers above, and never undone
+    // once set, the same "only ever adds" rule the walk/hike version of this feature uses.
+    // Runs for every secondary waypoint regardless of whether it has audio configured.
+    let passedChanged = false;
+    let nextPassed = passedSecondaryRef.current;
+    for (const wp of secondaryWaypoints) {
+      const key = wpKeyFor(wp);
+      if (nextPassed.has(key)) continue;
+      const distance = haversine(lat, lng, wp.lat, wp.lng);
+      const radius = wp.trigger_radius_m || 150;
+      if (distance <= radius) {
+        if (!passedChanged) nextPassed = new Set(nextPassed);
+        nextPassed.add(key);
+        passedChanged = true;
+      }
+    }
+    if (passedChanged) {
+      passedSecondaryRef.current = nextPassed;
+      setPassedSecondaryIds(nextPassed);
+      persistPassedSecondary(nextPassed);
+    }
+
     prevPosRef.current = { lat, lng };
-  }, [triggerWaypoints]);
+  }, [triggerWaypoints, secondaryWaypoints, persistPassedSecondary]);
 
   const playTriggerAudio = useCallback((wp, wpKey) => {
     // Stop any currently playing audio
@@ -127,15 +219,19 @@ export default function DrivingTourPlayer({ walk }) {
     }
   }, []);
 
-  const handleStart = () => {
+  // seedKeys (optional): waypoint keys to mark as "already triggered" before GPS tracking
+  // begins. Used by "Restart tour from here" below so picking up mid-route doesn't replay
+  // every earlier segment's audio again — a normal Start Tour click passes nothing, so it
+  // begins from a genuinely clean slate exactly as before.
+  const handleStart = (seedKeys) => {
     if (!gpsService.isSupported()) {
       tourLogService.logWarning('Geolocation not supported on this device');
       return;
     }
 
     tourLogService.startSession(walk.id, walk.name);
-    triggeredRef.current = new Set();
-    setTriggeredWpIds(new Set());
+    triggeredRef.current = new Set(seedKeys || []);
+    setTriggeredWpIds(new Set(triggeredRef.current));
     prevPosRef.current = null;
     setStatus('running');
 
@@ -153,6 +249,20 @@ export default function DrivingTourPlayer({ walk }) {
       },
       { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
     );
+  };
+
+  // "Restart tour from here" — seeds every waypoint up to and including the last known
+  // position as already-triggered, then starts GPS tracking exactly as Start Tour does.
+  // The tour doesn't jump anywhere on the map; it simply won't replay audio for the parts
+  // of the route already driven, and will pick back up naturally as the driver continues —
+  // the next un-triggered waypoint they physically reach plays as normal.
+  const handleRestartFromLastKnown = () => {
+    if (!lastKnownWaypoint) return;
+    const allWaypoints = walk.waypoints || [];
+    const lastKey = wpKeyFor(lastKnownWaypoint);
+    const idx = allWaypoints.findIndex(wp => wpKeyFor(wp) === lastKey);
+    const seedKeys = idx >= 0 ? allWaypoints.slice(0, idx + 1).map(wpKeyFor) : [];
+    handleStart(seedKeys);
   };
 
   const handlePause = () => {
@@ -218,12 +328,42 @@ export default function DrivingTourPlayer({ walk }) {
         )}
       </div>
 
+      {/* Last known position — shows the single most recent point along the route the
+          driver has actually reached (never the full list of points), and while the tour
+          isn't currently running, offers to pick back up from there instead of the very
+          start. Covers losing GPS signal, the app being closed by accident, the phone
+          overheating and switching off, etc. — whatever the reason it stopped, this is
+          still here when they come back. */}
+      {lastKnownWaypoint && (
+        <div className="mx-4 mb-3 flex items-center justify-between gap-3 bg-blue-900/20 border border-blue-700/40 rounded-lg px-3 py-2">
+          <div className="min-w-0">
+            <p className="text-xs text-blue-300">{t('player.lastKnownPosition')}</p>
+            <p className="text-sm font-medium text-blue-100 truncate">
+              {lastKnownWaypoint.segment_title || lastKnownWaypoint.name}
+            </p>
+          </div>
+          {status === 'idle' && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={handleRestartFromLastKnown}
+              disabled={!savedOffline}
+              title={!savedOffline ? t('player.mustSaveFirst') : undefined}
+              className="shrink-0 border-blue-500 text-blue-300 hover:bg-blue-900/40 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {t('player.restartFromHere')}
+            </Button>
+          )}
+        </div>
+      )}
+
       {/* Triggered waypoints progress */}
       {triggerWaypoints.length > 0 && (
         <div className="px-4 pb-2">
           <div className="flex items-center gap-1.5">
             {triggerWaypoints.map((wp, i) => {
-              const wpKey = wp.segment_id || wp.name || `${wp.lat},${wp.lng}`;
+              const wpKey = wpKeyFor(wp);
               const isTriggered = triggeredWpIds.has(wpKey);
               return (
                 <div
@@ -251,7 +391,7 @@ export default function DrivingTourPlayer({ walk }) {
         <div className="flex items-center gap-2">
           {status === 'idle' && (
             <Button
-              onClick={handleStart}
+              onClick={() => handleStart()}
               disabled={!savedOffline}
               title={!savedOffline ? t('player.mustSaveFirst') : undefined}
               className="flex-1 gap-2 bg-green-600 hover:bg-green-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"

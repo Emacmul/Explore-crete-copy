@@ -41,6 +41,38 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-22 (follow-up 2) — Map popup: code and "Start" badge now hidden from real customers; driving tours remember your last known position
+Scope: `src/components/map/WalkDetailMap.jsx`, `src/components/admin/AdminPreviewMap.jsx`,
+`src/components/walks/DrivingTourPlayer.jsx`, `src/lib/i18n/index.js` (frontend only — no
+backend function touched, a hard refresh + republish in Base44 is enough for this one).
+
+**Map popup.** Clicking a waypoint marker on the map popped up the internal waypoint code
+(e.g. "BOR1a-PS") stuck onto the front of the title, plus a small coloured badge (e.g.
+"Start"). Correct for the Admin's own "Map Preview" while editing a tour — kept exactly as
+it was there. Wrong for a real customer, who should see only the plain waypoint name.
+Added a `showInternalLabels` option to the shared map component: off by default (so the
+real customer-facing map needed no changes at all), and the Admin's own "Map Preview"
+panel turns it on explicitly. When it's off, the badge doesn't render, and if the waypoint's
+title had the code typed straight onto the front of it (from how some tours were imported
+from GPX files), that exact code is stripped off using the code already stored on the
+waypoint record, not a guess.
+
+**Last known position (driving tours).** While a driving tour is running, the app now
+quietly remembers the most recent point along the route the driver has actually reached —
+one point only, never a list — and saves it on the phone so it's still there if the signal
+drops, the app gets closed by accident, or the phone overheats and switches off. Reopening
+the tour shows a small card: "This was your last known position" with the point's name, and
+a "Restart tour from here" button that starts GPS tracking again without replaying the
+audio for everything already driven past — it just picks up naturally as the driver
+continues. If the saved position is more than 18 hours old, it's treated as a different
+day's drive and dropped, same rule already used for the walk/hike version of this idea.
+
+Verified: `npx vite build` clean, `npx eslint` clean on all four files above (two pre-existing,
+already-known unused-import warnings in `WalkDetailMap.jsx` and `DrivingTourPlayer.jsx` are
+untouched leftovers from before this session, confirmed by checking against the last commit).
+
+---
+
 ## 2026-08-22 (follow-up) — Narration Script & TTS: Build & Play / Continue now play the audio AHEAD of you, not the audio you just read
 Scope: `src/components/admin/NarrationTtsEditor.jsx` (frontend only — no backend function
 touched, a hard refresh + republish in Base44 is enough for this one).
