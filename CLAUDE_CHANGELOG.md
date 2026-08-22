@@ -41,6 +41,79 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-22 (follow-up 10) — Fix: "Continue" freeze losing all edits; simulator now stops at a location's own end
+Scope: `src/lib/audioCombiner.js`, `src/lib/utils.js`,
+`src/components/admin/NarrationTtsEditor.jsx`,
+`src/components/admin/TourSimulator.jsx`. (Frontend only — no backend
+function touched.)
+
+**What changed — the freeze (this is the important one):**
+- Root cause: `decodeAndBoundSegments()` in `audioCombiner.js` (used by both
+  "Build & Play"/"Continue" preview playback and the final "Save & Finish"
+  render) fetched each segment's generated audio clip with a plain
+  `fetch(url)` — which has NO timeout of its own in a browser. If that
+  request ever stalled (flaky connection, a slow/unreachable storage URL),
+  the fetch would simply hang forever, never resolving and never
+  rejecting. Every button on the Narration Script & TTS panel is disabled
+  while a `playing` flag is true, and that flag never got set back to
+  false because the code was still waiting on the stuck fetch — so the
+  whole panel looked frozen with no error and nothing clickable. The only
+  way out was a hard refresh, which throws away every unsaved edit on the
+  ENTIRE tour (not just this one part), since edits only reach the server
+  on an explicit Save.
+- Fixed at the source: `fetch()` calls in `audioCombiner.js` now go through
+  a small `fetchWithTimeout()` wrapper (20 second ceiling) that aborts and
+  throws a clear, catchable error instead of hanging.
+- Added a second, general-purpose safety net: a new `withTimeout()` helper
+  in `src/lib/utils.js`, used to wrap both the audio-loading step and the
+  playback-finishing step in `NarrationTtsEditor.jsx`'s "Continue"/"Build &
+  Play" handler. This means ANY unexpected hang at this point (not just
+  the fetch that actually caused it) now surfaces a plain-language,
+  recoverable error ("nothing has been lost, just try again") instead of
+  freezing the panel — the narrator can just retry, no page reload needed
+  and no edits lost.
+
+**What changed — the simulator (building on follow-up 9's zoom fix):**
+- The simulated vehicle used to keep driving straight through a location's
+  own end point and on into whatever comes next, whenever the simulation
+  was jumped to a location (or to a single waypoint via "Test this
+  waypoint") and started. It now auto-pauses right at that location's own
+  end (its `primary_stop` waypoint, or its last waypoint if a location
+  hasn't got one set) — a scoped jump/test now stays scoped to the one
+  location it belongs to, instead of running on uncontrolled into the
+  next one.
+- "Test this waypoint" now ALSO auto-pauses the instant that ONE
+  waypoint's own audio has finished playing, rather than continuing on to
+  whatever triggers next in the same location — keeping a single-waypoint
+  test genuinely about just that one waypoint, repeatable cleanly for
+  each one in turn. "Jump to location…" still plays every waypoint in that
+  location back-to-back (only the new end-of-location auto-pause is new
+  there) — that's the "verify the full location in one pass" mode.
+
+**Why:** Enda hit the freeze firsthand while editing — the "Continue"
+button never responded, forcing a hard refresh that wiped every unsaved
+change on the tour — and separately found that after using "Jump" and
+Start, the simulated vehicle just kept going past the end of the location
+being tested instead of stopping there.
+
+**Verified:** `npx vite build` completes with no errors. `npx eslint` on
+all five changed/touched files reports zero errors (the one pre-existing,
+unrelated warning noted in follow-up 9 remains, present before this
+session's work).
+
+**Not done / worth knowing for next time:**
+- Not tested live — needs a real check: deliberately slow/break a segment
+  audio URL (or just test on a flaky connection) and confirm "Continue"
+  now shows an error instead of freezing; then jump to a location, press
+  Start, and confirm the vehicle stops right at that location's own end
+  instead of driving on.
+- The zoom-hold fix from follow-up 9 was not changed further here — if it
+  still isn't holding after this update is live in Base44 (pushed AND
+  republished, not just refreshed), that needs a fresh, separate look
+  rather than assuming it's the same root cause as the freeze.
+
+---
+
 ## 2026-08-22 (follow-up 9) — Fix: simulator map snapped back out of a manual zoom on Start; added per-waypoint audio testing
 Scope: `src/components/admin/TourSimulatorMap.jsx`,
 `src/components/admin/TourSimulator.jsx`. (Frontend only — no backend

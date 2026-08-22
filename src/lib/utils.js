@@ -21,3 +21,20 @@ export function getFnErrorMessage(err, fallback = 'Something went wrong.') {
 
 
 export const isIframe = window.self !== window.top;
+
+// Per Enda: an audio-preview flow (the "Continue"/"Build & Play" controls in
+// NarrationTtsEditor.jsx) once hung completely — every control on that panel gates on
+// a `playing` flag that a stuck promise left stuck `true` forever, with nothing to
+// click and no error shown, and the only way out was a hard refresh that threw away
+// every unsaved edit on the whole tour, not just that one part. The direct cause (an
+// unbounded fetch()) is fixed at its source, but this is a general-purpose safety net
+// for wrapping any promise-based action that must never be allowed to hang the UI
+// silently — races it against a timeout and rejects with a clear, recoverable message
+// instead of leaving things stuck.
+export function withTimeout(promise, ms, message) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}

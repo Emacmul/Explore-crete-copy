@@ -1,4 +1,3 @@
-// (cache-bust marker — forces Vite to re-evaluate this module after the GitHub syncs)
 /**
  * Builds the "combined" narration audio — and, critically, PREVIEWS it — by stitching
  * together the already-generated per-segment TTS clips with EXACT silence for every
@@ -50,6 +49,31 @@ const SILENCE_PAD_SECONDS = 0.015;
 // Google's synthesized speech comes back mono at a modest sample rate. Only used if a
 // browser ever hands back a buffer with no sampleRate at all (shouldn't happen).
 const FALLBACK_SAMPLE_RATE = 24000;
+
+// Per Enda: a stalled network request here used to hang forever with no error and no
+// way to cancel it — plain `fetch()` never times out on its own, so a flaky connection
+// (or a segment's audio URL that was slow/unreachable) left "Continue"/"Build & Play"
+// stuck mid-click. Every button on the panel gates on the `playing` flag, which this
+// hang left permanently true, so the whole panel looked frozen and the only way out
+// was a hard refresh — which threw away every unsaved edit on the WHOLE tour, not just
+// this one part. Giving every fetch a hard ceiling means this always either finishes or
+// fails with a visible, recoverable error instead of hanging indefinitely.
+const FETCH_TIMEOUT_MS = 20000;
+
+async function fetchWithTimeout(url, timeoutMs = FETCH_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      throw new Error(`Timed out waiting for a segment's audio to load (over ${Math.round(timeoutMs / 1000)}s) — check your connection and try again.`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /**
  * Finds where actual sound starts and ends within a decoded clip, scanning inward
@@ -104,7 +128,7 @@ async function decodeAndBoundSegments(segments, segmentAudioUrls, audioCtx) {
     if (!url) {
       throw new Error(`Segment ${seg.id} has no generated audio yet — click "Parse & Generate" again first.`);
     }
-    const res = await fetch(url);
+    const res = await fetchWithTimeout(url);
     if (!res.ok) throw new Error(`Could not fetch segment ${seg.id}'s audio (HTTP ${res.status}).`);
     const arrayBuffer = await res.arrayBuffer();
     decoded[seg.id] = await audioCtx.decodeAudioData(arrayBuffer);

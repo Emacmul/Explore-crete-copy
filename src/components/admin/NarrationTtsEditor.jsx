@@ -13,7 +13,7 @@ import AudioPlayer from '@/components/ui/AudioPlayer';
 import { Loader2, Sparkles, Pause, Play, Download, Braces, FileText, Square, CheckCircle2 } from 'lucide-react';
 import { downloadScriptAsDocx } from '@/lib/docxExporter';
 import { useNarratorApiKeys } from '@/lib/useNarratorApiKeys';
-import { getFnErrorMessage } from '@/lib/utils';
+import { getFnErrorMessage, withTimeout } from '@/lib/utils';
 import { playSegmentsPrecisely, combineSegmentsToWav, blobToBase64 } from '@/lib/audioCombiner';
 
 const VOICES = [
@@ -273,23 +273,45 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
 
     let playback = null;
     try {
-      playback = await playSegmentsPrecisely(targetSegments, segmentAudios, {
-        // playSegmentsPrecisely reports an index into the slice we gave it, not the
-        // full segments list — map it back to the card that's actually showing that
-        // segment so highlighting lands on the right one.
-        onSegmentChange: (localIdx) => {
-          const seg = targetSegments[localIdx];
-          const globalIdx = seg ? segments.findIndex((s) => s.id === seg.id) : -1;
-          if (globalIdx >= 0) setCurrentPlayingIndex(globalIdx);
-        },
-      });
+      // Per Enda: this used to be able to hang completely (a stalled fetch inside
+      // playSegmentsPrecisely, fixed at the source in audioCombiner.js) — every
+      // control on this panel gates on `playing`, which stayed stuck true forever
+      // with nothing to click and no error, so the panel looked frozen and the only
+      // way out was a hard refresh that lost every unsaved edit on the whole tour.
+      // withTimeout() is a second, general-purpose safety net here (on top of that
+      // source fix) so ANY unexpected hang in this step still surfaces a clear,
+      // recoverable error instead of freezing the panel again.
+      playback = await withTimeout(
+        playSegmentsPrecisely(targetSegments, segmentAudios, {
+          // playSegmentsPrecisely reports an index into the slice we gave it, not the
+          // full segments list — map it back to the card that's actually showing that
+          // segment so highlighting lands on the right one.
+          onSegmentChange: (localIdx) => {
+            const seg = targetSegments[localIdx];
+            const globalIdx = seg ? segments.findIndex((s) => s.id === seg.id) : -1;
+            if (globalIdx >= 0) setCurrentPlayingIndex(globalIdx);
+          },
+        }),
+        20000,
+        "Loading this part's audio took too long (check your connection) — nothing has been lost, just try again."
+      );
       currentPlaybackRef.current = playback;
       if (stopRef.current) {
         playback.stop();
       } else {
-        await playback.done;
+        await withTimeout(
+          playback.done,
+          Math.ceil((playback.totalSeconds + 5) * 1000) + 15000,
+          'Playback got stuck — nothing has been lost, just try again.'
+        );
       }
     } catch (err) {
+      // If we got as far as having a real `playback` (i.e. this was the "playback.done
+      // took too long" timeout, not a failure to even start), its audio sources may
+      // still be physically scheduled/playing even though we've given up waiting on
+      // them — stop() cuts them off and closes the AudioContext, so a timeout doesn't
+      // leave stray audio running behind an editor that now thinks nothing is playing.
+      if (playback) { try { playback.stop(); } catch { /* already stopped */ } }
       const msg = getFnErrorMessage(err);
       addLog(`Preview ERROR: ${msg}`);
       setError(`Preview failed: ${msg}`);

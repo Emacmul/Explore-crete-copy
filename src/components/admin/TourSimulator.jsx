@@ -112,13 +112,33 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
   const multRef = useRef(simMult);
   const tickRef = useRef(null);
   const passedSegmentsRef = useRef(new Set());
+  // Entries are {url, index} — the waypoint index rides along so the "ended" handler
+  // below can tell whether the clip that just finished was the one a single-waypoint
+  // test is specifically waiting on (see scopedTestRef).
   const audioQueueRef = useRef([]);
+  // Which waypoint's audio is the CURRENTLY loaded/playing clip in audioRef.current, if
+  // any — set the moment a clip starts, cleared once its "ended" handling has run.
+  const activeAudioWpIndexRef = useRef(null);
+  // Set by jumpToWaypoint() below whenever a jump/test is scoped to one location —
+  // either "Jump to location…" (whole location) or "Test this waypoint" (one waypoint
+  // within it) — and cleared by stopSim()/Reset. Two independent auto-pause points:
+  // segmentEndDist (never drive on past THIS location's own end, into the next one)
+  // and singleWaypointIndex (for a single-waypoint test, stop the instant that one
+  // waypoint's own audio has finished, rather than rolling on to whatever's next).
+  const scopedTestRef = useRef(null);
   const handleAudioEndedRef = useRef(null);
   handleAudioEndedRef.current = () => {
+    const finishedIndex = activeAudioWpIndexRef.current;
+    activeAudioWpIndexRef.current = null;
+    if (scopedTestRef.current?.singleWaypointIndex != null && finishedIndex === scopedTestRef.current.singleWaypointIndex) {
+      pauseSim();
+      return;
+    }
     if (audioQueueRef.current.length > 0) {
       const next = audioQueueRef.current.shift();
       if (audioRef.current) {
-        audioRef.current.src = next;
+        audioRef.current.src = next.url;
+        activeAudioWpIndexRef.current = next.index;
         audioRef.current.play().catch(() => {});
       }
     }
@@ -151,6 +171,19 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
       cumDist += haversine(trailPath[i - 1].lat, trailPath[i - 1].lng, trailPath[i].lat, trailPath[i].lng);
     }
     return cumDist;
+  };
+
+  // How far along the trail a location (all waypoints sharing one segment_number) ENDS
+  // — its own primary_stop waypoint if it has one, otherwise its last waypoint in
+  // segment_number order as a fallback. Used so a jump/test scoped to one location
+  // (see jumpToWaypoint below) auto-pauses there instead of driving on into whatever
+  // location comes right after it.
+  const segmentBoundaryDist = (segmentNumber) => {
+    if (segmentNumber === undefined || segmentNumber === null) return null;
+    const group = waypoints.filter(w => w.segment_number === segmentNumber);
+    if (group.length === 0) return null;
+    const stopWp = group.find(w => w.waypoint_role === 'primary_stop');
+    return cumDistForWaypoint(stopWp || group[group.length - 1]);
   };
 
   // Every primary_start location, with how far along the trail it sits — lets the narrator jump
@@ -189,6 +222,8 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
     triggeredRef.current = {};
     passedSegmentsRef.current = new Set();
     audioQueueRef.current = [];
+    activeAudioWpIndexRef.current = null;
+    scopedTestRef.current = null;
     setDistTraveled(0);
     setSimTime(0);
     setTriggered({});
@@ -210,7 +245,15 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
   // audio play out against the moving marker — repeatable for every waypoint in turn.
   // Jumping to a location's start (from the "Jump to location…" list) is just this
   // same function called on that location's own primary_start waypoint.
-  const jumpToWaypoint = (targetIndex, { autoplay = false } = {}) => {
+  //
+  // Every jump is scoped to the target waypoint's own location (segment_number): the
+  // tick loop below auto-pauses once the marker reaches that location's own end
+  // (primary_stop), rather than driving on uncontrolled into whatever location comes
+  // next. `scopeToThisWaypoint` narrows that further, for "Test this waypoint": the
+  // run ALSO auto-pauses the instant that one waypoint's own audio has finished, so a
+  // single-waypoint test stays about just that waypoint rather than rolling on to the
+  // next thing that triggers within the same location.
+  const jumpToWaypoint = (targetIndex, { autoplay = false, scopeToThisWaypoint = false } = {}) => {
     const wp = waypoints[targetIndex];
     if (!wp) return;
     pauseSim();
@@ -222,6 +265,11 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
     waypoints.forEach((w, i) => { if (i < targetIndex) triggeredRef.current[i] = true; });
     passedSegmentsRef.current = new Set();
     audioQueueRef.current = [];
+    activeAudioWpIndexRef.current = null;
+    scopedTestRef.current = {
+      segmentEndDist: segmentBoundaryDist(wp.segment_number),
+      singleWaypointIndex: scopeToThisWaypoint ? targetIndex : null,
+    };
     if (audioRef.current) audioRef.current.pause();
     setDistTraveled(cumDist);
     setSimTime(0);
@@ -267,6 +315,22 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
       return;
     }
 
+    // A jump/test scoped to one location (see jumpToWaypoint) auto-pauses right here,
+    // at that location's own end, instead of driving on uncontrolled into whatever
+    // location comes next — this is the fix for the simulated vehicle running straight
+    // through a sub-segment's own end point.
+    const segBoundary = scopedTestRef.current?.segmentEndDist;
+    if (segBoundary != null && newDist >= segBoundary) {
+      distRef.current = segBoundary;
+      setDistTraveled(segBoundary);
+      const boundaryPos = posAtDistance(pathData.segments, pathData.total, segBoundary);
+      if (boundaryPos) { setCurrentPos(boundaryPos); prevPosRef.current = boundaryPos; }
+      setIsPlaying(false);
+      if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
+      setTourComplete(true);
+      return;
+    }
+
     const newPos = posAtDistance(pathData.segments, pathData.total, newDist);
     if (!newPos) return;
 
@@ -291,9 +355,10 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
       const wasPlaying = audioRef.current && !audioRef.current.paused;
       if (audioRef.current) {
         if (wasPlaying) {
-          audioQueueRef.current.push(wp.audio_clip_url);
+          audioQueueRef.current.push({ url: wp.audio_clip_url, index: i });
         } else {
           audioRef.current.src = wp.audio_clip_url;
+          activeAudioWpIndexRef.current = i;
           audioRef.current.play().catch(() => {});
         }
       }
@@ -508,7 +573,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
                     waypoint has no saved audio yet, since there'd be nothing to test. */}
                 <Button
                   size="sm"
-                  onClick={() => jumpToWaypoint(selectedWpIndex, { autoplay: true })}
+                  onClick={() => jumpToWaypoint(selectedWpIndex, { autoplay: true, scopeToThisWaypoint: true })}
                   disabled={!selectedWp?.audio_clip_url}
                   className="bg-blue-700/30 hover:bg-blue-700/50 border border-blue-600/50 text-white shrink-0 whitespace-nowrap"
                   title="Jump to this waypoint and play its saved audio, without resetting the map zoom"
