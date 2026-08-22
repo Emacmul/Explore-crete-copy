@@ -412,7 +412,9 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
         ))}
       </div>
 
-      {/* Editable script textarea */}
+      {/* Editable script textarea — same pastel yellow as every duplicate copy further
+          down (per Enda: every editable script box must look identical, so it's never
+          ambiguous which boxes on this panel are text you can type into). */}
       <div>
         <Textarea
           ref={textareaRef}
@@ -420,7 +422,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
           onChange={handleScriptEdit}
           placeholder={'Import a script file or write here...\n\nUse <break time="2s"/> for pauses.'}
           rows={6}
-          className="bg-slate-700 border-slate-500 text-white text-sm font-mono resize-y"
+          className="bg-amber-100 border-amber-300 text-black placeholder:text-amber-900/50 text-sm font-mono resize-y focus-visible:ring-amber-400"
         />
         <div className="flex items-center justify-between mt-1">
           <span className={`text-xs ${overLimit ? 'text-red-400' : 'text-slate-500'}`}>

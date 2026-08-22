@@ -144,6 +144,24 @@ re-review A first.
 
 ---
 
+## 2026-08-22 (follow-up) — Main script box now matches the pastel yellow of its duplicates
+Scope: `src/components/admin/NarrationTtsEditor.jsx` only (frontend-only, no backend
+function touched).
+
+Enda: the main "editable script" textarea at the top of the Narration Script & TTS
+panel was still styled dark (matching the rest of the panel), while every duplicate
+copy of it further down the segment list was pastel yellow with black text (from an
+earlier entry). Having only some of the editable boxes stand out was confusing — it
+should be obvious at a glance that ALL of them are the same kind of thing.
+
+What changed: the top textarea now uses the exact same pastel yellow / black text
+styling as the duplicates. Every editable script box on this panel now looks
+identical, wherever it appears.
+
+Verified: `npx vite build` clean; `npx eslint` on the changed file shows zero issues.
+
+---
+
 ## 2026-08-22 (follow-up) — "Test in Simulator" button now gates on Done, not just audio; troubleshooting notes for narrator visibility
 Scope: `src/components/admin/DrivingTourWaypointEditor.jsx` only (frontend-only, no
 backend function touched).
