@@ -43,7 +43,7 @@ const MAX_CHARS = 5000;
 // true, and every one of those flags gates nearly every other control on the whole
 // page. This is the exact same class of bug already fixed once for playback (see
 // FETCH_TIMEOUT_MS in audioCombiner.js, and withTimeout() around playSegmentsPrecisely
-// in handlePlayTarget below) — just never extended to these four call sites. A
+// in handleBuildAndPlay below) — just never extended to these four call sites. A
 // generous but FINITE ceiling here means a stalled request always either finishes or
 // fails with a clear, recoverable error, never hangs forever.
 const TTS_CALL_TIMEOUT_MS = 30000;
@@ -180,27 +180,45 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   // write-only internal bookkeeping (addLog below) rather than ripped out everywhere it
   // was called, in case it's ever useful again behind a future admin/debug view.
   const [, setDebugLog] = useState([]);
-  // Which subsection the narrator has reached so far (0-based). Subsections before this
-  // one are "done" (with a Replay option); this one is the active Build & Play /
-  // Continue; anything after is locked until the narrator works through to it.
-  const [subsectionCursor, setSubsectionCursor] = useState(0);
-  // Which subsection is actively mid-playback right now, if any — used to show Stop in
-  // the right spot instead of a single global control.
+  // Per Enda (follow-up 31 — a deliberate, explicit redesign of the review/finalize
+  // workflow, replacing follow-up 30's subsectionCursor/playedSegmentIds approach
+  // entirely): the whole point of this panel is a script written "for the ear, not the
+  // eye" — a narrator must be forced to actually LISTEN to the complete, current state
+  // of a part before they can either edit it further or declare it finished. Follow-up
+  // 30 let a narrator satisfy that by listening to every line individually, which
+  // technically worked but didn't force listening to the lines TOGETHER, in context,
+  // back-to-back the way an end user actually hears them — Enda asked for something
+  // stricter: listening and editing are now two completely separate, alternating
+  // MODES, never available at the same time.
+  //
+  // reviewPhase is 'listen' (only the whole-document Build & Play control is shown —
+  // no per-line play, no editing, nothing else) or 'edit' (every line's own play/edit
+  // control and every subsection's own script box are unlocked, but the combined
+  // Build & Play control is gone — the only way to hear the result of an edit is to
+  // finish editing and go listen again). See handleBuildAndPlay/handleSaveAndListenAgain
+  // further down for the two moves that flip between them.
+  const [reviewPhase, setReviewPhase] = useState('listen');
+  // How many COMPLETE, uninterrupted whole-document Build & Play passes have finished
+  // since the most recent fresh Parse & Generate (the manual button, or a brand new
+  // import/translate) — deliberately NOT reset by handleSaveAndListenAgain's own
+  // re-parse, so it keeps counting across as many listen/edit cycles as the narrator
+  // wants to repeat (Enda: "There should be no limit to the amount of times this can be
+  // repeated"). A pass stopped early (Stop clicked) or that errors out does NOT
+  // increment this. Per Enda: "the ability to declare something done must never appear
+  // after the first Build and Play pass" — Mark Segment as Done requires this to be at
+  // least 2 (the original pass, plus at least one further pass after an edit), never
+  // available straight off the very first listen.
+  const [listenPassCount, setListenPassCount] = useState(0);
+  // True the moment ANY edit (a per-line save, a per-subsection "Save This Part", or a
+  // pause-duration slider nudge) is actually applied during an 'edit' phase, cleared
+  // back to false only when the NEXT full listen pass completes. Per Enda: "Done" must
+  // "never appear after an editing pass" — i.e. the instant something changes, it has
+  // to be heard again (a fresh Build & Play pass) before Done can reappear, however
+  // many completed passes came before it.
+  const [editedSinceLastListen, setEditedSinceLastListen] = useState(false);
+  // Which subsection is actively mid-playback right now during a Build & Play pass, if
+  // any — used to show "Playing part X of Y" and Stop in the right spot.
   const [activeSubsectionIndex, setActiveSubsectionIndex] = useState(null);
-  // Per Anoushka/Enda (follow-up 30): a narrator who reviews and fixes every line
-  // entirely via each TtsSegmentCard's own inline Play button — exactly the workflow the
-  // per-line quick editor above was built to support, so fixing one line "shouldn't
-  // require sitting through the full sequential Build & Play first" — never touches
-  // subsectionCursor at all, since that's a completely separate, simpler audio pathway
-  // (see playSegment below). But Continue/Save & Finish's availability was ONLY ever
-  // wired to subsectionCursor, which only moves via the combined Build & Play/Continue
-  // engine — so a narrator who works this way could listen to and fix every single line
-  // and still find Save & Finish permanently disabled, with no way to finish at all (the
-  // exact bug Enda reported). This tracks which segment ids have had their own individual
-  // clip played all the way through, so a subsection whose every text line has been heard
-  // this way counts as reviewed exactly like one heard via the combined engine — see
-  // subsectionReviewed further down.
-  const [playedSegmentIds, setPlayedSegmentIds] = useState(() => new Set());
   // Per Enda: past 12-13 subsections it became hard to find the right passage to edit,
   // because every duplicate "Edit script" box further down showed and edited the WHOLE
   // document — so each one is now scoped to just its OWN subsection's own text instead.
@@ -231,14 +249,17 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   // while it's in flight, rather than allowing a second click to race it.
   const [committingIndex, setCommittingIndex] = useState(null);
   // Per Anoushka (a narrator — see CLAUDE_CHANGELOG.md for her full request, relayed by
-  // Enda): fixing ONE line's wording right after Parse & Generate shouldn't require
-  // sitting through the full sequential Build & Play first, and shouldn't go anywhere
-  // near the big per-subsection edit box further down (editing THAT box before ever
-  // pressing Continue once was a real bug — see the "two audios playing at once" fix in
-  // playSegment/handlePlayTarget below). editingSegmentId/segmentEditText track which
-  // ONE text segment's own quick editor (on its TtsSegmentCard, see that file) is open
-  // right now and what's currently typed into it — only one line open at a time, closing
-  // whichever was open before opening a different one, matching how a narrator actually
+  // Enda): fixing ONE line's wording should be a small, self-contained action — its own
+  // quick editor right on that line's own card, not the big per-subsection edit box
+  // further down (editing THAT box was originally a real bug before its own Continue
+  // had ever run once — see the "two audios playing at once" history in playSegment/
+  // handleBuildAndPlay below). Per the follow-up 31 redesign, this editor (like every
+  // other editing control) is only ever actually usable during the 'edit' phase —
+  // reviewPhase above — never during a Build & Play pass. editingSegmentId/
+  // segmentEditText track which ONE text segment's own quick editor (on its
+  // TtsSegmentCard, see that file) is open right now and what's currently typed into
+  // it — only one line open at a time, closing whichever was open before opening a
+  // different one, matching how a narrator actually
   // works down the list. savingSegmentId tracks which line is mid-save (regenerating its
   // own audio) so its own card can show "Saving…" and every other control on the panel
   // can be disabled while it's in flight, exactly like committingIndex does for a whole
@@ -422,8 +443,10 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   // the array if this box grew or shrank.
   //
   // Returns the FRESH segments/segmentAudios directly (not relying on React state
-  // having flushed by the time the caller needs them) so callers — handleContinueClick,
-  // handleFinalizeClick — can use the up-to-date data immediately.
+  // having flushed by the time a caller needs them) — kept even though its only current
+  // caller (handleSaveSubsectionPart) doesn't use the return value, since a future
+  // caller acting on this part's freshly-committed data right away shouldn't have to
+  // wait for a re-render to see it, exactly as it was originally needed for.
   const commitSubsectionEdit = async (si) => {
     const currentText = subsectionTexts?.[si];
     const currentSegs = subsections[si];
@@ -502,6 +525,28 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     setSegmentAudios(newSegmentAudios);
 
     return { segments: newSegments, segmentAudios: newSegmentAudios };
+  };
+
+  // Per Enda's follow-up 31 redesign: this box's own text no longer needs to be
+  // "committed" before moving on (there's no more per-block Continue to bundle it
+  // with) — it behaves exactly like the top script box already does, living as plain
+  // typed text that only actually takes effect the next time a full reparse runs (see
+  // handleSaveAndListenAgain below). This button is a pure convenience on top of that:
+  // saving THIS part now, without waiting for the next full listen pass, regenerates
+  // just its own lines' audio so the narrator can preview them via each line's own ▶
+  // Play button straight away — reusing commitSubsectionEdit exactly as before, just no
+  // longer tied to "and then start playing the next part".
+  const handleSaveSubsectionPart = async (si) => {
+    if (passLocked) return;
+    setError('');
+    setCommittingIndex(si);
+    try {
+      await commitSubsectionEdit(si);
+      setEditedSinceLastListen(true);
+    } catch (err) {
+      setError(`Could not save this part: ${getFnErrorMessage(err)}`);
+    }
+    setCommittingIndex(null);
   };
 
   // Opens (or, clicked again, closes) the compact quick-edit box on ONE text segment's
@@ -642,6 +687,10 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
       setSegments(newSegments);
       setSegmentAudios(newSegmentAudios);
       setEditingSegmentId(null);
+      // Per Enda's follow-up 31 redesign: a saved line edit is what "an editing pass"
+      // means — Mark Segment as Done must stay unavailable until the next COMPLETE
+      // Build & Play pass confirms this change was actually heard.
+      setEditedSinceLastListen(true);
     } catch (err) {
       setError(`Could not save this line: ${getFnErrorMessage(err)}`);
     }
@@ -674,8 +723,13 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     const parsed = parseScript(script);
     setSegments(parsed);
     setSegmentAudios({});
-    setSubsectionCursor(0);
-    setPlayedSegmentIds(new Set());
+    // Per Enda's follow-up 31 redesign: every fresh parse — the first one, or one
+    // triggered by "Save & Listen Again" after an edit — starts back in the 'listen'
+    // phase. listenPassCount is deliberately NOT reset here (see its declaration
+    // above) — it only resets on a brand new document (TranslationPanel's onTranslated)
+    // or after Mark Segment as Done finalizes, so it keeps counting across as many
+    // listen/edit cycles as this pass goes through.
+    setReviewPhase('listen');
     setActiveSubsectionIndex(null);
     // A fresh pass starts with a clean slate — any line's quick-edit box left open from
     // the previous pass would now be pointing at a segment id that no longer exists.
@@ -743,11 +797,15 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
       onScriptChange(rebuildScript(updated));
       return updated;
     });
+    // A pause length nudge changes the audio just as much as a wording edit does — Mark
+    // Segment as Done must wait for the next full listen pass to confirm it, same as
+    // any other edit (see commitSegmentEdit above).
+    setEditedSinceLastListen(true);
   };
 
-  // Per Anoushka/Enda: playing one line's own clip (this) and the combined Build &
-  // Play/Continue engine (handlePlayTarget, below) used to be two completely separate
-  // audio pathways that never checked each other — clicking one while the other was
+  // Per Anoushka/Enda: playing one line's own clip (this) and the combined Build & Play
+  // engine (handleBuildAndPlay, below) used to be two completely separate audio
+  // pathways that never checked each other — clicking one while the other was
   // already going started a SECOND sound on top of the first, with no way to stop just
   // the one already playing. That's the "two audio's playing at the same time" bug
   // Anoushka described. Fixed the same way every other control on this panel already
@@ -766,30 +824,22 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     setCurrentPlayingIndex(segIndex);
     const audio = new Audio(url);
     currentAudioRef.current = audio;
-    // Marks this line as genuinely heard (played all the way through) — see
-    // playedSegmentIds above for why this matters: it's what lets Continue/Save & Finish
-    // unlock for a narrator who reviews entirely line-by-line, never touching the
-    // combined Build & Play/Continue engine at all.
-    audio.onended = () => {
-      setCurrentPlayingIndex(null);
-      setPlayedSegmentIds((prev) => (prev.has(segmentId) ? prev : new Set(prev).add(segmentId)));
-    };
+    audio.onended = () => setCurrentPlayingIndex(null);
     audio.onerror = () => setCurrentPlayingIndex(null);
     audio.play().catch(() => setCurrentPlayingIndex(null));
   };
 
-  // Builds the final combined file and saves it — exactly what the single "Build &
-  // Play" button used to do at the very end. Only ever called once, when the LAST
-  // subsection finishes playing. Decodes fresh here (rather than reusing an earlier
-  // subsection's precomputed clips) since each subsection now plays with its own,
-  // separate playSegmentsPrecisely call — there's no single "precomputed" covering the
-  // whole script to reuse, and combineSegmentsToWav already supports decoding on its
-  // own perfectly well when nothing is passed.
-  // Accepts optional fresh segments/segmentAudios (from a commitSubsectionEdit call
-  // that just ran moments before, in handleFinalizeClick) rather than always reading
-  // component state directly — state set via setSegments/setSegmentAudios hasn't
-  // necessarily flushed and re-rendered yet by the time this runs, so passing the
-  // freshly-committed values explicitly avoids finalizing against stale, pre-edit data.
+  // Builds the final combined file and saves it — the action behind "Mark Segment as
+  // Done" (see handleMarkAsDone below). Decodes fresh here rather than reusing any
+  // earlier precomputed clips, since combineSegmentsToWav already supports decoding on
+  // its own perfectly well when nothing is passed.
+  // Accepts optional fresh segments/segmentAudios overrides — not currently used by
+  // handleMarkAsDone (Mark Segment as Done only ever appears once every edit is already
+  // committed, via commitSegmentEdit or the "Save This Part" button, so component state
+  // is always current by then), but left in place in case a future caller ever needs to
+  // finalize data it just committed a moment before component state would reflect it —
+  // state set via setSegments/setSegmentAudios doesn't necessarily flush/re-render
+  // before the very next line runs.
   const finalizeAndSave = async (segmentsOverride, segmentAudiosOverride) => {
     const segsToUse = segmentsOverride || segments;
     const audiosToUse = segmentAudiosOverride || segmentAudios;
@@ -815,15 +865,19 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
       if (response.data?.url) {
         onAudioChange(response.data.url);
         addLog('Combined audio saved.');
-        // Per Enda: once the final Build & Play has saved this pass, the editor goes
-        // back to the beginning — segments/audio cleared so "Parse & Generate" has to
-        // be clicked again to start a fresh pass over the (possibly just-edited)
-        // script. Only done on a successful save, so a failed upload doesn't lose the
+        // Per Enda: once Mark Segment as Done has saved this pass, the editor goes back
+        // to the beginning — segments/audio cleared so "Parse & Generate" has to be
+        // clicked again to start a fresh pass over the (possibly just-edited) script.
+        // Only done on a successful save, so a failed upload doesn't lose the
         // segments/audio the narrator would otherwise have to regenerate from scratch.
+        // listenPassCount/editedSinceLastListen reset here too — the NEXT segment (or a
+        // fresh pass on this one) starts its own review cycle from zero, exactly like a
+        // brand new import/translate does (see TranslationPanel's onTranslated below).
         setSegments(null);
         setSegmentAudios({});
-        setSubsectionCursor(0);
-        setPlayedSegmentIds(new Set());
+        setReviewPhase('listen');
+        setListenPassCount(0);
+        setEditedSinceLastListen(false);
         setEditingSegmentId(null);
       } else {
         addLog('Combined audio: no URL returned from upload.');
@@ -837,34 +891,25 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     setGeneratingCombined(false);
   };
 
-  // Plays ONE subsection's audio on demand — used both by the standalone "Build & Play"
-  // button under Parse & Generate (which always plays the very first subsection) and by
-  // every "Continue" button further down the list. Per Enda: pressing a control must
-  // play the audio that comes AFTER it, never the text already shown above it — so the
-  // narrator hears each part fresh, edits the text box that belongs to that part to
-  // reflect what needs to change, then presses Continue to move on. Also doubles as
-  // "Replay" for a part that's already been heard (targetIndex !== subsectionCursor),
-  // which just plays it again without moving the narrator's place forward.
-  const handlePlayTarget = async (subsections, targetIndex) => {
-    const targetSegments = subsections[targetIndex];
-    // Deliberately checks `playing`/`generatingCombined`/`editingSegmentId` individually
-    // here rather than the `busy`/`passLocked` aggregates: this function is also called
-    // synchronously from handleContinueClick right after `setCommittingIndex(null)` —
-    // React hasn't re-rendered yet at that point, so `committingIndex` (and anything
-    // computed from it, like `busy`/`passLocked`) would still read this render's OLD,
-    // pre-reset value here and wrongly bail out, breaking Continue every time. Adding
-    // `editingSegmentId` alone is safe — handleContinueClick never touches it, so it's
-    // never stale in that same-tick way — and it closes off the direct-click paths (the
-    // standalone Build & Play / Replay buttons) from starting while a per-line editor is
-    // still open and unsaved.
-    if (!targetSegments || playing || generatingCombined || editingSegmentId !== null) return;
-    const isReplay = targetIndex !== subsectionCursor;
+  // Plays the WHOLE document, subsection by subsection, automatically chained with no
+  // pause for editing between parts — this is the entire "listen" phase (see
+  // reviewPhase above). Per Enda's follow-up 31 redesign: a Build & Play pass is now
+  // meant to be a single, complete, uninterrupted listen from start to finish, with
+  // absolutely nothing else clickable while it runs (see the render below — no segment
+  // cards, no edit boxes are even shown during 'listen'), so there's no more reason to
+  // stop between subsections the way the old per-subsection Continue button did.
+  //
+  // Only counts as a genuine, complete pass — incrementing listenPassCount and moving
+  // the panel into 'edit' phase — if it plays every subsection through to the end
+  // without the narrator clicking Stop and without an error along the way. A stopped or
+  // failed pass leaves reviewPhase alone (still 'listen'), ready to press Build & Play
+  // again from the top.
+  const handleBuildAndPlay = async () => {
+    if (reviewPhase !== 'listen' || passLocked || generatingCombined || !hasSegmentAudios || !subsections.length) return;
 
-    // See the comment on playSegment above — the other half of the same fix. A
-    // single-line clip started via a card's own Play button doesn't touch `playing`
-    // (it's a much simpler, separate audio pathway), so it wouldn't otherwise be
-    // stopped just because this combined playback is about to start. Cut it off first
-    // so starting this never leaves that one still audible underneath it.
+    // See the comment on playSegment above — a lingering single-line preview clip
+    // doesn't touch `playing`, so it wouldn't otherwise be stopped just because this
+    // combined playback is about to start.
     if (currentAudioRef.current) {
       currentAudioRef.current.pause();
       currentAudioRef.current = null;
@@ -873,136 +918,100 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
 
     stopRef.current = false;
     setPlaying(true);
-    setActiveSubsectionIndex(targetIndex);
     setError('');
+    let interrupted = false;
 
-    let playback = null;
-    try {
-      // Per Enda: this used to be able to hang completely (a stalled fetch inside
-      // playSegmentsPrecisely, fixed at the source in audioCombiner.js) — every
-      // control on this panel gates on `playing`, which stayed stuck true forever
-      // with nothing to click and no error, so the panel looked frozen and the only
-      // way out was a hard refresh that lost every unsaved edit on the whole tour.
-      // withTimeout() is a second, general-purpose safety net here (on top of that
-      // source fix) so ANY unexpected hang in this step still surfaces a clear,
-      // recoverable error instead of freezing the panel again.
-      playback = await withTimeout(
-        playSegmentsPrecisely(targetSegments, segmentAudios, {
-          // playSegmentsPrecisely reports an index into the slice we gave it, not the
-          // full segments list — map it back to the card that's actually showing that
-          // segment so highlighting lands on the right one.
-          onSegmentChange: (localIdx) => {
-            const seg = targetSegments[localIdx];
-            const globalIdx = seg ? segments.findIndex((s) => s.id === seg.id) : -1;
-            if (globalIdx >= 0) setCurrentPlayingIndex(globalIdx);
-          },
-        }),
-        20000,
-        "Loading this part's audio took too long (check your connection) — nothing has been lost, just try again."
-      );
-      currentPlaybackRef.current = playback;
-      if (stopRef.current) {
-        playback.stop();
-      } else {
-        await withTimeout(
-          playback.done,
-          Math.ceil((playback.totalSeconds + 5) * 1000) + 15000,
-          'Playback got stuck — nothing has been lost, just try again.'
+    for (let i = 0; i < subsections.length; i++) {
+      setActiveSubsectionIndex(i);
+      const targetSegments = subsections[i];
+      let playback = null;
+      try {
+        // Per Enda: this used to be able to hang completely (a stalled fetch inside
+        // playSegmentsPrecisely, fixed at the source in audioCombiner.js) — every
+        // control on this panel gates on `playing`, which stayed stuck true forever
+        // with nothing to click and no error. withTimeout() is a second, general-
+        // purpose safety net here (on top of that source fix) so ANY unexpected hang
+        // in this step still surfaces a clear, recoverable error instead of freezing
+        // the panel again.
+        playback = await withTimeout(
+          playSegmentsPrecisely(targetSegments, segmentAudios, {}),
+          20000,
+          "Loading this part's audio took too long (check your connection) — nothing has been lost, just try again."
         );
+        currentPlaybackRef.current = playback;
+        if (stopRef.current) {
+          playback.stop();
+        } else {
+          await withTimeout(
+            playback.done,
+            Math.ceil((playback.totalSeconds + 5) * 1000) + 15000,
+            'Playback got stuck — nothing has been lost, just try again.'
+          );
+        }
+      } catch (err) {
+        // If we got as far as having a real `playback` (i.e. this was the
+        // "playback.done took too long" timeout, not a failure to even start), its
+        // audio sources may still be physically scheduled/playing even though we've
+        // given up waiting on them — stop() cuts them off and closes the
+        // AudioContext, so a timeout doesn't leave stray audio running behind an
+        // editor that now thinks nothing is playing.
+        if (playback) { try { playback.stop(); } catch { /* already stopped */ } }
+        const msg = getFnErrorMessage(err);
+        addLog(`Preview ERROR: ${msg}`);
+        setError(`Preview failed: ${msg}`);
+        interrupted = true;
       }
-    } catch (err) {
-      // If we got as far as having a real `playback` (i.e. this was the "playback.done
-      // took too long" timeout, not a failure to even start), its audio sources may
-      // still be physically scheduled/playing even though we've given up waiting on
-      // them — stop() cuts them off and closes the AudioContext, so a timeout doesn't
-      // leave stray audio running behind an editor that now thinks nothing is playing.
-      if (playback) { try { playback.stop(); } catch { /* already stopped */ } }
-      const msg = getFnErrorMessage(err);
-      addLog(`Preview ERROR: ${msg}`);
-      setError(`Preview failed: ${msg}`);
-      setCurrentPlayingIndex(null);
-      setPlaying(false);
-      setActiveSubsectionIndex(null);
       currentPlaybackRef.current = null;
-      return;
+      if (stopRef.current || interrupted) {
+        interrupted = true;
+        break;
+      }
     }
 
-    currentPlaybackRef.current = null;
-    setCurrentPlayingIndex(null);
     setPlaying(false);
     setActiveSubsectionIndex(null);
 
     if (stopRef.current) {
       stopRef.current = false;
-      return;
+      return; // stopped early — no pass credit, stay in 'listen', ready to try again
     }
-    if (isReplay) return;
+    if (interrupted) return; // errored mid-way — same, no credit
 
-    // Not a replay — this was the next part the narrator hadn't heard yet, so move the
-    // marker forward. Once every subsection has been played this way, the LAST
-    // subsection's own "Save & Finish" control lights up (see the render below) —
-    // finalizing is now always a deliberate, separate click, never bundled into a play
-    // action, so there's always a chance to edit the last bit of text after hearing it
-    // and before it gets saved.
-    setSubsectionCursor(targetIndex + 1);
+    // A full, uninterrupted pass just finished. Per Enda: "when they are happy, then,
+    // and only then can they declare the segment as done" — this is the moment that
+    // becomes possible (see listenPassCount/editedSinceLastListen above for the exact
+    // eligibility rule), and the panel switches into 'edit' phase, unlocking every
+    // line's own play/edit control and every subsection's own script box.
+    setListenPassCount((n) => n + 1);
+    setEditedSinceLastListen(false);
+    setReviewPhase('edit');
   };
 
-  // "Continue" for every subsection except the last. Per Enda: clicking Continue must
-  // save whatever's in THIS subsection's own edit box first — regenerating its audio and
-  // re-splitting its cards if a <break> was added or removed — and only then play the
-  // NEXT subsection, instead of quietly ignoring the edit until a full re-parse. Safe to
-  // still hand handlePlayTarget the (technically stale, pre-commit) `subsections` closure
-  // here: committing subsection `si` only ever changes ITS OWN ids/boundary — every
-  // subsection after it keeps the exact same segment objects/ids, just shifted position
-  // in the flat array — so the NEXT subsection (targetIndex) that's about to play is
-  // completely unaffected by the edit just committed.
-  const handleContinueClick = async (si, targetIndex) => {
-    // Per the follow-up 23 audit: also refuses to start while a per-line quick editor is
-    // open (editingSegmentId !== null) — without that, committing this WHOLE subsection
-    // (reassigning fresh ids to every segment in it) could run concurrently with, and
-    // silently clobber or be clobbered by, a per-line save on a segment inside it. Safe
-    // to call this synchronously from here (unlike inside handlePlayTarget below) since
-    // nothing in THIS function's own body changes committingIndex/editingSegmentId
-    // before this check runs — it's always a fresh read of the last render's state.
+  // Ends the 'edit' phase: whatever's currently typed into any subsection's script box
+  // (or the top box) is already the live `script` value (see handleScriptEdit/
+  // handleSubsectionScriptEdit — typing there always keeps it in sync, exactly like the
+  // top box already worked before this redesign), so this simply re-runs the same
+  // Parse & Generate pass as the manual button does: fresh ids, fresh audio for every
+  // segment, and back to the 'listen' phase — Enda: "every Save and finish must be
+  // followed by a new Parse and Generate, and the Build and Play". Deliberately reuses
+  // handleParseAndGenerate itself rather than a separate implementation, so this always
+  // behaves identically to a manual re-parse — and deliberately does NOT reset
+  // listenPassCount (handleParseAndGenerate no longer does that itself either), so
+  // repeating this as many times as the narrator wants keeps counting toward Mark
+  // Segment as Done's 2-pass requirement.
+  const handleSaveAndListenAgain = async () => {
     if (passLocked) return;
-    setError('');
-    setCommittingIndex(si);
-    try {
-      await commitSubsectionEdit(si);
-    } catch (err) {
-      setCommittingIndex(null);
-      setError(`Could not save your edit: ${getFnErrorMessage(err)}`);
-      return;
-    }
-    setCommittingIndex(null);
-    handlePlayTarget(subsections, targetIndex);
+    await handleParseAndGenerate();
   };
 
-  // The very last subsection has nothing after it to "Continue" into — its control is
-  // "Save & Finish" instead, and only renders/uploads/saves (no playback of its own,
-  // since its audio was already played by the Continue button before it). Kept separate
-  // from handlePlayTarget so a click here can never accidentally play anything.
-  //
-  // Per Enda: exactly like Continue, Save & Finish must also save whatever's currently in
-  // the LAST subsection's own edit box before finalizing — this is the one place where
-  // the freshly-committed segments/audio (not the stale closure) actually matter, since
-  // finalizeAndSave is rendering and uploading THIS possibly-just-edited subsection's own
-  // audio, not just about to play some later, unaffected one.
-  const handleFinalizeClick = async (si) => {
-    // See the comment in handleContinueClick above — same reasoning applies here.
-    if (passLocked) return;
-    setError('');
-    setCommittingIndex(si);
-    let fresh;
-    try {
-      fresh = await commitSubsectionEdit(si);
-    } catch (err) {
-      setCommittingIndex(null);
-      setError(`Could not save your edit: ${getFnErrorMessage(err)}`);
-      return;
-    }
-    setCommittingIndex(null);
-    await finalizeAndSave(fresh.segments, fresh.segmentAudios);
+  // The actual finalize action — renders the combined file, uploads it, and resets the
+  // panel (see finalizeAndSave above). Per Enda: only reachable once a full listen pass
+  // has confirmed the CURRENT state was actually heard — see the render below for
+  // exactly when the button itself is shown; this guard is defense in depth, the same
+  // pattern every other action on this panel already follows.
+  const handleMarkAsDone = async () => {
+    if (passLocked || reviewPhase !== 'edit' || listenPassCount < 2 || editedSinceLastListen) return;
+    await finalizeAndSave();
   };
 
   const handleStopPlay = () => {
@@ -1067,20 +1076,12 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     ? (subsectionSizes ? chunkBySizes(segments, subsectionSizes) : chunkIntoSubsections(segments))
     : [];
 
-  // A subsection counts as reviewed once every one of its own text lines (pauses have no
-  // audio to hear) has been individually played all the way through — see
-  // playedSegmentIds above. Used below alongside subsectionCursor so either review path
-  // — the combined Build & Play/Continue engine, or hearing/fixing every line one at a
-  // time — unlocks Continue/Save & Finish equally.
-  const isSubsectionReviewed = (subsectionSegments) =>
-    subsectionSegments.filter((s) => s.type === 'text').every((s) => playedSegmentIds.has(s.id));
-
   // Shared "something else has the floor right now" flag for every control on this
-  // panel — combined playback, a whole-subsection Continue/Save & Finish commit, the
-  // final render/upload, a single line's own quick-edit save (see commitSegmentEdit
-  // above), or Parse & Generate's own initial generation loop. Used to disable
-  // everything else while any one of them is in flight, so two of these can never race
-  // each other or overlap their audio.
+  // panel — combined playback, a whole-subsection "Save This Part" commit, the final
+  // render/upload, a single line's own quick-edit save (see commitSegmentEdit above),
+  // or Parse & Generate's own initial generation loop. Used to disable everything else
+  // while any one of them is in flight, so two of these can never race each other or
+  // overlap their audio.
   //
   // Per the follow-up 23 audit: `generatingSegmentId !== null` was added after finding
   // that a per-line quick edit could be saved WHILE Parse & Generate's own loop
@@ -1096,14 +1097,40 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
 
   // Layered on top of `busy`: a per-line quick editor being OPEN — even before its own
   // Save is clicked — must also block every "advance the pass" control (Parse &
-  // Generate, Build & Play, Continue, Save & Finish, Replay) and the per-subsection
-  // edit box. Without this, an open-but-unsaved per-line edit could be silently
-  // discarded or desynced by one of those (full audit in CLAUDE_CHANGELOG.md
+  // Generate, Build & Play, Save & Listen Again, Mark Segment as Done) and the
+  // per-subsection edit box. Without this, an open-but-unsaved per-line edit could be
+  // silently discarded or desynced by one of those (full audit in CLAUDE_CHANGELOG.md
   // follow-up 23). Deliberately kept SEPARATE from `busy` rather than folded into it:
   // `busy` also drives a card's own Play button and its pause Slider, and there's no
   // reason listening to (or nudging the duration of) a DIFFERENT line should be
   // blocked just because one line's own quick editor happens to be open elsewhere.
   const passLocked = busy || editingSegmentId !== null;
+
+  // Per Enda's follow-up 31 redesign: separate listening and per-line/per-subsection
+  // editing are two alternating MODES, never available together — "when it is running
+  // through a Build and Play pass, the ability to listen and edit a single sub segment
+  // must be disabled. When doing a editing pass, it must obviously be enabled." Covers
+  // BOTH the "actively playing" sub-state and the "parsed but Build & Play not clicked
+  // yet" sub-state uniformly — both are still the 'listen' phase.
+  const editingLocked = reviewPhase !== 'edit';
+
+  // Per Enda's follow-up 31 redesign: covers the top script textarea and its "Insert
+  // pause" quick-insert buttons — the ones editingLocked alone can't gate, because
+  // editingLocked defaults to true (reviewPhase starts as 'listen') even before any
+  // segments exist, and that box has to stay usable for the very first import/write.
+  // Locked only once a pass is actually active (segments exist) and it isn't the
+  // 'edit' phase yet, or whenever something else on the panel is busy.
+  const topScriptLocked = busy || (!!segments && editingLocked);
+
+  // Per Enda: "the ability to declare a segment as Done should only appear after a full
+  // Build a play procedure, never after and editing pass" and "must never appear after
+  // the first Build and Play pass". listenPassCount only ever increments on a complete,
+  // uninterrupted pass (see handleBuildAndPlay above); editedSinceLastListen flips back
+  // to true the instant anything is actually changed (a saved line/part edit, or a
+  // duration nudge) and only clears on the NEXT complete pass — so this is true for
+  // exactly the narrow window Enda described: right after listening, before any further
+  // edit.
+  const canMarkAsDone = reviewPhase === 'edit' && listenPassCount >= 2 && !editedSinceLastListen;
 
   return (
     <div className="bg-slate-800/50 rounded-lg border border-blue-600/30 p-3 space-y-3">
@@ -1118,8 +1145,11 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
           onScriptChange(text);
           setSegments(null);
           setSegmentAudios({});
-          setSubsectionCursor(0);
-          setPlayedSegmentIds(new Set());
+          // A brand new document — its own review cycle starts from zero, same as
+          // after Mark Segment as Done finalizes (see finalizeAndSave above).
+          setReviewPhase('listen');
+          setListenPassCount(0);
+          setEditedSinceLastListen(false);
           setEditingSegmentId(null);
         }}
         fixedLanguage={fixedLanguage}
@@ -1128,32 +1158,37 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
         // Per the follow-up 23 audit's fourth review pass: this panel's own
         // Import/Translate & Load controls used to be completely ungated by
         // anything happening below — a narrator could fire a translation reset
-        // while a Continue/Save & Finish/per-line save was still mid-flight
-        // awaiting its own TTS call, and that commit's stale pre-reset closure
-        // would resurrect the old document on top of the fresh reset once it
-        // resolved, discarding the translation and any other unrelated draft.
+        // while a Save This Part/per-line save was still mid-flight awaiting its
+        // own TTS call, and that commit's stale pre-reset closure would resurrect
+        // the old document on top of the fresh reset once it resolved, discarding
+        // the translation and any other unrelated draft.
         // Locked the same way every other segments-mutating control here is.
         disabled={passLocked}
       />
 
-      {/* Insert break tags at cursor */}
+      {/* Insert break tags at cursor. Per Enda's follow-up 31 redesign: these edit the
+          script directly, exactly like typing in the box below, so they're locked
+          under the exact same condition — see topScriptLocked just below. */}
       <div className="flex items-center gap-1 flex-wrap">
         <span className="text-xs text-slate-500">Insert pause:</span>
         {/* 0.1s — a mid-sentence pause is often much shorter than half a second; 0.5s
             alone made that impossible to express with a quick-insert button. */}
         <Button type="button" size="sm" variant="ghost"
           onClick={() => insertBreakTag('<break time="0.1s"/>')}
+          disabled={topScriptLocked}
           className="text-slate-400 hover:text-slate-200 h-7 px-2 text-xs gap-1">
           <Pause className="w-3 h-3" /> 0.1s
         </Button>
         <Button type="button" size="sm" variant="ghost"
           onClick={() => insertBreakTag('<break time="0.5s"/>')}
+          disabled={topScriptLocked}
           className="text-slate-400 hover:text-slate-200 h-7 px-2 text-xs gap-1">
           <Pause className="w-3 h-3" /> 0.5s (default)
         </Button>
         {[1, 2, 3].map((s) => (
           <Button key={s} type="button" size="sm" variant="ghost"
             onClick={() => insertBreakTag(`<break time="${s}s"/>`)}
+            disabled={topScriptLocked}
             className="text-slate-400 hover:text-slate-200 h-7 px-2 text-xs gap-1">
             <Pause className="w-3 h-3" /> {s}s
           </Button>
@@ -1162,7 +1197,17 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
 
       {/* Editable script textarea — same pastel yellow as every duplicate copy further
           down (per Enda: every editable script box must look identical, so it's never
-          ambiguous which boxes on this panel are text you can type into). */}
+          ambiguous which boxes on this panel are text you can type into). Per Enda's
+          follow-up 31 redesign: "no edits possible" during a listen pass has to cover
+          THIS box too, not just the per-line/per-subsection controls further down —
+          without locking it, a narrator could still freely rewrite the raw script here
+          while Build & Play is running (or before it's even been clicked), which is
+          exactly the kind of edit-without-listening the whole redesign exists to
+          prevent. Locked (topScriptLocked, see below) whenever a pass is active
+          (segments exist) and reviewPhase isn't 'edit' yet, or whenever anything else
+          on the panel is busy — but deliberately NOT locked before the very first Parse
+          & Generate (no segments yet), since that's the only way to import/write the
+          script in the first place. */}
       <div>
         <Textarea
           ref={textareaRef}
@@ -1170,6 +1215,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
           onChange={handleScriptEdit}
           placeholder={'Import a script file or write here...\n\nUse <break time="2s"/> for pauses.'}
           rows={6}
+          disabled={topScriptLocked}
           className="bg-amber-100 border-amber-300 text-black placeholder:text-amber-900/50 text-sm font-mono resize-y focus-visible:ring-amber-400"
         />
         <div className="flex items-center justify-between mt-1">
@@ -1188,18 +1234,18 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
           <Label className="text-slate-400 text-xs mb-1 block">Voice (Google)</Label>
           {/*
             Per the follow-up 23 audit's fifth review pass: this used to be changeable
-            at ANY time, including mid-pass — every Continue/Save-this-line click reads
-            selectedVoice fresh at the moment it fires, so switching voices partway
-            through working down a long document (an entirely ordinary thing to do
-            between subsections, with nothing else on the panel stopping it) silently
+            at ANY time, including mid-pass — every Save-this-line/Save This Part click
+            reads selectedVoice fresh at the moment it fires, so switching voices
+            partway through working down a long document (an entirely ordinary thing to
+            do between edit rounds, with nothing else on the panel stopping it) silently
             produced ONE saved narration mixing two different voices, with no warning
             at all. Locked to whatever was chosen before the pass started (Parse &
-            Generate) until it finishes (Save & Finish) or is abandoned (segments reset)
-            — exactly like the Language picker already is for a translation clone via
-            fixedLanguage, just for the ordinary non-clone case too.
+            Generate) until it finishes (Mark Segment as Done) or is abandoned (segments
+            reset) — exactly like the Language picker already is for a translation clone
+            via fixedLanguage, just for the ordinary non-clone case too.
           */}
           <Select value={selectedVoice} onValueChange={setSelectedVoice} disabled={!!segments}>
-            <SelectTrigger className="bg-slate-700 border-slate-500 text-white h-8 text-sm" title={segments ? 'Set for this pass when Parse & Generate was clicked — Save & Finish (or start a fresh pass) to change it.' : undefined}>
+            <SelectTrigger className="bg-slate-700 border-slate-500 text-white h-8 text-sm" title={segments ? 'Set for this pass when Parse & Generate was clicked — Mark Segment as Done (or start a fresh pass) to change it.' : undefined}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -1215,7 +1261,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
             </div>
           ) : (
             <Select value={selectedLanguage} onValueChange={setSelectedLanguage} disabled={!!segments}>
-              <SelectTrigger className="bg-slate-700 border-slate-500 text-white h-8 text-sm" title={segments ? 'Set for this pass when Parse & Generate was clicked — Save & Finish (or start a fresh pass) to change it.' : undefined}>
+              <SelectTrigger className="bg-slate-700 border-slate-500 text-white h-8 text-sm" title={segments ? 'Set for this pass when Parse & Generate was clicked — Mark Segment as Done (or start a fresh pass) to change it.' : undefined}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1226,16 +1272,25 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
         </div>
       </div>
 
-      {/* Parse & Generate */}
-      <Button
-        type="button"
-        onClick={handleParseAndGenerate}
-        disabled={generatingSegmentId !== null || overLimit || !script?.trim() || passLocked}
-        className="w-full bg-purple-600 hover:bg-purple-700 gap-2 text-white"
-      >
-        {generatingSegmentId !== null ? <Loader2 className="w-4 h-4 animate-spin" /> : <Braces className="w-4 h-4" />}
-        {generatingSegmentId !== null ? 'Generating…' : 'Parse & Generate'}
-      </Button>
+      {/* Parse & Generate — only shown before the very first pass. Once segments exist,
+          Save & Listen Again (further down, in 'edit' phase) is the one and only way to
+          re-parse — see the comment on handleSaveAndListenAgain above for why showing
+          both at once would just be two confusing paths to a similar-but-different
+          action. */}
+      {!segments && (
+        <Button
+          type="button"
+          onClick={() => {
+            setListenPassCount(0);
+            handleParseAndGenerate();
+          }}
+          disabled={generatingSegmentId !== null || overLimit || !script?.trim() || passLocked}
+          className="w-full bg-purple-600 hover:bg-purple-700 gap-2 text-white"
+        >
+          {generatingSegmentId !== null ? <Loader2 className="w-4 h-4 animate-spin" /> : <Braces className="w-4 h-4" />}
+          {generatingSegmentId !== null ? 'Generating…' : 'Parse & Generate'}
+        </Button>
+      )}
 
       {error && (
         <div ref={errorRef} className="text-red-400 text-sm bg-red-900/30 border border-red-700/50 rounded-lg px-3 py-2">
@@ -1243,19 +1298,17 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
         </div>
       )}
 
-      {/* Segments list, grouped into subsections (a run of up to SUBSECTION_MAX_SEGMENTS
-          cards, kept intact around pauses — see chunkIntoSubsections above). Per Enda: a control must
-          always play the audio that comes AFTER it, never the part already shown above
-          it — the narrator should hear a part fresh, THEN read/edit its text, not the
-          other way round. That means the very first part needs its own standalone
-          "Build & Play" button positioned right under Parse & Generate below, since
-          there's no earlier control to have played it. From there, the "Continue"
-          button at the end of each subsection's block plays the NEXT subsection down;
-          the narrator listens, edits that subsection's own text box to reflect what
-          they just heard, then presses Continue again. The very last subsection has
-          nothing left to Continue into, so its control is "Save & Finish" instead — it
-          renders and saves the combined file and sends the editor back to the top for a
-          fresh Parse & Generate pass. */}
+      {/* Per Enda's follow-up 31 redesign: a script written "for the ear, not the eye"
+          means a narrator must be forced to actually listen, so listening and editing
+          are two alternating MODES (see reviewPhase above), never available together.
+          'listen': ONLY the whole-document Build & Play control below is shown — no
+          segment cards, no edit boxes, nothing else to click. A complete, uninterrupted
+          pass through every subsection is what unlocks 'edit': every line's own
+          play/edit control and every subsection's own script box, but Build & Play
+          itself is gone — the only way to hear the result of an edit is to finish
+          editing (Save & Listen Again) and go listen again. Mark Segment as Done only
+          ever appears in 'edit' phase, and only in the narrow window right after a
+          pass completes, before anything is changed again — see canMarkAsDone above. */}
       {segments && subsections.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center gap-3 text-xs text-slate-400 flex-wrap">
@@ -1265,239 +1318,209 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
             <span className="text-slate-600">Use &lt;break time="Xs"/&gt; for pauses</span>
           </div>
 
-          {/* Standalone starter control — plays the very first subsection's audio.
-              Nothing comes before this one, so it's always "Build & Play", never
-              "Continue". */}
-          {(() => {
-            const topIsPlayingThis = playing && activeSubsectionIndex === 0;
-            const topAlreadyPlayed = subsectionCursor > 0 || (subsections[0] ? isSubsectionReviewed(subsections[0]) : false);
-            if (topIsPlayingThis) {
-              return (
-                <Button type="button" onClick={handleStopPlay} className="w-full bg-red-600 hover:bg-red-700 gap-2 text-white">
-                  <Square className="w-4 h-4" /> Stop
-                </Button>
-              );
-            }
-            if (topAlreadyPlayed) {
-              return (
-                <div className="flex gap-2 items-center">
-                  <span className="flex items-center gap-1.5 text-sm text-emerald-400 shrink-0">
-                    <CheckCircle2 className="w-4 h-4" /> Played
-                  </span>
-                  <Button
-                    type="button" variant="outline" size="sm"
-                    onClick={() => handlePlayTarget(subsections, 0)}
-                    disabled={passLocked}
-                    className="border-slate-500 text-slate-300 gap-1.5"
-                  >
-                    <Play className="w-3.5 h-3.5" /> Replay
-                  </Button>
-                </div>
-              );
-            }
-            return (
-              <Button
-                type="button"
-                onClick={() => handlePlayTarget(subsections, 0)}
-                disabled={passLocked || !hasSegmentAudios}
-                className="w-full bg-purple-600 hover:bg-purple-700 gap-2 text-white"
-              >
-                <Play className="w-4 h-4" /> Build & Play
-              </Button>
-            );
-          })()}
-
-          {subsections.map((subsectionSegments, si) => {
-            const isLastBlock = si === subsections.length - 1;
-            const targetIndex = si + 1; // the NEXT subsection this block's control plays
-            const isPlayingThis = playing && activeSubsectionIndex === targetIndex;
-            // thisBlockReviewed: has THIS block's own content actually been heard yet —
-            // either via the combined engine (subsectionCursor already past it) or by
-            // playing every one of its own lines individually (see isSubsectionReviewed
-            // above)? Either one is treated as a genuine review. Note this only ever
-            // ADDS a way to unlock what was reachable before — whenever the old
-            // cursor-only check would already have shown 'done' or 'active', cursor
-            // alone still satisfies this too, so nothing that worked before changes.
-            const thisBlockReviewed = subsectionCursor > si || isSubsectionReviewed(subsectionSegments);
-            const status = subsectionCursor > targetIndex ? 'done' : thisBlockReviewed ? 'active' : 'locked';
-            const finalizeReady = subsectionCursor >= subsections.length || thisBlockReviewed;
-            const isSavingThis = generatingCombined && isLastBlock;
-            const isCommittingThis = committingIndex === si;
-
-            return (
-              <div key={`subsection-${si}`} className="space-y-2 pt-2 border-t border-slate-700/60 first:border-t-0 first:pt-0">
-                {subsectionSegments.map((seg) => {
-                  const globalIdx = segments.findIndex((s) => s.id === seg.id);
-                  return (
-                    <TtsSegmentCard
-                      key={seg.id}
-                      segment={seg}
-                      audioUrl={segmentAudios[seg.id]}
-                      isGenerating={generatingSegmentId === seg.id}
-                      isPlaying={currentPlayingIndex === globalIdx}
-                      onPlay={playSegment}
-                      onDurationChange={handleDurationChange}
-                      controlsDisabled={busy}
-                      isEditing={editingSegmentId === seg.id}
-                      editValue={editingSegmentId === seg.id ? segmentEditText : ''}
-                      onEditChange={setSegmentEditText}
-                      onToggleEdit={seg.type === 'text' ? () => handleToggleSegmentEdit(seg) : undefined}
-                      // Per the follow-up 23 audit (Bug C): opening a DIFFERENT line's
-                      // editor while this one is still open used to silently discard
-                      // whatever was typed here, with no warning at all. Blocked at the
-                      // source instead of just documented — every card but the one
-                      // currently open (isEditing handles that one via TtsSegmentCard's
-                      // own logic) is locked out of opening a new editor while
-                      // editingSegmentId already points elsewhere.
-                      //
-                      // Also blocked (symmetric with the per-subsection Textarea's own
-                      // lock further below) whenever THIS subsection's own combined box
-                      // already has an uncommitted draft sitting in it — typed before
-                      // this editor was ever opened, not just during. Saving a per-line
-                      // edit refreshes its owning subsection's box to the new ground
-                      // truth (see commitSegmentEdit above); doing that while an
-                      // unrelated manual draft is already sitting there would silently
-                      // discard it, so opening the per-line editor at all is refused
-                      // until that draft is committed (Continue) or cleared first.
-                      editToggleDisabled={
-                        busy
-                        || (editingSegmentId !== null && editingSegmentId !== seg.id)
-                        || (subsectionTexts?.[si] !== undefined && subsectionTexts[si] !== rebuildScript(subsectionSegments))
-                      }
-                      onCancelEdit={handleCancelSegmentEdit}
-                      onSaveEdit={() => commitSegmentEdit(seg.id)}
-                      isSavingEdit={savingSegmentId === seg.id}
-                    />
-                  );
-                })}
-
-                {/* Per-subsection editable script box — shows and edits ONLY this
-                    block's own text (see subsectionTexts/handleSubsectionScriptEdit
-                    above), not the whole document, so it's never necessary to scroll
-                    through everything else to find the right passage. Still just as
-                    real an edit as the box at the top — it's sent up via the same
-                    onScriptChange, just scoped to this one part. Per Enda: this is
-                    where you write down the changes needed after hearing THIS
-                    subsection's audio (played by the control above this block, or by
-                    the standalone Build & Play button for the very first one) — not a
-                    box you fill in before listening. Deliberately styled unlike the dark
-                    narration cards around it (a muted pastel yellow with black text) so
-                    it reads clearly as an editing tool wedged into the list, not another
-                    narration block. */}
-                <div>
-                  <Label className="text-amber-200/80 text-xs mb-1 block">Edit this part's script (saved when you click Continue / Save &amp; Finish below)</Label>
-                  <Textarea
-                    value={subsectionTexts?.[si] ?? rebuildScript(subsectionSegments)}
-                    onChange={(e) => handleSubsectionScriptEdit(si, e.target.value)}
-                    rows={4}
-                    // Per the follow-up 23 audit (Bug B): typing into this box while ITS
-                    // OWN Continue/Save & Finish (or any other commit/save/render) is
-                    // already in flight used to go unseen by that in-flight commit
-                    // (which captured this box's text the moment it started) but WOULD
-                    // still feed the [segments] effect's re-derivation once that commit
-                    // finished — sizing this subsection using text that was never
-                    // actually the text sent to TTS. Locked for the same window
-                    // everything else on the panel already locks for.
-                    //
-                    // Also locked (Bug B's narrower sibling) whenever one of THIS
-                    // subsection's own segments has its per-line quick editor open —
-                    // without this, typing here while that per-line save lands would
-                    // get silently discarded the moment its commit refreshes this same
-                    // box from the newly-true segments (see the [segments] effect
-                    // above). A DIFFERENT subsection's box is untouched by this check —
-                    // only the one that actually owns the open editor locks.
-                    disabled={busy || subsectionSegments.some((s) => s.id === editingSegmentId)}
-                    className="bg-amber-100 border-amber-300 text-black placeholder:text-amber-900/50 text-sm font-mono resize-y focus-visible:ring-amber-400"
-                  />
-                  {/* Per Enda's follow-up 26 report: this box going grey with no
-                      explanation read as "stuck" — it's actually locked for a real
-                      reason (a line inside it has its own quick editor open right now;
-                      typing here while that line's save lands would get silently
-                      thrown away), but with nothing on screen saying so, closing that
-                      one line's editor felt like the only way to find out why, and it
-                      wasn't obvious that was even what was happening. Spelling it out
-                      here instead of just going quiet — this box unlocks the moment
-                      that line's own editor is closed or saved, no page action needed. */}
-                  {!busy && subsectionSegments.some((s) => s.id === editingSegmentId) && (
-                    <p className="text-xs text-amber-500/80 mt-1">
-                      Locked while one of this part's own lines has its own editor open above — close or save that line first.
-                    </p>
-                  )}
-                </div>
-
-                <div className="flex gap-2 items-center">
-                  {isLastBlock ? (
-                    finalizeReady ? (
-                      <Button
-                        type="button"
-                        onClick={() => handleFinalizeClick(si)}
-                        disabled={passLocked}
-                        className="flex-1 bg-purple-600 hover:bg-purple-700 gap-2 text-white"
-                      >
-                        {(isSavingThis || isCommittingThis) ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                        {isCommittingThis ? 'Saving your edit…' : isSavingThis ? 'Saving…' : 'Save & Finish'}
-                      </Button>
-                    ) : (
-                      <Button type="button" disabled className="flex-1 bg-slate-700 text-slate-500 gap-2 cursor-not-allowed">
-                        <CheckCircle2 className="w-4 h-4" /> Save & Finish
-                      </Button>
-                    )
-                  ) : isPlayingThis ? (
-                    <Button type="button" onClick={handleStopPlay} className="flex-1 bg-red-600 hover:bg-red-700 gap-2 text-white">
-                      <Square className="w-4 h-4" /> Stop
-                    </Button>
-                  ) : status === 'done' ? (
-                    <>
-                      <span className="flex items-center gap-1.5 text-sm text-emerald-400 shrink-0">
-                        <CheckCircle2 className="w-4 h-4" /> Played
-                      </span>
-                      <Button
-                        type="button" variant="outline" size="sm"
-                        onClick={() => handlePlayTarget(subsections, targetIndex)}
-                        disabled={passLocked}
-                        className="border-slate-500 text-slate-300 gap-1.5"
-                      >
-                        <Play className="w-3.5 h-3.5" /> Replay
-                      </Button>
-                    </>
-                  ) : status === 'active' ? (
-                    <Button
-                      type="button"
-                      onClick={() => handleContinueClick(si, targetIndex)}
-                      disabled={passLocked || !hasSegmentAudios}
-                      className="flex-1 bg-purple-600 hover:bg-purple-700 gap-2 text-white"
-                    >
-                      {isCommittingThis ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-                      {isCommittingThis ? 'Saving your edit…' : 'Continue'}
-                    </Button>
-                  ) : (
-                    <Button type="button" disabled className="flex-1 bg-slate-700 text-slate-500 gap-2 cursor-not-allowed">
-                      <Play className="w-4 h-4" /> Continue
-                    </Button>
-                  )}
-                  <Button
-                    type="button" variant="outline"
-                    onClick={handleDownload}
-                    disabled={!hasSegmentAudios || busy}
-                    className="border-slate-500 text-slate-300 gap-2"
-                  >
-                    <Download className="w-4 h-4" /> Download
-                  </Button>
-                </div>
-                {/* Per Enda's follow-up 30 report: Save & Finish (or Continue) sitting
-                    permanently greyed out with no explanation looked like a bug even
-                    though it wasn't one — spelling out exactly what unlocks it, the same
-                    way follow-up 26's locked-box hint above already does for a similar
-                    "why is this stuck" moment. */}
-                {!thisBlockReviewed && !isPlayingThis && (
-                  <p className="text-xs text-amber-500/80">
-                    {isLastBlock ? 'Save & Finish unlocks once' : 'Continue unlocks once'} every line above has
-                    been played through — press ▶ on each one, or use Build & Play / Continue further up.
+          {reviewPhase === 'listen' ? (
+            // LISTEN PHASE — the whole point is that nothing else is even shown here:
+            // no segment cards, no edit boxes, nothing to click but Build & Play/Stop.
+            <div className="bg-slate-800/50 rounded-lg border border-purple-600/30 p-4 space-y-3">
+              <p className="text-sm text-slate-300 text-center">
+                {listenPassCount === 0
+                  ? "Listen to the whole part, start to finish, before you can make any changes."
+                  : "Listen to your edits, start to finish, before you can edit again."}
+              </p>
+              {playing ? (
+                <>
+                  <p className="text-xs text-purple-300 text-center">
+                    Playing part {(activeSubsectionIndex ?? 0) + 1} of {subsections.length}…
                   </p>
-                )}
+                  <Button type="button" onClick={handleStopPlay} className="w-full bg-red-600 hover:bg-red-700 gap-2 text-white">
+                    <Square className="w-4 h-4" /> Stop
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  type="button"
+                  onClick={handleBuildAndPlay}
+                  disabled={passLocked || !hasSegmentAudios}
+                  className="w-full bg-purple-600 hover:bg-purple-700 gap-2 text-white"
+                >
+                  <Play className="w-4 h-4" /> Build & Play
+                </Button>
+              )}
+            </div>
+          ) : (
+            // EDIT PHASE — every line's own play/edit control and every subsection's
+            // own script box are unlocked; Build & Play itself is gone (see the comment
+            // block above this whole section for the full reasoning).
+            <>
+              {canMarkAsDone && (
+                <div className="bg-emerald-900/20 border border-emerald-600/40 rounded-lg p-3 space-y-2 text-center">
+                  <p className="text-sm text-emerald-300 flex items-center justify-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4" /> You've listened all the way through — happy with it?
+                  </p>
+                  <Button
+                    type="button"
+                    onClick={handleMarkAsDone}
+                    disabled={passLocked}
+                    className="w-full bg-blue-700/30 hover:bg-blue-700/50 border border-blue-600/50 text-amber-400 hover:text-amber-300 gap-2"
+                  >
+                    {generatingCombined ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                    {generatingCombined ? 'Saving…' : 'Mark Segment as Done'}
+                  </Button>
+                  <p className="text-xs text-emerald-400/70">Not happy yet? Just make your changes below instead.</p>
+                </div>
+              )}
+
+              {subsections.map((subsectionSegments, si) => {
+                const isCommittingThis = committingIndex === si;
+                const partHasDraft = subsectionTexts?.[si] !== undefined && subsectionTexts[si] !== rebuildScript(subsectionSegments);
+
+                return (
+                  <div key={`subsection-${si}`} className="space-y-2 pt-2 border-t border-slate-700/60 first:border-t-0 first:pt-0">
+                    {subsectionSegments.map((seg) => {
+                      const globalIdx = segments.findIndex((s) => s.id === seg.id);
+                      return (
+                        <TtsSegmentCard
+                          key={seg.id}
+                          segment={seg}
+                          audioUrl={segmentAudios[seg.id]}
+                          isGenerating={generatingSegmentId === seg.id}
+                          isPlaying={currentPlayingIndex === globalIdx}
+                          onPlay={playSegment}
+                          onDurationChange={handleDurationChange}
+                          controlsDisabled={busy || editingLocked}
+                          isEditing={editingSegmentId === seg.id}
+                          editValue={editingSegmentId === seg.id ? segmentEditText : ''}
+                          onEditChange={setSegmentEditText}
+                          onToggleEdit={seg.type === 'text' ? () => handleToggleSegmentEdit(seg) : undefined}
+                          // Per the follow-up 23 audit (Bug C): opening a DIFFERENT
+                          // line's editor while this one is still open used to
+                          // silently discard whatever was typed here, with no warning
+                          // at all. Blocked at the source instead of just documented —
+                          // every card but the one currently open (isEditing handles
+                          // that one via TtsSegmentCard's own logic) is locked out of
+                          // opening a new editor while editingSegmentId already points
+                          // elsewhere.
+                          //
+                          // Also blocked (symmetric with the per-subsection Textarea's
+                          // own lock further below) whenever THIS subsection's own
+                          // combined box already has an uncommitted draft sitting in
+                          // it — typed before this editor was ever opened, not just
+                          // during. Saving a per-line edit refreshes its owning
+                          // subsection's box to the new ground truth (see
+                          // commitSegmentEdit above); doing that while an unrelated
+                          // manual draft is already sitting there would silently
+                          // discard it, so opening the per-line editor at all is
+                          // refused until that draft is saved (via "Save This Part"
+                          // below) or cleared first.
+                          editToggleDisabled={
+                            busy
+                            || editingLocked
+                            || (editingSegmentId !== null && editingSegmentId !== seg.id)
+                            || partHasDraft
+                          }
+                          onCancelEdit={handleCancelSegmentEdit}
+                          onSaveEdit={() => commitSegmentEdit(seg.id)}
+                          isSavingEdit={savingSegmentId === seg.id}
+                        />
+                      );
+                    })}
+
+                    {/* Per-subsection editable script box — shows and edits ONLY this
+                        block's own text (see subsectionTexts/handleSubsectionScriptEdit
+                        above), not the whole document, so it's never necessary to
+                        scroll through everything else to find the right passage. Per
+                        Enda's follow-up 31 redesign: this box's typed text, like the
+                        top script box, takes effect the next time a full reparse runs
+                        ("Save & Listen Again" below) — "Save This Part" is a pure
+                        convenience that regenerates just this part's own audio early,
+                        so its lines can be previewed via their own ▶ Play buttons
+                        without waiting for the next full listen pass. Deliberately
+                        styled unlike the dark narration cards around it (a muted
+                        pastel yellow with black text) so it reads clearly as an
+                        editing tool wedged into the list, not another narration
+                        block. */}
+                    <div>
+                      <Label className="text-amber-200/80 text-xs mb-1 block">Edit this part's script</Label>
+                      <Textarea
+                        value={subsectionTexts?.[si] ?? rebuildScript(subsectionSegments)}
+                        onChange={(e) => handleSubsectionScriptEdit(si, e.target.value)}
+                        rows={4}
+                        // Per the follow-up 23 audit (Bug B): typing into this box
+                        // while ITS OWN "Save This Part" (or any other commit/save/
+                        // render) is already in flight used to go unseen by that
+                        // in-flight commit (which captured this box's text the moment
+                        // it started) but WOULD still feed the [segments] effect's
+                        // re-derivation once that commit finished — sizing this
+                        // subsection using text that was never actually the text sent
+                        // to TTS. Locked for the same window everything else on the
+                        // panel already locks for — and, per the follow-up 31
+                        // redesign, for the whole 'listen' phase too.
+                        //
+                        // Also locked (Bug B's narrower sibling) whenever one of THIS
+                        // subsection's own segments has its per-line quick editor
+                        // open — without this, typing here while that per-line save
+                        // lands would get silently discarded the moment its commit
+                        // refreshes this same box from the newly-true segments (see
+                        // the [segments] effect above). A DIFFERENT subsection's box
+                        // is untouched by this check — only the one that actually
+                        // owns the open editor locks.
+                        disabled={busy || editingLocked || subsectionSegments.some((s) => s.id === editingSegmentId)}
+                        className="bg-amber-100 border-amber-300 text-black placeholder:text-amber-900/50 text-sm font-mono resize-y focus-visible:ring-amber-400"
+                      />
+                      {/* Per Enda's follow-up 26 report: this box going grey with no
+                          explanation read as "stuck" — it's actually locked for a real
+                          reason (a line inside it has its own quick editor open right
+                          now; typing here while that line's save lands would get
+                          silently thrown away), but with nothing on screen saying so,
+                          closing that one line's editor felt like the only way to find
+                          out why, and it wasn't obvious that was even what was
+                          happening. Spelling it out here instead of just going quiet —
+                          this box unlocks the moment that line's own editor is closed
+                          or saved, no page action needed. */}
+                      {!busy && subsectionSegments.some((s) => s.id === editingSegmentId) && (
+                        <p className="text-xs text-amber-500/80 mt-1">
+                          Locked while one of this part's own lines has its own editor open above — close or save that line first.
+                        </p>
+                      )}
+                      {partHasDraft && (
+                        <div className="flex justify-end mt-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleSaveSubsectionPart(si)}
+                            disabled={passLocked}
+                            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-blue-700/30 hover:bg-blue-700/50 border border-blue-600/50 text-amber-400 hover:text-amber-300 disabled:opacity-40 transition-colors"
+                          >
+                            {isCommittingThis ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                            {isCommittingThis ? 'Saving…' : 'Save This Part (preview before listening again)'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+
+              <div className="flex gap-2 items-center pt-2 border-t border-slate-700/60">
+                <Button
+                  type="button"
+                  onClick={handleSaveAndListenAgain}
+                  disabled={passLocked}
+                  className="flex-1 bg-purple-600 hover:bg-purple-700 gap-2 text-white"
+                >
+                  {generatingSegmentId !== null ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                  {generatingSegmentId !== null ? 'Generating…' : 'Save & Listen Again'}
+                </Button>
+                <Button
+                  type="button" variant="outline"
+                  onClick={handleDownload}
+                  disabled={!hasSegmentAudios || busy}
+                  className="border-slate-500 text-slate-300 gap-2"
+                >
+                  <Download className="w-4 h-4" /> Download
+                </Button>
               </div>
-            );
-          })}
+            </>
+          )}
         </div>
       )}
 
@@ -1514,16 +1537,18 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
           </div>
           <AudioPlayer src={audioUrl} className="w-full" />
           <p className="text-xs text-slate-500">
-            To change this: edit the script above, click <strong>Parse &amp; Generate</strong>, then click
-            <strong> Build &amp; Play</strong> to hear the first part. Edit the yellow text box under it to
-            reflect what you just heard, then click <strong>Continue</strong> to hear the next part — repeat
-            down the list. Once you have heard and adjusted every part, <strong>Save &amp; Finish</strong>
-            saves the new version. No need to leave this screen.
+            To change this: edit the script above and click <strong>Parse &amp; Generate</strong>, then
+            <strong> Build &amp; Play</strong> — listen to the whole thing, start to finish. Only once that
+            complete pass finishes do you get access to each line's own play/edit controls and every part's
+            own script box; make your changes, then <strong>Save &amp; Listen Again</strong> to hear them
+            together in context before you can edit further. Repeat as many times as you like — once
+            you've listened straight through at least twice with nothing left unheard,{' '}
+            <strong>Mark Segment as Done</strong> saves the new version. No need to leave this screen.
           </p>
           <p className="text-xs text-slate-500">
-            Spotted one line's mistake straight after Parse &amp; Generate, before you've heard anything
-            yet? No need to wait — click that line's own <strong>play</strong> button to hear just that
-            line, then the <strong>pencil</strong> next to it to fix and save just that line on its own.
+            This deliberately forces a listen between every round of edits — a script has to sound right
+            to the EAR, not just read right on screen, so every change gets heard in context before it can
+            be called finished.
           </p>
         </div>
       )}

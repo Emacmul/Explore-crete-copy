@@ -41,6 +41,103 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-23 (follow-up 31) — Redesigned the whole review/finalize workflow around forced listening: separate "listen" and "edit" modes that alternate, replacing follow-up 30's mechanism entirely
+Scope: `src/components/admin/NarrationTtsEditor.jsx` only. (Frontend only —
+no backend function touched.)
+
+Enda, across several messages: "The whole idea is, as I've said more than
+once, to end up with a script written for the ear rather than for the eye.
+Therefore, the narrators must be forced to listen as much as possible."
+He then laid out the exact sequence he wants: import/translate a file,
+Parse & Generate, then a first Build & Play pass that "should disable the
+ability to listen to each segment separately and edit lines in the text.
+They must listen to their edits first, the complete segment, and then get
+the option to make more changes." After that complete pass, the narrator
+is "taken back to the top" with per-line listening and editing unlocked
+again; any change then requires "a new Parse and Generate, and the 'Build
+and Play', where they listen, nothing else" before editing unlocks again —
+repeatable with no limit. He then added three clarifications: "Done"
+must only appear after a full Build & Play pass, never right after an
+editing pass, and never after only the very first pass ("must never
+appear after the first Build and Play pass"); and while a Build & Play
+pass is running, per-line listening/editing must be disabled, while
+during an editing pass it must obviously be enabled.
+
+This replaces follow-up 30's `subsectionCursor`/`playedSegmentIds`
+mechanism entirely — that approach let a narrator "unlock" finalizing by
+listening to lines individually, which technically worked but never forced
+listening to a whole part back-to-back, in context, the way an end user
+actually hears it. Implemented as two alternating, mutually-exclusive
+modes:
+
+- **`reviewPhase`** — `'listen'` or `'edit'`. In `'listen'`, the segment
+  list is replaced entirely by a single purple box with only a "Build &
+  Play" button (or "Playing part X of Y…" / Stop while it's running) — no
+  segment cards, no per-line play buttons, no edit boxes are rendered at
+  all. In `'edit'`, every line's own play/edit control and every
+  subsection's own script box are unlocked, but the combined "Build &
+  Play" control is gone — the only way to hear a change is to finish
+  editing and listen again.
+- **`listenPassCount`** — how many COMPLETE, uninterrupted Build & Play
+  passes have finished since the last fresh Parse & Generate. Only
+  increments if every subsection played through with no Stop and no
+  error; a stopped or failed pass earns no credit and stays in `'listen'`.
+  Deliberately NOT reset by "Save & Listen Again" (see below), so it keeps
+  counting across as many listen/edit cycles as the narrator repeats —
+  "There should be no limit to the amount of times this can be repeated."
+- **`editedSinceLastListen`** — set the instant any actual edit lands (a
+  per-line save, a per-subsection "Save This Part", or a pause-duration
+  nudge), cleared only when the next full listen pass completes.
+- **"Mark Segment as Done"** (renamed from "Save & Finish") only appears
+  when `reviewPhase === 'edit' && listenPassCount >= 2 && !editedSinceLastListen`
+  — i.e. only in the narrow window right after a SECOND (or later) complete
+  pass, before anything is touched again. This directly encodes all three
+  of Enda's clarifications: never after only the first pass, never right
+  after an edit, only right after a full listen.
+- **"Build & Play"** now always auto-chains through every subsection in
+  one continuous run with nothing else clickable meanwhile (previously
+  it paused for a manual "Continue" between each part) — since editing
+  during a listen pass is now forbidden outright, there was no longer any
+  reason to stop between parts.
+- **"Save & Finish"/"Continue" are gone**, replaced by "Save & Listen
+  Again" (ends the edit phase — reuses the existing, already-audited
+  `handleParseAndGenerate` to re-parse with fresh ids/audio and drop back
+  into `'listen'`, exactly matching Enda's "every Save and finish must be
+  followed by a new Parse and Generate, and the Build and Play") and a new
+  "Save This Part" convenience button (reuses the existing
+  `commitSubsectionEdit`) that regenerates just one subsection's audio
+  early, so its lines can be previewed via their own ▶ buttons before the
+  next full listen pass, without waiting for it.
+- Every per-line/per-subsection control's disabled logic now also checks
+  a new `editingLocked` flag (`reviewPhase !== 'edit'`), so — per Enda's
+  fourth message — "when it is running through a Build and Play pass, the
+  ability to listen and edit a single sub segment must be disabled. When
+  doing an editing pass, it must obviously be enabled."
+- **Found and fixed during review, before shipping:** the top-level script
+  textarea and its five "Insert pause" quick-insert buttons were never
+  covered by any of the above — they edit the script directly, exactly
+  like the per-subsection boxes, but had no `disabled` prop at all, so a
+  narrator could still freely rewrite the raw script while a Build & Play
+  pass was running (or before it had even been clicked), silently
+  defeating the "no edits possible" requirement for the listen phase.
+  Fixed with a new `topScriptLocked` flag (`busy || (!!segments &&
+  editingLocked)`) — locked only once a pass is actually active and it
+  isn't the edit phase yet, but deliberately left unlocked before the
+  very first Parse & Generate, since that's the only way to import or
+  write the script in the first place.
+
+Verified with `npx eslint`/`npx vite build` (both clean) and a standalone
+Node.js simulation hand-mirroring the exact state-transition logic
+(`/tmp/ttscheck2/sim14_review_phase_fsm.mjs`), covering 11 scenarios: a
+fresh parse never offers Done; the first complete pass alone never offers
+it; an edit after a pass hides it again; "Save & Listen Again" preserves
+the pass count rather than resetting it; a second complete pass unlocks
+Done; editing again after that hides it again; this repeats with no
+limit; a Stopped pass earns no credit; retrying after a stop still works
+normally; Mark Segment as Done fully resets everything for the next
+segment; and the defensive guard blocks an ineligible call — all 11
+passed.
+
 ## 2026-08-23 (follow-up 30) — Save & Finish (and Continue) could get permanently stuck disabled for a narrator who reviews entirely line-by-line
 Scope: `src/components/admin/NarrationTtsEditor.jsx`. (Frontend only — no
 backend function touched.)
