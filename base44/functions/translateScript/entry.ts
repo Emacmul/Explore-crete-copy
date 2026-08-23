@@ -73,7 +73,6 @@ ${text}`;
       }, { status: 500 });
     }
 
-
     const groqData = await groqResponse.json();
     const translatedText = groqData.choices?.[0]?.message?.content;
 
