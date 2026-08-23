@@ -24,7 +24,70 @@ import { getFnErrorMessage } from '@/lib/utils';
 // every other segments-mutating control on that panel already is — this panel simply
 // can't be used to import/translate a replacement script while anything else has the
 // floor.
-export default function TranslationPanel({ onTranslated, fixedLanguage, disabled = false }) {
+//
+// waypointSegmentId/waypointSegmentTitle (follow-up 28, revised in follow-up 29 — see
+// CLAUDE_CHANGELOG.md for both): Enda originally reported the imported script always
+// ending with an extra "segment code and name" line (e.g. "BOR1a-PS Lidl (Tsesmes) Car
+// Park") that broke saving when he tried to delete it. Follow-up 28's investigation
+// wrongly concluded that line was deliberately sitting at the bottom of his master
+// documents; follow-up 29, after Enda uploaded the actual .odt, found the real cause —
+// that title is a heading at the very TOP of his document (correct — it's how he tells
+// his files apart), and `fileTextExtractor.js`'s .odt reader had a real bug that silently
+// moved every heading to the END of the extracted text, which is what actually produced
+// the "extra trailing line". That extractor bug is now fixed at the root (see
+// `extractTextFromOdtXml` in fileTextExtractor.js), so this should no longer fire for
+// .odt files with a real heading. It's kept in place as a backstop for any OTHER way a
+// waypoint's own label could end up as a plain line of text — a .docx/.txt file where the
+// title was typed as an ordinary line rather than a heading style, for instance — checking
+// the FIRST and LAST non-empty line of a freshly-imported file against this waypoint's own
+// known code/title and silently dropping it if — and only if — it matches one of those
+// exactly (ignoring case/whitespace/trailing punctuation). Deliberately exact-match-only,
+// never fuzzy: it will never touch a real narration line that merely happens to mention
+// the location.
+function normalizeForLabelMatch(str) {
+  return (str || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s.:;\-–—]+$/g, '') // drop trailing punctuation/separators first…
+    .replace(/\s+/g, ' ')          // …then collapse any remaining internal whitespace
+    .trim();
+}
+
+function stripWaypointLabelLine(text, segmentId, segmentTitle) {
+  if (!text) return text;
+  const candidates = [
+    [segmentId, segmentTitle].filter(Boolean).join(' '),
+    segmentTitle,
+    segmentId,
+  ]
+    .map(normalizeForLabelMatch)
+    .filter(Boolean);
+  if (candidates.length === 0) return text;
+
+  let lines = text.split(/\r?\n/);
+
+  // Check the last non-empty line first (the originally-reported shape).
+  let lastIdx = lines.length - 1;
+  while (lastIdx >= 0 && !lines[lastIdx].trim()) lastIdx--;
+  if (lastIdx >= 0 && candidates.includes(normalizeForLabelMatch(lines[lastIdx]))) {
+    lines.splice(lastIdx, 1);
+    while (lines.length > 0 && !lines[lines.length - 1].trim()) lines.pop();
+  }
+
+  // Then check the first non-empty line (the shape a real heading-style title takes once
+  // the .odt extractor bug above is fixed — this is now the normal, correct position for
+  // it, so this only matters for other file types/conventions where it isn't a heading).
+  let firstIdx = 0;
+  while (firstIdx < lines.length && !lines[firstIdx].trim()) firstIdx++;
+  if (firstIdx < lines.length && candidates.includes(normalizeForLabelMatch(lines[firstIdx]))) {
+    lines.splice(firstIdx, 1);
+    while (lines.length > 0 && !lines[0].trim()) lines.shift();
+  }
+
+  return lines.join('\n');
+}
+
+export default function TranslationPanel({ onTranslated, fixedLanguage, disabled = false, waypointSegmentId, waypointSegmentTitle }) {
   const { keys: apiKeys } = useNarratorApiKeys();
   const [importedText, setImportedText] = useState('');
   const [fileName, setFileName] = useState('');
@@ -54,7 +117,7 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
         setImportedText('');
         setFileName('');
       } else {
-        setImportedText(text);
+        setImportedText(stripWaypointLabelLine(text, waypointSegmentId, waypointSegmentTitle));
         setFileName(file.name);
       }
     } catch (err) {

@@ -41,6 +41,129 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-23 (follow-up 29) — Found and fixed the REAL cause of follow-up 28: a document-order bug in the .odt text extractor
+Scope: `src/lib/fileTextExtractor.js`, `src/components/admin/TranslationPanel.jsx`.
+(Frontend only — no backend function touched.)
+
+Follow-up 28 (below) fixed the symptom Enda reported — a "segment code and
+name" line always ending up at the bottom of the imported script — based
+on an investigation that concluded it must be deliberate trailing content
+in his master documents. Enda corrected this directly, uploading one of
+his actual `.odt` files: the title ("BOR1a-PS Lidl (Tsesmes) Car Park")
+is a heading at the very TOP of the document, exactly where it should be
+— it's how he tells his files apart — and was never at the bottom, ever.
+That earlier investigation was wrong.
+
+Inspecting the real file's `content.xml` found the actual bug, in
+`extractTextFromOdtXml()` in `fileTextExtractor.js`:
+
+    const paragraphs = [...doc.getElementsByTagName('text:p'), ...doc.getElementsByTagName('text:h')];
+
+`text:h` is ODF's tag for a heading-styled paragraph (Enda's page title
+uses it). `getElementsByTagName` returns each tag's own matches in
+document order, but concatenating the two separate lists like this threw
+away the ordering BETWEEN them — every heading, regardless of where it
+actually sits in the real document, got moved to the very end of the
+extracted text. Enda's title sits at paragraph #1 in the real document;
+this bug silently relocated it to the last line of the imported script,
+which is exactly what looked like an unwanted trailing narration line.
+
+Fixed at the root: `extractTextFromOdtXml()` now walks the document tree
+once, collecting `text:p` and `text:h` elements in their real, actual
+order (new `collectOdtParagraphsInOrder()` helper) — and, since a
+heading is a page title/label, never narration meant to be spoken,
+headings are now excluded from the extracted script entirely rather
+than just correctly repositioned. Enda's title stays exactly where he
+put it in his own `.odt` file for finding it later; it simply never
+becomes a line of narration in this app, in any position. Verified
+against the real uploaded file end-to-end (via jsdom, the actual
+`extractTextFromFile()` code path) — the title no longer appears
+anywhere in the extracted text, confirmed by a script assertion, not
+just a visual check.
+
+Follow-up 28's `TranslationPanel.jsx` fix (the exact-match strip against
+the waypoint's known `segment_id`/`segment_title`) is kept in place as a
+backstop, not removed — it's harmless now for `.odt` files with a real
+heading (nothing left for it to match), and still useful for any OTHER
+file type/convention where a narrator's title might end up as a plain
+line of text rather than a real heading style (e.g. typed as an ordinary
+first line in a `.docx` or `.txt`). It's now widened to check the FIRST
+non-empty line as well as the last, since a correctly-extracted heading
+now normally lands at the top, not the bottom — still exact-match-only,
+verified against 5 cases including the new leading-line and both-ends
+scenarios (`/tmp/ttscheck2/sim12_label_strip_v2.mjs`), and a real
+narration line that merely mentions the location is still never touched.
+
+## 2026-08-23 (follow-up 28) — Stopped the trailing "segment code and name" line from becoming a spoken narration line
+Scope: `src/components/admin/TranslationPanel.jsx`,
+`src/components/admin/NarrationTtsEditor.jsx`,
+`src/components/admin/DrivingTourWaypointEditor.jsx`,
+`src/components/admin/TourSimulator.jsx`. (Frontend only — no backend
+function touched.)
+
+Enda reported that with every segment, the imported/translated script
+ends with an extra line — the waypoint's own code and name (e.g.
+"BOR1a-PS Lidl (Tsesmes) Car Park") — sitting at the bottom as if it
+were meant to be spoken. Deleting that line via the per-line quick
+editor triggered the "can't save an empty line" error (since deleting
+the whole line leaves nothing to save); deleting it via the larger
+per-subsection script box instead didn't activate Save & Finish. Asked:
+"Is it possible to just stop the translator from adding that last line
+in the first place?"
+
+Traced the whole import → translate → TTS-parse pipeline end-to-end
+first, since "the translator adds it" was one live hypothesis. Nothing
+in this codebase appends such a line anywhere — not the import step
+(`extractTextFromFile`), not the `translateScript` backend function,
+not the TTS parser. It's already present in Enda's own source/master
+documents (the ones he imports via "Import File"), sitting there as
+plain trailing text before this app ever sees it.
+
+Two options: stop including that label line in the master documents
+going forward (no code change needed at all, since it's Enda's own
+document), or defensively strip it automatically on import. Did the
+latter, since it needs no change to Enda's existing workflow and is
+safe to leave in place either way:
+
+- `TranslationPanel.jsx` now accepts two new optional props,
+  `waypointSegmentId` and `waypointSegmentTitle` — the same
+  `segment_id`/`segment_title` fields already shown together as a
+  waypoint's own label elsewhere in `DrivingTourWaypointEditor.jsx`.
+  A new `stripTrailingWaypointLabelLine()` helper checks the LAST
+  non-empty line of a freshly-imported file against those two fields
+  (as "id + title", title alone, and id alone — case/whitespace/
+  trailing-punctuation-insensitive) and drops that line — and any
+  newly-trailing blank lines — only on an EXACT match. This is
+  deliberately exact-match-only, never fuzzy: a real narration line
+  that merely happens to mention the place by name (e.g. "You are now
+  approaching Lidl (Tsesmes) Car Park.") is left completely untouched,
+  since it isn't the whole line on its own. Verified with 8 standalone
+  test cases (`/tmp/ttscheck2/sim10_label_strip.mjs`) covering the
+  exact reported scenario, trailing punctuation/whitespace variants,
+  case-insensitivity, a real narration line that must NOT be touched,
+  a real narration line that only mentions the location mid-sentence
+  (must NOT be touched), a title-only trailing line, no waypoint info
+  supplied (safe no-op), and a document that is only the label line.
+  All 8 passed.
+- `NarrationTtsEditor.jsx` now accepts and simply forwards the same two
+  new props straight through to `<TranslationPanel>`.
+- `DrivingTourWaypointEditor.jsx` (both `<NarrationTtsEditor>` render
+  sites — the narrator-facing one and the admin one) and
+  `TourSimulator.jsx` (its one render site) now pass
+  `waypointSegmentId={wp.segment_id}` /
+  `waypointSegmentTitle={wp.segment_title}` (or `selectedWp.` in
+  `TourSimulator.jsx`) through, so the strip has the real waypoint's
+  own code/title to match against.
+- `SegmentScriptEditor.jsx`'s own `<NarrationTtsEditor>` render site
+  (a combined, multi-waypoint "segment" editor) was deliberately left
+  untouched — there's no single waypoint's own label to match against
+  there, so nothing is stripped for that editor either way; that's the
+  existing, correct behaviour for it, not a gap.
+
+Nothing about the parsing/chunking/TTS-generation pipeline changed —
+this only affects what gets stored into the editable script the
+moment a file is imported, before any of that runs.
+
 ## 2026-08-23 (follow-up 27) — Raised the per-part segment ceiling from 12 to 125, per Enda
 Scope: `src/components/admin/NarrationTtsEditor.jsx`. (Frontend only — no
 backend function touched.)

@@ -197,16 +197,55 @@ function extractOdtParagraphText(paragraphEl) {
   return text;
 }
 
+// THE REAL BUG (follow-up 29, per Enda's uploaded .odt): this used to build `paragraphs`
+// as [...all text:p elements..., ...all text:h elements...] — every text:h (an ODF
+// "Heading 1"-style paragraph) got tacked on AFTER every ordinary text:p, regardless of
+// where it actually sits in the real document. Enda's own master .odt files put the page
+// title — e.g. "BOR1a-PS Lidl (Tsesmes) Car Park" — in a heading at the very TOP of the
+// document, exactly where it belongs (so he can tell which file is which without opening
+// it). getElementsByTagName('text:p')/('text:h') don't care about that — they each just
+// return their own tag's matches in document order, and concatenating the two lists then
+// threw that order away, silently moving the title from the top of the real document to
+// the BOTTOM of the imported text. That's what looked like an extra unwanted line being
+// "added" at the end of every script (see the follow-up 28 entry below, which treated the
+// symptom rather than this root cause — it's kept in place as a harmless backstop, but
+// this is the actual fix).
+//
+// Walking the tree once, in real document order, and treating text:h specially fixes it
+// two ways at once: paragraphs never get reshuffled relative to each other regardless of
+// heading/body mix, and headings — which are titles/labels, not narration meant to be
+// spoken — are excluded from the extracted script entirely rather than just relocated.
+// The title stays exactly where Enda put it in his own .odt file; it just never becomes
+// a line of narration in this app, in any position.
+function collectOdtParagraphsInOrder(rootEl) {
+  const paragraphs = [];
+  const walk = (node) => {
+    for (let i = 0; i < node.childNodes.length; i++) {
+      const child = node.childNodes[i];
+      if (child.nodeName === 'text:p') {
+        paragraphs.push({ el: child, isHeading: false });
+      } else if (child.nodeName === 'text:h') {
+        paragraphs.push({ el: child, isHeading: true });
+      } else if (child.childNodes && child.childNodes.length) {
+        walk(child);
+      }
+    }
+  };
+  walk(rootEl);
+  return paragraphs;
+}
+
 function extractTextFromOdtXml(xml) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(sanitizeXmlEntities(xml), 'text/xml');
   if (doc.getElementsByTagName('parsererror').length > 0) {
     throw new Error('This .odt file contains something the browser\'s XML reader couldn\'t parse. Try re-saving it as a plain .txt file instead.');
   }
-  const paragraphs = [...doc.getElementsByTagName('text:p'), ...doc.getElementsByTagName('text:h')];
+  const paragraphs = collectOdtParagraphsInOrder(doc.documentElement);
   const lines = [];
-  for (let i = 0; i < paragraphs.length; i++) {
-    const text = extractOdtParagraphText(paragraphs[i]);
+  for (const { el, isHeading } of paragraphs) {
+    if (isHeading) continue; // a page title/label, never narration — see comment above
+    const text = extractOdtParagraphText(el);
     if (text.trim()) lines.push(text);
   }
   return lines.join('\n');
