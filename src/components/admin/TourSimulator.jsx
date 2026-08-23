@@ -119,21 +119,17 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
   // Which waypoint's audio is the CURRENTLY loaded/playing clip in audioRef.current, if
   // any — set the moment a clip starts, cleared once its "ended" handling has run.
   const activeAudioWpIndexRef = useRef(null);
-  // Set by jumpToWaypoint() below whenever a jump/test is scoped to one location —
-  // either "Jump to location…" (whole location) or "Test this waypoint" (one waypoint
-  // within it) — and cleared by stopSim()/Reset. Two independent auto-pause points:
-  // segmentEndDist (never drive on past THIS location's own end, into the next one)
-  // and singleWaypointIndex (for a single-waypoint test, stop the instant that one
-  // waypoint's own audio has finished, rather than rolling on to whatever's next).
+  // Set by jumpToWaypoint() below whenever a jump/test is scoped — either "Jump to
+  // location…" (drive across the whole location, auto-pause at the next location) or
+  // "Test this waypoint" (drive across just this one waypoint's own stretch, auto-pause
+  // at the very next waypoint, whatever its role) — and cleared by stopSim()/Reset.
+  // segmentEndDist is the one auto-pause point either way; excludeWaypointIndex keeps
+  // that boundary waypoint's own audio from triggering early, before the boundary check
+  // below has actually paused there.
   const scopedTestRef = useRef(null);
   const handleAudioEndedRef = useRef(null);
   handleAudioEndedRef.current = () => {
-    const finishedIndex = activeAudioWpIndexRef.current;
     activeAudioWpIndexRef.current = null;
-    if (scopedTestRef.current?.singleWaypointIndex != null && finishedIndex === scopedTestRef.current.singleWaypointIndex) {
-      pauseSim();
-      return;
-    }
     if (audioQueueRef.current.length > 0) {
       const next = audioQueueRef.current.shift();
       if (audioRef.current) {
@@ -188,6 +184,22 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
       }
     }
     return null;
+  };
+
+  // Where a single-waypoint test (see "Test this waypoint" / jumpToWaypoint's
+  // scopeToThisWaypoint below) should auto-pause: the very NEXT waypoint in the list,
+  // whatever its own role — e.g. BOR1a's own boundary is BOR1b, not the next whole
+  // location. Per Enda: BOR1b is its own point within the same BOR1 location, not a
+  // separate location, so nextLocationBoundary (which only stops at the next
+  // primary_start) skips right past it. Checking one point's speech length against
+  // driving speed means watching the car actually drive from that point to the very
+  // next one and seeing whether the audio has already finished, or is still going, once
+  // it gets there — so this must be a real drive to a real next point, never a stop
+  // triggered by the audio clip itself ending early.
+  const nextWaypointBoundary = (targetIndex) => {
+    const next = waypoints[targetIndex + 1];
+    if (!next) return null;
+    return { dist: cumDistForWaypoint(next), waypointIndex: targetIndex + 1 };
   };
 
   // Every primary_start location, with how far along the trail it sits — lets the narrator jump
@@ -250,17 +262,17 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
   // Jumping to a location's start (from the "Jump to location…" list) is just this
   // same function called on that location's own primary_start waypoint.
   //
-  // Every jump is scoped to the target waypoint's own location: the tick loop below
-  // auto-pauses once the marker reaches the very next primary_start waypoint after this
-  // one (see nextLocationBoundary above) — that's where the NEXT location starts, so
-  // it's also exactly where this one ends — rather than driving on uncontrolled into
-  // whatever location comes next. That next-location waypoint is also excluded from
-  // triggering its own audio during this run (see the geofence check further down), so
-  // testing one location can never bleed into the next one starting to play too early.
-  // `scopeToThisWaypoint` narrows this further, for "Test this waypoint": the run ALSO
-  // auto-pauses the instant that one waypoint's own audio has finished, so a
-  // single-waypoint test stays about just that waypoint rather than rolling on to the
-  // next thing that triggers within the same location.
+  // Every jump is scoped so the tick loop below auto-pauses at a real boundary, rather
+  // than driving on uncontrolled into whatever comes next. "Jump to location…" (whole
+  // location) uses nextLocationBoundary — the very next primary_start waypoint, i.e.
+  // where the NEXT location starts, so it's also exactly where this one ends.
+  // `scopeToThisWaypoint`, for "Test this waypoint", narrows this to just one point's
+  // own stretch instead: nextWaypointBoundary — the very next waypoint in the list,
+  // whatever its role, so BOR1a's own test stops at BOR1b, not at wherever the next
+  // whole location happens to start. Either way the boundary waypoint is also excluded
+  // from triggering its own audio during this run (see the geofence check further
+  // down), so a test can never bleed into whatever comes after the boundary starting to
+  // play too early.
   const jumpToWaypoint = (targetIndex, { autoplay = false, scopeToThisWaypoint = false } = {}) => {
     const wp = waypoints[targetIndex];
     if (!wp) return;
@@ -274,11 +286,10 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
     passedSegmentsRef.current = new Set();
     audioQueueRef.current = [];
     activeAudioWpIndexRef.current = null;
-    const boundary = nextLocationBoundary(targetIndex);
+    const boundary = scopeToThisWaypoint ? nextWaypointBoundary(targetIndex) : nextLocationBoundary(targetIndex);
     scopedTestRef.current = {
       segmentEndDist: boundary?.dist ?? null,
       excludeWaypointIndex: boundary?.waypointIndex ?? null,
-      singleWaypointIndex: scopeToThisWaypoint ? targetIndex : null,
     };
     if (audioRef.current) audioRef.current.pause();
     setDistTraveled(cumDist);
@@ -325,10 +336,9 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
       return;
     }
 
-    // A jump/test scoped to one location (see jumpToWaypoint) auto-pauses right here,
-    // at that location's own end, instead of driving on uncontrolled into whatever
-    // location comes next — this is the fix for the simulated vehicle running straight
-    // through a sub-segment's own end point.
+    // A scoped jump/test (see jumpToWaypoint) auto-pauses right here, at its own
+    // boundary — the next location for "Jump to location…", or just the next waypoint
+    // for "Test this waypoint" — instead of driving on uncontrolled past it.
     const segBoundary = scopedTestRef.current?.segmentEndDist;
     if (segBoundary != null && newDist >= segBoundary) {
       distRef.current = segBoundary;
@@ -586,17 +596,22 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
                     ))}
                   </SelectContent>
                 </Select>
-                {/* Per Enda: jumps the marker to just this waypoint and immediately plays
-                    its own saved audio, so speech length can be checked against driving
-                    speed one waypoint at a time — zoom in on the map first, this never
-                    resets that zoom. Repeat for each waypoint in turn. Disabled when this
-                    waypoint has no saved audio yet, since there'd be nothing to test. */}
+                {/* Per Enda: jumps the marker to just this waypoint, plays its own saved
+                    audio, and drives on — same as a normal run — all the way to the very
+                    NEXT waypoint in the list (whatever its role), auto-pausing there. That
+                    way speech length can actually be checked against driving speed one
+                    waypoint at a time: watch whether the audio has already finished, or is
+                    still going, by the time the car reaches the next point, rather than the
+                    drive being cut short the instant the audio itself ends. Zoom in on the
+                    map first — this never resets that zoom. Repeat for each waypoint in
+                    turn. Disabled when this waypoint has no saved audio yet, since there'd
+                    be nothing to test. */}
                 <Button
                   size="sm"
                   onClick={() => jumpToWaypoint(selectedWpIndex, { autoplay: true, scopeToThisWaypoint: true })}
                   disabled={!selectedWp?.audio_clip_url}
                   className="bg-blue-700/30 hover:bg-blue-700/50 border border-blue-600/50 text-white shrink-0 whitespace-nowrap"
-                  title="Jump to this waypoint and play its saved audio, without resetting the map zoom"
+                  title="Jump to this waypoint, play its saved audio, and drive on to the next waypoint — without resetting the map zoom"
                 >
                   Test this waypoint
                 </Button>

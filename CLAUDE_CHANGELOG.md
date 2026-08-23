@@ -41,6 +41,71 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-22 (follow-up 16) — Fix: "Test this waypoint" now drives on to the very next waypoint instead of freezing the instant its audio ends
+Scope: `src/components/admin/TourSimulator.jsx`. (Frontend only — no
+backend function touched.)
+
+**What changed:**
+- Enda just finished editing BOR1a's narration and wanted to check its
+  speech length against driving speed: click Start, watch the vehicle
+  drive across BOR1a's own stretch, and stop at BOR1b (the very next
+  point, still within the same BOR1 location — not a separate
+  location). He clicked the plain "Start" button above the map directly
+  and got no audio and a car that never stopped. Plain "Start" always
+  begins wherever the simulation currently sits (position 0 after a
+  reset) with no scoping at all — it has no idea a waypoint is selected
+  in the editor panel beside it, so it drives from the very beginning
+  of the whole trail with no auto-pause anywhere, which is why nothing
+  seemed to happen and the car "kept driving": it was still working its
+  way toward BOR1a from the start of the tour, with no boundary set to
+  ever stop it once it got there.
+- The button actually built for this — "Test this waypoint", right next
+  to the waypoint dropdown in the editor panel — jumps straight to the
+  selected waypoint and plays its audio, so that part already worked.
+  But its OWN auto-pause was wrong for this exact purpose: it stopped
+  the instant that waypoint's own audio clip finished playing, which
+  cuts the simulated drive short before the car can ever reach the next
+  point — making it impossible to actually see whether the audio
+  finished with time to spare or overran, which is the whole point of
+  a speech-length check.
+- Replaced that "stop when the audio ends" behaviour with a real
+  distance boundary: "Test this waypoint" now drives the marker on,
+  same as a normal run — triggering audio via the same geofences as
+  always — all the way to the very NEXT waypoint in the list, whatever
+  its own role (so BOR1a's own test correctly stops at BOR1b, not at
+  wherever the next whole separate location happens to start), and
+  auto-pauses only once it actually gets there. A new
+  `nextWaypointBoundary()` helper (alongside the existing
+  `nextLocationBoundary()` used by "Jump to location…") computes that.
+
+**Why:** Enda: "I want to use the simulator to see if the speech length
+works. I should therefore be able to click 'Start' above the map, see
+the vehicle move across Bor1a and stop at the location of BOR1b. I
+should also be able to hear the audio. I can not hear anything, and the
+car keeps driving." Confirmed with him that he'd clicked the plain
+"Start" button directly (not "Jump to location" or "Test this
+waypoint"), and that BOR1b is its own point within location BOR1, not a
+separate location — both needed to pin down which of the three
+start-style controls was the right one and what its boundary should
+actually be. Going forward: plain "Start" always plays the WHOLE tour
+from wherever it currently sits, with no auto-pause; "Jump to
+location…" (top toolbar) tests a WHOLE location, auto-pausing at the
+next one; "Test this waypoint" (in the editor panel, beside the
+waypoint you're editing) now correctly tests ONE point's own stretch,
+auto-pausing at the very next point.
+
+**Verified:** `npx vite build` completes with no errors. `npx eslint`
+on the changed file reports zero new errors/warnings (the one
+pre-existing "Unused eslint-disable directive" warning on an unrelated
+line was already present before this change — confirmed via `git
+stash`). Traced `jumpToWaypoint`'s new boundary selection by hand:
+`scopeToThisWaypoint` (from "Test this waypoint") now always resolves
+to `nextWaypointBoundary`, while the "Jump to location…" path is
+completely unchanged and still resolves to `nextLocationBoundary` —
+the two controls' behaviour no longer shares any accidental coupling.
+
+---
+
 ## 2026-08-22 (follow-up 15) — Feature fix: "Continue" and "Save & Finish" now save each box's own edit immediately, instead of ignoring it until the next Parse & Generate
 Scope: `src/components/admin/NarrationTtsEditor.jsx`. (Frontend only —
 no backend function touched.)
