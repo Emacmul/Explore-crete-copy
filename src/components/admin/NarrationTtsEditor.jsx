@@ -100,18 +100,36 @@ function chunkBySizes(segments, sizes) {
 // scratch on every re-parse (the original chunkIntoSubsections behaviour) doesn't do
 // that — inserting segments anywhere shifts every later group's boundary too.
 //
-// Instead: `subsectionTexts` (see the effect below) already holds each box's OWN
-// current text — including any edit just typed into it, even before Parse & Generate
-// is clicked — so re-parsing EACH box's own text independently gives exactly how many
-// segments THAT box should claim now. Slicing the freshly re-parsed flat `segments`
-// list using those per-box counts, in order, reproduces every untouched box's exact
-// prior grouping and only changes the size of the one that was actually edited. Falls
-// back to the original fixed-grouping rule only when there's no established
-// breakdown yet (the very first Parse & Generate of a pass).
-function deriveSubsections(segments, subsectionTexts) {
+// Takes `subsectionSizes` — the FROZEN, explicitly-maintained segment count per
+// subsection (see the state declaration further down) — never the live box text.
+// An earlier version took `subsectionTexts` instead and re-parsed every box's own
+// current text to work out its size, on the theory that a box's own text is always
+// the freshest source of "how many segments should this box claim now". That's true
+// for the ONE box actually being committed, but this function sizes EVERY box, and
+// the other boxes' text can be a narrator's own uncommitted draft sitting there
+// unsaved (see the [segments] effect below for the full "must survive an unrelated
+// change" requirement that draft has to meet). Re-parsing that draft's length to
+// decide a completely different subsection's boundary meant an uncommitted draft
+// with a different piece count than its subsection's real segments — typed but
+// Continue never clicked — could silently shift every LATER subsection's slice the
+// moment ANY subsection elsewhere committed, stealing a real segment from one
+// subsection into another and corrupting its display, while ALSO fooling the
+// ground-truth comparison in that effect into thinking the wrong subsection had
+// changed (follow-up 23 audit, third review pass). Sizing only from the frozen,
+// explicitly-set `subsectionSizes` — updated precisely by commitSubsectionEdit and
+// commitSegmentEdit, in the same update as segments itself, never inferred from
+// text — makes chunk index i mean the same logical subsection from one run of the
+// effect to the next, no matter what's mid-typing in an unrelated box. Falls back to
+// the original fixed-grouping rule whenever there's no valid frozen breakdown yet —
+// the very first Parse & Generate of a pass, or (defensively) if the sizes on hand
+// don't actually sum to the current segment count.
+function deriveSubsections(segments, subsectionSizes) {
   if (!segments) return [];
-  if (subsectionTexts && subsectionTexts.length > 0) {
-    return chunkBySizes(segments, subsectionTexts.map((t) => parseScript(t).length));
+  const sizesValid = Array.isArray(subsectionSizes)
+    && subsectionSizes.length > 0
+    && subsectionSizes.reduce((a, b) => a + b, 0) === segments.length;
+  if (sizesValid) {
+    return chunkBySizes(segments, subsectionSizes);
   }
   return chunkIntoSubsections(segments);
 }
@@ -168,6 +186,22 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   // control can show "Saving…" and every other control on the panel can be disabled
   // while it's in flight, rather than allowing a second click to race it.
   const [committingIndex, setCommittingIndex] = useState(null);
+  // Per Anoushka (a narrator — see CLAUDE_CHANGELOG.md for her full request, relayed by
+  // Enda): fixing ONE line's wording right after Parse & Generate shouldn't require
+  // sitting through the full sequential Build & Play first, and shouldn't go anywhere
+  // near the big per-subsection edit box further down (editing THAT box before ever
+  // pressing Continue once was a real bug — see the "two audios playing at once" fix in
+  // playSegment/handlePlayTarget below). editingSegmentId/segmentEditText track which
+  // ONE text segment's own quick editor (on its TtsSegmentCard, see that file) is open
+  // right now and what's currently typed into it — only one line open at a time, closing
+  // whichever was open before opening a different one, matching how a narrator actually
+  // works down the list. savingSegmentId tracks which line is mid-save (regenerating its
+  // own audio) so its own card can show "Saving…" and every other control on the panel
+  // can be disabled while it's in flight, exactly like committingIndex does for a whole
+  // subsection's Continue/Save & Finish.
+  const [editingSegmentId, setEditingSegmentId] = useState(null);
+  const [segmentEditText, setSegmentEditText] = useState('');
+  const [savingSegmentId, setSavingSegmentId] = useState(null);
   const textareaRef = useRef(null);
   const currentAudioRef = useRef(null);
   const stopRef = useRef(false);
@@ -186,18 +220,88 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     if (fixedLanguage) setSelectedLanguage(fixedLanguage);
   }, [fixedLanguage]);
 
+  // Ground truth for each subsection's box text AS OF the last time this effect ran —
+  // i.e. what rebuildScript(that subsection's real segments) actually was, regardless
+  // of whatever a narrator might have typed (but not yet committed) into the box on
+  // top of it. Used only to detect whether a subsection's OWN underlying data actually
+  // changed between one run of this effect and the next (see below) — never read or
+  // written anywhere else.
+  const subsectionTruthRef = useRef(null);
+
   // Keeps the per-subsection edit boxes AND the frozen card-grouping sizes in sync any
-  // time `segments` actually changes — a fresh Parse & Generate, or a pause-duration
-  // tweak via a slider — using deriveSubsections (see above) so each box's boundary is
-  // PRESERVED wherever possible instead of the whole document being re-flowed into
-  // fresh groups from scratch every time. Reads `subsectionTexts` as it stood
-  // BEFORE this change (deliberately left out of the dependency array — this must only
-  // re-run when `segments` itself changes, never on every keystroke into a box).
+  // time `segments` actually changes — a fresh Parse & Generate, a pause-duration tweak
+  // via a slider, a whole-subsection Continue/Save & Finish commit, or a per-line quick
+  // edit — using deriveSubsections (see above) so each box's boundary is PRESERVED
+  // wherever possible instead of the whole document being re-flowed into fresh groups
+  // from scratch every time. Reads `subsectionSizes` as it stands at the moment this
+  // effect runs (deliberately left out of the dependency array — this must only re-run
+  // when `segments` itself changes, not merely because subsectionSizes was updated in
+  // the very same batch by whichever handler changed segments; see deriveSubsections
+  // above for why sizing must come from here, never from subsectionTexts).
+  //
+  // Per the follow-up 23 audit: this used to unconditionally overwrite EVERY
+  // subsection's box text with a fresh rebuild on ANY segments change, even for a
+  // subsection whose own data didn't change at all — so an uncommitted draft sitting in
+  // subsection A's box (typed but Continue never clicked) would be silently wiped out
+  // the moment ANYTHING else changed `segments` elsewhere: a duration slider dragged in
+  // a completely different subsection, or a whole-subsection/per-line commit anywhere
+  // else in the document.
+  //
+  // Per the follow-up 23 audit's THIRD review pass: an initial fix comparing each
+  // subsection's fresh rebuilt "truth" against its OWN truth last time (only refresh if
+  // it changed) wasn't enough on its own, because the chunk boundaries it was comparing
+  // were themselves still being sized from live subsectionTexts (via the old
+  // deriveSubsections) — see the long comment above deriveSubsections/chunkBySizes for
+  // the full concrete failure this caused. Sizing now comes only from the frozen
+  // `subsectionSizes` (set precisely by commitSubsectionEdit/commitSegmentEdit alongside
+  // segments itself, and otherwise left untouched by anything that doesn't change a
+  // subsection's segment COUNT, like a duration slider), so chunk index i is guaranteed
+  // to mean the same logical subsection on this run as it did last run.
+  //
+  // Per the follow-up 23 audit's FIFTH review pass: even with correct sizing, comparing
+  // "did this subsection's truth change" was still the wrong question — a pause-duration
+  // slider dragged on a segment WITHIN a subsection that ALSO has its own uncommitted
+  // text draft sitting in its box counts as that subsection's truth changing (the
+  // duration really did change), so the old rule refreshed the box and silently
+  // discarded the narrator's in-progress wording edit, keeping only the new duration.
+  // The right question isn't "did truth change" but "does the box currently hold
+  // anything other than what we last knew to be true" — i.e. is there something here
+  // (a draft, or a value a commit handler already applied directly) that this effect
+  // must not clobber. `commitSubsectionEdit` now explicitly writes the committed
+  // subsection's own box to its canonical rebuilt text itself (matching what
+  // `commitSegmentEdit` already did), so by the time this effect runs after ANY real
+  // commit, that subsection's box already holds exactly the right value — meaning it's
+  // always safe to leave a subsection's box alone whenever it doesn't match last known
+  // truth, and only pull in the fresh rebuild when a box exactly matches last known
+  // truth (nothing pending, nothing already applied) and something changed it — which
+  // can now only be a duration tweak on a segment inside it. A subsection whose box
+  // holds a genuine narrator draft keeps that draft, no matter what changed elsewhere,
+  // including its own pause durations — the trade-off being that if the narrator later
+  // commits that draft, it re-parses their own typed text as-is, so a duration nudged in
+  // the meantime would need to be redone after commit; losing a cheap-to-redo duration
+  // tweak is preferable to silently losing typed narration wording.
   useEffect(() => {
-    if (!segments) { setSubsectionTexts(null); setSubsectionSizes(null); return; }
-    const chunks = deriveSubsections(segments, subsectionTexts);
-    setSubsectionTexts(chunks.map(rebuildScript));
+    if (!segments) {
+      setSubsectionTexts(null);
+      setSubsectionSizes(null);
+      subsectionTruthRef.current = null;
+      return;
+    }
+    const chunks = deriveSubsections(segments, subsectionSizes);
+    const freshTruth = chunks.map(rebuildScript);
+    const priorTruth = subsectionTruthRef.current;
+
+    setSubsectionTexts((prevTexts) => {
+      if (!prevTexts || prevTexts.length !== freshTruth.length || !priorTruth || priorTruth.length !== freshTruth.length) {
+        // No matching prior baseline to compare against (the very first Parse &
+        // Generate of a pass, or the subsection COUNT itself changed) — nothing
+        // meaningful to preserve; take the fresh derivation for every box.
+        return freshTruth;
+      }
+      return freshTruth.map((truth, i) => (prevTexts[i] === priorTruth[i] ? truth : prevTexts[i]));
+    });
     setSubsectionSizes(chunks.map((c) => c.length));
+    subsectionTruthRef.current = freshTruth;
   }, [segments]);
 
   const addLog = (msg) => setDebugLog((prev) => [...prev, msg]);
@@ -276,6 +380,21 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     const maxId = segments.reduce((m, s) => Math.max(m, s.id), -1);
     const freshSegs = parseScript(currentText).map((seg, i) => ({ ...seg, id: maxId + 1 + i }));
 
+    const before = subsections.slice(0, si).flat();
+    const after = subsections.slice(si + 1).flat();
+
+    // Per the follow-up 23 audit's fifth review pass: the MAX_CHARS limit was only ever
+    // checked on a fresh Parse & Generate — an edit made through THIS box (or the
+    // per-line quick editor below) could grow the document past the limit via ordinary
+    // Continue/Save-this-line clicks, with the narrator only finding out on the NEXT
+    // full re-parse, by which point a Save & Finish may already have gone through over
+    // the intended cap. Checked here too, before spending any TTS API calls on an edit
+    // that wouldn't be allowed anyway.
+    const prospectiveTotal = rebuildScript([...before, ...freshSegs, ...after]).length;
+    if (prospectiveTotal > MAX_CHARS) {
+      throw new Error(`This edit would bring the whole document to ${prospectiveTotal} characters, over the ${MAX_CHARS} limit. Shorten it, or trim elsewhere first.`);
+    }
+
     const languageCode = LANG_TO_CODE[selectedLanguage] || 'en-US';
     const newAudios = {};
     for (const seg of freshSegs) {
@@ -291,10 +410,29 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
       newAudios[seg.id] = response.data.url;
     }
 
-    const before = subsections.slice(0, si).flat();
-    const after = subsections.slice(si + 1).flat();
     const newSegments = [...before, ...freshSegs, ...after];
     const newSegmentAudios = { ...segmentAudios, ...newAudios };
+
+    // Per the follow-up 23 audit's third review pass: tell the [segments] effect
+    // EXACTLY how many segments this subsection now has, in the same update as
+    // setSegments, rather than letting that effect infer it from live box text
+    // elsewhere — see the comment above deriveSubsections/chunkBySizes for why that
+    // used to be able to silently misalign a completely different subsection.
+    const baseSizes = subsectionSizes && subsectionSizes.length === subsections.length
+      ? subsectionSizes
+      : subsections.map((s) => s.length);
+    setSubsectionSizes(baseSizes.map((sz, i) => (i === si ? freshSegs.length : sz)));
+    // Per the follow-up 23 audit's fifth review pass: write this subsection's own box
+    // to its canonical rebuilt text directly, in the same update as setSegments —
+    // exactly like commitSegmentEdit already does for the segment it edits. Without
+    // this, the [segments] effect's own draft-preserving logic (see the long comment
+    // above it) would have nothing telling it this box's new content is already
+    // correct and settled, not a still-pending draft, immediately after the very
+    // commit that just saved it.
+    setSubsectionTexts((prev) => {
+      const base = prev && prev.length === subsections.length ? prev : subsections.map(rebuildScript);
+      return base.map((t, i) => (i === si ? rebuildScript(freshSegs) : t));
+    });
 
     setSegments(newSegments);
     setSegmentAudios(newSegmentAudios);
@@ -302,7 +440,154 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     return { segments: newSegments, segmentAudios: newSegmentAudios };
   };
 
+  // Opens (or, clicked again, closes) the compact quick-edit box on ONE text segment's
+  // own card — see the comment on editingSegmentId above and TtsSegmentCard.jsx for the
+  // UI itself. Seeds the editor with that segment's OWN current text, not the whole
+  // subsection's.
+  const handleToggleSegmentEdit = (segment) => {
+    if (editingSegmentId === segment.id) {
+      setEditingSegmentId(null);
+      return;
+    }
+    setEditingSegmentId(segment.id);
+    setSegmentEditText(segment.content);
+    setError('');
+  };
+
+  const handleCancelSegmentEdit = () => {
+    setEditingSegmentId(null);
+  };
+
+  // Commits ONE line's own quick edit — regenerating audio for whatever the edited
+  // text now parses into (almost always still just one text piece, but a narrator
+  // typing a NEW <break> tag in here is now fully supported too — see below) and
+  // splicing the fresh piece(s) back into that exact position in the flat
+  // segments/segmentAudios — entirely independently of Continue/Save & Finish and
+  // without requiring the narrator to have played (or even reached) that part yet.
+  //
+  // An earlier version of this rejected any edit that split into more than one piece
+  // (i.e. adding a pause), because the per-subsection card grouping further down
+  // (subsectionSizes) is frozen until the next Parse & Generate, and only stays
+  // accurate automatically (via the [segments] effect above) by re-deriving from
+  // subsectionTexts — which this function didn't used to touch, so a piece-count
+  // change here would have gone unseen by that effect and left the grouping stale.
+  // Fixed properly instead of just documented as a limit: this now ALSO finds which
+  // subsection owns the edited segment and updates THAT subsection's own entry in
+  // subsectionTexts (and sends the full script back up via onScriptChange, exactly
+  // like handleSubsectionScriptEdit does) in the same update as the segments change —
+  // so by the time the [segments] effect runs, subsectionTexts already reflects the
+  // new piece count and the grouping re-derives correctly no matter how many pieces
+  // this one line turned into. This also fixes a real (if narrower) bug the earlier
+  // version had even for a plain wording-only edit: it changed `segments` directly
+  // but never told the parent via onScriptChange, so the top-level script text (and
+  // a subsequent full Parse & Generate) could silently revert a quick edit that
+  // hadn't gone through a whole-subsection Continue yet.
+  const commitSegmentEdit = async (segmentId) => {
+    // Defense in depth: the "Save this line" button that calls this should already be
+    // impossible to click while a whole-subsection commit or playback is in flight (see
+    // passLocked/editToggleDisabled below, which stop an editor from even OPENING during
+    // one) — but that's a UI-level guard, and this is the one place where a whole
+    // subsection's segments get reassigned fresh ids/audio, so a defensive check here too
+    // costs nothing and guarantees this can never race commitSubsectionEdit even if some
+    // future code path calls it directly.
+    if (committingIndex !== null || playing || generatingCombined) return;
+    const segIndex = segments.findIndex((s) => s.id === segmentId);
+    const oldSeg = segIndex >= 0 ? segments[segIndex] : null;
+    if (!oldSeg || oldSeg.type !== 'text') {
+      setEditingSegmentId(null);
+      return;
+    }
+    const newText = segmentEditText;
+    if (newText === oldSeg.content) {
+      // Nothing actually changed — close the editor without spending an API call.
+      setEditingSegmentId(null);
+      return;
+    }
+    if (!apiKeys.google_tts_api_key) {
+      setError('No Google TTS API key found for your account yet. Add your own key via "API Keys" in the header.');
+      return;
+    }
+
+    const freshPieces = parseScript(newText);
+    if (freshPieces.length === 0) {
+      setError("A line can't be saved empty. Delete it entirely via the larger script box further down instead, if that's what you meant.");
+      return;
+    }
+
+    // Per the follow-up 23 audit's fifth review pass: see the matching comment in
+    // commitSubsectionEdit — the document-wide character limit used to only ever be
+    // checked on a fresh Parse & Generate, not on an incremental per-line save like
+    // this one, which could quietly grow the document past MAX_CHARS with no warning
+    // until the next full re-parse.
+    const prospectiveTotal = rebuildScript([...segments.slice(0, segIndex), ...freshPieces, ...segments.slice(segIndex + 1)]).length;
+    if (prospectiveTotal > MAX_CHARS) {
+      setError(`This edit would bring the whole document to ${prospectiveTotal} characters, over the ${MAX_CHARS} limit. Shorten it, or trim elsewhere first.`);
+      return;
+    }
+
+    setSavingSegmentId(segmentId);
+    setError('');
+    try {
+      const maxId = segments.reduce((m, s) => Math.max(m, s.id), -1);
+      const freshSegs = freshPieces.map((seg, i) => ({ ...seg, id: maxId + 1 + i }));
+
+      const languageCode = LANG_TO_CODE[selectedLanguage] || 'en-US';
+      const newAudios = {};
+      for (const seg of freshSegs) {
+        if (seg.type !== 'text') continue;
+        const response = await base44.functions.invoke('generateTts', {
+          text: seg.content,
+          gender: selectedVoice,
+          language_code: languageCode,
+          apiKey: apiKeys.google_tts_api_key,
+          ...getNarratorAuthPayload(),
+        });
+        if (!response.data?.url) throw new Error('No audio URL returned for the edited text.');
+        newAudios[seg.id] = response.data.url;
+      }
+
+      const newSegments = [...segments.slice(0, segIndex), ...freshSegs, ...segments.slice(segIndex + 1)];
+      const newSegmentAudios = { ...segmentAudios, ...newAudios };
+
+      // Keep the owning subsection's own box (and the parent's full script) in sync —
+      // see the comment above for why this matters even when freshSegs.length === 1.
+      const ownerIndex = subsections.findIndex((sub) => sub.some((s) => s.id === segmentId));
+      if (ownerIndex !== -1) {
+        const updatedOwnerSegs = subsections[ownerIndex].flatMap((s) => (s.id === segmentId ? freshSegs : [s]));
+        const updatedOwnerText = rebuildScript(updatedOwnerSegs);
+        setSubsectionTexts((prev) => {
+          const base = prev && prev.length === subsections.length ? prev : subsections.map(rebuildScript);
+          const updated = base.map((t, i) => (i === ownerIndex ? updatedOwnerText : t));
+          onScriptChange(updated.join('\n\n'));
+          return updated;
+        });
+        // Same reasoning as commitSubsectionEdit: tell the effect this subsection's
+        // new true segment count directly, instead of leaving it to infer sizing
+        // from box text elsewhere (see deriveSubsections' comment for why that was
+        // the real bug the follow-up 23 audit's third review pass found).
+        const baseSizes = subsectionSizes && subsectionSizes.length === subsections.length
+          ? subsectionSizes
+          : subsections.map((s) => s.length);
+        setSubsectionSizes(baseSizes.map((sz, i) => (i === ownerIndex ? updatedOwnerSegs.length : sz)));
+      }
+
+      setSegments(newSegments);
+      setSegmentAudios(newSegmentAudios);
+      setEditingSegmentId(null);
+    } catch (err) {
+      setError(`Could not save this line: ${getFnErrorMessage(err)}`);
+    }
+    setSavingSegmentId(null);
+  };
+
   const handleParseAndGenerate = async () => {
+    // Per the follow-up 23 audit: this used to be the one control on the whole panel
+    // that ignored `busy`/an open per-line editor entirely — clickable mid-playback,
+    // mid-commit, or with an unsaved per-line edit still open, silently pulling the rug
+    // out from under whichever of those was in flight (its own fresh re-parse races
+    // that other one's eventual setSegments call). Guarded the same way every other
+    // control on this panel already is.
+    if (passLocked) return;
     if (!script || !script.trim()) {
       setError('Please import or write a script first.');
       return;
@@ -323,6 +608,23 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     setSegmentAudios({});
     setSubsectionCursor(0);
     setActiveSubsectionIndex(null);
+    // A fresh pass starts with a clean slate — any line's quick-edit box left open from
+    // the previous pass would now be pointing at a segment id that no longer exists.
+    setEditingSegmentId(null);
+    // Per the follow-up 23 audit: without this, a SECOND Parse & Generate in the same
+    // pass (e.g. editing the top script box directly and re-parsing, without ever
+    // finishing/resetting via Save & Finish first) reused the PREVIOUS pass's
+    // subsectionTexts to size the brand-new segments array — chunkBySizes would then
+    // slice using sizes that no longer summed to the new segment count, producing a
+    // phantom empty subsection (script got shorter) or one subsection silently growing
+    // past SUBSECTION_MAX_SEGMENTS (script got longer/reshaped). Nulling both here
+    // forces the [segments] effect below to fall back to a fresh, correct
+    // chunkIntoSubsections — exactly what already happens automatically whenever
+    // `segments` itself is set to null first (see finalizeAndSave's success path and
+    // TranslationPanel's onTranslated above) — this just makes it explicit here too,
+    // since this path sets `segments` straight to the new parsed array instead.
+    setSubsectionTexts(null);
+    setSubsectionSizes(null);
 
     const languageCode = LANG_TO_CODE[selectedLanguage] || 'en-US';
     const audios = {};
@@ -370,7 +672,18 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     });
   };
 
+  // Per Anoushka/Enda: playing one line's own clip (this) and the combined Build &
+  // Play/Continue engine (handlePlayTarget, below) used to be two completely separate
+  // audio pathways that never checked each other — clicking one while the other was
+  // already going started a SECOND sound on top of the first, with no way to stop just
+  // the one already playing. That's the "two audio's playing at the same time" bug
+  // Anoushka described. Fixed the same way every other control on this panel already
+  // treats `playing`/`generatingCombined`: as "something else has the floor right now",
+  // so this simply won't start while either is true, and (below) starting the combined
+  // engine always stops a lingering single-line clip first. That leaves exactly one
+  // sound audible at any moment, in either direction.
   const playSegment = (segmentId) => {
+    if (playing || generatingCombined) return;
     const url = segmentAudios[segmentId];
     if (!url) return;
     if (currentAudioRef.current) {
@@ -423,6 +736,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
         setSegments(null);
         setSegmentAudios({});
         setSubsectionCursor(0);
+        setEditingSegmentId(null);
       } else {
         addLog('Combined audio: no URL returned from upload.');
         setError('Combined audio failed: upload did not return a file URL.');
@@ -445,8 +759,29 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   // which just plays it again without moving the narrator's place forward.
   const handlePlayTarget = async (subsections, targetIndex) => {
     const targetSegments = subsections[targetIndex];
-    if (!targetSegments || playing || generatingCombined) return;
+    // Deliberately checks `playing`/`generatingCombined`/`editingSegmentId` individually
+    // here rather than the `busy`/`passLocked` aggregates: this function is also called
+    // synchronously from handleContinueClick right after `setCommittingIndex(null)` —
+    // React hasn't re-rendered yet at that point, so `committingIndex` (and anything
+    // computed from it, like `busy`/`passLocked`) would still read this render's OLD,
+    // pre-reset value here and wrongly bail out, breaking Continue every time. Adding
+    // `editingSegmentId` alone is safe — handleContinueClick never touches it, so it's
+    // never stale in that same-tick way — and it closes off the direct-click paths (the
+    // standalone Build & Play / Replay buttons) from starting while a per-line editor is
+    // still open and unsaved.
+    if (!targetSegments || playing || generatingCombined || editingSegmentId !== null) return;
     const isReplay = targetIndex !== subsectionCursor;
+
+    // See the comment on playSegment above — the other half of the same fix. A
+    // single-line clip started via a card's own Play button doesn't touch `playing`
+    // (it's a much simpler, separate audio pathway), so it wouldn't otherwise be
+    // stopped just because this combined playback is about to start. Cut it off first
+    // so starting this never leaves that one still audible underneath it.
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current = null;
+      setCurrentPlayingIndex(null);
+    }
 
     stopRef.current = false;
     setPlaying(true);
@@ -534,7 +869,14 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   // in the flat array — so the NEXT subsection (targetIndex) that's about to play is
   // completely unaffected by the edit just committed.
   const handleContinueClick = async (si, targetIndex) => {
-    if (playing || generatingCombined || committingIndex !== null) return;
+    // Per the follow-up 23 audit: also refuses to start while a per-line quick editor is
+    // open (editingSegmentId !== null) — without that, committing this WHOLE subsection
+    // (reassigning fresh ids to every segment in it) could run concurrently with, and
+    // silently clobber or be clobbered by, a per-line save on a segment inside it. Safe
+    // to call this synchronously from here (unlike inside handlePlayTarget below) since
+    // nothing in THIS function's own body changes committingIndex/editingSegmentId
+    // before this check runs — it's always a fresh read of the last render's state.
+    if (passLocked) return;
     setError('');
     setCommittingIndex(si);
     try {
@@ -559,7 +901,8 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   // finalizeAndSave is rendering and uploading THIS possibly-just-edited subsection's own
   // audio, not just about to play some later, unaffected one.
   const handleFinalizeClick = async (si) => {
-    if (playing || generatingCombined || committingIndex !== null) return;
+    // See the comment in handleContinueClick above — same reasoning applies here.
+    if (passLocked) return;
     setError('');
     setCommittingIndex(si);
     let fresh;
@@ -636,6 +979,36 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     ? (subsectionSizes ? chunkBySizes(segments, subsectionSizes) : chunkIntoSubsections(segments))
     : [];
 
+  // Shared "something else has the floor right now" flag for every control on this
+  // panel — combined playback, a whole-subsection Continue/Save & Finish commit, the
+  // final render/upload, a single line's own quick-edit save (see commitSegmentEdit
+  // above), or Parse & Generate's own initial generation loop. Used to disable
+  // everything else while any one of them is in flight, so two of these can never race
+  // each other or overlap their audio.
+  //
+  // Per the follow-up 23 audit: `generatingSegmentId !== null` was added after finding
+  // that a per-line quick edit could be saved WHILE Parse & Generate's own loop
+  // (handleParseAndGenerate) was still generating the rest of the document's audio —
+  // that loop only calls setSegmentAudios ONCE, right at the end, with everything it
+  // has accumulated so far; if a per-line save's own setSegmentAudios call landed
+  // first, the loop's later one would silently overwrite it, wiping out that line's
+  // just-generated audio (its card, id, and text would all still be correct — the URL
+  // to actually play it would simply be gone, with no error shown). Nothing about
+  // editing a line makes sense before the very first generation pass has even finished
+  // anyway, so locking every quick-edit control for that whole window costs nothing.
+  const busy = playing || generatingCombined || committingIndex !== null || savingSegmentId !== null || generatingSegmentId !== null;
+
+  // Layered on top of `busy`: a per-line quick editor being OPEN — even before its own
+  // Save is clicked — must also block every "advance the pass" control (Parse &
+  // Generate, Build & Play, Continue, Save & Finish, Replay) and the per-subsection
+  // edit box. Without this, an open-but-unsaved per-line edit could be silently
+  // discarded or desynced by one of those (full audit in CLAUDE_CHANGELOG.md
+  // follow-up 23). Deliberately kept SEPARATE from `busy` rather than folded into it:
+  // `busy` also drives a card's own Play button and its pause Slider, and there's no
+  // reason listening to (or nudging the duration of) a DIFFERENT line should be
+  // blocked just because one line's own quick editor happens to be open elsewhere.
+  const passLocked = busy || editingSegmentId !== null;
+
   return (
     <div className="bg-slate-800/50 rounded-lg border border-blue-600/30 p-3 space-y-3">
       <div className="flex items-center gap-2">
@@ -650,8 +1023,18 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
           setSegments(null);
           setSegmentAudios({});
           setSubsectionCursor(0);
+          setEditingSegmentId(null);
         }}
         fixedLanguage={fixedLanguage}
+        // Per the follow-up 23 audit's fourth review pass: this panel's own
+        // Import/Translate & Load controls used to be completely ungated by
+        // anything happening below — a narrator could fire a translation reset
+        // while a Continue/Save & Finish/per-line save was still mid-flight
+        // awaiting its own TTS call, and that commit's stale pre-reset closure
+        // would resurrect the old document on top of the fresh reset once it
+        // resolved, discarding the translation and any other unrelated draft.
+        // Locked the same way every other segments-mutating control here is.
+        disabled={passLocked}
       />
 
       {/* Insert break tags at cursor */}
@@ -704,8 +1087,20 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
       <div className="grid grid-cols-2 gap-3">
         <div>
           <Label className="text-slate-400 text-xs mb-1 block">Voice (Google)</Label>
-          <Select value={selectedVoice} onValueChange={setSelectedVoice}>
-            <SelectTrigger className="bg-slate-700 border-slate-500 text-white h-8 text-sm">
+          {/*
+            Per the follow-up 23 audit's fifth review pass: this used to be changeable
+            at ANY time, including mid-pass — every Continue/Save-this-line click reads
+            selectedVoice fresh at the moment it fires, so switching voices partway
+            through working down a long document (an entirely ordinary thing to do
+            between subsections, with nothing else on the panel stopping it) silently
+            produced ONE saved narration mixing two different voices, with no warning
+            at all. Locked to whatever was chosen before the pass started (Parse &
+            Generate) until it finishes (Save & Finish) or is abandoned (segments reset)
+            — exactly like the Language picker already is for a translation clone via
+            fixedLanguage, just for the ordinary non-clone case too.
+          */}
+          <Select value={selectedVoice} onValueChange={setSelectedVoice} disabled={!!segments}>
+            <SelectTrigger className="bg-slate-700 border-slate-500 text-white h-8 text-sm" title={segments ? 'Set for this pass when Parse & Generate was clicked — Save & Finish (or start a fresh pass) to change it.' : undefined}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -720,8 +1115,8 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
               {fixedLanguage}
             </div>
           ) : (
-            <Select value={selectedLanguage} onValueChange={setSelectedLanguage}>
-              <SelectTrigger className="bg-slate-700 border-slate-500 text-white h-8 text-sm">
+            <Select value={selectedLanguage} onValueChange={setSelectedLanguage} disabled={!!segments}>
+              <SelectTrigger className="bg-slate-700 border-slate-500 text-white h-8 text-sm" title={segments ? 'Set for this pass when Parse & Generate was clicked — Save & Finish (or start a fresh pass) to change it.' : undefined}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -736,7 +1131,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
       <Button
         type="button"
         onClick={handleParseAndGenerate}
-        disabled={generatingSegmentId !== null || overLimit || !script?.trim()}
+        disabled={generatingSegmentId !== null || overLimit || !script?.trim() || passLocked}
         className="w-full bg-purple-600 hover:bg-purple-700 gap-2 text-white"
       >
         {generatingSegmentId !== null ? <Loader2 className="w-4 h-4 animate-spin" /> : <Braces className="w-4 h-4" />}
@@ -793,7 +1188,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                   <Button
                     type="button" variant="outline" size="sm"
                     onClick={() => handlePlayTarget(subsections, 0)}
-                    disabled={playing || generatingCombined || committingIndex !== null}
+                    disabled={passLocked}
                     className="border-slate-500 text-slate-300 gap-1.5"
                   >
                     <Play className="w-3.5 h-3.5" /> Replay
@@ -805,7 +1200,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
               <Button
                 type="button"
                 onClick={() => handlePlayTarget(subsections, 0)}
-                disabled={playing || generatingCombined || committingIndex !== null || !hasSegmentAudios}
+                disabled={passLocked || !hasSegmentAudios}
                 className="w-full bg-purple-600 hover:bg-purple-700 gap-2 text-white"
               >
                 <Play className="w-4 h-4" /> Build & Play
@@ -835,6 +1230,36 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                       isPlaying={currentPlayingIndex === globalIdx}
                       onPlay={playSegment}
                       onDurationChange={handleDurationChange}
+                      controlsDisabled={busy}
+                      isEditing={editingSegmentId === seg.id}
+                      editValue={editingSegmentId === seg.id ? segmentEditText : ''}
+                      onEditChange={setSegmentEditText}
+                      onToggleEdit={seg.type === 'text' ? () => handleToggleSegmentEdit(seg) : undefined}
+                      // Per the follow-up 23 audit (Bug C): opening a DIFFERENT line's
+                      // editor while this one is still open used to silently discard
+                      // whatever was typed here, with no warning at all. Blocked at the
+                      // source instead of just documented — every card but the one
+                      // currently open (isEditing handles that one via TtsSegmentCard's
+                      // own logic) is locked out of opening a new editor while
+                      // editingSegmentId already points elsewhere.
+                      //
+                      // Also blocked (symmetric with the per-subsection Textarea's own
+                      // lock further below) whenever THIS subsection's own combined box
+                      // already has an uncommitted draft sitting in it — typed before
+                      // this editor was ever opened, not just during. Saving a per-line
+                      // edit refreshes its owning subsection's box to the new ground
+                      // truth (see commitSegmentEdit above); doing that while an
+                      // unrelated manual draft is already sitting there would silently
+                      // discard it, so opening the per-line editor at all is refused
+                      // until that draft is committed (Continue) or cleared first.
+                      editToggleDisabled={
+                        busy
+                        || (editingSegmentId !== null && editingSegmentId !== seg.id)
+                        || (subsectionTexts?.[si] !== undefined && subsectionTexts[si] !== rebuildScript(subsectionSegments))
+                      }
+                      onCancelEdit={handleCancelSegmentEdit}
+                      onSaveEdit={() => commitSegmentEdit(seg.id)}
+                      isSavingEdit={savingSegmentId === seg.id}
                     />
                   );
                 })}
@@ -858,6 +1283,23 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                     value={subsectionTexts?.[si] ?? rebuildScript(subsectionSegments)}
                     onChange={(e) => handleSubsectionScriptEdit(si, e.target.value)}
                     rows={4}
+                    // Per the follow-up 23 audit (Bug B): typing into this box while ITS
+                    // OWN Continue/Save & Finish (or any other commit/save/render) is
+                    // already in flight used to go unseen by that in-flight commit
+                    // (which captured this box's text the moment it started) but WOULD
+                    // still feed the [segments] effect's re-derivation once that commit
+                    // finished — sizing this subsection using text that was never
+                    // actually the text sent to TTS. Locked for the same window
+                    // everything else on the panel already locks for.
+                    //
+                    // Also locked (Bug B's narrower sibling) whenever one of THIS
+                    // subsection's own segments has its per-line quick editor open —
+                    // without this, typing here while that per-line save lands would
+                    // get silently discarded the moment its commit refreshes this same
+                    // box from the newly-true segments (see the [segments] effect
+                    // above). A DIFFERENT subsection's box is untouched by this check —
+                    // only the one that actually owns the open editor locks.
+                    disabled={busy || subsectionSegments.some((s) => s.id === editingSegmentId)}
                     className="bg-amber-100 border-amber-300 text-black placeholder:text-amber-900/50 text-sm font-mono resize-y focus-visible:ring-amber-400"
                   />
                 </div>
@@ -868,7 +1310,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                       <Button
                         type="button"
                         onClick={() => handleFinalizeClick(si)}
-                        disabled={playing || generatingCombined || committingIndex !== null}
+                        disabled={passLocked}
                         className="flex-1 bg-purple-600 hover:bg-purple-700 gap-2 text-white"
                       >
                         {(isSavingThis || isCommittingThis) ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
@@ -891,7 +1333,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                       <Button
                         type="button" variant="outline" size="sm"
                         onClick={() => handlePlayTarget(subsections, targetIndex)}
-                        disabled={playing || generatingCombined || committingIndex !== null}
+                        disabled={passLocked}
                         className="border-slate-500 text-slate-300 gap-1.5"
                       >
                         <Play className="w-3.5 h-3.5" /> Replay
@@ -901,7 +1343,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                     <Button
                       type="button"
                       onClick={() => handleContinueClick(si, targetIndex)}
-                      disabled={playing || generatingCombined || committingIndex !== null || !hasSegmentAudios}
+                      disabled={passLocked || !hasSegmentAudios}
                       className="flex-1 bg-purple-600 hover:bg-purple-700 gap-2 text-white"
                     >
                       {isCommittingThis ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
@@ -915,7 +1357,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                   <Button
                     type="button" variant="outline"
                     onClick={handleDownload}
-                    disabled={!hasSegmentAudios || playing || committingIndex !== null}
+                    disabled={!hasSegmentAudios || busy}
                     className="border-slate-500 text-slate-300 gap-2"
                   >
                     <Download className="w-4 h-4" /> Download
@@ -945,6 +1387,11 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
             reflect what you just heard, then click <strong>Continue</strong> to hear the next part — repeat
             down the list. Once you have heard and adjusted every part, <strong>Save &amp; Finish</strong>
             saves the new version. No need to leave this screen.
+          </p>
+          <p className="text-xs text-slate-500">
+            Spotted one line's mistake straight after Parse &amp; Generate, before you've heard anything
+            yet? No need to wait — click that line's own <strong>play</strong> button to hear just that
+            line, then the <strong>pencil</strong> next to it to fix and save just that line on its own.
           </p>
         </div>
       )}

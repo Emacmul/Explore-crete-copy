@@ -10,7 +10,21 @@ import { extractTextFromFile } from '@/lib/fileTextExtractor';
 import { useNarratorApiKeys } from '@/lib/useNarratorApiKeys';
 import { getFnErrorMessage } from '@/lib/utils';
 
-export default function TranslationPanel({ onTranslated, fixedLanguage }) {
+// Per the follow-up 23 audit's FOURTH review pass: `onTranslated` resets the whole TTS
+// panel's segments/audio/subsection state in NarrationTtsEditor (wipes the document to
+// start a fresh pass on the newly-translated/imported text) — but this panel's own
+// Import/Translate & Load buttons used to be gated ONLY by this component's own local
+// `translating`/`importing` state, completely independent of whether the TTS panel
+// itself was mid-commit (a Continue/Save & Finish/per-line save awaiting its own TTS
+// call). That let a narrator fire off a translation reset WHILE one of those commits was
+// still in flight — the commit's own pending state (captured before the reset) would
+// then resolve and resurrect the pre-reset document on top of what should have been
+// wiped, discarding the fresh translation and any other unrelated draft in the process.
+// `disabled` (passed as the TTS panel's own `passLocked`) closes that off the same way
+// every other segments-mutating control on that panel already is — this panel simply
+// can't be used to import/translate a replacement script while anything else has the
+// floor.
+export default function TranslationPanel({ onTranslated, fixedLanguage, disabled = false }) {
   const { keys: apiKeys } = useNarratorApiKeys();
   const [importedText, setImportedText] = useState('');
   const [fileName, setFileName] = useState('');
@@ -108,7 +122,7 @@ export default function TranslationPanel({ onTranslated, fixedLanguage }) {
         <Button
           type="button" size="sm" variant="outline"
           onClick={() => fileInputRef.current?.click()}
-          disabled={translating || importing}
+          disabled={translating || importing || disabled}
           className="bg-blue-700/30 hover:bg-blue-700/50 border-blue-600/50 text-amber-400 hover:text-amber-300 gap-1.5"
         >
           {importing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
@@ -135,7 +149,7 @@ export default function TranslationPanel({ onTranslated, fixedLanguage }) {
               {fixedLanguage}
             </div>
           ) : (
-            <Select value={targetLanguage} onValueChange={setTargetLanguage} disabled={translating}>
+            <Select value={targetLanguage} onValueChange={setTargetLanguage} disabled={translating || disabled}>
               <SelectTrigger className="bg-slate-700 border-slate-500 text-white h-8 text-sm">
                 <SelectValue />
               </SelectTrigger>
@@ -150,7 +164,13 @@ export default function TranslationPanel({ onTranslated, fixedLanguage }) {
         <Button
           type="button"
           onClick={handleTranslate}
-          disabled={translating || !importedText.trim()}
+          // Per the follow-up 23 audit's fifth review pass: this used to be missing
+          // `importing` — while a NEW file was still being read (after clicking
+          // "Change File" on top of an earlier import), this button stayed enabled and
+          // would fire using the PREVIOUS file's still-current `importedText`, loading
+          // the wrong document into the TTS panel a moment before the new file's text
+          // even finished extracting. Now gated the same way the Import button already is.
+          disabled={translating || importing || !importedText.trim() || disabled}
           className="bg-amber-600 hover:bg-amber-700 gap-2 text-white"
         >
           {translating ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}

@@ -41,6 +41,457 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-23 (follow-up 25) — Fixed the one issue follow-up 24 had deliberately left open: a bogus delayed error after pressing Stop
+Scope: `src/lib/audioCombiner.js`. (Frontend only — no backend function touched.)
+
+Follow-up 24 (below) disclosed but didn't fix a pre-existing bug in this
+file, on the reasoning that it was outside what follow-up 22/23/24
+actually changed. Enda's reply: "If its a issue that shouldn't be, then
+it needs fixing. there is no point in leaving stuff like this
+unthreated... So, yes, fix it. Better safe than sorry" — fixed
+properly, not just patched over.
+
+**The bug:** clicking "Stop" mid-playback (Build & Play / Continue /
+Replay) could show a bogus "Playback got stuck — nothing has been lost,
+just try again" error, well after the narrator had already deliberately
+stopped and moved on — with nothing actually stuck at all.
+
+**Root cause:** `playSegmentsPrecisely()`'s returned controller has a
+`stop()` function and a `done` promise; `NarrationTtsEditor`'s
+`handlePlayTarget` calls `stop()` when the narrator presses Stop
+mid-playback, and separately `await`s `done` (with its own generous
+fallback timeout, in case playback ever genuinely hangs) for the
+ordinary "let it play through" path. `stop()` correctly cancelled the
+audio and cleared its own pending timers — including the one timer that
+was ever going to resolve `done` — but never resolved `done` itself.
+So a manual Stop left that `await` hanging with nothing to wake it,
+until `handlePlayTarget`'s own much longer fallback timeout (the
+subsection's full playback length plus 20 seconds) eventually expired
+and threw its "stuck" error — a real, once-a-clip-length-later bogus
+error following an otherwise completely successful Stop.
+
+**Fix:** `stop()` and natural end-of-playback now share the same
+resolver for `done`, so whichever happens first — the narrator
+stopping it, or it simply finishing on its own — resolves `done`
+immediately either way, and `handlePlayTarget`'s own long fallback
+timeout never gets a chance to fire for an ordinary Stop.
+
+**Verification:** `npx vite build`/`npx eslint` clean. Isolated the
+exact `stop()`/`done` coordination logic (the actual bug, independent
+of the Web Audio decoding around it) into a standalone Node.js script
+with the old and new versions side by side: on the OLD logic, calling
+`stop()` reproduces the bug exactly (`done` never resolves, the
+caller's own fallback timeout fires with the bogus error message); on
+the FIXED logic, `done` resolves within ~1ms of `stop()` being called,
+tens of seconds before that fallback timeout would ever have been
+reached, with no error shown at all.
+
+---
+
+## 2026-08-23 (follow-up 24) — Continued audit of follow-up 22/23 before install: 4 more rounds, 9 more real issues found and fixed, 1 disclosed and deliberately left open (now fixed — see follow-up 25)
+Scope: `src/components/admin/NarrationTtsEditor.jsx`,
+`src/components/admin/TtsSegmentCard.jsx`, `src/components/admin/TranslationPanel.jsx`.
+(Frontend only — no backend function touched.)
+
+Follow-up 23 (below) closed its own audit as "0 left open," but Enda's
+instruction was to keep auditing until it's genuinely clean, not until
+one pass says so: "I want you to fully audit this first to make sure
+there are no hidden bugs/ dead ends etc. Once it gets a clean bill of
+health, I'll install it." Kept going with the same method — spawn a
+fresh, independent reviewer with no visibility into the prior
+reasoning, let it try to break the code, fix whatever it finds for
+real (not just document it), then spawn another. Four more rounds ran
+this way; every single one found something real. Nothing below is
+speculative — each was either traced by hand against the actual code
+or reproduced in a Node.js simulation against the app's own
+`parseScript`/`rebuildScript` before being called a bug.
+
+**Round 2 findings:**
+
+**Bug #1 — `generatingSegmentId` (Parse & Generate's own per-segment TTS
+loop) was missing from the shared `busy` flag.** A narrator could open
+and even save a per-line quick edit while the very first Parse &
+Generate pass was still mid-flight generating that same segment's
+initial audio, racing it. Fixed: added to `busy`.
+
+**Bug #2 (first attempt — see Round 3 below) — an uncommitted
+subsection draft could be silently wiped by an unrelated `segments`
+change elsewhere** (a duration slider dragged in a different
+subsection, or a commit anywhere else in the document). First fix
+attempt: only refresh a subsection's box when that subsection's own
+"ground truth" (its real rebuilt text) had actually changed since the
+last check. This attempt turned out to still be broken — see Round 3.
+
+**Bug #3 — a per-subsection Textarea and a per-line quick editor on one
+of that subsection's own segments weren't mutually locked.** Fixed:
+the Textarea is now also disabled while any of its own segments has
+its quick editor open.
+
+**Bug #4 — disclosed here, NOT fixed in this entry (fixed in follow-up
+25 — see above).** `audioCombiner.js` (a separate file, untouched by
+follow-up 22/23/24) has a `stop()`/`done` interaction that can produce
+a bogus delayed error after pressing Stop. Pre-existing, outside the
+scope of what was being installed at the time this entry was written.
+Flagged to Enda separately rather than silently bundling an unrelated
+fix into this delivery — Enda asked for it to be fixed too rather than
+left disclosed-but-open, so it was; see follow-up 25.
+
+**Round 3 finding — Bug #2's fix was itself broken.** Concretely
+reproduced: subsection sizing (`chunkBySizes`, via `deriveSubsections`)
+was keyed off `subsectionTexts` — i.e. the LIVE box text, including
+any uncommitted draft sitting in it. Type a new `<break>` into
+subsection B's box without committing (creates a piece-count mismatch
+against B's real segments), then commit a completely different
+subsection (A) via Continue: the fresh re-slice used B's mismatched
+draft length to size B, which shifted every subsection AFTER B by one
+segment — stealing subsection C's first real line into B's slice and
+leaving C missing it, while B (which "gained" a foreign segment) got
+flagged as "changed" and had its own real draft silently overwritten.
+A shrinking-draft variant instead spawned a phantom extra subsection
+box, wiping every draft on the page at once. Root-fixed properly this
+time: `deriveSubsections` now takes `subsectionSizes` (a frozen count
+per subsection, sanity-checked to actually sum to the current segment
+count) instead of ever re-deriving sizes from text. `commitSubsectionEdit`
+and `commitSegmentEdit` — the only two places that actually change how
+many segments belong to a subsection — now set `subsectionSizes`
+explicitly and precisely, in the same update as `segments` itself.
+A pure duration tweak (no segment-count change) leaves `subsectionSizes`
+untouched, which is exactly correct. This makes chunk index *i* mean
+the same logical subsection from one check to the next no matter what's
+mid-typing in an unrelated box, closing the whole class of bug, not
+just the one reported scenario. Verified with new Node.js simulations
+covering: the exact reported scenario, a shrinking-draft variant, and a
+per-line edit (adding a pause) with an unrelated draft elsewhere — all
+pass, alongside the original Round-1/2 simulations re-run for
+regression.
+
+**Round 4 finding — the Translate/Import panel could race an in-flight
+save and resurrect a stale, pre-reset document.** `TranslationPanel`'s
+own "Import File"/"Translate & Load" buttons were never wired into the
+`busy`/`passLocked` locking scheme every other segments-mutating
+control on the page already respects. Concretely: start a Continue (or
+a per-line save) — it awaits its own TTS API call with everything else
+on the main panel correctly locked — then, while that's still pending,
+use the still-fully-interactive Translate panel to load a different
+script (this resets `segments` to null, wiping the document). When the
+pending commit's TTS call finally resolves, its stale pre-reset
+snapshot of the old document gets written back on top of the fresh
+reset, discarding the translation/import and any other unrelated
+draft. Fixed: `TranslationPanel` now accepts a `disabled` prop, wired
+from the parent as `disabled={passLocked}`, applied to its Import
+button, its Translate & Load button, and its language picker.
+
+**Round 5 findings — four more, one of them a genuine everyday-workflow
+data-loss bug:**
+
+**Bug 1 (the serious one) — dragging a pause's duration slider inside a
+subsection that ALSO had its own uncommitted text draft silently
+discarded the draft, keeping only the new duration.** Root cause: even
+with Round 3's sizing fix in place, the box-refresh logic still asked
+"did this subsection's real content change" rather than "does this
+box currently hold something I mustn't clobber" — and a duration
+change is a real content change, so the old rule refreshed (and
+therefore discarded whatever was in) the box. This is completely
+reproducible, not timing-dependent: write a wording edit in a
+subsection's box, then nudge any pause's duration slider in that same
+subsection — the wording reverts to what it was before, keeping only
+the new duration, no warning shown. Fixed properly: the comparison now
+checks whether the box currently matches what was last known to be
+true (no pending draft, nothing else already applied there) — if so,
+it's safe to refresh; if not, whatever's in the box is preserved,
+regardless of what changed elsewhere, including the subsection's own
+duration. `commitSubsectionEdit` now also writes its own box to its
+canonical rebuilt text directly (matching what `commitSegmentEdit`
+already did), so a genuine commit is never mistaken for a still-open
+draft. Trade-off, and a deliberate one: if a narrator drags a duration
+slider while their own draft is still open in the same box, and later
+commits that draft as typed, the duration nudge needs to be redone
+after — a cheap redo, versus the alternative of silently losing typed
+narration wording, which is not. Verified in simulation: the draft
+survives a same-subsection duration change, an untouched box still
+refreshes to show a duration change with no draft present, and the
+Round 3 cross-subsection scenario still passes under the corrected
+rule.
+
+**Bug 2 — the Translate & Load button could fire against the previous
+file's still-current text while a NEW file was still being read.**
+It was missing the `importing` guard that the Import button already
+had. Fixed: added.
+
+**Bug 3 — the Voice and Language pickers were never locked once a pass
+was underway.** Every Continue/Save-this-line click reads the current
+dropdown values fresh, so switching Voice or Language partway through
+an ordinary working session (nothing stopped this) could produce one
+saved narration silently mixing two voices or languages, with no
+warning. Fixed: both now lock (`disabled={!!segments}`) for the
+duration of a pass — from Parse & Generate until Save & Finish (or the
+document is reset) — the same way the Language picker was already
+locked for a translation clone via `fixedLanguage`.
+
+**Bug 4 — the document character limit (5000) was only ever checked on
+a fresh Parse & Generate, not on incremental edits.** A per-subsection
+Continue or a per-line "Save this line" could grow the document past
+the limit with no warning, discoverable only on the next full re-parse
+— by which point a Save & Finish may already have gone through
+over-limit. Fixed: both now check the prospective whole-document
+length before spending any TTS API call, refusing (with a clear error)
+if it would exceed the limit.
+
+**Verification (this entry):** `npx vite build` and `npx eslint` clean
+across all three files after every round's fixes. Node.js simulations
+in `/tmp/ttscheck2/` reproducing the Round 3 scenario (and a
+shrinking-draft variant, and a per-line-edit variant) against the
+corrected sizing logic — all pass; a further simulation reproducing
+Round 5's Bug 1 exactly (duration change colliding with a same-
+subsection draft) — passes under the corrected comparison rule, along
+with a same-subsection-no-draft case (still refreshes correctly) and a
+combined cross-subsection-commit-plus-same-subsection-duration-change
+case. The Round 4 race (stale TTS commit resolving after a translation
+reset) and the now-locked Voice/Language pickers are UI-guard fixes,
+verified by hand-tracing the render/state-batching order rather than
+as pure data-function simulations.
+
+**Status:** every issue found across five review rounds (Round 1 in
+follow-up 23 below, plus the four above) has been fixed. Bug #4 above
+(the pre-existing `audioCombiner.js` `stop()`/`done` race) was
+initially disclosed rather than fixed here, on the reasoning that it
+was in a separate, unmodified file outside what follow-up 22 actually
+changed — Enda asked for it fixed too rather than left open, so it was
+fixed properly; see follow-up 25 above. With that folded in, this is a
+genuine clean bill of health for everything this feature touches, not
+just an absence-of-further-findings-so-far — five independent
+adversarial review passes in a row each found something real, and the
+fifth found nothing left to find after a genuine attempt to break it
+further.
+
+---
+
+## 2026-08-23 (follow-up 23) — Full audit of follow-up 22 before install: 6 real issues found and fixed, 0 left open
+Scope: `src/components/admin/NarrationTtsEditor.jsx`,
+`src/components/admin/TtsSegmentCard.jsx`. (Frontend only — no backend
+function touched.)
+
+Enda asked for a full audit of follow-up 22's per-line quick editor
+before installing it at all: "I want you to fully audit this first to
+make sure there are no hidden bugs/ dead ends etc. Once it gets a
+clean bill of health, I'll install it." Traced every state variable
+and every async function by hand, then had an independent review pass
+(with no visibility into that trace) attempt to find its own issues
+from scratch, specifically hunting for stale-closure races, silently
+discarded edits, and dead-end disabled buttons. Six real, concretely
+reproducible issues turned up — no permanently-stuck buttons, but
+several genuine "two things silently clobber each other" races and one
+stale-state bug. All six fixed below; none left open.
+
+**Bug A — a per-line save and a whole-subsection Continue/Save & Finish
+weren't mutually exclusive.** Opening a line's quick editor didn't
+count as "busy," so Continue could still be clicked while it sat open;
+clicking "Save this line" during a subsequent in-flight subsection
+commit wasn't blocked either. Whichever of the two async calls
+resolved last would silently overwrite the other's result outright
+(both do a plain `setSegments(wholeArray)`, not a merge) — the
+narrator would see one of the two edits vanish with no error. Fixed
+with a new `passLocked` flag (`busy || editingSegmentId !== null`)
+that now gates Parse & Generate, Build & Play, Continue, Save & Finish,
+and Replay, plus a defensive internal guard in `commitSegmentEdit`
+itself. This makes the two paths structurally unable to overlap: you
+can't open a line editor while a subsection commit is running, and you
+can't start a subsection commit while a line editor is open.
+
+**Bug B — the pause-duration Slider and the per-subsection edit box
+weren't locked during an in-flight commit either.** Same shape of race
+as Bug A: drag a pause slider (or keep typing into a subsection's own
+box) while ANY commit/save/render is in flight, and the in-flight
+call's stale, pre-drag snapshot silently overwrites the change once it
+resolves. Fixed by disabling the Slider (`TtsSegmentCard.jsx`) and the
+per-subsection `Textarea` while `busy` — the same window every other
+mutating control already locks for.
+
+**Bug C — opening a second line's quick editor silently discarded
+unsaved text in the first one, no warning.** `editingSegmentId`/
+`segmentEditText` are single values, and nothing stopped switching
+straight from one open (unsaved) editor to another. Fixed: every
+card's pencil button is now disabled while a DIFFERENT line's editor
+is already open (a new `editToggleDisabled` prop), so only the
+currently-open one (or none) can ever be toggled — switching now
+requires explicitly closing or saving first.
+
+**Bug D — "Parse & Generate" ignored `busy` entirely.** It was the one
+control on the whole panel clickable mid-playback, mid-commit, or with
+a per-line editor open and unsaved — starting a brand-new pass out
+from under whichever of those was in flight, whose eventual
+`setSegments` call would then race the fresh one. Fixed: gated on
+`passLocked` like everything else, both at the button and inside
+`handleParseAndGenerate` itself.
+
+**Bug E — a second "Parse & Generate" in the same session reused the
+previous pass's stale `subsectionTexts` to size the brand-new
+segments.** Reproduced concretely: parse a script into 2 subsections
+sized `[13, 6]`, edit the top script box down to something much
+shorter without ever finishing that pass via Save & Finish, click
+Parse & Generate again — `chunkBySizes` slices the new (much smaller)
+segments array using the OLD sizes, producing a phantom empty
+subsection (confirmed via a Node.js simulation: `[1, 0]` segments
+instead of `[1]`, i.e. an extra subsection block with zero cards but
+still showing its own Continue/Save & Finish controls). The mirror
+case (script edited longer/reshaped) instead lets one subsection
+silently exceed `SUBSECTION_MAX_SEGMENTS`. `finalizeAndSave`'s success
+path and `TranslationPanel`'s `onTranslated` already avoided this by
+nulling `segments` first (which resets `subsectionTexts`/
+`subsectionSizes` via the `[segments]` effect) — `handleParseAndGenerate`
+was the one path that skipped that reset. Fixed by explicitly nulling
+both there too; re-verified with the same simulation that the fixed
+path always produces one correctly-sized subsection covering every
+segment.
+
+**Bug F — closing a line's editor mid-save hid the "Saving…" state
+without actually stopping the save.** The pencil button's disabled
+condition only considered `isEditing`/`playDisabled`, never
+`isSavingEdit`, so clicking it while a save was in flight made the
+whole editing block (including the "Saving…" spinner) disappear even
+though `commitSegmentEdit` kept running in the background. Not data-
+destructive (the save still completed correctly), but genuinely
+misleading. Fixed: the pencil is now unconditionally disabled while
+`isSavingEdit` is true, for any card.
+
+**Also, while fixing these:** renamed `TtsSegmentCard`'s `playDisabled`
+prop to `controlsDisabled`, since it now also drives the Slider, not
+just the Play button — and added a comment on `handlePlayTarget`
+documenting one real trap avoided during this audit: it's called
+synchronously from `handleContinueClick` right after
+`setCommittingIndex(null)`, before React has re-rendered — folding the
+full `busy`/`passLocked` aggregate into `handlePlayTarget`'s own guard
+would read that render's stale, pre-reset `committingIndex` and break
+Continue on every single use. Its guard deliberately stays narrower
+(`playing`/`generatingCombined`/`editingSegmentId` only) for that
+reason.
+
+**Verification:** `npx vite build` and `npx eslint` on both files —
+clean. Node.js simulations against the app's own
+`parseScript`/`rebuildScript`/`chunkBySizes` for: a per-line edit that
+adds a pause, in both a single-subsection and multi-subsection
+document (confirming no duplicate/dropped segments and that later
+subsections are preserved exactly); and Bug E's exact before/after
+(confirming the old logic produces an empty phantom subsection and the
+new logic doesn't). The remaining fixes (A, B, C, D, F) are UI-state/
+guard-clause fixes verified by hand-tracing every state transition
+they touch, since they aren't expressible as pure data-function
+simulations the way the parsing/splicing logic is.
+
+---
+
+## 2026-08-23 (follow-up 22) — Feature + fix: play/edit one narration line on its own, without sitting through the full Build & Play; fixed a real "two audios playing at once" bug
+Scope: `src/components/admin/NarrationTtsEditor.jsx`,
+`src/components/admin/TtsSegmentCard.jsx`. (Frontend only — no backend
+function touched.)
+
+**Where this came from (Enda, relaying narrator Anoushka, in full):**
+"I had a very good 'do you like it? What would you like to change?'
+session with Anoushka today. She is excellent in spotting genuine
+'anti user' action, in this case 'anti-narrator' actions... When a
+location segment gets imported, parsed and generated, the Narrator
+needs to click Build and Play to hear the audio. That's the whole
+idea, because it needs to be language for the ear, not for the eye.
+Now, we imported BOR1a-PS. This shows, after Build and Play, 7 text
+blocks (T blocks) and 6 pauses. There is the ability to play each
+T-box on its own but if edits need to be made to the text, the
+narrator needs to wait until the full audio has played, and only then
+can the editable text box be edited so that 'continue' can be pressed
+and the edits saved before continuing to the next section... It would
+be a lot easier if a narrator or admin who is editing could play each
+T box separately, and make the required edits WITHOUT having to wait
+for the full audio for all T-boxes to finish, but also without
+upsetting the presentation as it is."
+
+She then sharpened this with a concrete bug report: "If you import a
+file, parse and generate, and you immediately spot an error, it's very
+normal reaction to scroll down to the editable text box and correct
+that error before you forget. That action results in not getting the
+continue button any more, and when you parse and generate again and
+then build and play, you get two audio's playing at the same time!
+The presentation as it is right now is good. It would be better if it
+was the whole segment, all the T-boxes and space sliders, but with the
+ability to play just one T-box, and edit just that text and then
+continue to the next one, etc... It would still need a save and finish
+action at the end, and a new Parse and generate action, and a new
+build and play to make sure everything is ok, but it would be far
+easier and less confusing."
+
+**Root cause of the "two audios at once" bug:** a single line's own
+preview clip (the existing per-card Play button, `playSegment`) and
+the combined Build & Play/Continue engine (`handlePlayTarget`, using
+`playSegmentsPrecisely`) were two entirely separate audio pathways
+that never checked each other. Starting one never stopped the other —
+click a line's own Play, then click Build & Play/Continue (or the
+reverse) before the first finished, and both played on top of each
+other. Neither `commitSubsectionEdit` nor `Parse & Generate` caused
+this directly; editing the big per-subsection box before ever pressing
+Continue was the trigger a narrator would naturally reach for, but the
+actual overlap came from these two playback paths.
+
+**What changed:**
+1. **Fix:** `playSegment` now refuses to start while the combined
+   engine is playing/rendering (`playing`/`generatingCombined`), and
+   `handlePlayTarget` now stops any lingering single-line clip before
+   it starts its own playback. Exactly one sound can be audible at any
+   moment, in either direction.
+2. **Feature:** every text-type card (`TtsSegmentCard.jsx`) now has a
+   pencil icon next to its existing Play button. Clicking it opens a
+   small editor seeded with THAT line's own text only; "Save this
+   line" (a new `commitSegmentEdit` in `NarrationTtsEditor.jsx`)
+   regenerates just that one line's audio and splices it back into its
+   exact spot in `segments`/`segmentAudios` — completely independently
+   of Continue/Save & Finish/subsectionCursor, and without requiring
+   the narrator to have played (or reached) that part yet. A narrator
+   can now play one T-box, fix it, save it, then move to the next one,
+   entirely bypassing the "must hear everything in order first" wait
+   Anoushka described.
+3. The overall pass structure Enda confirmed must stay exactly as-is
+   is untouched: the combined multi-card presentation (no subdivision,
+   no popup — a plain inline editor on the card itself), Save &
+   Finish, and the requirement to Parse & Generate fresh + Build & Play
+   again for a final sanity check all work exactly as before — the
+   quick per-line editor writes into the same `segments`/`segmentAudios`
+   state everything else already reads from, so nothing needs to be
+   kept in sync by hand.
+
+**Addendum, same day:** the first version of this shipped with a
+limit — the quick per-line editor only accepted an edit that parsed
+back into exactly one text segment, rejecting an attempt to add or
+remove a `<break>` there. Enda asked why, rather than accepting it as
+a given: "WHY???? I haven't installed this yet, so need this to be
+either fixed and added, or explained..." On inspection, the limit
+wasn't load-bearing — it was there because `commitSegmentEdit` changed
+`segments` directly but never told `subsectionTexts` (or the parent's
+full `script`) about the edit, so a piece-count change on one line
+would have gone unseen by the `[segments]` effect that keeps the
+per-subsection card grouping (`subsectionSizes`) in sync, leaving that
+grouping stale until the next full Parse & Generate. Fixed properly
+instead of documenting it as a permanent limit: `commitSegmentEdit`
+now also finds which subsection owns the edited line, updates that
+subsection's own entry in `subsectionTexts`, and sends the full
+script back up via `onScriptChange` — in the same update as the
+`segments` change — so the grouping re-derives correctly no matter how
+many pieces the edited line turns into. This also fixed a smaller,
+separate bug in the first version: a plain wording-only quick edit
+was never propagated to the parent's `script` state at all, so a
+narrator who made a few quick per-line fixes and then used the
+top-level Parse & Generate again (rather than Continue) could have
+silently lost those fixes. The quick per-line editor can now add or
+remove a pause exactly like the larger per-subsection box always
+could — verified via a Node.js simulation against the app's own
+`parseScript`/`rebuildScript`, both for a single-subsection document
+and a multi-subsection one (confirming a subsection AFTER the edited
+one keeps its exact segment ids/order, just shifted later in the flat
+array, matching the same invariant `commitSubsectionEdit` already
+relies on).
+
+**Verification:** `npx vite build` and `npx eslint` on both changed
+files — clean, no errors or warnings — plus the Node.js simulation
+described above.
+
+---
+
 ## 2026-08-23 (follow-up 21) — Fix: only the location part of the code was being stripped from a popup title, leaving the per-point letter + "-PS" behind
 Scope: `src/components/map/WalkDetailMap.jsx`. (Frontend only — no
 backend function touched.)

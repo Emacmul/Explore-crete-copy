@@ -204,21 +204,34 @@ export async function playSegmentsPrecisely(segments, segmentAudioUrls, { onSegm
     }
   }
 
+  // Per the follow-up 24 audit (round 2's disclosed, then-unfixed finding): `stop()`
+  // used to clear every pending timer — including the one below that resolves `done`
+  // on natural completion — without ever resolving `done` itself. A caller that awaits
+  // `done` (NarrationTtsEditor's handlePlayTarget does, for the ordinary "let it play
+  // out" path) had no way to find out a manual Stop had already ended playback: `done`
+  // just sat unresolved until that caller's OWN much longer fallback timeout
+  // ("Playback got stuck…") eventually fired — a bogus error shown well after the
+  // narrator had already deliberately stopped and moved on, with nothing actually
+  // stuck at all. Fixed by giving `stop()` and natural completion the SAME resolver,
+  // so whichever happens first — the narrator stopping it, or it simply finishing —
+  // resolves `done` immediately either way.
   let stopped = false;
+  let resolveDone;
+  const done = new Promise((resolve) => { resolveDone = resolve; });
+
   const stop = () => {
     if (stopped) return;
     stopped = true;
     sources.forEach((s) => { try { s.stop(); } catch { /* already ended */ } });
     timers.forEach(clearTimeout);
     ctx.close().catch(() => {});
+    resolveDone();
   };
 
-  const done = new Promise((resolve) => {
-    const doneTimer = setTimeout(() => {
-      if (!stopped) { stopped = true; ctx.close().catch(() => {}); resolve(); }
-    }, Math.ceil((leadIn + totalSeconds) * 1000) + 50);
-    timers.push(doneTimer);
-  });
+  const doneTimer = setTimeout(() => {
+    if (!stopped) { stopped = true; ctx.close().catch(() => {}); resolveDone(); }
+  }, Math.ceil((leadIn + totalSeconds) * 1000) + 50);
+  timers.push(doneTimer);
 
   return { stop, done, decoded, bounds, totalSeconds };
 }
