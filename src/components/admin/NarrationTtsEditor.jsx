@@ -31,6 +31,23 @@ const LANG_TO_CODE = {
 
 const MAX_CHARS = 5000;
 
+// Per Enda's follow-up 26 report: a narrator working through many lines in one sitting
+// hit a real, total freeze — every control on the panel stuck disabled, no error, no
+// spinner ever resolving, the only way out a hard refresh that throws away whatever
+// wasn't saved yet. Root cause: `base44.functions.invoke('generateTts'/
+// 'uploadNarrationAudio', …)` calls a plain network request with no ceiling of its own,
+// and none of Parse & Generate / a per-subsection commit / a per-line quick save /
+// Save & Finish's final upload ever wrapped it in a timeout — so a single stalled
+// request (a network hiccup, a slow backend response) left `busy` (via
+// generatingSegmentId/committingIndex/savingSegmentId/generatingCombined) permanently
+// true, and every one of those flags gates nearly every other control on the whole
+// page. This is the exact same class of bug already fixed once for playback (see
+// FETCH_TIMEOUT_MS in audioCombiner.js, and withTimeout() around playSegmentsPrecisely
+// in handlePlayTarget below) — just never extended to these four call sites. A
+// generous but FINITE ceiling here means a stalled request always either finishes or
+// fails with a clear, recoverable error, never hangs forever.
+const TTS_CALL_TIMEOUT_MS = 30000;
+
 // How many raw pieces (a narration line and a pause each count as ONE piece toward
 // this) a single box may hold before a new one starts — a CEILING, never a target: a
 // box can close earlier (see the dangling-pause defer below), it just never grows past
@@ -41,14 +58,27 @@ const MAX_CHARS = 5000;
 // driving/walking speed needs a whole natural run of several consecutive narration
 // lines to sit together in ONE box, so they can all be heard, judged, and adjusted as
 // one connected passage — one sentence in total isolation made that impossible and
-// broke the flow of the narration. Raised well past the original default of 3 so a
-// real run of connected narration can sit together in one box; a document that happens
-// to have several genuinely unrelated SHORT lines in a row can still end up sharing a
-// box up to this ceiling — that's an accepted tradeoff for keeping longer passages
-// together, not a bug — but a box can never grow BEYOND this ceiling just from
-// bundling, only from the narrator's own edit to their own box's text (see
-// chunkBySizes/deriveSubsections below).
-const SUBSECTION_MAX_SEGMENTS = 12;
+// broke the flow of the narration. Raised to 3, then to 12 for the same reason, then
+// — per the follow-up 26/27 conversation — raised again, much further, to 125.
+//
+// Per Enda (follow-up 27): a per-line/per-subsection edit that pushes ONE box past
+// this ceiling is allowed to stand (nothing forces a re-flow mid-pass — see
+// chunkBySizes/deriveSubsections below) — but a SECOND "Parse & Generate" in the same
+// session re-derives every box from scratch and would then split that one oversized
+// box back down to this ceiling again. Nothing gets silently lost when that happens —
+// the full text is always still there, just regrouped into more boxes — but a second
+// Parse & Generate also wipes every already-generated clip and restarts the whole
+// sequential Continue/Build & Play pass from the beginning regardless of this number,
+// which is disruptive to a narrator's rhythm on its own. Raised from 12 to 125 (Enda's
+// own suggestion: "ridiculously high") specifically so that in ordinary use no single
+// natural run of narration ever comes close to hitting this ceiling in the first
+// place, making the reshuffle-on-a-second-parse scenario a non-issue in practice,
+// while still leaving a real (if very generous) ceiling in place rather than removing
+// chunking altogether — a single "part" covering an entire multi-waypoint script would
+// also do away with the original reason subsections exist at all: matching a natural
+// run of narration to the DISTANCE it covers while driving, so a narrator can pace-
+// check one part against the next as they Continue down the list.
+const SUBSECTION_MAX_SEGMENTS = 125;
 
 // A "subsection" (per Enda's term) is a run of segment cards ending at a Build & Play /
 // Continue control, up to SUBSECTION_MAX_SEGMENTS raw pieces long (see above).
@@ -206,6 +236,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   const currentAudioRef = useRef(null);
   const stopRef = useRef(false);
   const currentPlaybackRef = useRef(null);
+  const errorRef = useRef(null);
 
   const charCount = (script || '').length;
   const overLimit = charCount > MAX_CHARS;
@@ -219,6 +250,21 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   useEffect(() => {
     if (fixedLanguage) setSelectedLanguage(fixedLanguage);
   }, [fixedLanguage]);
+
+  // Per Enda's follow-up 26 report: on a long document this list can run many screens
+  // tall, and every error this panel raises — a per-line save refused for being empty
+  // or over the character limit, a subsection commit that failed, a missing API key —
+  // used to only ever appear in the ONE banner right at the very top, above the whole
+  // list (see below). Working on a line deep in the list, that banner sits far off
+  // screen: the save silently does nothing VISIBLE, the text you typed just sits there
+  // unchanged, and there's no way to tell why without scrolling all the way back up —
+  // which reads exactly like the page has frozen, even though it hasn't; the error was
+  // real and correct the whole time, just invisible. Scrolls the banner into view the
+  // moment an error is actually set, wherever on the page you currently are, so a
+  // refusal is never silent just because of where you happened to be scrolled to.
+  useEffect(() => {
+    if (error) errorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [error]);
 
   // Ground truth for each subsection's box text AS OF the last time this effect ran —
   // i.e. what rebuildScript(that subsection's real segments) actually was, regardless
@@ -399,13 +445,17 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     const newAudios = {};
     for (const seg of freshSegs) {
       if (seg.type !== 'text') continue;
-      const response = await base44.functions.invoke('generateTts', {
-        text: seg.content,
-        gender: selectedVoice,
-        language_code: languageCode,
-        apiKey: apiKeys.google_tts_api_key,
-        ...getNarratorAuthPayload(),
-      });
+      const response = await withTimeout(
+        base44.functions.invoke('generateTts', {
+          text: seg.content,
+          gender: selectedVoice,
+          language_code: languageCode,
+          apiKey: apiKeys.google_tts_api_key,
+          ...getNarratorAuthPayload(),
+        }),
+        TTS_CALL_TIMEOUT_MS,
+        "Generating this part's audio took too long (check your connection) — nothing has been lost, just try again."
+      );
       if (!response.data?.url) throw new Error('No audio URL returned for the edited text.');
       newAudios[seg.id] = response.data.url;
     }
@@ -535,13 +585,17 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
       const newAudios = {};
       for (const seg of freshSegs) {
         if (seg.type !== 'text') continue;
-        const response = await base44.functions.invoke('generateTts', {
-          text: seg.content,
-          gender: selectedVoice,
-          language_code: languageCode,
-          apiKey: apiKeys.google_tts_api_key,
-          ...getNarratorAuthPayload(),
-        });
+        const response = await withTimeout(
+          base44.functions.invoke('generateTts', {
+            text: seg.content,
+            gender: selectedVoice,
+            language_code: languageCode,
+            apiKey: apiKeys.google_tts_api_key,
+            ...getNarratorAuthPayload(),
+          }),
+          TTS_CALL_TIMEOUT_MS,
+          'Generating audio for this line took too long (check your connection) — nothing has been lost, just try again.'
+        );
         if (!response.data?.url) throw new Error('No audio URL returned for the edited text.');
         newAudios[seg.id] = response.data.url;
       }
@@ -636,13 +690,17 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
       addLog(`Language: ${languageCode}`);
       addLog(`Text length: ${seg.content.length}`);
       try {
-        const response = await base44.functions.invoke('generateTts', {
-          text: seg.content,
-          gender: selectedVoice,
-          language_code: languageCode,
-          apiKey: apiKeys.google_tts_api_key,
-          ...getNarratorAuthPayload(),
-        });
+        const response = await withTimeout(
+          base44.functions.invoke('generateTts', {
+            text: seg.content,
+            gender: selectedVoice,
+            language_code: languageCode,
+            apiKey: apiKeys.google_tts_api_key,
+            ...getNarratorAuthPayload(),
+          }),
+          TTS_CALL_TIMEOUT_MS,
+          `Generating segment ${seg.id}'s audio took too long (check your connection) — try Parse & Generate again.`
+        );
         if (response.data?.url) {
           audios[seg.id] = response.data.url;
           addLog(`Segment ${seg.id}: OK`);
@@ -719,12 +777,19 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
       const wavBlob = await combineSegmentsToWav(segsToUse, audiosToUse);
       addLog(`Combined audio rendered (${(wavBlob.size / 1024 / 1024).toFixed(2)} MB). Uploading…`);
       const audioBase64 = await blobToBase64(wavBlob);
-      const response = await base44.functions.invoke('uploadNarrationAudio', {
-        audioBase64,
-        mimeType: 'audio/wav',
-        filename: `narration_${Date.now()}.wav`,
-        ...getNarratorAuthPayload(),
-      });
+      // A longer ceiling than the per-line/per-segment calls above — this uploads the
+      // WHOLE combined file in one request, which can legitimately take a while longer
+      // on a slow connection, but must still have SOME limit rather than none at all.
+      const response = await withTimeout(
+        base44.functions.invoke('uploadNarrationAudio', {
+          audioBase64,
+          mimeType: 'audio/wav',
+          filename: `narration_${Date.now()}.wav`,
+          ...getNarratorAuthPayload(),
+        }),
+        TTS_CALL_TIMEOUT_MS * 2,
+        'Uploading the combined audio took too long (check your connection) — nothing has been lost, just try again.'
+      );
       if (response.data?.url) {
         onAudioChange(response.data.url);
         addLog('Combined audio saved.');
@@ -1139,7 +1204,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
       </Button>
 
       {error && (
-        <div className="text-red-400 text-sm bg-red-900/30 border border-red-700/50 rounded-lg px-3 py-2">
+        <div ref={errorRef} className="text-red-400 text-sm bg-red-900/30 border border-red-700/50 rounded-lg px-3 py-2">
           {error}
         </div>
       )}
@@ -1302,6 +1367,20 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                     disabled={busy || subsectionSegments.some((s) => s.id === editingSegmentId)}
                     className="bg-amber-100 border-amber-300 text-black placeholder:text-amber-900/50 text-sm font-mono resize-y focus-visible:ring-amber-400"
                   />
+                  {/* Per Enda's follow-up 26 report: this box going grey with no
+                      explanation read as "stuck" — it's actually locked for a real
+                      reason (a line inside it has its own quick editor open right now;
+                      typing here while that line's save lands would get silently
+                      thrown away), but with nothing on screen saying so, closing that
+                      one line's editor felt like the only way to find out why, and it
+                      wasn't obvious that was even what was happening. Spelling it out
+                      here instead of just going quiet — this box unlocks the moment
+                      that line's own editor is closed or saved, no page action needed. */}
+                  {!busy && subsectionSegments.some((s) => s.id === editingSegmentId) && (
+                    <p className="text-xs text-amber-500/80 mt-1">
+                      Locked while one of this part's own lines has its own editor open above — close or save that line first.
+                    </p>
+                  )}
                 </div>
 
                 <div className="flex gap-2 items-center">

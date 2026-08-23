@@ -41,6 +41,167 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-23 (follow-up 27) — Raised the per-part segment ceiling from 12 to 125, per Enda
+Scope: `src/components/admin/NarrationTtsEditor.jsx`. (Frontend only — no
+backend function touched.)
+
+Follow-up 26 (below) explained that `SUBSECTION_MAX_SEGMENTS` doesn't
+cause a mid-pass edit to silently lose anything, but left one part of
+the picture unexplored: what a SECOND "Parse & Generate" in the same
+session actually does to a part that had grown past the ceiling via
+edits. Enda asked directly: "So if an edit pushes it over the 12, it
+will take that, but a second Parse and generate will [then] create the
+problem of going back to a maximum of 12. What happens to the
+surplus?"
+
+**Answer, confirmed by re-reading `handleParseAndGenerate`:** nothing
+gets silently lost — the full text is always still there (every edit
+along the way keeps the top-level `script` in sync via
+`onScriptChange`), so a fresh Parse & Generate re-parses the complete,
+current document and simply re-splits it into more, smaller parts
+around the 12-cap again — the "surplus" becomes its own extra part(s),
+not a dropped chunk. But a second Parse & Generate does something
+disruptive regardless of that: per its own existing, deliberate design,
+it throws away every already-generated audio clip and restarts the
+whole sequential Continue/Build & Play pass from the very first part —
+the narrator would have to sit through generating and confirming the
+ENTIRE document again, not just the part that grew. Enda's read on this
+— "It sounds like this will break the workflow, or at least the
+narrator's rhythm" — is correct; a mid-session Parse & Generate is
+disruptive on its own account, and a low ceiling only made hitting that
+disruption more likely, since ordinary editing could realistically
+grow one part past 12 pieces without the narrator doing anything
+unusual.
+
+**Fix:** `SUBSECTION_MAX_SEGMENTS` raised from 12 to 125 — Enda's own
+suggested number ("ridiculously high… like 125 or so"). Not removed
+outright: a single part covering an entire multi-waypoint script would
+undo the original reason parts exist at all (matching a natural run of
+narration to the distance it covers while driving, so each part can be
+paced against the next one as the narrator Continues down the list) —
+but 125 is high enough that in ordinary use no realistic run of
+narration comes close to it, making the reshuffle-on-a-second-parse
+scenario a non-issue in practice while keeping that safety net in
+place for a genuinely huge script.
+
+**Verification:** `npx vite build`/`npx eslint` clean. Confirmed via
+the app's own `parseScript`/`chunkIntoSubsections` logic that an
+80-line test script (159 raw pieces including pauses) — which would
+have split into 14 separate parts under the old 12-cap — now splits
+into just 2 under the new 125-cap, matching the intent.
+
+---
+
+## 2026-08-23 (follow-up 26) — Real-world bug report from live testing: found and fixed a genuine freeze (a network-stall gap the five audit rounds never tested for), plus two confusing-but-correct behaviors made self-explaining
+Scope: `src/components/admin/NarrationTtsEditor.jsx`. (Frontend only — no
+backend function touched.)
+
+Enda tested follow-up 25 live and reported, in detail: working down the
+line-by-line quick editor, a line's own editable box sometimes appeared
+already open without clicking its pencil, and clicking that pencil did
+nothing; after saving one edit, a per-subsection box stayed permanently
+greyed out and unusable; a save on an emptied line silently "didn't
+work," with no visible explanation; and the overall experience read as
+the page having "frozen." He also flagged that this might be related to
+the `SUBSECTION_MAX_SEGMENTS` (12-segment) grouping limit.
+
+Investigated by reasoning through the actual reported sequence of
+clicks against the code, rather than guessing. Three real, distinct
+things were found:
+
+**The real freeze, and very likely the actual root cause of "froze":
+every `generateTts`/`uploadNarrationAudio` network call in this whole
+file had NO timeout at all**, except the ones inside the combined-
+playback path (`handlePlayTarget`, which already uses `withTimeout`)
+and inside `audioCombiner.js` (`fetchWithTimeout`) — both fixed in
+earlier rounds. The four call sites that trigger from Parse & Generate,
+a per-subsection Continue/Save & Finish commit, a per-line "Save this
+line," and Save & Finish's final upload were all still a plain,
+un-timed `await base44.functions.invoke(...)`. A single stalled
+network request on any one of these — a real possibility over a long
+editing session, and exactly the kind of thing static code review
+can't surface, only live use against a real network can — left
+`generatingSegmentId`/`committingIndex`/`savingSegmentId`/
+`generatingCombined` (and therefore `busy`, which gates nearly every
+control on the page) stuck true FOREVER, with no error, no spinner
+ever resolving, and no way out except a hard refresh that throws away
+anything unsaved — a genuine, total freeze. This also explains the
+"editor open without clicking pencil, pencil does nothing" symptom
+without needing any OTHER bug: if an earlier line's save had silently
+stalled this way, ITS editor stays genuinely open (by design, so nothing
+typed is lost) and `busy` being stuck true disables every other line's
+pencil — including ones further down the list the narrator scrolls to
+next, with no visible sign of why. Fixed: all four call sites now go
+through the same `withTimeout()` helper already used elsewhere in this
+file, with a generous but finite ceiling (30s per line/segment, 60s for
+the one final combined-file upload) — a stall now always surfaces a
+clear, recoverable error instead of hanging forever.
+
+**Errors only ever appeared in ONE banner at the very top of the page,
+invisible on a long document.** This editor's segment list can run many
+screens tall; every error this panel raises (a line refused for being
+empty, a save that failed, a missing API key) only ever rendered in a
+single banner near the "Parse & Generate" button, above the whole list.
+Working on a line deep in the list, a real, correct refusal (e.g. "A
+line can't be saved empty") fired exactly as designed but was
+completely invisible without scrolling all the way back up — which is
+very likely why an intentional, correct refusal (trying to save an
+emptied line) read as "doesn't work" with the text just sitting there
+unchanged and no visible explanation. Fixed: the page now scrolls that
+error banner into view the moment an error is set, wherever on the page
+the narrator currently is.
+
+**A per-subsection box locking while one of its own lines has its own
+quick editor open is correct, intended behavior — but gave no reason
+why, which read as stuck/broken.** This lock exists specifically to
+stop a per-line save from being silently discarded by a stale
+subsection-box edit landing on top of it (a real bug from an earlier
+audit round) — but with nothing on screen explaining it, seeing it turn
+grey right after successfully saving an unrelated line (because a
+DIFFERENT line in the same part now had ITS OWN editor open) looked
+exactly like a leftover, broken lock rather than a new, correct one.
+Fixed: a small explanatory line now appears under that box specifically
+when this is why it's locked, saying so plainly.
+
+**On the `SUBSECTION_MAX_SEGMENTS` (12) question:** traced through what
+this limit actually still does, and it isn't the cause of anything
+reported here. It only sets the INITIAL grouping the moment "Parse &
+Generate" runs (kept deliberately generous, well past the original
+default of 3, specifically so a real connected run of narration lines
+stays together in one box). After that, an added or removed pause via
+the per-line quick editor or a subsection's own box only changes THAT
+one part's own size going forward — nothing ever re-flows the whole
+document around the 12-cap again until the next full Parse & Generate,
+so a part can already end up holding more (or fewer) than 12 pieces
+over the course of an editing session without issue. Raising or
+removing it outright is a real, separate decision, not a bug fix — it
+governs how the sequential Continue/Build & Play pass is chunked for
+checking pace against driving/walking time, which is a workflow
+question for Enda to weigh in on, not something to change unilaterally
+alongside a bug-fix delivery.
+
+**Verification:** `npx vite build`/`npx eslint` clean. The timeout
+mechanism itself (a promise that would otherwise hang forever,
+wrapped in `withTimeout`) was isolated and tested in a standalone
+Node.js script: confirmed it rejects with the intended clear message
+right at the configured ceiling, never hanging past it. The error-
+banner auto-scroll and the new inline locking hint are UI-only
+changes, verified by reading the render logic and confirming the
+`useEffect`/ref wiring matches the existing pattern already used
+elsewhere in this file (e.g. `textareaRef`).
+
+**Status:** the network-timeout gap is treated as the most likely real
+explanation for the reported freeze and the "editor open without a
+click" symptom — it is a genuine, previously-undetected bug (missed by
+all five prior audit rounds, since none of them could exercise an
+actual network stall) and is now fixed outright, not just made less
+likely. The other two changes make already-correct behavior
+self-explaining rather than changing what the code does. Still open:
+whether to raise/remove `SUBSECTION_MAX_SEGMENTS` — waiting on Enda's
+answer before touching it.
+
+---
+
 ## 2026-08-23 (follow-up 25) — Fixed the one issue follow-up 24 had deliberately left open: a bogus delayed error after pressing Stop
 Scope: `src/lib/audioCombiner.js`. (Frontend only — no backend function touched.)
 
