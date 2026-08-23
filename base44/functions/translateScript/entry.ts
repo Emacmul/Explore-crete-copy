@@ -62,7 +62,17 @@ ${text}`;
           { role: 'user', content: prompt },
         ],
         temperature: 0.3,
-        max_tokens: 8000,
+        // Groq's "tokens per minute" rate limit is charged against the FULL max_tokens
+        // reservation the moment a request is sent, not just the tokens actually used —
+        // so 8000 here alone was already almost the entire org's 8000 TPM allowance,
+        // before a single token of the real prompt (script + instructions) was even
+        // counted, guaranteeing "Request too large" on every single call regardless of
+        // how short the script was. Scripts are capped at 5000 characters in the editor
+        // (see MAX_CHARS in NarrationTtsEditor.jsx) — roughly 1,100-1,300 tokens once
+        // translated even into a more verbose target language — so 4000 leaves several
+        // times that much headroom while comfortably fitting under an 8000 TPM ceiling
+        // alongside the prompt/instruction overhead.
+        max_tokens: 4000,
       }),
     });
 

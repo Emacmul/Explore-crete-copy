@@ -41,6 +41,47 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-23 (follow-up 18) — Fix: Groq translation calls were reserving a full 8000-token reply on every request, alone almost enough to blow the org's 8000 TPM rate limit
+Scope: `base44/functions/translateScript/entry.ts`. **BACKEND FUNCTION —
+needs the blank-line-then-redeploy step in Base44 for `translateScript`
+specifically, not just a push/republish.**
+
+**What changed:** After redeploying the earlier Groq-model fix
+(follow-up in the 08-19 entry, switching off the decommissioned
+`llama-3.3-70b-versatile`), Enda's very next translation attempt hit a
+NEW Groq error: "Request too large... Limit 8000, Requested 8874" — on
+a script that was only 2721 characters. The confusing part: 2721
+characters is only around 600 "tokens" (the small text chunks Groq
+actually counts, not the same thing as characters) — nowhere near 8874.
+The real cause was `max_tokens: 8000` in the API call — Groq's
+"tokens per minute" rate limit is charged against that FULL reserved
+reply size the instant a request is sent, not against what actually
+comes back. So this call alone was reserving very nearly this Groq
+org's entire 8000-token-per-minute allowance before a single token of
+the real script or its wrapping instructions was even counted,
+guaranteeing "Request too large" on every single translation
+regardless of how short the script was. Lowered `max_tokens` to 4000 —
+still several times more than any script could plausibly need given
+the editor's own 5000-character cap (`MAX_CHARS` in
+`NarrationTtsEditor.jsx`), but low enough to leave real headroom under
+the 8000 TPM ceiling once the prompt/instruction overhead is counted
+too.
+
+**Why:** Enda: "Request too large for model `openai/gpt-oss-120b`...
+Requested 8874... the text I'm trying to translate is 2721 characters,
+with spaces. Where do they get the 8874 from???"
+
+**Verified:** No Deno toolchain available in this session to run/type-
+check the function directly, so checked by hand: brace-balance and the
+single `max_tokens` line confirmed correct via a quick script; the rest
+of the file is untouched from its already-verified state. **Not
+independently tested against a real Groq call** — Enda should redeploy
+and retry a translation to confirm 4000 is enough headroom in practice
+now that the actual cause (the reservation size, not the script length)
+is fixed.
+
+---
+
 ## 2026-08-22 (follow-up 17) — Root-cause fix: a subsection box could silently absorb an unrelated NEXT sentence, which editing then dragged along with it
 Scope: `src/components/admin/NarrationTtsEditor.jsx`. (Frontend only —
 no backend function touched.)
