@@ -41,6 +41,68 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-22 (follow-up 17) — Root-cause fix: a subsection box could silently absorb an unrelated NEXT sentence, which editing then dragged along with it
+Scope: `src/components/admin/NarrationTtsEditor.jsx`. (Frontend only —
+no backend function touched.)
+
+**What changed:**
+- Found the actual root cause of the "editing one box merges in the next
+  one" bug that follow-ups 11–15 kept chasing symptoms of. The grouping
+  rule that decides where each box's boundary falls (`chunkIntoSubsections`,
+  used on a fresh Parse & Generate) used to count "up to 3 raw pieces per
+  box" — counting a narration LINE and a PAUSE as the same kind of
+  "piece". A single long narration line with no `<break>` inside it only
+  ever counts as ONE piece toward that "3" — so the grouping kept pulling
+  in whatever came right after it to fill the count up, even when that
+  next piece was a completely UNRELATED sentence with nothing to do with
+  the first one. That put two unrelated sentences in the SAME edit box
+  from the very first Parse & Generate, before Enda ever touched
+  anything — invisible until he edited the first sentence's own box,
+  which (correctly, by design) grows that box's own content — dragging
+  the unrelated second sentence along with it, since it had been sharing
+  the box all along. That's exactly what looked like "the next
+  sub-segment got amalgamated into the one I was editing".
+- Fixed by giving every box exactly ONE narration line, always — never
+  more than one, unless Enda's own edit adds a new `<break>` inside that
+  box's own text (which still grows that SAME box, exactly as designed
+  in follow-up 13 — a box can only ever grow by an edit to its OWN text
+  now, never by silently absorbing a neighbour it was never given).
+  This does mean more, smaller boxes on a fresh Parse & Generate than
+  before (one per narration line rather than a couple bundled together),
+  but each one now maps to exactly what it visibly shows, with no chance
+  of an invisible extra sentence riding along.
+- Also encountered "Preview failed: Playback got stuck" once during
+  testing — this is an existing safety net (from the freeze fix in
+  follow-up 10) that surfaces a recoverable error instead of the panel
+  hanging forever, most likely triggered by ordinary network delay while
+  loading a part's audio; nothing was lost when it happened, and simply
+  trying that Continue/Replay again should work. Will keep an eye on it,
+  but with the box-merging bug fixed, the oversized multi-sentence boxes
+  most likely to run long generation/decoding right before playback are
+  gone, which should make this considerably rarer.
+
+**Why:** Enda: "...it's back to moving the editable text box to where a
+new `<break>` is put in, instead of keeping the box at the end of the
+subsegment and putting the changes above it. It also took the next sub
+segment and amalgamated it with the sub segment where the new `<break>`
+was added, quite literally skipping parts in the newly created audio!"
+— reported on two separate boxes in the same document, both times right
+after adding a new `<break>` tag.
+
+**Verified:** `npx vite build` completes with no errors. `npx eslint`
+on the changed file reports zero errors/warnings. Re-ran the same kind
+of standalone Node.js simulation used in follow-ups 13/14, using the
+real `parseScript`/`rebuildScript` functions, with a document
+deliberately shaped like Enda's real one — one long narration line with
+no break inside it, immediately followed by a short, unrelated
+sentence. Confirmed: (1) on a fresh parse, the long line and the
+unrelated sentence now land in two separate boxes; (2) adding a new
+mid-sentence `<break>` to the first box and committing it grows ONLY
+that box (1 segment → 3), while the unrelated sentence's own box comes
+back byte-for-byte identical, untouched.
+
+---
+
 ## 2026-08-22 (follow-up 16) — Fix: "Test this waypoint" now drives on to the very next waypoint instead of freezing the instant its audio ends
 Scope: `src/components/admin/TourSimulator.jsx`. (Frontend only — no
 backend function touched.)

@@ -32,26 +32,42 @@ const LANG_TO_CODE = {
 const MAX_CHARS = 5000;
 
 // A "subsection" (per Enda's term) is a run of segment cards ending at a Build & Play /
-// Continue control — the same grouping the old flat list already used (every 3rd card,
-// plus whatever's left over at the very end), just organized into real groups now
-// instead of a modulo check sprinkled through the render.
+// Continue control. Each subsection holds exactly ONE narration line (one text segment
+// — the text between two <break> tags, or between a break and the start/end of the
+// document) plus whatever pause immediately leads into it — never more than one.
+//
+// This used to instead group up to 3 raw segments (text AND pause both counted)
+// per box, which seemed harmless but had a real bug: a single very long narration
+// line with no <break> inside it only counts as ONE segment toward that "3", so the
+// grouping would keep pulling in whatever came next to fill the count up — silently
+// sharing ONE edit box between two completely unrelated sentences (e.g. "...wherever
+// you like" bundled together with the next, unrelated "It is important for you to..."
+// line just because the first one was short on its own segment count). Editing the
+// first sentence's own box then dragged the second, unrelated sentence along with it
+// — exactly the "the next sub-segment got amalgamated into the one I was editing"
+// bug Enda hit. One text segment per box makes that impossible: a box can only ever
+// grow by the narrator's OWN edit to their OWN text (see chunkBySizes/deriveSubsections
+// below), never by silently absorbing a neighbour it was never given.
 //
 // Per Enda: a subsection must never end right on a pause when there's still a
 // narration line after it — a pause exists to lead into whatever comes next, so
 // splitting them apart (with the editable box + Continue/Build & Play controls
-// wedged in between) visually breaks that pair apart. So a would-be boundary lands
-// on a pause is deferred — the pause stays grouped with the text segment that
+// wedged in between) visually breaks that pair apart. So a would-be boundary that
+// lands on a pause is deferred — the pause stays grouped with the text segment that
 // follows it — rather than closing the subsection right there.
 function chunkIntoSubsections(segments) {
   const subsections = [];
   let current = [];
+  let textCount = 0;
   segments.forEach((seg, idx) => {
     current.push(seg);
+    if (seg.type === 'text') textCount += 1;
     const isLastOverall = idx === segments.length - 1;
     const endsOnDanglingPause = seg.type === 'pause' && !isLastOverall;
-    if (!endsOnDanglingPause && (current.length >= 3 || isLastOverall)) {
+    if (!endsOnDanglingPause && (textCount >= 1 || isLastOverall)) {
       subsections.push(current);
       current = [];
+      textCount = 0;
     }
   });
   if (current.length > 0) subsections.push(current);
