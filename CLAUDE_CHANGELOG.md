@@ -41,6 +41,50 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-23 (follow-up 21) — Fix: only the location part of the code was being stripped from a popup title, leaving the per-point letter + "-PS" behind
+Scope: `src/components/map/WalkDetailMap.jsx`. (Frontend only — no
+backend function touched.)
+
+**What changed:** Follow-up 20 correctly removed the "Start" badge, but
+the code-stripping logic it kept only ever removed `segment_id` (e.g.
+"BOR1" — the tour code + location number, shared by every point in that
+location). A driving-tour title imported straight from a GPX file
+carries the FULL per-point code on the front of the raw text (e.g.
+"BOR1a-PS Start at Lidl car park Tsesmes") — the letter ("a") and the
+"-PS" suffix are never part of `segment_id` at all, so stripping only
+that left "a-PS Start at Lidl car park Tsesmes" showing in the popup —
+the exact leftover fragment Enda caught. Fixed by matching the WHOLE
+leading code with the naming-convention regex already used (and
+already proven correct) in two other places in this codebase —
+`parseWpNameSortKey` in `DrivingTourWaypointEditor.jsx` and
+`SegmentScriptManager.jsx` — instead of only stripping the shorter
+`segment_id` string. Falls back to the old segment_id-only stripping
+for a title that doesn't follow the letter-suffix convention at all
+(e.g. hand-typed rather than GPX-imported).
+
+**Why:** Enda: "I now checked again, and now the word 'Start' is
+indeed gone, but half the code is still showing. It only removed the
+location ID (BOR1), but not the second part of the code, the letter or
+'a-PS'..." He also flagged, rightly, that the admin "Map Preview" tab
+needs to actually BE a preview — showing exactly what a real customer
+sees, not some separate admin-only version — which is exactly what
+follow-up 20 already fixed (see that entry): the preview and the real
+customer page share the exact same `WalkDetailMap` component and now
+render identically, this entry is purely about a leftover text
+fragment within that shared component.
+
+**Verified:** `npx vite build` completes with no errors. `npx eslint`
+reports the same single pre-existing, unrelated `createWaypointIcon`
+unused-var warning as before (confirmed via `git stash` in follow-up
+20) — no new warnings. Ran the exact reported string,
+`"BOR1a-PS Start at Lidl car park Tsesmes"`, plus a few other real
+naming-convention shapes (`"BRZ12h Old Fountain"`, a title with no code
+at all) through the new regex directly in Node: confirms it now
+correctly strips down to just `"Start at Lidl car park Tsesmes"` /
+`"Old Fountain"` / the untouched plain title, respectively.
+
+---
+
 ## 2026-08-23 (follow-up 20) — Audit + fix: map popups unconditionally show the plain waypoint name now, no "Start" badge or code anywhere, on any screen, any tour type
 Scope: `src/components/map/WalkDetailMap.jsx`, `src/components/admin/AdminPreviewMap.jsx`.
 (Frontend only — no backend function touched.)

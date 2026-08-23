@@ -138,10 +138,23 @@ export default function WalkDetailMap({ walk, followGps = false }) {
         //
         // Some driving-tour titles were typed/imported with the code stuck on the
         // front of the text itself (e.g. "BOR1a-PS Start at Lidl car park Tsesmes",
-        // from the GPX file's raw point name) — strip that exact code off the front
-        // when it's there, using the code already on the waypoint record rather than
-        // guessing at a pattern.
-        if (wp.segment_id && wpName?.startsWith(wp.segment_id)) {
+        // straight from the GPX file's raw point name) — strip it off the front when
+        // it's there. `wp.segment_id` (e.g. "BOR1") only ever covers the tour code +
+        // location number — it never includes the per-point letter or the "-PS"
+        // suffix, so stripping just that much left a "a-PS Start at..." fragment
+        // sitting in front of the real title, which is exactly what Enda caught. Match
+        // the WHOLE leading code instead, using the exact same naming-convention regex
+        // already proven elsewhere in this codebase (parseWpNameSortKey in
+        // DrivingTourWaypointEditor.jsx / SegmentScriptManager.jsx) —
+        // <3-letter-tour-code><location-number><letter>[-PS] — rather than inventing a
+        // second, possibly-inconsistent way of recognising the same thing.
+        const codeMatch = wpName?.match(/^[A-Z]{3}\d+[a-z](?:-PS)?(?:\s|$)/);
+        if (codeMatch) {
+          wpName = wpName.slice(codeMatch[0].length).trim();
+        } else if (wp.segment_id && wpName?.startsWith(wp.segment_id)) {
+          // Fallback for a title that doesn't follow the letter-suffix convention at
+          // all (e.g. hand-typed rather than GPX-imported) but still happens to start
+          // with the plain segment_id code.
           wpName = wpName.slice(wp.segment_id.length).trim();
         }
 
