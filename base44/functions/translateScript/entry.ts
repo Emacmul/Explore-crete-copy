@@ -15,6 +15,7 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'Not authorized' }, { status: 403 });
     }
 
+
     if (!text || !text.trim()) {
       return Response.json({ error: 'Missing text to translate' }, { status: 400 });
     }
