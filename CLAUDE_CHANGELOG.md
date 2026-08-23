@@ -41,6 +41,67 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-23 (follow-up 20) — Audit + fix: map popups unconditionally show the plain waypoint name now, no "Start" badge or code anywhere, on any screen, any tour type
+Scope: `src/components/map/WalkDetailMap.jsx`, `src/components/admin/AdminPreviewMap.jsx`.
+(Frontend only — no backend function touched.)
+
+**What Enda asked for:** "The user still sees 'start' and the Waypoint
+code in the pop-up on their map. I've asked more than once to remove
+the word 'Start', and Waypoint code, and keep the Waypoint name only.
+It still has not happened. Now I'm not just asking, I'm demanding this
+gets done, and gets done properly for every Waypoint in any
+walk/walkabout/or driving tour. Audit the code, find the way to do this
+and fix it."
+
+**Audit performed:** Searched the whole codebase for every place that
+renders a Leaflet `Popup` at all — only two exist. `CreteMap.jsx` shows
+one marker per WALK (not per waypoint) on the "browse tours" map, with
+the walk's own product code and name — a completely different thing
+from a waypoint code, no "Start" text anywhere in it, left untouched.
+`WalkDetailMap.jsx` is the ONLY component that renders a per-waypoint
+popup, for BOTH tour types (walking/walkabout AND driving tour), and it
+is used on exactly two screens: the real customer-facing walk page
+(`WalkDetail.jsx`) and the admin's own "Map Preview" tab
+(`AdminPreviewMap.jsx`, the exact screen in Enda's screenshot). Also
+checked `TourSimulatorMap.jsx` (the Narration & Simulate tab's map) —
+it renders no popup at all, so nothing to fix there.
+
+**Root cause found:** `WalkDetailMap.jsx` already had logic to hide the
+badge and strip the code (added in an earlier session), but it was
+gated behind a `showInternalLabels` prop that only the real customer
+page left off — `AdminPreviewMap.jsx` deliberately passed
+`showInternalLabels={true}`, on the reasoning (from that earlier
+session, never actually confirmed with Enda) that the admin's own
+working view should keep the code + badge as a convenience. That
+reasoning is exactly backwards from what Enda has been asking for
+repeatedly: the "Map Preview" tab is the ONE screen he actually looks
+at day to day, so keeping the bug alive there — even while correctly
+fixing the real customer page — meant it looked completely unfixed to
+him every time he checked.
+
+**Fix:** Removed `showInternalLabels` entirely — prop, both branches,
+and the one caller that set it to `true`. The popup now unconditionally
+shows only the plain waypoint name (with any leading waypoint code
+still stripped off a title that has one baked in from a GPX import, as
+before) on every screen, for every waypoint, in every tour type — there
+is no toggle left anywhere that could bring the badge or code back,
+intentionally or by accident. The coloured MARKER PIN on the map itself
+still varies by role (green start / red stop / blue point, for driving
+tours) — that's a visual-only distinction on the pin's own icon, not
+text in the popup, and Enda's complaint was specifically about the
+popup's own text.
+
+**Verified:** `npx vite build` and `npx eslint` on both changed files
+clean (one pre-existing, unrelated `createWaypointIcon` unused-var
+warning confirmed via `git stash` to already exist before this change).
+Traced both callers of `WalkDetailMap` by hand: `WalkDetail.jsx` (real
+customer page) never passed `showInternalLabels` even before this
+change, so its behaviour is unchanged; `AdminPreviewMap.jsx` is the only
+one whose behaviour actually changes, from "code + badge" to "plain
+name only" — exactly matching the real customer page now, as intended.
+
+---
+
 ## 2026-08-23 (follow-up 19) — Reverted follow-up 17's "one narration line per box" — restored multi-line boxes with a much higher ceiling instead
 Scope: `src/components/admin/NarrationTtsEditor.jsx`. (Frontend only —
 no backend function touched.)

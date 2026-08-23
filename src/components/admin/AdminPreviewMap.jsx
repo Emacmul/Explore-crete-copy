@@ -32,24 +32,17 @@ export default function AdminPreviewMap({ walk }) {
     <div className="space-y-4">
       <div>
         <h3 className="text-white font-semibold mb-1">Map Preview</h3>
-        {/* Per Enda: this screen only ever opens inside the tour editor, which only an
-            Admin or a Narrator can get to — a real paying customer never sees this exact
-            screen at all. So the popup here is allowed to keep the waypoint code and the
-            coloured "Start" badge, as a genuinely useful working reference while editing
-            (see showInternalLabels below). The wording here used to say "This is how the
-            walk will appear to users", which read as a promise that this exact popup was
-            what a customer sees — it isn't, so it's been reworded to say what this screen
-            actually is, to avoid that confusion again. */}
-        <p className="text-slate-400 text-sm">Route and waypoints preview for editing — codes and badges here are for your own reference. A real customer's popup just shows the plain waypoint name.</p>
+        {/* Per Enda: this popup shows exactly what a real customer sees — no separate
+            "admin reference" version. An earlier version of this screen deliberately
+            showed a waypoint code + coloured "Start"/"Stop"/"Point" badge here that a
+            real customer's popup didn't, meant as a working aid, but Enda never asked
+            for that split and it meant this exact screen kept showing the thing he
+            was repeatedly asking to have removed. WalkDetailMap (below) no longer has
+            any such toggle at all, so there is nothing left to keep in sync here. */}
+        <p className="text-slate-400 text-sm">Route and waypoints preview for editing — this popup shows exactly what a real customer sees.</p>
       </div>
       <div className="h-96 rounded-xl overflow-hidden border border-slate-600">
-        {/* Per Enda: this is the Admin/Narrator's own working view, so it keeps the
-            waypoint code and the coloured "Start" (etc.) badge in the popup — genuinely
-            useful here. The real customer-facing map (a completely different screen,
-            opened from the tour's own page in the customer-facing part of the app, never
-            from inside this editor) leaves showInternalLabels off — its default — so it
-            shows only the plain waypoint name, no code, no badge. */}
-        <WalkDetailMap walk={previewWalk} showInternalLabels={true} />
+        <WalkDetailMap walk={previewWalk} />
       </div>
       <div className="bg-slate-700/50 rounded-lg p-3 border border-slate-600 text-sm text-slate-400">
         <span className="text-slate-300 font-medium">Trail points: </span>{(walk.trail_path || []).length} · 
