@@ -41,6 +41,54 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-23 (follow-up 19) — Reverted follow-up 17's "one narration line per box" — restored multi-line boxes with a much higher ceiling instead
+Scope: `src/components/admin/NarrationTtsEditor.jsx`. (Frontend only —
+no backend function touched.)
+
+**What changed:** Follow-up 17 fixed a real bug (an unrelated sentence
+silently sharing a box with whatever was being edited) by capping every
+box at exactly ONE narration line. Enda tried it and it broke something
+more important: judging speech length against driving/walking speed
+needs a whole natural RUN of several connected narration lines sitting
+together in one box, heard and adjusted as one passage — one sentence
+in total isolation on its own made that impossible and broke the flow
+of the narration.
+- Reverted `chunkIntoSubsections` back to counting raw pieces (a
+  narration line and a pause each count as one, same as originally),
+  capped by a new named constant `SUBSECTION_MAX_SEGMENTS`, raised from
+  the old default of 3 to **12** — Enda's own suggestion was "10 or 15,
+  whatever", so 12 was picked as the middle of that range. It's a
+  ceiling, not a target: a box can still close earlier (the existing
+  dangling-pause defer is unchanged), it just never grows past 12
+  pieces from bundling alone.
+- This does mean the specific scenario follow-up 17 fixed can happen
+  again — several genuinely unrelated short lines in a row could still
+  end up sharing one box, up to the ceiling — but per Enda ("because
+  they can be there, doesn't mean they have to be there"), that's now
+  an accepted, understood tradeoff in exchange for keeping longer
+  connected passages editable together, not a surprise bug. A box still
+  can never grow BEYOND the 12-piece ceiling just from bundling — only
+  from the narrator's own edit to their own box's text (follow-up 13's
+  sticky-boundary mechanism, completely unchanged by this revert).
+
+**Why:** Enda: "This is a nightmare, It just breaks the flow of the
+narration in a sub segment making it impossible to edit this and
+properly match speech/speed. Bring this back to the 'up to 3 pieces'
+per box' system, but change 3 to 10 or 15, whatever... at least let the
+narration flow!"
+
+**Verified:** `npx vite build` and `npx eslint` on the changed file both
+clean. Re-ran the same kind of standalone Node.js simulation as
+follow-up 17, now with `SUBSECTION_MAX_SEGMENTS = 12` against a document
+with 8 short, connected sentences: confirmed a fresh parse now bundles 7
+of them into one box (restoring narration flow), and that editing that
+box (adding a new mid-sentence `<break>`) still only grows that ONE box
+(13→15 segments) while every other box comes back byte-for-byte
+untouched — the sticky-boundary guarantee from follow-up 13 holds
+regardless of the ceiling's size.
+
+---
+
 ## 2026-08-23 (follow-up 18) — Fix: Groq translation calls were reserving a full 8000-token reply on every request, alone almost enough to blow the org's 8000 TPM rate limit
 Scope: `base44/functions/translateScript/entry.ts`. **BACKEND FUNCTION —
 needs the blank-line-then-redeploy step in Base44 for `translateScript`

@@ -31,23 +31,27 @@ const LANG_TO_CODE = {
 
 const MAX_CHARS = 5000;
 
+// How many raw pieces (a narration line and a pause each count as ONE piece toward
+// this) a single box may hold before a new one starts — a CEILING, never a target: a
+// box can close earlier (see the dangling-pause defer below), it just never grows past
+// this many pieces. Per Enda: for a short time this was capped at exactly ONE
+// narration line per box (see CLAUDE_CHANGELOG.md follow-up 17), fixing a real bug
+// where an unrelated sentence could get silently swallowed into whatever box was being
+// edited — but that fix broke something more important: matching speech length against
+// driving/walking speed needs a whole natural run of several consecutive narration
+// lines to sit together in ONE box, so they can all be heard, judged, and adjusted as
+// one connected passage — one sentence in total isolation made that impossible and
+// broke the flow of the narration. Raised well past the original default of 3 so a
+// real run of connected narration can sit together in one box; a document that happens
+// to have several genuinely unrelated SHORT lines in a row can still end up sharing a
+// box up to this ceiling — that's an accepted tradeoff for keeping longer passages
+// together, not a bug — but a box can never grow BEYOND this ceiling just from
+// bundling, only from the narrator's own edit to their own box's text (see
+// chunkBySizes/deriveSubsections below).
+const SUBSECTION_MAX_SEGMENTS = 12;
+
 // A "subsection" (per Enda's term) is a run of segment cards ending at a Build & Play /
-// Continue control. Each subsection holds exactly ONE narration line (one text segment
-// — the text between two <break> tags, or between a break and the start/end of the
-// document) plus whatever pause immediately leads into it — never more than one.
-//
-// This used to instead group up to 3 raw segments (text AND pause both counted)
-// per box, which seemed harmless but had a real bug: a single very long narration
-// line with no <break> inside it only counts as ONE segment toward that "3", so the
-// grouping would keep pulling in whatever came next to fill the count up — silently
-// sharing ONE edit box between two completely unrelated sentences (e.g. "...wherever
-// you like" bundled together with the next, unrelated "It is important for you to..."
-// line just because the first one was short on its own segment count). Editing the
-// first sentence's own box then dragged the second, unrelated sentence along with it
-// — exactly the "the next sub-segment got amalgamated into the one I was editing"
-// bug Enda hit. One text segment per box makes that impossible: a box can only ever
-// grow by the narrator's OWN edit to their OWN text (see chunkBySizes/deriveSubsections
-// below), never by silently absorbing a neighbour it was never given.
+// Continue control, up to SUBSECTION_MAX_SEGMENTS raw pieces long (see above).
 //
 // Per Enda: a subsection must never end right on a pause when there's still a
 // narration line after it — a pause exists to lead into whatever comes next, so
@@ -58,16 +62,13 @@ const MAX_CHARS = 5000;
 function chunkIntoSubsections(segments) {
   const subsections = [];
   let current = [];
-  let textCount = 0;
   segments.forEach((seg, idx) => {
     current.push(seg);
-    if (seg.type === 'text') textCount += 1;
     const isLastOverall = idx === segments.length - 1;
     const endsOnDanglingPause = seg.type === 'pause' && !isLastOverall;
-    if (!endsOnDanglingPause && (textCount >= 1 || isLastOverall)) {
+    if (!endsOnDanglingPause && (current.length >= SUBSECTION_MAX_SEGMENTS || isLastOverall)) {
       subsections.push(current);
       current = [];
-      textCount = 0;
     }
   });
   if (current.length > 0) subsections.push(current);
@@ -77,7 +78,7 @@ function chunkIntoSubsections(segments) {
 // Slices a flat, freshly re-parsed segments array back into subsections using a given
 // list of per-subsection segment counts, in order — used to PRESERVE existing
 // subsection boundaries across a re-parse (see deriveSubsections below), instead of
-// re-flowing the whole document into fresh groups of 3 every time. Any leftover (a
+// re-flowing the whole document into fresh groups every time. Any leftover (a
 // rare mismatch, e.g. editing a box in a way that doesn't cleanly reparse to the same
 // shape) is appended as one extra trailing subsection rather than silently dropped.
 function chunkBySizes(segments, sizes) {
@@ -95,9 +96,9 @@ function chunkBySizes(segments, sizes) {
 // Per Enda: typing a new <break> tag INSIDE one subsection's own edit box must only
 // ever split that ONE box's own cards apart — every OTHER subsection needs to keep
 // exactly what it already had, just shifted later on the page in the same order, never
-// reshuffled into the wrong box. Re-flowing the whole document into fixed groups of 3
-// from scratch on every re-parse (the original chunkIntoSubsections behaviour) doesn't
-// do that — inserting segments anywhere shifts every later group's boundary too.
+// reshuffled into the wrong box. Re-flowing the whole document into fresh groups from
+// scratch on every re-parse (the original chunkIntoSubsections behaviour) doesn't do
+// that — inserting segments anywhere shifts every later group's boundary too.
 //
 // Instead: `subsectionTexts` (see the effect below) already holds each box's OWN
 // current text — including any edit just typed into it, even before Parse & Generate
@@ -189,7 +190,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   // time `segments` actually changes — a fresh Parse & Generate, or a pause-duration
   // tweak via a slider — using deriveSubsections (see above) so each box's boundary is
   // PRESERVED wherever possible instead of the whole document being re-flowed into
-  // fixed groups of 3 from scratch every time. Reads `subsectionTexts` as it stood
+  // fresh groups from scratch every time. Reads `subsectionTexts` as it stood
   // BEFORE this change (deliberately left out of the dependency array — this must only
   // re-run when `segments` itself changes, never on every keystroke into a box).
   useEffect(() => {
@@ -748,8 +749,8 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
         </div>
       )}
 
-      {/* Segments list, grouped into subsections (a run of up to 3 cards, kept intact
-          around pauses — see chunkIntoSubsections above). Per Enda: a control must
+      {/* Segments list, grouped into subsections (a run of up to SUBSECTION_MAX_SEGMENTS
+          cards, kept intact around pauses — see chunkIntoSubsections above). Per Enda: a control must
           always play the audio that comes AFTER it, never the part already shown above
           it — the narrator should hear a part fresh, THEN read/edit its text, not the
           other way round. That means the very first part needs its own standalone
