@@ -164,7 +164,7 @@ function deriveSubsections(segments, subsectionSizes) {
   return chunkIntoSubsections(segments);
 }
 
-export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, onAudioChange, fixedLanguage }) {
+export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, onAudioChange, fixedLanguage, waypointSegmentId, waypointSegmentTitle }) {
   const { keys: apiKeys } = useNarratorApiKeys();
   const [selectedVoice, setSelectedVoice] = useState('NEUTRAL');
   const [selectedLanguage, setSelectedLanguage] = useState(fixedLanguage || 'English');
@@ -187,6 +187,20 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   // Which subsection is actively mid-playback right now, if any — used to show Stop in
   // the right spot instead of a single global control.
   const [activeSubsectionIndex, setActiveSubsectionIndex] = useState(null);
+  // Per Anoushka/Enda (follow-up 30): a narrator who reviews and fixes every line
+  // entirely via each TtsSegmentCard's own inline Play button — exactly the workflow the
+  // per-line quick editor above was built to support, so fixing one line "shouldn't
+  // require sitting through the full sequential Build & Play first" — never touches
+  // subsectionCursor at all, since that's a completely separate, simpler audio pathway
+  // (see playSegment below). But Continue/Save & Finish's availability was ONLY ever
+  // wired to subsectionCursor, which only moves via the combined Build & Play/Continue
+  // engine — so a narrator who works this way could listen to and fix every single line
+  // and still find Save & Finish permanently disabled, with no way to finish at all (the
+  // exact bug Enda reported). This tracks which segment ids have had their own individual
+  // clip played all the way through, so a subsection whose every text line has been heard
+  // this way counts as reviewed exactly like one heard via the combined engine — see
+  // subsectionReviewed further down.
+  const [playedSegmentIds, setPlayedSegmentIds] = useState(() => new Set());
   // Per Enda: past 12-13 subsections it became hard to find the right passage to edit,
   // because every duplicate "Edit script" box further down showed and edited the WHOLE
   // document — so each one is now scoped to just its OWN subsection's own text instead.
@@ -661,6 +675,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     setSegments(parsed);
     setSegmentAudios({});
     setSubsectionCursor(0);
+    setPlayedSegmentIds(new Set());
     setActiveSubsectionIndex(null);
     // A fresh pass starts with a clean slate — any line's quick-edit box left open from
     // the previous pass would now be pointing at a segment id that no longer exists.
@@ -751,7 +766,14 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     setCurrentPlayingIndex(segIndex);
     const audio = new Audio(url);
     currentAudioRef.current = audio;
-    audio.onended = () => setCurrentPlayingIndex(null);
+    // Marks this line as genuinely heard (played all the way through) — see
+    // playedSegmentIds above for why this matters: it's what lets Continue/Save & Finish
+    // unlock for a narrator who reviews entirely line-by-line, never touching the
+    // combined Build & Play/Continue engine at all.
+    audio.onended = () => {
+      setCurrentPlayingIndex(null);
+      setPlayedSegmentIds((prev) => (prev.has(segmentId) ? prev : new Set(prev).add(segmentId)));
+    };
     audio.onerror = () => setCurrentPlayingIndex(null);
     audio.play().catch(() => setCurrentPlayingIndex(null));
   };
@@ -801,6 +823,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
         setSegments(null);
         setSegmentAudios({});
         setSubsectionCursor(0);
+        setPlayedSegmentIds(new Set());
         setEditingSegmentId(null);
       } else {
         addLog('Combined audio: no URL returned from upload.');
@@ -1044,6 +1067,14 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     ? (subsectionSizes ? chunkBySizes(segments, subsectionSizes) : chunkIntoSubsections(segments))
     : [];
 
+  // A subsection counts as reviewed once every one of its own text lines (pauses have no
+  // audio to hear) has been individually played all the way through — see
+  // playedSegmentIds above. Used below alongside subsectionCursor so either review path
+  // — the combined Build & Play/Continue engine, or hearing/fixing every line one at a
+  // time — unlocks Continue/Save & Finish equally.
+  const isSubsectionReviewed = (subsectionSegments) =>
+    subsectionSegments.filter((s) => s.type === 'text').every((s) => playedSegmentIds.has(s.id));
+
   // Shared "something else has the floor right now" flag for every control on this
   // panel — combined playback, a whole-subsection Continue/Save & Finish commit, the
   // final render/upload, a single line's own quick-edit save (see commitSegmentEdit
@@ -1088,9 +1119,12 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
           setSegments(null);
           setSegmentAudios({});
           setSubsectionCursor(0);
+          setPlayedSegmentIds(new Set());
           setEditingSegmentId(null);
         }}
         fixedLanguage={fixedLanguage}
+        waypointSegmentId={waypointSegmentId}
+        waypointSegmentTitle={waypointSegmentTitle}
         // Per the follow-up 23 audit's fourth review pass: this panel's own
         // Import/Translate & Load controls used to be completely ungated by
         // anything happening below — a narrator could fire a translation reset
@@ -1236,7 +1270,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
               "Continue". */}
           {(() => {
             const topIsPlayingThis = playing && activeSubsectionIndex === 0;
-            const topAlreadyPlayed = subsectionCursor > 0;
+            const topAlreadyPlayed = subsectionCursor > 0 || (subsections[0] ? isSubsectionReviewed(subsections[0]) : false);
             if (topIsPlayingThis) {
               return (
                 <Button type="button" onClick={handleStopPlay} className="w-full bg-red-600 hover:bg-red-700 gap-2 text-white">
@@ -1277,8 +1311,16 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
             const isLastBlock = si === subsections.length - 1;
             const targetIndex = si + 1; // the NEXT subsection this block's control plays
             const isPlayingThis = playing && activeSubsectionIndex === targetIndex;
-            const status = subsectionCursor > targetIndex ? 'done' : subsectionCursor === targetIndex ? 'active' : 'locked';
-            const finalizeReady = subsectionCursor >= subsections.length;
+            // thisBlockReviewed: has THIS block's own content actually been heard yet —
+            // either via the combined engine (subsectionCursor already past it) or by
+            // playing every one of its own lines individually (see isSubsectionReviewed
+            // above)? Either one is treated as a genuine review. Note this only ever
+            // ADDS a way to unlock what was reachable before — whenever the old
+            // cursor-only check would already have shown 'done' or 'active', cursor
+            // alone still satisfies this too, so nothing that worked before changes.
+            const thisBlockReviewed = subsectionCursor > si || isSubsectionReviewed(subsectionSegments);
+            const status = subsectionCursor > targetIndex ? 'done' : thisBlockReviewed ? 'active' : 'locked';
+            const finalizeReady = subsectionCursor >= subsections.length || thisBlockReviewed;
             const isSavingThis = generatingCombined && isLastBlock;
             const isCommittingThis = committingIndex === si;
 
@@ -1442,6 +1484,17 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                     <Download className="w-4 h-4" /> Download
                   </Button>
                 </div>
+                {/* Per Enda's follow-up 30 report: Save & Finish (or Continue) sitting
+                    permanently greyed out with no explanation looked like a bug even
+                    though it wasn't one — spelling out exactly what unlocks it, the same
+                    way follow-up 26's locked-box hint above already does for a similar
+                    "why is this stuck" moment. */}
+                {!thisBlockReviewed && !isPlayingThis && (
+                  <p className="text-xs text-amber-500/80">
+                    {isLastBlock ? 'Save & Finish unlocks once' : 'Continue unlocks once'} every line above has
+                    been played through — press ▶ on each one, or use Build & Play / Continue further up.
+                  </p>
+                )}
               </div>
             );
           })}

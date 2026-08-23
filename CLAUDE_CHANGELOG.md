@@ -41,6 +41,75 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-23 (follow-up 30) — Save & Finish (and Continue) could get permanently stuck disabled for a narrator who reviews entirely line-by-line
+Scope: `src/components/admin/NarrationTtsEditor.jsx`. (Frontend only — no
+backend function touched.)
+
+Enda reported (with a screenshot) that after editing a segment, the
+"Save & Finish" button never activates — it stayed greyed out at the end
+no matter what.
+
+Root cause: "Save & Finish" (and "Continue" on every subsection before
+the last one) only ever unlocked via `subsectionCursor`, a counter that
+ONLY advances by using the standalone "Build & Play" button and the
+"Continue" buttons — the sequential, combined-playback engine. But this
+app also has a second, completely independent way to review a
+subsection: each line's own inline ▶ Play button on its `TtsSegmentCard`,
+plus its own pencil-icon quick editor — built specifically (per Anoushka,
+relayed by Enda, and recorded in this codebase's own comments) so a
+narrator could hear and fix one line right after Parse & Generate
+"without sitting through the full sequential Build & Play first". A
+narrator who works entirely that way — playing and, where needed, fixing
+each line one at a time, never touching the big Build & Play/Continue
+controls — never moves `subsectionCursor` at all, so Save & Finish (and
+any earlier subsection's Continue) stayed disabled forever, with no way
+to finish, even though every line had genuinely been heard and reviewed.
+
+Fixed by recognizing BOTH review paths as equally valid, rather than
+only the sequential one:
+- New `playedSegmentIds` state (a `Set` of segment ids) records every
+  line whose own individual clip has been played all the way through
+  (`audio.onended` in `playSegment`). Reset to empty everywhere
+  `subsectionCursor` already resets to 0 (a fresh Parse & Generate, a
+  fresh Translate & Load, and after a successful Save & Finish) — so
+  each new pass starts with a clean review state, same as before.
+- New `isSubsectionReviewed()` helper: true once every TEXT line (pauses
+  have nothing to hear) in a subsection has had its own clip played
+  through. A subsection made up only of pauses is trivially reviewed —
+  nothing to get stuck on.
+- `thisBlockReviewed = subsectionCursor > si || isSubsectionReviewed(...)`
+  replaces the old cursor-only check everywhere it gated a control:
+  the per-block `status` (locked/active/done, driving each non-last
+  block's own Continue button) and `finalizeReady` (driving the last
+  block's Save & Finish) now unlock on EITHER path. The standalone top
+  "Build & Play" button's own "Played" indicator was updated the same
+  way, so it can't show a stale "not yet played" state while Save &
+  Finish below it is already unlocked. This only ever ADDS a way to
+  unlock what already worked before — wherever the old cursor-only
+  logic already showed 'done'/'active'/ready, `subsectionCursor > si`
+  alone still satisfies the new check identically, so the original
+  combined-playback workflow is completely unaffected — verified with 6
+  scenarios covering both regression (combined-only) and the new
+  per-line-only, mixed, partial-review, edited-line, and pause-only
+  cases (`/tmp/ttscheck2/sim13_save_finish_gate.mjs`), all passing.
+- Editing a line already assigns it a fresh id (existing behavior,
+  unchanged) — so a `playedSegmentIds` entry for the pre-edit id simply
+  becomes irrelevant once that line is edited, correctly requiring the
+  new, edited audio to be heard again before it counts as reviewed. No
+  extra invalidation logic was needed for this.
+- Added a small explanatory hint under a still-locked Continue/Save &
+  Finish button, spelling out what unlocks it — the same kind of "why is
+  this greyed out" fix as follow-up 26's locked-edit-box hint, since a
+  control just sitting disabled with no explanation is exactly what
+  made this look like a dead end rather than an in-progress task.
+
+Confirmed `commitSubsectionEdit` (what Save & Finish actually calls to
+save the box's current text before finalizing) never depended on
+`subsectionCursor`/the combined engine having run — only on the
+subsection's own text and segments — so finalizing via the per-line-only
+path was always going to work correctly once the button could actually
+be clicked; the button's enablement was the whole bug.
+
 ## 2026-08-23 (follow-up 29) — Found and fixed the REAL cause of follow-up 28: a document-order bug in the .odt text extractor
 Scope: `src/lib/fileTextExtractor.js`, `src/components/admin/TranslationPanel.jsx`.
 (Frontend only — no backend function touched.)
