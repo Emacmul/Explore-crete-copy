@@ -41,6 +41,34 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-24 (follow-up 34) — Auto-scroll to "Parse & Generate" right after a file is imported/translated
+Scope: `src/components/admin/NarrationTtsEditor.jsx` only. (Frontend only
+— no backend function touched.)
+
+Enda: "After importing a file, the system does not expose the 'Parse and
+Generate' button without manually scrolling down. Here, it should also
+automatically scroll down to expose that button." Same underlying problem
+as follow-up 33's Build & Play fix, one step earlier in the flow: "Parse &
+Generate" sits below the pause-insert row, the (six-row) main script box,
+and the Voice/Language pickers, so on most screens it's below the fold
+right after a file gets imported and loaded.
+
+New `parseGenerateRef` on the wrapping `<div>` around that button (always
+present in the DOM once `!segments`, unlike follow-up 33's `listenBoxRef`
+which only exists during the 'listen' phase — so this one just needs to be
+scrolled TO, not conditionally attached), and a `justImportedTick` counter
+bumped once at the end of `TranslationPanel`'s `onTranslated` callback (the
+one path used by both "Translate & Load" and "Load (already English)").
+A new effect watches that counter and scrolls the ref into view (smooth,
+centered) whenever it's bumped. Deliberately NOT keyed on `segments`
+itself (already `null` both before and after an ordinary import, so a
+`[segments]`-only effect would never see a change to react to) or on
+`script` (which also changes on every keystroke while typing directly
+into the top box — scrolling on every keystroke would be worse than the
+original problem).
+
+Verified with `npx eslint`/`npx vite build` (both clean).
+
 ## 2026-08-24 (follow-up 33) — Auto-scroll to the Build & Play box after Parse & Generate, and make it obvious when the button is still just generating audio
 Scope: `src/components/admin/NarrationTtsEditor.jsx` only. (Frontend only
 — no backend function touched.)

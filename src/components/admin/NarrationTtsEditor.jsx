@@ -304,6 +304,20 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   // the ref on that box further down) — used by the effect below to bring it into view
   // automatically the moment a fresh parse starts.
   const listenBoxRef = useRef(null);
+  // Per Enda's follow-up 34 report: the same "have to scroll to find it" problem, one
+  // step earlier — the "Parse & Generate" button (past the pause-insert row, the big
+  // script box, and the Voice/Language pickers) sits below the fold right after
+  // importing/translating a file too. Always present in the DOM once !segments, so
+  // this just needs to be scrolled TO, not conditionally attached like listenBoxRef.
+  const parseGenerateRef = useRef(null);
+  // Bumped once every time TranslationPanel's onTranslated fires (see below) — the
+  // effect further down watches this and scrolls parseGenerateRef into view. A plain
+  // counter rather than watching `segments` directly (already null both BEFORE and
+  // AFTER an import in the ordinary case, so a `[segments]`-keyed effect wouldn't see
+  // any change to react to) or `script` (which also changes on every single keystroke
+  // while typing directly in the top box — scrolling on every keystroke would be far
+  // worse than the original problem).
+  const [justImportedTick, setJustImportedTick] = useState(0);
 
   const charCount = (script || '').length;
   const overLimit = charCount > MAX_CHARS;
@@ -349,6 +363,17 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
       listenBoxRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   }, [segments]);
+
+  // Per Enda's follow-up 34 report: same idea, one step earlier — bring "Parse &
+  // Generate" into view the moment a file's been imported/translated and loaded into
+  // the script box, rather than leaving a narrator to scroll down and find it
+  // themselves. justImportedTick > 0 (not just "truthy") so this never fires on the
+  // initial render, only on an actual import.
+  useEffect(() => {
+    if (justImportedTick > 0) {
+      parseGenerateRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [justImportedTick]);
 
   // Ground truth for each subsection's box text AS OF the last time this effect ran —
   // i.e. what rebuildScript(that subsection's real segments) actually was, regardless
@@ -1245,6 +1270,9 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
           setEditingSegmentId(null);
           setPlayedSegmentIds(new Set());
           setLastEditedSegmentIds(new Set());
+          // Per Enda's follow-up 34 report: scroll "Parse & Generate" into view — see
+          // justImportedTick/parseGenerateRef above.
+          setJustImportedTick((n) => n + 1);
         }}
         fixedLanguage={fixedLanguage}
         waypointSegmentId={waypointSegmentId}
@@ -1370,20 +1398,26 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
           Save & Listen Again (further down, in 'edit' phase) is the one and only way to
           re-parse — see the comment on handleSaveAndListenAgain above for why showing
           both at once would just be two confusing paths to a similar-but-different
-          action. */}
+          action. ref={parseGenerateRef} pairs with the scroll effect above — per
+          Enda's follow-up 34 report, this button sits below the fold on most screens
+          (past the pause-insert row, the big script box, and the Voice/Language
+          pickers), so a narrator had to scroll down themselves to find it after
+          importing a file. */}
       {!segments && (
-        <Button
-          type="button"
-          onClick={() => {
-            setListenPassCount(0);
-            handleParseAndGenerate();
-          }}
-          disabled={generatingSegmentId !== null || overLimit || !script?.trim() || passLocked}
-          className="w-full bg-purple-600 hover:bg-purple-700 gap-2 text-white"
-        >
-          {generatingSegmentId !== null ? <Loader2 className="w-4 h-4 animate-spin" /> : <Braces className="w-4 h-4" />}
-          {generatingSegmentId !== null ? 'Generating…' : 'Parse & Generate'}
-        </Button>
+        <div ref={parseGenerateRef}>
+          <Button
+            type="button"
+            onClick={() => {
+              setListenPassCount(0);
+              handleParseAndGenerate();
+            }}
+            disabled={generatingSegmentId !== null || overLimit || !script?.trim() || passLocked}
+            className="w-full bg-purple-600 hover:bg-purple-700 gap-2 text-white"
+          >
+            {generatingSegmentId !== null ? <Loader2 className="w-4 h-4 animate-spin" /> : <Braces className="w-4 h-4" />}
+            {generatingSegmentId !== null ? 'Generating…' : 'Parse & Generate'}
+          </Button>
+        </div>
       )}
 
       {error && (
