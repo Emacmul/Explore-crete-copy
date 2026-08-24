@@ -41,6 +41,51 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-24 (follow-up 33) — Auto-scroll to the Build & Play box after Parse & Generate, and make it obvious when the button is still just generating audio
+Scope: `src/components/admin/NarrationTtsEditor.jsx` only. (Frontend only
+— no backend function touched.)
+
+Enda, with two screenshots of the 'listen' phase box: "Once a file is
+imported and the parse to generate button is clicked, the section should
+scroll down to show the 'Build and Play' button. Now the user has to
+manually scroll down, which is confusing. The explanatory text above the
+'Build and Play' button should also tell them to wait until the button
+becomes active before they can listen to the whole part. She was clicking
+this like crazy with no effect... until it showed in full colour. By then,
+she was annoyed :)"
+
+Two fixes, both in the same box:
+
+- **Auto-scroll.** A new `listenBoxRef` is attached to the 'listen' phase
+  box only while it's actually rendered (`reviewPhase === 'listen'`), and
+  a new effect scrolls it into view (smooth, centered — matching the
+  existing error-banner auto-scroll pattern from follow-up 26) the moment
+  a fresh parse happens. Gated on `segments && reviewPhase === 'listen'`
+  together: `segments` gets a new array reference on every fresh Parse &
+  Generate (the manual button, or "Save & Listen Again") — the only path
+  that ever puts `reviewPhase` back to 'listen' — so this never fires for
+  a `segments` change that happens mid-'edit'-phase (a per-line save, a
+  duration nudge, etc.), only for an actual fresh pass.
+- **Make "still generating" visually obvious.** The root problem: the
+  segments list (and this box) renders as soon as Parse & Generate starts,
+  well before the per-line TTS generation loop inside it finishes — so
+  the Build & Play button was already on screen and already purple,
+  just disabled, for as long as that loop was still running. Nothing
+  said so. New `stillGeneratingAudio` flag (`generatingSegmentId !==
+  null`, the same flag that flag already drives the disabling) now
+  drives two things: the explanatory text above the button switches to
+  "Still generating audio for every line — the Build & Play button below
+  will light up and become clickable the moment it's ready. Clicking it
+  before then won't do anything, so there's no need to keep clicking
+  it."; and the button itself swaps its "Build & Play"/▶ label for a
+  spinner and "Generating audio…" — the same pattern the "Parse &
+  Generate" button already uses for itself — so there's a real, moving
+  visual difference between "still working" and "ready", not just a
+  slightly different shade of purple that's easy to miss while
+  impatiently clicking.
+
+Verified with `npx eslint`/`npx vite build` (both clean).
+
 ## 2026-08-24 (follow-up 32) — A single line's own edit pencil now requires a fresh, full listen every time; a "where you left off" bookmark on whichever line was last saved
 Scope: `src/components/admin/NarrationTtsEditor.jsx`,
 `src/components/admin/TtsSegmentCard.jsx`. (Frontend only — no backend

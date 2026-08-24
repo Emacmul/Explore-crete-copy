@@ -297,6 +297,13 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   const stopRef = useRef(false);
   const currentPlaybackRef = useRef(null);
   const errorRef = useRef(null);
+  // Per Enda's follow-up 33 report: after Parse & Generate, the 'listen' phase box
+  // (with the Build & Play button) renders below the fold on a document of any real
+  // length — Anoushka had to scroll down herself to find it, which read as the page
+  // not having done anything. Only ever attached while reviewPhase is 'listen' (see
+  // the ref on that box further down) — used by the effect below to bring it into view
+  // automatically the moment a fresh parse starts.
+  const listenBoxRef = useRef(null);
 
   const charCount = (script || '').length;
   const overLimit = charCount > MAX_CHARS;
@@ -325,6 +332,23 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   useEffect(() => {
     if (error) errorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, [error]);
+
+  // Per Enda's follow-up 33 report: bring the 'listen' phase box (Build & Play) into
+  // view the moment a fresh parse starts, rather than leaving a narrator to scroll down
+  // and find it themselves. `segments` changes to a new array reference on every fresh
+  // Parse & Generate (the manual button, or "Save & Listen Again") — that's also the
+  // only path that ever puts reviewPhase back to 'listen' (see handleParseAndGenerate),
+  // so gating on both together means this never fires for a `segments` change that
+  // happens mid-'edit'-phase (a per-line save, a duration nudge, etc — see
+  // commitSegmentEdit/commitSubsectionEdit/handleDurationChange), only for an actual
+  // fresh pass. listenBoxRef is only ever attached while reviewPhase is 'listen' (see
+  // the ref on that box further down), so it's already pointing at the right element by
+  // the time this runs.
+  useEffect(() => {
+    if (segments && reviewPhase === 'listen') {
+      listenBoxRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [segments]);
 
   // Ground truth for each subsection's box text AS OF the last time this effect ran —
   // i.e. what rebuildScript(that subsection's real segments) actually was, regardless
@@ -1193,6 +1217,13 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   // edit.
   const canMarkAsDone = reviewPhase === 'edit' && listenPassCount >= 2 && !editedSinceLastListen;
 
+  // Per Enda's follow-up 33 report: handleParseAndGenerate's own per-line TTS loop sets
+  // this while it's still working through the document — the Build & Play button stays
+  // disabled the whole time (via passLocked/busy above), but with nothing SAYING so it
+  // just looked stuck rather than working. Drives both the explanatory text and the
+  // button's own label/spinner in the 'listen' phase box below.
+  const stillGeneratingAudio = generatingSegmentId !== null;
+
   return (
     <div className="bg-slate-800/50 rounded-lg border border-blue-600/30 p-3 space-y-3">
       <div className="flex items-center gap-2">
@@ -1384,11 +1415,20 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
           {reviewPhase === 'listen' ? (
             // LISTEN PHASE — the whole point is that nothing else is even shown here:
             // no segment cards, no edit boxes, nothing to click but Build & Play/Stop.
-            <div className="bg-slate-800/50 rounded-lg border border-purple-600/30 p-4 space-y-3">
+            // Per Enda's follow-up 33 report: Anoushka clicked Build & Play repeatedly
+            // while it was still disabled (audio still generating for every line — see
+            // stillGeneratingAudio below) because nothing on screen told her to wait, or
+            // made the button itself look any different than when it was actually
+            // ready — by the time it "showed in full colour" she was already annoyed.
+            // ref={listenBoxRef} pairs with the scroll effect above, so this box comes
+            // into view on its own the moment a fresh parse starts.
+            <div ref={listenBoxRef} className="bg-slate-800/50 rounded-lg border border-purple-600/30 p-4 space-y-3">
               <p className="text-sm text-slate-300 text-center">
-                {listenPassCount === 0
-                  ? "Listen to the whole part, start to finish, before you can make any changes."
-                  : "Listen to your edits, start to finish, before you can edit again."}
+                {stillGeneratingAudio
+                  ? "Still generating audio for every line — the Build & Play button below will light up and become clickable the moment it's ready. Clicking it before then won't do anything, so there's no need to keep clicking it."
+                  : listenPassCount === 0
+                    ? "Listen to the whole part, start to finish, before you can make any changes."
+                    : "Listen to your edits, start to finish, before you can edit again."}
               </p>
               {playing ? (
                 <>
@@ -1406,7 +1446,15 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                   disabled={passLocked || !hasSegmentAudios}
                   className="w-full bg-purple-600 hover:bg-purple-700 gap-2 text-white"
                 >
-                  <Play className="w-4 h-4" /> Build & Play
+                  {stillGeneratingAudio ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" /> Generating audio…
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4" /> Build & Play
+                    </>
+                  )}
                 </Button>
               )}
             </div>
