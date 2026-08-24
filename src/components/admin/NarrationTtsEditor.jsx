@@ -216,6 +216,31 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   // to be heard again (a fresh Build & Play pass) before Done can reappear, however
   // many completed passes came before it.
   const [editedSinceLastListen, setEditedSinceLastListen] = useState(false);
+  // Per Enda's follow-up 32 request: "irrespective of this being the first, fifth or
+  // 10th editing attempt", a narrator must play a line's own clip through in full again
+  // right before that line's edit pencil unlocks — Anoushka changes her mind mid-
+  // sentence often enough that Enda wants a fresh listen forced every single time, not
+  // just once. Tracks every segment id whose clip has been played to completion
+  // (onended — see playSegment below; a manual interruption, like starting a different
+  // line's clip early, does NOT count) since the CURRENT 'edit' phase visit began.
+  // Reset to empty by every fresh Parse & Generate (handleParseAndGenerate) — the only
+  // path that leads into a new 'edit' phase visit (via a completed Build & Play pass) —
+  // so a narrator always starts each visit needing to (re-)listen to every line before
+  // touching it, with nothing extra needed when Build & Play itself completes. Saving
+  // an edit (commitSegmentEdit) or a whole part (commitSubsectionEdit) always assigns
+  // brand-new ids to whatever it just regenerated, so those pieces are naturally absent
+  // from this set afterwards too — re-editing the SAME line a second time still
+  // requires hearing its newly-generated audio first, with no extra invalidation logic
+  // needed.
+  const [playedSegmentIds, setPlayedSegmentIds] = useState(new Set());
+  // Which segment id(s) came from the most recent "Save this line" — a pure location
+  // bookmark. Per Enda: "This is not to entice them to edit again, or to block further
+  // editing, it's to show them where they left off" — after answering a call of nature,
+  // making coffee, or just taking a break, especially with 15 or so lines in one
+  // segment. Deliberately independent of playedSegmentIds above: it stays put even
+  // after that line gets played again, and only moves when a DIFFERENT line is saved,
+  // or clears on a fresh pass or once the segment is marked done.
+  const [lastEditedSegmentIds, setLastEditedSegmentIds] = useState(new Set());
   // Which subsection is actively mid-playback right now during a Build & Play pass, if
   // any — used to show "Playing part X of Y" and Stop in the right spot.
   const [activeSubsectionIndex, setActiveSubsectionIndex] = useState(null);
@@ -606,6 +631,16 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
       setEditingSegmentId(null);
       return;
     }
+    // Defense in depth (see the comment above): the pencil that opens this editor
+    // should already be impossible to click before this line's own clip has been
+    // played through in full this pass (see playedSegmentIds/editToggleDisabled) —
+    // this is the one place that actually commits the edit, so it's worth guarding
+    // here too rather than trusting the UI alone.
+    if (!playedSegmentIds.has(segmentId)) {
+      setError('Play this line, start to finish, before editing it.');
+      setEditingSegmentId(null);
+      return;
+    }
     const newText = segmentEditText;
     if (newText === oldSeg.content) {
       // Nothing actually changed — close the editor without spending an API call.
@@ -691,6 +726,12 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
       // means — Mark Segment as Done must stay unavailable until the next COMPLETE
       // Build & Play pass confirms this change was actually heard.
       setEditedSinceLastListen(true);
+      // Per Enda's follow-up 32 request: move the "where you left off" bookmark to
+      // whichever fresh piece(s) this edit just produced — freshSegs.length is almost
+      // always 1, but a narrator typing a new <break> tag into this line's own editor
+      // can turn one line into several, and every piece that came out of THIS edit
+      // should carry the bookmark.
+      setLastEditedSegmentIds(new Set(freshSegs.map((s) => s.id)));
     } catch (err) {
       setError(`Could not save this line: ${getFnErrorMessage(err)}`);
     }
@@ -734,6 +775,13 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     // A fresh pass starts with a clean slate — any line's quick-edit box left open from
     // the previous pass would now be pointing at a segment id that no longer exists.
     setEditingSegmentId(null);
+    // Per Enda's follow-up 32 request: this is the one place that always leads into a
+    // fresh 'edit' phase visit (via a completed Build & Play pass) — clearing both here
+    // means every visit starts with every line requiring a fresh listen again before
+    // its pencil unlocks, and the "where you left off" bookmark from a previous pass no
+    // longer applies to a document that's just been re-parsed from scratch.
+    setPlayedSegmentIds(new Set());
+    setLastEditedSegmentIds(new Set());
     // Per the follow-up 23 audit: without this, a SECOND Parse & Generate in the same
     // pass (e.g. editing the top script box directly and re-parsing, without ever
     // finishing/resetting via Save & Finish first) reused the PREVIOUS pass's
@@ -824,7 +872,18 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     setCurrentPlayingIndex(segIndex);
     const audio = new Audio(url);
     currentAudioRef.current = audio;
-    audio.onended = () => setCurrentPlayingIndex(null);
+    audio.onended = () => {
+      setCurrentPlayingIndex(null);
+      // Per Enda's follow-up 32 request: only a full, natural completion unlocks this
+      // line's own edit pencil (see playedSegmentIds above/editToggleDisabled below) —
+      // starting a DIFFERENT line's clip pauses this one (just above) without ever
+      // firing 'ended', so an interrupted listen correctly does not count.
+      setPlayedSegmentIds((prev) => {
+        const next = new Set(prev);
+        next.add(segmentId);
+        return next;
+      });
+    };
     audio.onerror = () => setCurrentPlayingIndex(null);
     audio.play().catch(() => setCurrentPlayingIndex(null));
   };
@@ -879,6 +938,8 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
         setListenPassCount(0);
         setEditedSinceLastListen(false);
         setEditingSegmentId(null);
+        setPlayedSegmentIds(new Set());
+        setLastEditedSegmentIds(new Set());
       } else {
         addLog('Combined audio: no URL returned from upload.');
         setError('Combined audio failed: upload did not return a file URL.');
@@ -1151,6 +1212,8 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
           setListenPassCount(0);
           setEditedSinceLastListen(false);
           setEditingSegmentId(null);
+          setPlayedSegmentIds(new Set());
+          setLastEditedSegmentIds(new Set());
         }}
         fixedLanguage={fixedLanguage}
         waypointSegmentId={waypointSegmentId}
@@ -1378,6 +1441,13 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                   <div key={`subsection-${si}`} className="space-y-2 pt-2 border-t border-slate-700/60 first:border-t-0 first:pt-0">
                     {subsectionSegments.map((seg) => {
                       const globalIdx = segments.findIndex((s) => s.id === seg.id);
+                      // Per Enda's follow-up 32 request: a text line's own pencil must
+                      // stay locked until ITS OWN clip has been played through in full
+                      // this pass — see playedSegmentIds above. A pause has no pencil
+                      // at all (onToggleEdit is only ever passed for text segments), so
+                      // this is meaningless for one and left false.
+                      const needsListenBeforeEdit = seg.type === 'text' && !playedSegmentIds.has(seg.id);
+                      const isLastEdited = lastEditedSegmentIds.has(seg.id);
                       return (
                         <TtsSegmentCard
                           key={seg.id}
@@ -1392,6 +1462,8 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                           editValue={editingSegmentId === seg.id ? segmentEditText : ''}
                           onEditChange={setSegmentEditText}
                           onToggleEdit={seg.type === 'text' ? () => handleToggleSegmentEdit(seg) : undefined}
+                          needsListenBeforeEdit={needsListenBeforeEdit}
+                          isLastEdited={isLastEdited}
                           // Per the follow-up 23 audit (Bug C): opening a DIFFERENT
                           // line's editor while this one is still open used to
                           // silently discard whatever was typed here, with no warning
@@ -1412,11 +1484,17 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                           // discard it, so opening the per-line editor at all is
                           // refused until that draft is saved (via "Save This Part"
                           // below) or cleared first.
+                          //
+                          // Also refused (needsListenBeforeEdit, follow-up 32) until
+                          // THIS line's own clip has been played through in full this
+                          // pass — every single time, not just the first — see
+                          // playedSegmentIds above.
                           editToggleDisabled={
                             busy
                             || editingLocked
                             || (editingSegmentId !== null && editingSegmentId !== seg.id)
                             || partHasDraft
+                            || needsListenBeforeEdit
                           }
                           onCancelEdit={handleCancelSegmentEdit}
                           onSaveEdit={() => commitSegmentEdit(seg.id)}
@@ -1548,7 +1626,9 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
           <p className="text-xs text-slate-500">
             This deliberately forces a listen between every round of edits — a script has to sound right
             to the EAR, not just read right on screen, so every change gets heard in context before it can
-            be called finished.
+            be called finished. The same idea applies to a single line: its own pencil stays locked until
+            that line's own clip has just been played through in full, every time, however many times
+            you've edited it before.
           </p>
         </div>
       )}

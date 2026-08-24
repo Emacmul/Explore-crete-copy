@@ -1,7 +1,7 @@
 import React from 'react';
 import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
-import { Play, Clock, Type, Loader2, Volume2, Pencil, X, Check } from 'lucide-react';
+import { Play, Clock, Type, Loader2, Volume2, Pencil, X, Check, MapPin } from 'lucide-react';
 
 // Per Anoushka, a narrator (relayed by Enda — see CLAUDE_CHANGELOG.md for the full
 // request): the whole point of a narration line is that it's language for the EAR, not
@@ -32,6 +32,18 @@ import { Play, Clock, Type, Loader2, Volume2, Pencil, X, Check } from 'lucide-re
 // (or nudging the pause after) a different line is never blocked just because one
 // line's editor happens to be open elsewhere, while still making it impossible to open
 // a second editor and silently lose whatever was typed into the first one.
+//
+// needsListenBeforeEdit/isLastEdited (follow-up 32, per Enda): needsListenBeforeEdit is
+// folded into editToggleDisabled by the parent already (this line's pencil genuinely
+// can't be clicked until its own clip has played through in full this pass — "the
+// first, fifth, or 10th editing attempt", every time, not just once) — passed here
+// separately, purely so the right explanation can be shown for WHY the pencil is
+// locked, distinct from every other reason editToggleDisabled can be true. isLastEdited
+// is unrelated to any of that — a pure "you left off here" bookmark on whichever
+// line was most recently saved, so a narrator coming back from a break can find their
+// place again in a segment with a dozen-plus lines. Per Enda: "not to entice them to
+// edit again, or to block further editing" — so it's shown as plain, muted text, never
+// styled like a clickable action.
 export default function TtsSegmentCard({
   segment,
   audioUrl,
@@ -45,6 +57,8 @@ export default function TtsSegmentCard({
   onEditChange,
   onToggleEdit,
   editToggleDisabled = false,
+  needsListenBeforeEdit = false,
+  isLastEdited = false,
   onCancelEdit,
   onSaveEdit,
   isSavingEdit = false,
@@ -59,6 +73,11 @@ export default function TtsSegmentCard({
             <Type className="w-3.5 h-3.5 text-slate-400" />
           </div>
           <div className="flex-1 min-w-0">
+            {isLastEdited && !isEditing && (
+              <p className="text-[11px] text-purple-300/90 flex items-center gap-1 mb-1">
+                <MapPin className="w-3 h-3" /> Edit again — this is where you left off
+              </p>
+            )}
             <p className="text-sm text-slate-200 whitespace-pre-wrap break-words">{segment.content}</p>
             <p className="text-xs text-slate-500 mt-1">{segment.content.length} characters</p>
           </div>
@@ -90,7 +109,13 @@ export default function TtsSegmentCard({
               // comment above this component for why that's a separate flag from
               // controlsDisabled.
               disabled={isSavingEdit || (!isEditing && editToggleDisabled)}
-              title={isEditing ? 'Close without saving' : 'Fix just this line'}
+              title={
+                isEditing
+                  ? 'Close without saving'
+                  : needsListenBeforeEdit
+                    ? 'Play this line, start to finish, before you can edit it'
+                    : 'Fix just this line'
+              }
               className={`shrink-0 w-8 h-8 flex items-center justify-center rounded-full transition-colors disabled:opacity-30 ${
                 isEditing ? 'bg-blue-700/50 text-blue-300' : 'hover:bg-slate-700 text-slate-400'
               }`}
@@ -99,6 +124,16 @@ export default function TtsSegmentCard({
             </button>
           )}
         </div>
+
+        {/* Per Enda's follow-up 32 request: "irrespective of this being the first,
+            fifth or 10th editing attempt" — spelled out here the same way every other
+            locked control on this panel explains itself, rather than leaving the
+            pencil greyed out with no reason given. */}
+        {!isEditing && needsListenBeforeEdit && (
+          <p className="text-xs text-amber-500/80 mt-1 ml-10">
+            Play this line, start to finish, before you can edit it.
+          </p>
+        )}
 
         {isEditing && (
           <div className="mt-3 pt-3 border-t border-slate-700 space-y-2">

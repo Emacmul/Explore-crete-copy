@@ -41,6 +41,89 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-24 (follow-up 32) — A single line's own edit pencil now requires a fresh, full listen every time; a "where you left off" bookmark on whichever line was last saved
+Scope: `src/components/admin/NarrationTtsEditor.jsx`,
+`src/components/admin/TtsSegmentCard.jsx`. (Frontend only — no backend
+function touched.)
+
+Two related requests from Enda, on top of follow-up 31's listen/edit-phase
+redesign:
+
+1. "When the narrator/admin editing a segment reaches the stage
+   (irrespective of this being the first, fifth or 10th editing attempt)
+   where they are going to edit sub segments ('Save a line' stage), they
+   should have to play the sub segment block they are going to edit
+   first, in it's entirety, before the edit pencil becomes active and an
+   edit can be done." He explained why: "I see Anoushka changing her
+   mind regularly in mid sentence, so I want to force her and others to
+   listen carefully to that specific sub segment again, before they
+   edit." The key word is "again" and "irrespective of... first, fifth or
+   10th" — this isn't a one-time unlock the first time a line is heard,
+   it's required freshly every single time a narrator wants to open that
+   line's pencil, including immediately after having just edited (and
+   thereby regenerated) it.
+2. "When they have 'saved a line', that block should show a message
+   'edit again'. This is not to entice them to edit again, or to block
+   further editing, it's to show them where they left of after answering
+   a call of nature, making coffee or just taking a break. I can very
+   well see the doubt 'where was I?' when a segment has 15 or so sub
+   segments in it."
+
+Implemented as two new, deliberately independent pieces of state in
+NarrationTtsEditor.jsx:
+
+- `playedSegmentIds` — every text segment id whose own clip has been
+  played to completion (`audio.onended` in `playSegment` — a manual
+  interruption, like starting a different line's clip early, does NOT
+  fire `onended` and correctly does not count) since the current 'edit'
+  phase visit began. Reset to empty by every fresh Parse & Generate — the
+  only path that ever leads into a new 'edit' phase visit (via a
+  completed Build & Play pass) — so every visit starts with every line
+  requiring a fresh listen again. A saved edit (either "Save this line"
+  or "Save This Part") always assigns brand-new ids to whatever it just
+  regenerated, so those pieces are naturally absent from this set right
+  afterwards too — re-editing the very same line a second time still
+  needs a fresh listen first, with no extra invalidation logic required;
+  the id scheme already guarantees it. Each text `TtsSegmentCard`'s own
+  edit pencil is now disabled (folded into the existing
+  `editToggleDisabled` prop, alongside every other reason it can already
+  be locked) whenever its own id isn't in this set yet, with its own
+  explanatory hint text under the row ("Play this line, start to finish,
+  before you can edit it") distinguishing this reason from the others.
+  `commitSegmentEdit` also re-checks this itself before saving (defense
+  in depth, matching every other guard already in that function), in
+  case a future code path ever calls it directly.
+- `lastEditedSegmentIds` — the id(s) produced by the most recent "Save
+  this line" (almost always one id, but a narrator typing a new
+  `<break>` tag into a line's own quick editor can turn one line into
+  several, and every piece from that one edit carries the bookmark).
+  Deliberately independent of `playedSegmentIds` above: playing that line
+  again does NOT clear it — per Enda, it's a pure location marker, not a
+  call to action, so it stays exactly where it was left until a
+  DIFFERENT line gets saved (moving it), a fresh pass starts, or the
+  segment is marked done. Shown on the bookmarked card as plain, muted
+  text ("Edit again — this is where you left off") with a location-pin
+  icon, never styled like a clickable button, per Enda's explicit "not to
+  entice… or to block further editing."
+
+Scoped deliberately to the per-line "Save this line" action only, not
+"Save This Part" (the whole-subsection box) — Enda's own wording was
+specifically about the "Save a line" stage. Saving a whole part still
+regenerates every one of that part's lines with fresh ids, which already
+has the side effect of requiring them all to be re-heard before editing
+(via `playedSegmentIds`, same as above) — it just doesn't move the
+bookmark. Worth revisiting if that turns out to be confusing in practice.
+
+Verified with `npx eslint`/`npx vite build` on both changed files (clean)
+and a hand-traced walk through the new state: entering edit phase locks
+every pencil; playing one line's clip through in full unlocks only that
+line's pencil; saving it assigns fresh ids, so the SAME line's pencil
+locks again immediately and the bookmark moves to it; playing that line
+again unlocks the pencil while the bookmark stays; editing a different
+line moves the bookmark and leaves the first line's own state
+(now unhear-until-played-again) alone; a fresh Parse & Generate or Mark
+Segment as Done clears both sets entirely.
+
 ## 2026-08-23 (follow-up 31) — Redesigned the whole review/finalize workflow around forced listening: separate "listen" and "edit" modes that alternate, replacing follow-up 30's mechanism entirely
 Scope: `src/components/admin/NarrationTtsEditor.jsx` only. (Frontend only —
 no backend function touched.)
