@@ -41,6 +41,77 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-25 (follow-up 45) — Removed the now-redundant "Mark Waypoint as Done" button from the Narration & Simulate tab
+Scope: `src/components/admin/TourSimulator.jsx`. (Frontend only — no
+backend function touched.)
+
+Enda's reaction to follow-up 44: "of course finishing the narration
+finishes the waypoint — why would I need two different buttons? That's
+just totally confusing!" He's right, and it's a direct consequence of
+follow-up 44 not going far enough: Finalize Narration Audio now marks
+the waypoint done automatically, but follow-up 41's standalone "Mark
+Waypoint as Done" button was still sitting right next to it in the same
+panel — a second control doing the exact same thing the first one now
+does on its own. Two buttons for one outcome, in the same spot, is
+exactly the kind of confusion this whole thread started with.
+
+**What changed:** removed that button (and the "waypoint marked as
+done" status line next to it) from TourSimulator.jsx entirely. The
+Narration & Simulate tab now has exactly one relevant action —
+Finalize Narration Audio — and it handles both jobs. The original "Mark
+Waypoint as Done" button in the Waypoints tab (DrivingTourWaypointEditor.jsx,
+pre-existing, not touched) is left as the one remaining manual option,
+for the case of a waypoint that's being checked off without going
+through narration at all — a different, deliberate tab, not a second
+click beside the one that already does it.
+
+Verified: `npx eslint` on TourSimulator.jsx reports only the same
+pre-existing unused-eslint-disable warning already confirmed harmless.
+`npx vite build` completes cleanly.
+
+---
+
+## 2026-08-25 (follow-up 44) — Stopped treating "finished narrating" and "waypoint done" as two separate steps — they aren't, in practice, so Finalize Narration Audio now marks the waypoint done itself
+Scope: `src/components/admin/TourSimulator.jsx`,
+`src/components/admin/DrivingTourWaypointEditor.jsx`. (Frontend only —
+no backend function touched.)
+
+Enda clicked "Finalize Narration Audio" (the renamed button from
+follow-up 42) in the Narration & Simulate tab, checked the Waypoints
+tab, and it still wasn't marked done. Follow-up 41's separate "Mark
+Waypoint as Done" button was sitting right there too, but he didn't
+click that one — he clicked the finalize button, because as far as his
+own workflow is concerned, finishing a waypoint's narration IS finishing
+that waypoint. This is the third time this exact expectation has come
+up (follow-ups 41, 42, and now this one), which is a clear enough signal
+on its own: keeping these as two deliberate, separate clicks was solving
+the wrong problem. Renaming and recolouring the button in follow-up 42
+fixed the "these look like the same button" confusion, but never
+addressed the actual mismatch — that in Enda's own workflow, they always
+were meant to be the same action.
+
+**What changed:** `onAudioChange` — called exactly once in this whole
+codebase, from `finalizeAndSave`'s success path when Finalize Narration
+Audio actually completes and a real audio URL comes back — now also sets
+`waypoint_done: true`, in both places a waypoint's `NarrationTtsEditor`
+is wired up (TourSimulator.jsx's own panel, and both instances inside
+DrivingTourWaypointEditor.jsx). Same guard as the existing `trigger_audio`
+line right next to it: only fires when there's an actual url, so it can't
+mark a waypoint done on a failed or half-finished pass. Follow-up 41's
+standalone "Mark Waypoint as Done" button in the Narration & Simulate tab
+is left in place as a manual option — useful for a waypoint that doesn't
+need narration audio at all, or if a narrator wants to check a point off
+without going through Finalize Narration Audio — but for the normal
+narrate-a-waypoint workflow, one click now does what Enda has been
+expecting it to do since follow-up 41.
+
+Verified: `npx eslint` on both files reports only the same pre-existing
+issues already confirmed harmless in earlier follow-ups — nothing new.
+`npx vite build` completes cleanly. Not tested against a live Base44
+session — same caveat as follow-ups 40-43.
+
+---
+
 ## 2026-08-25 (follow-up 43) — Found the actual bug: a second auto-save could arrive while an earlier one was still in flight and get silently dropped, while the screen still claimed everything was saved
 Scope: `src/components/admin/WalkEditor.jsx`. (Frontend only — no backend
 function touched.)

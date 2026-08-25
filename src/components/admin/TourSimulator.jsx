@@ -717,37 +717,19 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                 </Button>
               </div>
 
-              {/* Per Enda's follow-up 41 report: he does his whole narration workflow from
-                  this tab and never lands anywhere with a "Mark Waypoint as Done" control —
-                  that button only ever existed in the Waypoints tab's expanded row (see
-                  DrivingTourWaypointEditor.jsx). "Mark Segment as Done" below is a
-                  completely different action (finalizes this waypoint's combined audio) and
-                  was never wired to waypoint_done — so going through a full narration pass
-                  here, including that button, could never have checked the Waypoints tab's
-                  box, no matter how many times it was clicked. Giving this tab its own
-                  Mark Waypoint as Done control closes that gap directly, instead of asking
-                  Enda to keep switching tabs to do it. */}
-              {selectedWp && onWaypointUpdate && (
-                <div className="flex items-center justify-between gap-2 bg-slate-900/40 rounded-lg border border-slate-700/60 px-3 py-2">
-                  <span className={`text-xs font-medium ${selectedWp.waypoint_done ? 'text-emerald-400' : 'text-slate-400'}`}>
-                    {selectedWp.waypoint_done ? 'Waypoint marked as done' : 'Waypoint not yet marked as done'}
-                  </span>
-                  {!selectedWp.waypoint_done && (
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        onWaypointUpdate(toRawIndex(selectedWpIndex), 'waypoint_done', true);
-                        onAutoSave?.();
-                      }}
-                      variant="outline"
-                      className="bg-blue-700/30 hover:bg-blue-700/50 border-blue-600/50 text-amber-400 hover:text-amber-300 gap-2 shrink-0"
-                    >
-                      <CheckCircle2 className="w-4 h-4" />
-                      Mark Waypoint as Done
-                    </Button>
-                  )}
-                </div>
-              )}
+              {/* Per Enda's follow-up 45 report: follow-up 41 put a second "Mark Waypoint
+                  as Done" button in this tab, right next to Finalize Narration Audio —
+                  reasonable at the time, since this tab had no way to mark a waypoint
+                  done at all. Follow-up 44 changed that: Finalize Narration Audio now
+                  marks the waypoint done itself, automatically, the moment it succeeds.
+                  That made this a second button doing the same thing, sitting right next
+                  to the first one — exactly the kind of duplicate control that caused the
+                  original "Mark Segment as Done" vs "Mark Waypoint as Done" confusion this
+                  whole thread has been about. Removed rather than left as a redundant
+                  manual option — the one place left to hand-mark a waypoint done without
+                  going through narration is the Waypoints tab's own button, a different
+                  tab entirely, not a second click sitting beside the one that already does
+                  it here. */}
 
               {selectedWp && (
                 <NarrationTtsEditor
@@ -757,7 +739,16 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                   onScriptChange={(val) => onWaypointUpdate(toRawIndex(selectedWpIndex), 'narration_script', val)}
                   onAudioChange={(val) => {
                     onWaypointUpdate(toRawIndex(selectedWpIndex), 'audio_clip_url', val);
-                    if (val) onWaypointUpdate(toRawIndex(selectedWpIndex), 'trigger_audio', true);
+                    if (val) {
+                      onWaypointUpdate(toRawIndex(selectedWpIndex), 'trigger_audio', true);
+                      // Per Enda's follow-up 44 report: three rounds running, "finished
+                      // narrating this waypoint" and "waypoint marked as done" turned out
+                      // to be the exact same moment in his own head, not two separate
+                      // steps — this fires only once, right when Finalize Narration Audio
+                      // (onAudioChange with a real url) actually succeeds, so it can't
+                      // fire early on a half-finished pass.
+                      onWaypointUpdate(toRawIndex(selectedWpIndex), 'waypoint_done', true);
+                    }
                   }}
                   onAutoSave={onAutoSave}
                   fixedLanguage={targetLanguage}
