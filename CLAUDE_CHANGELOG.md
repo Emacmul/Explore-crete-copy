@@ -41,6 +41,79 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-25 (follow-up 48) — Map redesign for the speech/speed-matching phase: started on the clear parts (no more autoplay on Jump, map zooms to the location, Primary/Secondary marker styling), left the ambiguous parts for tomorrow
+Scope: `src/components/admin/TourSimulator.jsx`,
+`src/components/admin/TourSimulatorMap.jsx`. (Frontend only — no backend
+function touched.)
+
+Enda laid out a larger redesign of the simulator's map + right-hand panel
+for the upcoming "match speech to speed" phase (still to start — he's
+finishing BOR1's text/audio pass first) and explicitly invited questions
+for some of it rather than guessing. Built the parts that were
+unambiguous; the rest is listed below rather than built speculatively.
+
+**What changed:**
+- **Jump no longer autoplays.** This directly reverses follow-up 37's own
+  change from this morning — per Enda: "the person editing this location
+  has to manually start the car/walker moving. It should never happen
+  automatically." `jumpToLocation` no longer opts into `autoplay`;
+  `jumpToWaypoint` already reset `hasPlayed` to false on every jump
+  regardless, so the green button still correctly reads "Start", not a
+  leftover "Resume".
+- **Jumping to a location now zooms/centres the map on that location's
+  own extent** — its own primary_start waypoint through every secondary
+  point up to (not including) the next location's primary_start — using
+  the exact same `nextLocationBoundary` logic the simulator's own scoped
+  playback already relies on, so the map's idea of "this location" can
+  never drift from the simulator's. New `FocusBounds` component in
+  TourSimulatorMap.jsx, separate from the existing whole-trail
+  `FitBounds` so the two don't interfere with each other's timing.
+- **Primary waypoints are now always green and drawn larger (34px);
+  secondary waypoints are always blue and smaller (22px)** — a fixed,
+  unconditional role colour/size, per Enda's "as is its colour code
+  throughout the app." This replaces the marker's PREVIOUS colour logic,
+  which changed colour based on triggered/has-audio state (green once
+  triggered, purple once it merely had audio) — that meant a triggered
+  secondary waypoint used to turn the same green as an untriggered
+  primary one, with no way to tell role from state at a glance.
+  Triggered/has-audio state still shows, just moved onto the marker's
+  emoji (✅ triggered, 🔊 has audio, blank otherwise) instead of taking
+  over the whole marker's colour.
+
+**Left for tomorrow — genuinely ambiguous, would rather ask than guess
+and rebuild:**
+1. The marker click-popup (first ~10 words of narration text + an
+   editable trigger radius) — buildable, but interacts with question 3
+   below (what exactly the popup should hand off to), so held until
+   that's settled.
+2. **Co-located waypoint toggle** — a location's primary_start point (a
+   "static" waypoint the customer listens to without moving) and its
+   first secondary point end up at the exact same lat/lng, so their
+   markers will sit stacked on top of each other however they're
+   coloured/sized. What should "toggle between the two" actually look
+   like — small prev/next arrows in the popup, click-to-cycle on repeat
+   clicks at the same spot, an offset/spread on hover, something else?
+3. **The right-hand panel redesign** for the speech/speed phase —
+   read-only text + editable pause sliders, replacing (or sitting
+   alongside?) the current full script/TTS editor for this specific
+   phase, syncing to whichever waypoint's marker/popup was just clicked.
+   This is the single biggest piece of what was described and the one
+   most likely to need real back-and-forth to get right — not started,
+   on purpose, until phase 1 (BOR1's text/audio pass) is actually done
+   and this becomes the active screen.
+4. Whether "jump should never autoplay" also applies to "Test this
+   waypoint" (the per-waypoint jump button, still autoplays) — only
+   "Jump to location" was described concretely, so only that one was
+   changed. Say the word if "Test this waypoint" should lose its
+   autoplay too.
+
+Verified: `npx eslint` on both files reports zero new issues —
+TourSimulatorMap.jsx is fully clean, TourSimulator.jsx has only the same
+pre-existing unused-eslint-disable warning confirmed harmless earlier
+today. `npx vite build` completes cleanly.
+
+---
+
 ## 2026-08-25 (follow-up 47) — The narrator lockdown now holds up server-side too — a narrator's own clone is trimmed before it ever leaves the server, not just hidden behind tabs
 Scope: `base44/shared/narratorWalkFields.ts` (**new file**),
 `base44/functions/getWalksForBackend/entry.ts`,

@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { MapContainer, TileLayer, Polyline, Marker, Circle, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { getRoleColour, calculateBearing, splitTrailRuns } from '@/lib/routeExport';
+import { calculateBearing, splitTrailRuns } from '@/lib/routeExport';
 
 const R_EARTH = 6371000;
 
@@ -31,6 +31,21 @@ function destinationPoint(lat, lng, bearingDeg, distanceM) {
     (lat2 * 180) / Math.PI,
     (((lng2 * 180) / Math.PI + 540) % 360) - 180,
   ];
+}
+
+// Per Enda's follow-up 48 report: separate from the initial whole-trail fit above —
+// this fires only when `focusBounds` itself changes (passed down from
+// TourSimulator.jsx's jumpToLocation, a fresh array each time), zooming/centring on
+// just one location's own waypoints without disturbing the whole-trail fit's own
+// unrelated effect timing.
+function FocusBounds({ focusBounds }) {
+  const map = useMap();
+  useEffect(() => {
+    if (focusBounds && focusBounds.length > 0) {
+      map.fitBounds(L.latLngBounds(focusBounds), { padding: [60, 60], maxZoom: 17 });
+    }
+  }, [map, focusBounds]);
+  return null;
 }
 
 function FitBounds({ trailPath, waypoints }) {
@@ -87,13 +102,30 @@ function moverIcon(bearing, isWalking) {
   });
 }
 
-function wpIcon(colour, emoji) {
+function wpIcon(colour, emoji, size) {
+  const half = size / 2;
   return L.divIcon({
     className: '',
-    html: `<div style="width:28px;height:28px;border-radius:50%;background:${colour};border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;font-size:12px;">${emoji}</div>`,
-    iconSize: [28, 28],
-    iconAnchor: [14, 14],
+    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${colour};border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;font-size:${Math.round(size * 0.43)}px;">${emoji}</div>`,
+    iconSize: [size, size],
+    iconAnchor: [half, half],
   });
+}
+
+// Per Enda's follow-up 48 report: "A Primary waypoint must be Green, as is its colour
+// code throughout the app, and larger than a secondary waypoint. A secondary waypoint
+// must be blue, and smaller." This is now the marker's BASE colour/size, unconditional
+// on role — separate from the emoji overlay just below, which is what still shows
+// triggered/has-audio state. Before this, colour itself flipped for triggered/has-audio
+// (green when triggered, purple when it merely had audio) and every waypoint was drawn
+// at the same fixed size — that meant a triggered SECONDARY waypoint turned the same
+// green as an untriggered PRIMARY one, and a co-located primary_start/secondary pair
+// (see the comment on locationKey below) was impossible to tell apart at all. Role
+// colour/size is now the constant, primary signal; triggered/audio state moved onto the
+// emoji instead of taking over the whole marker.
+function roleMarkerStyle(role) {
+  const isPrimary = role === 'primary_start' || role === 'primary_stop';
+  return { colour: isPrimary ? '#22c55e' : '#3b82f6', size: isPrimary ? 34 : 22 };
 }
 
 function arrowIcon(bearing) {
@@ -114,7 +146,7 @@ function handleIcon(colour) {
   });
 }
 
-export default function TourSimulatorMap({ trailPath, waypoints, triggered, currentPos, currentBearing, isWalkingTour, onWaypointUpdate, breaks }) {
+export default function TourSimulatorMap({ trailPath, waypoints, triggered, currentPos, currentBearing, isWalkingTour, onWaypointUpdate, breaks, focusBounds }) {
   const center = trailPath.length > 0
     ? [trailPath[0].lat, trailPath[0].lng]
     : waypoints.length > 0
@@ -128,6 +160,7 @@ export default function TourSimulatorMap({ trailPath, waypoints, triggered, curr
         attribution='&copy; OpenStreetMap contributors'
       />
       <FitBounds trailPath={trailPath} waypoints={waypoints} />
+      <FocusBounds focusBounds={focusBounds} />
 
       {trailPath.length > 1 &&
         splitTrailRuns(trailPath, breaks).map((run, i) =>
@@ -143,8 +176,8 @@ export default function TourSimulatorMap({ trailPath, waypoints, triggered, curr
       {waypoints.map((wp, i) => {
         const isTriggered = triggered[i];
         const hasAudio = wp.trigger_audio && wp.audio_clip_url;
-        const colour = isTriggered ? '#22c55e' : (hasAudio ? '#a855f7' : getRoleColour(wp.waypoint_role));
-        const emoji = isTriggered ? '✅' : (hasAudio ? '🔊' : '📍');
+        const { colour, size } = roleMarkerStyle(wp.waypoint_role);
+        const emoji = isTriggered ? '✅' : (hasAudio ? '🔊' : '');
         const radius = Number(wp.trigger_radius_m) || 30;
         const bearingDir = Number(wp.bearing_direction) || 0;
         const canEdit = !!onWaypointUpdate;
@@ -155,7 +188,7 @@ export default function TourSimulatorMap({ trailPath, waypoints, triggered, curr
 
         return (
           <React.Fragment key={wp.segment_id || `${wp.lat},${wp.lng},${i}`}>
-            <Marker position={[wp.lat, wp.lng]} icon={wpIcon(colour, emoji)} />
+            <Marker position={[wp.lat, wp.lng]} icon={wpIcon(colour, emoji, size)} />
 
             {/* Pastel red radius circle — scales with zoom (uses metres) */}
             {hasAudio && (

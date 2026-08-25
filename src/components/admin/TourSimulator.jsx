@@ -129,6 +129,13 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // button's label below: "Start" until real playback has happened, "Resume" only once
   // it genuinely has and is now paused. See jumpToWaypoint/startSim/stopSim.
   const [hasPlayed, setHasPlayed] = useState(false);
+  // Per Enda's follow-up 48 report: "Jump to location…" should zoom/centre the map on
+  // that location's own waypoints, not leave whatever pan/zoom the editor happened to
+  // be at before. Set only by jumpToLocation (see below), never by the plain per-
+  // waypoint jumpToWaypoint ("Test this waypoint") — a fresh object each time so
+  // TourSimulatorMap's effect (watching this by reference) fires on every jump, even a
+  // repeat jump to the same location.
+  const [mapFocusBounds, setMapFocusBounds] = useState(null);
   const [currentBearing, setCurrentBearing] = useState(() =>
     trailPath.length >= 2
       ? calculateBearing(trailPath[0].lat, trailPath[0].lng, trailPath[1].lat, trailPath[1].lng)
@@ -360,13 +367,29 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     if (newPos) { setCurrentPos(newPos); prevPosRef.current = newPos; }
     if (autoplay) startSim();
   };
-  // Per Enda: jumping to a location should immediately play its audio, the same way
-  // "Test this waypoint" already does for a single waypoint — otherwise there's nothing
-  // to check the simulator's movement against, and a narrator has to remember a
-  // separate manual Start/Resume click just to hear anything. Auto-plays through the
-  // whole location (every waypoint up to the next primary_start), same boundary as
-  // before.
-  const jumpToLocation = (targetIndex) => jumpToWaypoint(targetIndex, { autoplay: true });
+  // Per Enda's follow-up 48 report: reversing follow-up 37's own change here —
+  // jumping to a location must NOT autoplay any more. "The person editing this
+  // location has to manually start the car/walker moving. It should never happen
+  // automatically." jumpToWaypoint already leaves autoplay defaulted to false, so this
+  // just stops explicitly opting into it; hasPlayed still resets to false inside
+  // jumpToWaypoint regardless, so the green button correctly still reads "Start", never
+  // a leftover "Resume", right after a jump.
+  //
+  // What jumping to a location DOES still do, new in follow-up 48: zoom/centre the map
+  // on this location's own extent — its own primary_start waypoint through every
+  // secondary point up to (not including) the next location's primary_start — instead
+  // of leaving whatever pan/zoom the editor was previously at. Reuses
+  // nextLocationBoundary, the exact same "where does this location end" logic the
+  // scoped-playback boundary already relies on, so the map's own idea of "this
+  // location" can never drift from the simulator's.
+  const jumpToLocation = (targetIndex) => {
+    jumpToWaypoint(targetIndex);
+    const boundary = nextLocationBoundary(targetIndex);
+    const endIndex = boundary ? boundary.waypointIndex : waypoints.length;
+    const locationWaypoints = waypoints.slice(targetIndex, endIndex);
+    const bounds = locationWaypoints.filter(wp => wp.lat && wp.lng).map(wp => [wp.lat, wp.lng]);
+    if (bounds.length > 0) setMapFocusBounds(bounds);
+  };
 
   // Reset when trail path changes
   useEffect(() => {
@@ -655,6 +678,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
             isWalkingTour={isWalkingTour}
             onWaypointUpdate={onWaypointUpdate ? (i, field, value) => onWaypointUpdate(toRawIndex(i), field, value) : undefined}
             breaks={form.trail_breaks}
+            focusBounds={mapFocusBounds}
           />
         </div>
 
