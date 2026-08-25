@@ -89,9 +89,20 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // Defaults to the first waypoint so there's always something to work with as soon as
   // the panel appears.
   const [selectedWpIndex, setSelectedWpIndex] = useState(0);
+  // Per Enda: a primary_start point (e.g. BOR1a) is static — its own intro plays
+  // before the car/walker moves, so there's no driving/walking speed for its speech
+  // to be tested against, and it's authored on the Waypoints tab like every other
+  // waypoint anyway. This panel exists specifically for the edit-script → simulate →
+  // check-it-against-speed loop, so a primary_start is excluded from it (see the
+  // disabled SelectItem below) — this just keeps the default selection off of one
+  // whenever the waypoint list changes under it (e.g. on load, or a role edited
+  // elsewhere), landing on the first point that loop actually applies to instead.
   useEffect(() => {
-    if (selectedWpIndex >= waypoints.length) setSelectedWpIndex(0);
-  }, [waypoints.length, selectedWpIndex]);
+    if (selectedWpIndex >= waypoints.length || waypoints[selectedWpIndex]?.waypoint_role === 'primary_start') {
+      const firstEditable = waypoints.findIndex(wp => wp.waypoint_role !== 'primary_start');
+      setSelectedWpIndex(firstEditable >= 0 ? firstEditable : 0);
+    }
+  }, [waypoints, selectedWpIndex]);
   const selectedWp = waypoints[selectedWpIndex] || null;
 
   // Per Enda: the map + break-tag editor is THE working screen — everything else
@@ -705,19 +716,29 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                     <SelectValue placeholder="Select a waypoint…" />
                   </SelectTrigger>
                   <SelectContent>
-                    {waypoints.map((wp, i) => (
-                      <SelectItem key={i} value={String(i)}>
-                        {/* Per Enda: segment_id alone (e.g. "BOR1") is shared by every
-                            point in a whole location, so a list of secondary points all
-                            showed the exact same label. wp.name carries each point's own
-                            proper code (e.g. "BOR1b"), plus its own name/title where one
-                            was given — that's what actually tells one point apart from
-                            another. */}
-                        {wp.name || wp.segment_id || `Waypoint ${i + 1}`}
-                        {' — '}{ROLE_LABEL[wp.waypoint_role] || 'Point'}
-                        {wp.audio_clip_url ? ' 🔊' : ''}
-                      </SelectItem>
-                    ))}
+                    {waypoints.map((wp, i) => {
+                      // Per Enda: shown here for clarity — so the full location structure
+                      // is still visible, and its own saved script/audio can still be
+                      // eyeballed — but not selectable, since this panel's whole purpose
+                      // (test the script against a driving/walking speed) doesn't apply to
+                      // a static, parked intro point. disabled dims it via SelectItem's
+                      // own built-in styling, matching the muted marker on the map.
+                      const isStatic = wp.waypoint_role === 'primary_start';
+                      return (
+                        <SelectItem key={i} value={String(i)} disabled={isStatic}>
+                          {/* Per Enda: segment_id alone (e.g. "BOR1") is shared by every
+                              point in a whole location, so a list of secondary points all
+                              showed the exact same label. wp.name carries each point's own
+                              proper code (e.g. "BOR1b"), plus its own name/title where one
+                              was given — that's what actually tells one point apart from
+                              another. */}
+                          {wp.name || wp.segment_id || `Waypoint ${i + 1}`}
+                          {' — '}{ROLE_LABEL[wp.waypoint_role] || 'Point'}
+                          {wp.audio_clip_url ? ' 🔊' : ''}
+                          {isStatic ? ' (static — edit on Waypoints tab)' : ''}
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
                 {/* Per Enda: jumps the marker to just this waypoint, plays its own saved
@@ -733,7 +754,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                 <Button
                   size="sm"
                   onClick={() => jumpToWaypoint(selectedWpIndex, { autoplay: true, scopeToThisWaypoint: true })}
-                  disabled={!selectedWp?.audio_clip_url}
+                  disabled={!selectedWp?.audio_clip_url || selectedWp?.waypoint_role === 'primary_start'}
                   className="bg-blue-700/30 hover:bg-blue-700/50 border border-blue-600/50 text-white shrink-0 whitespace-nowrap"
                   title="Jump to this waypoint, play its saved audio, and drive on to the next waypoint — without resetting the map zoom"
                 >

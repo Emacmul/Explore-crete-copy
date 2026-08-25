@@ -41,6 +41,48 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-25 (follow-up 50) — A location's static primary_start point (e.g. BOR1a) is no longer editable in the Simulator, and this is also what resolves follow-up 48's open "co-located marker toggle" question
+Scope: `src/components/admin/TourSimulator.jsx`,
+`src/components/admin/TourSimulatorMap.jsx`. (Frontend only — no backend
+function touched.)
+
+Enda: a primary_start point is static — the customer listens to its intro
+parked, before the car/walker starts moving — so there's no driving/
+walking speed for its speech to be tested against, and it shouldn't be
+editable in the Simulator at all. Visible for clarity, just greyed out;
+only the first secondary point onward should be editable.
+
+**What changed:**
+- `TourSimulatorMap.jsx`: a primary_start marker now renders at reduced
+  opacity (0.55) instead of full green, and its bearing/trigger-radius
+  drag handles are no longer draggable (`canEdit` is now `false` for that
+  role) — it stays plotted for context but accepts no input.
+- `TourSimulator.jsx`: the "Waypoint Audio & Break Tags" selector still
+  lists every waypoint (so the location's full structure stays visible),
+  but a primary_start entry is now `disabled` (dimmed via the Select
+  component's own built-in styling) and labelled "(static — edit on
+  Waypoints tab)" — that's still where its actual intro script/audio gets
+  authored; this panel is specifically for the edit → simulate → check-
+  against-speed loop, which doesn't apply to a parked intro. The default/
+  auto-corrected selection now skips past any primary_start to land on
+  the first real editable point. "Test this waypoint" is disabled as a
+  backstop if one ever ends up selected regardless.
+
+**Also resolves follow-up 48's open question 2** ("co-located waypoint
+toggle" — a primary_start and its first secondary point sit at the exact
+same lat/lng, so what should toggling between their stacked markers look
+like?). Since only one of the two ever accepts a drag or a click-to-edit
+now, there's nothing left to disambiguate — a click/drag at that shared
+spot has exactly one valid target. The size difference already in place
+(34px primary vs 22px secondary) means the muted green marker still
+shows as a faint ring around the full-opacity blue one, which is enough
+of a "there's a static point under this" cue without needing it to be
+interactive. No popup/arrows/cycle mechanism needed.
+
+Verified: `npx eslint` on both files reports zero issues.
+
+---
+
 ## 2026-08-25 (follow-up 49) — Trigger radius circle now shows for every waypoint, not just ones that already have audio
 Scope: `src/components/admin/TourSimulatorMap.jsx`. (Frontend only — no
 backend function touched.)

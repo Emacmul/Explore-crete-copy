@@ -102,11 +102,11 @@ function moverIcon(bearing, isWalking) {
   });
 }
 
-function wpIcon(colour, emoji, size) {
+function wpIcon(colour, emoji, size, opacity = 1) {
   const half = size / 2;
   return L.divIcon({
     className: '',
-    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${colour};border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;font-size:${Math.round(size * 0.43)}px;">${emoji}</div>`,
+    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${colour};border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;font-size:${Math.round(size * 0.43)}px;opacity:${opacity};">${emoji}</div>`,
     iconSize: [size, size],
     iconAnchor: [half, half],
   });
@@ -180,7 +180,19 @@ export default function TourSimulatorMap({ trailPath, waypoints, triggered, curr
         const emoji = isTriggered ? '✅' : (hasAudio ? '🔊' : '');
         const radius = Number(wp.trigger_radius_m) || 30;
         const bearingDir = Number(wp.bearing_direction) || 0;
-        const canEdit = !!onWaypointUpdate;
+        // Per Enda: a location's primary_start point (e.g. BOR1a) is static — the
+        // customer listens to it parked, before the car/walker starts moving — so
+        // matching its speech against a driving/walking speed is meaningless, and it
+        // should never be draggable here (bearing + trigger-radius handles below are
+        // both about tuning a moving-vehicle geofence). It stays plotted and visible
+        // for context (see the reduced opacity on its own marker below), but only its
+        // first secondary point — the actual first point the simulated speed relates
+        // to — is editable. Since a primary_start and its first secondary point are
+        // co-located (same lat/lng), this is also what resolves the "which of the two
+        // stacked markers did you mean" question from the changelog: only one of them
+        // ever accepts a drag, so there's nothing left to disambiguate.
+        const canEdit = !!onWaypointUpdate && wp.waypoint_role !== 'primary_start';
+        const isMuted = wp.waypoint_role === 'primary_start';
 
         const bearingTipPos = destinationPoint(wp.lat, wp.lng, bearingDir, radius);
         const bearingTailPos = destinationPoint(wp.lat, wp.lng, bearingDir + 180, radius);
@@ -188,7 +200,7 @@ export default function TourSimulatorMap({ trailPath, waypoints, triggered, curr
 
         return (
           <React.Fragment key={wp.segment_id || `${wp.lat},${wp.lng},${i}`}>
-            <Marker position={[wp.lat, wp.lng]} icon={wpIcon(colour, emoji, size)} />
+            <Marker position={[wp.lat, wp.lng]} icon={wpIcon(colour, emoji, size, isMuted ? 0.55 : 1)} />
 
             {/* Pastel red radius circle — scales with zoom (uses metres). Per Enda's
                 follow-up 49 report: shown for every waypoint now, not just ones that
