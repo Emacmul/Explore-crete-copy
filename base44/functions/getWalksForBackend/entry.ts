@@ -1,5 +1,6 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 import { resolveActor } from '../../shared/backendActor.ts';
+import { pickNarratorReadableWalk } from '../../shared/narratorWalkFields.ts';
 
 // Returns the walk list for the back end (Admin Panel / Narr Studio), scoped to
 // who's actually asking. Replaces the old client-side entities.Walk.list() call,
@@ -15,8 +16,16 @@ import { resolveActor } from '../../shared/backendActor.ts';
 //   - cloneable masters, trimmed to just enough for the "pick a tour to
 //     clone" list — no trail_path/waypoints/segment_scripts for tours they
 //     don't own.
-//   - their own clone(s), in full — this is the only place they get complete
-//     tour content back.
+//   - their own clone(s) — trimmed to NARRATOR_WALK_READ_FIELDS /
+//     NARRATOR_WAYPOINT_READ_FIELDS (see narratorWalkFields.ts), not sent in
+//     full any more. Per Enda's follow-up 47 report: hiding General/Route
+//     Path/Waypoints as TABS (follow-up 46) never stopped this function
+//     itself sending a narrator's own clone back COMPLETE — every field,
+//     including region/difficulty/distance_km/price_eur/approved/etc. — so
+//     the old tab-hiding was only ever hiding a UI button, not the
+//     underlying data, and it was sitting in the browser regardless (visible
+//     to anyone who opened dev tools). This is the actual boundary; the tabs
+//     are just what stops a narrator navigating to it in the normal UI.
 //   - every OTHER clone, redacted to just the fields needed to compute
 //     "which languages already have a published translation of this master"
 //     (clone_of/target_language/finished/approved/id) — enough to keep that
@@ -54,9 +63,9 @@ export default async function(req) {
         admin_completed: w.admin_completed,
       }));
 
-    const ownClones = all.filter(
-      (w) => w.clone_of && (w.assigned_narrator_email || '').toLowerCase() === email
-    );
+    const ownClones = all
+      .filter((w) => w.clone_of && (w.assigned_narrator_email || '').toLowerCase() === email)
+      .map(pickNarratorReadableWalk);
 
     const otherClonesMeta = all
       .filter((w) => w.clone_of && (w.assigned_narrator_email || '').toLowerCase() !== email)

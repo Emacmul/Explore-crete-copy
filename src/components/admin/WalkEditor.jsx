@@ -85,8 +85,17 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   // translation job — rather than anywhere else. Only applies to a driving tour clone;
   // everything else keeps its previous default.
   const isClonedDrivingTour = walk?.route_type === 'driving_audio_tour' && !!walk?.clone_of;
+  // Per Enda's follow-up 46 report: General, Route Path (GPS), and Waypoints are admin
+  // tools and must never be reachable by a narrator — Narration & Simulate and Preview
+  // are the only two tabs a narrator gets (see the `tabs` array below, which is what
+  // actually controls which tab buttons render). This default has to agree with that:
+  // 'waypoints' used to be the narrator default here, which doesn't exist as a button
+  // for them any more — defaulting to it would land a narrator on a tab with no way
+  // back to it via the tab bar.
   const [activeTab, setActiveTab] = useState(
-    isClonedDrivingTour ? 'narrate' : (isNarrator ? 'waypoints' : (walk?.id ? 'waypoints' : 'details'))
+    isClonedDrivingTour ? 'narrate'
+      : isNarrator ? (walk?.route_type === 'driving_audio_tour' ? 'narrate' : 'preview')
+      : (walk?.id ? 'waypoints' : 'details')
   );
   const [interests, setInterests] = useState(DEFAULT_INTERESTS);
   const [editingInterests, setEditingInterests] = useState(false);
@@ -625,7 +634,11 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
         title: 'Cannot save yet',
         description: 'Please fill in Route Type, Code, Name, Region, Difficulty (where shown), and the Starting Point coordinates before saving.',
       });
-      setActiveTab('details');
+      // A narrator has no 'details' tab to be sent to (see the tabs array below) — this
+      // should be unreachable for one in practice (an existing tour they're narrating
+      // already has these fields filled in), but redirect somewhere that actually
+      // exists for them regardless, rather than assume it can never happen.
+      setActiveTab(isNarrator ? (isDrivingAudioTour ? 'narrate' : 'preview') : 'details');
       return false;
     }
 
@@ -731,9 +744,11 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
           description: 'Could not reach the elevation service, so the previous Elevation Gain figure was kept as-is. Please check it manually before this route goes live.',
         });
       }
-      if (wasNewTour) {
+      if (wasNewTour && !isNarrator) {
         // First save after import — the tour now exists, so jump straight to describing waypoints
         // rather than leaving the admin sitting on the General tab wondering what happened.
+        // Admin-only in practice (narrators don't create brand-new tours), and 'waypoints'
+        // isn't a tab a narrator has anyway — guarded so this can't send one there.
         setActiveTab('waypoints');
         toast({ title: 'Tour saved', description: 'Now add descriptions for the imported waypoints below.' });
       }
@@ -916,10 +931,15 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   // to the moving-marker map) is its own dedicated, full-width tab — separated from the
   // Waypoints list and from the static Map Preview — since it's the screen a narrator
   // (or an admin wearing the Narr hat) actually lives in once a tour has been cloned.
+  // Per Enda's follow-up 46 report: General, Route Path (GPS), and Waypoints are admin
+  // tools — a narrator must never be able to reach any of them. Route Path was already
+  // gated (showTrailTab, above); General and Waypoints were not — both rendered
+  // unconditionally regardless of role, so a narrator could open either one. Narration &
+  // Simulate and Preview are the only two tabs a narrator gets now.
   const tabs = [
-    { id: 'details', label: 'General' },
+    ...(isNarrator ? [] : [{ id: 'details', label: 'General' }]),
     ...(showTrailTab ? [{ id: 'trail', label: 'Route Path (GPS)' }] : []),
-    { id: 'waypoints', label: `Waypoints${form.waypoints.length ? ` (${form.waypoints.length})` : ''}` },
+    ...(isNarrator ? [] : [{ id: 'waypoints', label: `Waypoints${form.waypoints.length ? ` (${form.waypoints.length})` : ''}` }]),
     ...(isDrivingAudioTour ? [{ id: 'narrate', label: 'Narration & Simulate' }] : []),
     { id: 'preview', label: 'Preview' },
   ];
@@ -1025,7 +1045,15 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
               </Button>
             </div>
           )}
-          {form.id && (
+          {/* Per Enda's follow-up 47 report: found while auditing what narrators can
+              still reach after the tab lockdown — this button had no `!isNarrator`
+              check at all (every other backup/export control in this file does), so
+              a narrator could click it. It also reads `form.segment_scripts`, which
+              the new narrator read-whitelist (getWalksForBackend.ts, via
+              narratorWalkFields.ts) no longer sends to a narrator's browser at all —
+              left ungated, it would now just produce a broken/incomplete zip instead
+              of the admin-only backup it's meant to be. */}
+          {form.id && !isNarrator && (
             <Button
               variant="outline"
               size="sm"

@@ -1,5 +1,13 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 import { resolveActor } from '../../shared/backendActor.ts';
+// Per Enda's follow-up 47 report: these two lists now live in one shared
+// place alongside the READ-side whitelist getWalksForBackend.ts uses, so the
+// two can never quietly drift apart — see narratorWalkFields.ts for the full
+// reasoning. Renamed NARRATOR_WALK_FIELDS -> NARRATOR_WALK_WRITE_FIELDS and
+// NARRATOR_WAYPOINT_FIELDS -> NARRATOR_WAYPOINT_WRITE_FIELDS to make the
+// read/write split explicit at every call site below; behaviour is
+// unchanged, only the names and where they're declared.
+import { NARRATOR_WALK_WRITE_FIELDS, NARRATOR_WAYPOINT_WRITE_FIELDS } from '../../shared/narratorWalkFields.ts';
 
 // Top-level Walk fields a narrator may change on their own clone. Everything
 // else (region, difficulty, distance_km, duration_hours, elevation_gain_m,
@@ -9,17 +17,15 @@ import { resolveActor } from '../../shared/backendActor.ts';
 // real enforcement point. The client-side field gating in WalkEditor.jsx /
 // DrivingTourWaypointEditor.jsx is only ever a convenience on top of this,
 // never the boundary itself.
-const NARRATOR_WALK_FIELDS = ['name', 'description', 'safety_notes', 'finished'];
+const NARRATOR_WALK_FIELDS = NARRATOR_WALK_WRITE_FIELDS;
 
 // Per-waypoint sub-fields a narrator may change. lat, lng, waypoint_role,
 // segment_number, segment_title and avg_segment_speed_kmh always come from
 // the server's own copy of the waypoint, never the client's — speed in
 // particular must never be settable by anyone but an Admin, anywhere.
-const NARRATOR_WAYPOINT_FIELDS = [
-  'narration_script', 'audio_clip_url', 'trigger_audio',
-  'trigger_radius_m', 'trigger_once', 'use_bearing',
-  'bearing_direction', 'bearing_tolerance',
-];
+// final_audio_applied is deliberately absent — see the comment on the admin
+// branch below; only the Update Audio tool (an admin-only action) may set it.
+const NARRATOR_WAYPOINT_FIELDS = NARRATOR_WAYPOINT_WRITE_FIELDS;
 
 // Narrators can't reorder/add/remove waypoints in the UI today (drag is
 // disabled, and the add/delete controls are admin-only) — so waypoint count

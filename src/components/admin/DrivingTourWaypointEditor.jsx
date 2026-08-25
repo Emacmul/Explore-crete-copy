@@ -745,7 +745,17 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                       checked={!!wp.waypoint_done}
                       disabled={!wp.waypoint_done}
                       onCheckedChange={(checked) => {
-                        if (!checked) updateWaypoint(index, 'waypoint_done', false);
+                        if (!checked) {
+                          updateWaypoint(index, 'waypoint_done', false);
+                          // Per Enda's follow-up 47 report: a narrator can no longer
+                          // reach this checkbox at all (no Waypoints tab access) if
+                          // they lock a segment by mistake — the admin unlocking it
+                          // for them here is now the only way. Same rule as every
+                          // other "sounds final" action fixed today: request a real
+                          // save immediately, so unlocking a waypoint doesn't quietly
+                          // sit unsaved until someone remembers to click Save Route.
+                          onAutoSave?.();
+                        }
                       }}
                       className="border-amber-400 data-[state=checked]:bg-amber-400 data-[state=checked]:border-amber-400 data-[state=checked]:text-slate-900 disabled:opacity-100"
                     />
@@ -815,7 +825,15 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                           onScriptChange={(val) => updateWaypoint(index, 'narration_script', val)}
                           onAudioChange={(val) => {
                             updateWaypoint(index, 'audio_clip_url', val);
-                            if (val) updateWaypoint(index, 'trigger_audio', true);
+                            if (val) {
+                              updateWaypoint(index, 'trigger_audio', true);
+                              // Per Enda's follow-up 44 report: "finished narrating this
+                              // waypoint" and "waypoint marked as done" are the same
+                              // moment in practice, not two separate steps — this fires
+                              // only once, right when Finalize Narration Audio actually
+                              // succeeds (a real url comes back), same as TourSimulator.jsx.
+                              updateWaypoint(index, 'waypoint_done', true);
+                            }
                           }}
                           onAutoSave={onAutoSave}
                           fixedLanguage={targetLanguage}
@@ -932,7 +950,15 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                           onScriptChange={(val) => updateWaypoint(index, 'narration_script', val)}
                           onAudioChange={(val) => {
                             updateWaypoint(index, 'audio_clip_url', val);
-                            if (val) updateWaypoint(index, 'trigger_audio', true);
+                            if (val) {
+                              updateWaypoint(index, 'trigger_audio', true);
+                              // Per Enda's follow-up 44 report: "finished narrating this
+                              // waypoint" and "waypoint marked as done" are the same
+                              // moment in practice, not two separate steps — this fires
+                              // only once, right when Finalize Narration Audio actually
+                              // succeeds (a real url comes back), same as TourSimulator.jsx.
+                              updateWaypoint(index, 'waypoint_done', true);
+                            }
                           }}
                           onAutoSave={onAutoSave}
                           fixedLanguage={targetLanguage}

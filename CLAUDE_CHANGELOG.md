@@ -41,6 +41,143 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-25 (follow-up 47) — The narrator lockdown now holds up server-side too — a narrator's own clone is trimmed before it ever leaves the server, not just hidden behind tabs
+Scope: `base44/shared/narratorWalkFields.ts` (**new file**),
+`base44/functions/getWalksForBackend/entry.ts`,
+`base44/functions/saveWalkForBackend/entry.ts`,
+`src/components/admin/WalkEditor.jsx`,
+`src/components/admin/DrivingTourWaypointEditor.jsx`.
+**Touches two backend functions — `getWalksForBackend` and
+`saveWalkForBackend` both need the manual per-function redeploy step in
+Base44 (add a blank line, redeploy, remove the blank line, redeploy
+again) — a git push alone will not make either change take effect.**
+
+Enda confirmed follow-up 46's tab-hiding wasn't enough on its own: "no
+way to see" needs to hold up against a narrator opening browser dev
+tools too, not just against the normal UI. That meant finding the
+actual place their browser gets the data in the first place —
+`getWalksForBackend.ts`. Its own comments already documented exactly
+this problem for other narrators' clones ("redacted to just the fields
+needed... without leaking other narrators' unpublished work") but never
+applied that same treatment to a narrator's OWN clone — that branch sent
+it back COMPLETE, every field, on the reasoning that "this is the only
+place they get complete tour content back." Full content is right, full
+FIELD LIST wasn't — that included region, difficulty, distance_km,
+price_eur, approved, and everything else, all sitting in the browser
+regardless of which tabs the UI chose to render.
+
+Traced every field actually read by the two screens a narrator keeps
+(Narration & Simulate → TourSimulator.jsx/TourSimulatorMap.jsx/
+NarrationTtsEditor.jsx, and Preview → AdminPreviewMap.jsx/WalkDetailMap.jsx,
+the same map component the live customer site uses) before writing a
+whitelist, rather than guessing — missing a field here silently breaks
+a screen, not just over-shares data. Two fields worth calling out
+specifically: `region` and `difficulty` are not read by either screen at
+all, but WalkEditor.jsx's `canSave` check reads them directly to decide
+whether Save Route is even enabled — leaving them out would have
+silently disabled saving for every narrator (a blank required field
+fails that check), which is a far worse outcome than a narrator seeing
+their own tour's region/difficulty label. Kept them in for that reason.
+
+**What changed:**
+- New `base44/shared/narratorWalkFields.ts` — the single source of truth
+  for both directions of narrator access to a Walk: the WRITE whitelist
+  (moved here from `saveWalkForBackend.ts`, unchanged in substance) and a
+  new READ whitelist (`NARRATOR_WALK_READ_FIELDS`/
+  `NARRATOR_WAYPOINT_READ_FIELDS`), plus `pickNarratorReadableWalk()` to
+  apply it. One shared file so the two lists can't quietly drift apart
+  from each other over time.
+- `getWalksForBackend.ts`'s narrator branch now runs a narrator's own
+  clone(s) through `pickNarratorReadableWalk()` before they go in the
+  response, instead of returning them complete.
+- `saveWalkForBackend.ts` now imports its write whitelist from the same
+  shared file instead of declaring its own local copy — no behaviour
+  change there, just removing the duplication that made the two lists
+  able to drift in the first place.
+- Found one more real gap while auditing what a narrator can still
+  reach: WalkEditor.jsx's "Download all backups" button had no
+  `!isNarrator` check at all — every other export/backup control in this
+  file does. Gated it the same way. It also reads `form.segment_scripts`,
+  which the new read whitelist no longer sends to a narrator's browser,
+  so left ungated it would have started silently producing a
+  broken/incomplete zip instead of the admin-only tool it's meant to be.
+- Separately, per Enda's point about locking: a narrator can no longer
+  reach the Waypoints tab at all, so if they lock a segment by mistake
+  (via Finalize Narration Audio), an admin unlocking it for them via that
+  tab's own checkbox is now the only path — confirmed that already works
+  (admin access to Waypoints was never restricted), and added the same
+  auto-save-on-action fix as everything else today: unticking that
+  checkbox used to only update this component's own `form` state, same
+  as every other "sounds final" action found earlier — now it requests a
+  real save immediately too.
+
+**Not done / worth knowing:** `id`/`code`/`name`/`clone_of`/`finished`
+stay in the read whitelist because the header ("Editing: …", the
+"Translation finished" checkbox, the unsaved-changes banner) needs them
+regardless of which tab is open — none of that is Waypoints/General/
+Route-Path-specific content, it's the persistent chrome around every
+tab. `segment_scripts` (a separate, apparently-legacy per-segment
+draft/accepted workflow, distinct from the waypoint-level
+`narration_script`/`waypoint_done` fields actually used today) is fully
+excluded from the read whitelist now that the backup button is gated —
+nothing else reachable by a narrator was found reading it.
+
+Verified: `npx eslint` on both touched frontend files reports only the
+same pre-existing issues confirmed harmless all day — nothing new.
+`npx vite build` completes cleanly. The two backend files and the new
+shared file were type-checked with `tsc --noEmit` (Deno isn't available
+in this environment to run them directly) — no errors. Not tested
+against a live Base44 session.
+
+---
+
+## 2026-08-25 (follow-up 46) — General, Route Path, and Waypoints tabs are now hidden from narrators entirely; only Narration & Simulate and Preview remain
+Scope: `src/components/admin/WalkEditor.jsx`. (Frontend only — no
+backend function touched.)
+
+Enda asked directly: narrators must never be able to reach General,
+Route Path (GPS), or Waypoints — only Narration & Simulate and Preview.
+Checked the actual tab bar code rather than assuming the existing
+`isNarrator` gating already covered this: Route Path was already
+narrator-gated (`showTrailTab = !isNarrator`, pre-existing), but General
+and Waypoints were NOT — both tab buttons rendered unconditionally
+regardless of role, so a narrator could open either one.
+
+**What changed:** the `tabs` array that builds the tab bar now excludes
+General and Waypoints for a narrator, the same way Route Path already
+was. Also fixed three other spots that could have silently sent a
+narrator to one of those hidden tabs even without a visible button for
+it: the initial tab a narrator's session opens on (used to default to
+'waypoints', now defaults to 'narrate' for a driving tour or 'preview'
+otherwise); the "Cannot save yet" validation redirect inside `handleSave`
+(used to always go to 'details'); and the "tour saved" redirect after a
+brand-new tour's first save (now skipped entirely for a narrator — GPX
+import and new-tour creation are already admin-only elsewhere in this
+file, so this is a defensive guard rather than a fix for something
+narrators could actually trigger).
+
+**Worth knowing, not done here:** this hides the tabs in the UI — a
+narrator has no button, link, or redirect anywhere in this file that
+reaches General/Route Path/Waypoints any more. It does NOT restrict what
+data reaches their browser in the first place: `WalkEditor` still loads
+the whole Walk record regardless of role (confirmed in BackendShell.jsx
+— the fetch isn't role-filtered), so all of it, including fields from
+the now-hidden tabs, is sitting in this component's own `form` state
+either way. The real write-side boundary already exists server-side
+(`saveWalkForBackend`'s narrator field whitelist), but there's no
+equivalent read-side restriction — a narrator opening browser dev tools
+could still inspect the full record. If "no way to see" needs to mean
+that too, that's a separate, larger change (a narrator-specific fetch
+that only returns whitelisted fields) that hasn't been built. Flagging
+this now rather than letting "the tabs are hidden" sound like more of a
+lockdown than it actually is.
+
+Verified: `npx eslint` on WalkEditor.jsx reports only the same
+pre-existing errors/warnings confirmed harmless in every earlier
+follow-up today — nothing new. `npx vite build` completes cleanly.
+
+---
+
 ## 2026-08-25 (follow-up 45) — Removed the now-redundant "Mark Waypoint as Done" button from the Narration & Simulate tab
 Scope: `src/components/admin/TourSimulator.jsx`. (Frontend only — no
 backend function touched.)
