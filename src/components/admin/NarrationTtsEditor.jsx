@@ -1458,7 +1458,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
             via fixedLanguage, just for the ordinary non-clone case too.
           */}
           <Select value={selectedVoice} onValueChange={setSelectedVoice} disabled={!!segments}>
-            <SelectTrigger className="bg-slate-700 border-slate-500 text-white h-8 text-sm" title={segments ? 'Set for this pass when Parse & Generate was clicked — Mark Segment as Done (or start a fresh pass) to change it.' : undefined}>
+            <SelectTrigger className="bg-slate-700 border-slate-500 text-white h-8 text-sm" title={segments ? 'Set for this pass when Parse & Generate was clicked — Finalize Narration Audio (or start a fresh pass) to change it.' : undefined}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -1474,7 +1474,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
             </div>
           ) : (
             <Select value={selectedLanguage} onValueChange={setSelectedLanguage} disabled={!!segments}>
-              <SelectTrigger className="bg-slate-700 border-slate-500 text-white h-8 text-sm" title={segments ? 'Set for this pass when Parse & Generate was clicked — Mark Segment as Done (or start a fresh pass) to change it.' : undefined}>
+              <SelectTrigger className="bg-slate-700 border-slate-500 text-white h-8 text-sm" title={segments ? 'Set for this pass when Parse & Generate was clicked — Finalize Narration Audio (or start a fresh pass) to change it.' : undefined}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1597,10 +1597,18 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                     type="button"
                     onClick={handleMarkAsDone}
                     disabled={passLocked}
-                    className="w-full bg-blue-700/30 hover:bg-blue-700/50 border border-blue-600/50 text-amber-400 hover:text-amber-300 gap-2"
+                    // Per Enda's follow-up 42 report: this used to share the exact same
+                    // classes, icon, and near-identical wording ("Mark Segment as Done")
+                    // as the unrelated "Mark Waypoint as Done" button (waypoint checklist
+                    // flag) — impossible to tell apart at a glance, and that's exactly
+                    // what led him to believe this button was checking the Waypoints tab
+                    // box when it never did. Deliberately different color family (emerald,
+                    // matching this box's own "you've listened through" styling above) so
+                    // the two are never visually confusable again.
+                    className="w-full bg-emerald-700/30 hover:bg-emerald-700/50 border border-emerald-600/50 text-emerald-300 hover:text-emerald-200 gap-2"
                   >
                     {generatingCombined ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                    {generatingCombined ? 'Saving…' : 'Mark Segment as Done'}
+                    {generatingCombined ? 'Finalizing…' : 'Finalize Narration Audio'}
                   </Button>
                   <p className="text-xs text-emerald-400/70">Not happy yet? Just make your changes below instead.</p>
                 </div>
@@ -1794,7 +1802,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
             own script box; make your changes, then <strong>Save &amp; Listen Again</strong> to hear them
             together in context before you can edit further. Repeat as many times as you like — once
             you've listened straight through at least twice with nothing left unheard,{' '}
-            <strong>Mark Segment as Done</strong> saves the new version. No need to leave this screen.
+            <strong>Finalize Narration Audio</strong> saves the new version. No need to leave this screen.
           </p>
           <p className="text-xs text-slate-500">
             This deliberately forces a listen between every round of edits — a script has to sound right

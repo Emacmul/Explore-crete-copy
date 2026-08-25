@@ -41,6 +41,54 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-25 (follow-up 42) — The two "done" buttons looked and read almost identically — renamed and recoloured the audio one so they can't be confused again
+Scope: `src/components/admin/NarrationTtsEditor.jsx`. (Frontend only — no
+backend function touched.)
+
+Enda pushed back on follow-up 41's explanation, fairly: "Mark Segment as
+Done" and "Mark Waypoint as Done" weren't just similarly named, they were
+built with the exact same button classes (`bg-blue-700/30
+hover:bg-blue-700/50 border-blue-600/50 text-amber-400
+hover:text-amber-300`) and the exact same `CheckCircle2` checkmark icon —
+one word apart in wording, pixel-identical in styling. That's a real
+design flaw, not just an unlucky coincidence of two buttons doing
+different things — it's exactly what made this bug so easy to walk into
+twice.
+
+To be precise about authorship: neither button was created in this
+session. "Mark Waypoint as Done" (the `waypoint_done` flag, only in
+DrivingTourWaypointEditor.jsx) and "Mark Segment as Done" (audio
+finalize, in NarrationTtsEditor.jsx) both predate follow-up 37 — this
+changelog's own comments trace "Mark Segment as Done" back through
+follow-ups 23 and 31. Follow-up 41 only added a NEW, third button (also
+called "Mark Waypoint as Done", also using that same house colour
+scheme) into TourSimulator.jsx — deliberately matching the existing
+Waypoints tab button, since it does the exact same thing. The confusable
+pair is the two pre-existing buttons doing genuinely different things.
+
+**What changed:** the audio one — "Mark Segment as Done" — is renamed to
+**"Finalize Narration Audio"**, a label that actually describes what it
+does (renders and uploads this waypoint's combined audio; nothing to do
+with the waypoint checklist), and recoloured to emerald
+(`bg-emerald-700/30`/`text-emerald-300`) to match the "you've listened
+all the way through" box it already sits inside, instead of the
+blue/amber "done" family reserved for `waypoint_done`. Updated
+everywhere this text is user-visible: the button itself, its two
+tooltip strings, and the help text at the bottom of the panel. Left the
+button's underlying function name (`handleMarkAsDone`) and the many code
+comments referencing the old "Mark Segment as Done" wording alone — those
+are internal history, not something a narrator ever sees, and rewriting
+them risks introducing an unrelated mistake for no user-facing benefit.
+"Mark Waypoint as Done" itself (both the original Waypoints tab button
+and follow-up 41's simulator copy) is untouched — it was never the
+confusing one, the audio button was.
+
+Verified: `npx eslint` on NarrationTtsEditor.jsx reports zero errors and
+zero warnings. `npx vite build` completes cleanly. Not tested against a
+live Base44 session, same caveat as follow-ups 40 and 41.
+
+---
+
 ## 2026-08-25 (follow-up 41) — Not a save bug this time: the Narration & Simulate tab never had a "Mark Waypoint as Done" control at all
 Scope: `src/components/admin/TourSimulator.jsx`. (Frontend only — no
 backend function touched.)
