@@ -107,7 +107,15 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
     }
   };
 
-  const set = (field, value) => { setForm(prev => ({ ...prev, [field]: value })); setDirty(true); };
+  // Per Enda's follow-up 43 report: bumped on every single local edit. handleSave
+  // reads this at the moment it starts and compares it again when the server call
+  // returns — if it's changed in between, some OTHER edit landed in `form` while
+  // this save was still talking to the server, so this save's success does NOT
+  // mean everything currently in `form` is safely persisted. See the comment on
+  // `setDirty(false)` inside handleSave for why this matters — it's the fix for a
+  // real, confirmed silent-data-loss race, not defensive extra code.
+  const editVersionRef = useRef(0);
+  const set = (field, value) => { setForm(prev => ({ ...prev, [field]: value })); editVersionRef.current += 1; setDirty(true); };
   const isDrivingAudioTour = form.route_type === 'driving_audio_tour';
   // Per Enda: a soft heads-up only, not a hard block — "Translation finished" can still
   // be ticked at any point even if some waypoints aren't marked done yet (useful for a
@@ -608,6 +616,9 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
 
   const handleSave = async () => {
     if (saving) return false; // guard against a double-click or double-invocation firing two saves at once
+    // Snapshot of editVersionRef the moment THIS save starts reading `form` — see
+    // the comment on setDirty(false) below for what this is for.
+    const editVersionAtSaveStart = editVersionRef.current;
     if (!canSave) {
       toast({
         variant: 'destructive',
@@ -670,10 +681,31 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
     try {
       const wasNewTour = !form.id;
       const saved = await onSave(data);
-      // Everything currently in `form` reached the server successfully at this point —
-      // clear the unsaved-changes flag (see `dirty` above) so the banner/close-tab
-      // warning don't linger claiming there's still something at risk.
-      setDirty(false);
+      // Per Enda's follow-up 43 report: "Mark Waypoint as Done" clicked from the
+      // Narration & Simulate tab, hard refresh + republish done exactly as always,
+      // and it still wasn't showing as done after reopening the live app. Traced
+      // to a real race in follow-up 40's own auto-save design: firing "Save this
+      // line" and then, a few seconds later — well within a TTS-generation-plus-
+      // upload round trip — "Mark Waypoint as Done", queued a SECOND handleSave()
+      // call while the FIRST was still talking to the server. That second call
+      // used to hit the `if (saving) return false` guard just above and do
+      // NOTHING AT ALL — no error, no retry — while the first call's own success
+      // handler unconditionally cleared `dirty` to false the moment IT finished,
+      // making the top-bar banner say "All changes saved" even though the
+      // waypoint_done edit made after that first call started had never been sent
+      // anywhere. `form` itself still had the edit in memory (so it could
+      // misleadingly look fine for as long as the tab stayed open), but reopening
+      // the live app re-fetches from the server, which never received it — exactly
+      // what got reported. Two changes close this: `requestAutoSave` (below) no
+      // longer lets a save request get silently dropped while another is already
+      // in flight — it queues and reruns once the current one finishes, reading
+      // `form` fresh at that point — and THIS check makes sure `dirty` itself
+      // never claims "saved" for an edit this particular save call didn't actually
+      // capture: only clear it if no further edit landed in `form` (editVersionRef
+      // hasn't moved) since this call started reading it.
+      if (editVersionRef.current === editVersionAtSaveStart) {
+        setDirty(false);
+      }
       // Keep the form's own id in sync with what was actually persisted, so the *next* save
       // updates this same record instead of accidentally creating a second one.
       if (saved?.id && saved.id !== form.id) {
@@ -734,11 +766,42 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   // runs AFTER the state update that set the flag has actually committed, so by the
   // time it calls handleSave(), `form` in this render is guaranteed to already include
   // whatever change requested the save.
+  // Per Enda's follow-up 43 report: this used to call handleSave() directly, which
+  // has its own `if (saving) return false` guard against two saves running at
+  // once — necessary so they can't race each other's server writes, but it meant
+  // a second auto-save request arriving while an earlier one was still in flight
+  // (very easy to do from this screen: "Save this line" on one segment, then
+  // "Mark Waypoint as Done" a few seconds later, well within a TTS-generation-
+  // plus-upload round trip) got silently thrown away — no error, no retry, and
+  // the earlier save's own success handler would then clear `dirty` and make the
+  // top bar say "All changes saved" with that second edit never having reached
+  // the server at all. See the long comment on setDirty(false) inside handleSave
+  // for the full trace — this is the other half of that same fix. `saveInFlightRef`
+  // is a ref, not state, because it has to be checked and set synchronously, in
+  // the same tick a request comes in — React state updates aren't visible until
+  // the next render, which would let two requests slip through before either saw
+  // the other's flag.
+  const saveInFlightRef = useRef(false);
+  const queuedSaveRef = useRef(false);
+  const triggerSave = async () => {
+    if (saveInFlightRef.current) {
+      queuedSaveRef.current = true;
+      return;
+    }
+    saveInFlightRef.current = true;
+    await handleSave();
+    saveInFlightRef.current = false;
+    if (queuedSaveRef.current) {
+      queuedSaveRef.current = false;
+      triggerSave(); // reads `form` fresh at this later point, not whatever it was when queued
+    }
+  };
+
   const [pendingAutoSave, setPendingAutoSave] = useState(false);
   useEffect(() => {
     if (!pendingAutoSave) return;
     setPendingAutoSave(false);
-    handleSave();
+    triggerSave();
   }, [pendingAutoSave]);
   const requestAutoSave = () => setPendingAutoSave(true);
 
@@ -1398,7 +1461,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
             </div>
             )}
 
-            <SaveButton onSave={handleSave} saving={saving} canSave={canSave} />
+            <SaveButton onSave={triggerSave} saving={saving} canSave={canSave} />
           </div>
         )}
 
@@ -1420,7 +1483,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
               />
             </div>
 
-            <SaveButton onSave={handleSave} saving={saving} canSave={canSave} />
+            <SaveButton onSave={triggerSave} saving={saving} canSave={canSave} />
 
             <TrailPathEditor
               trailPath={form.trail_path}
@@ -1443,7 +1506,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 tourCode={form.code}
                 tourCategory={form.tour_category}
                 defaultDrivingSpeedKmh={form.default_driving_speed_kmh}
-                onSave={handleSave}
+                onSave={triggerSave}
                 saving={saving}
                 onAutoSave={requestAutoSave}
                 userRole={userRole}
@@ -1465,14 +1528,14 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                   // below), not the waypoint list.
                   set('waypoints', wps);
                 }}
-                onSave={handleSave}
+                onSave={triggerSave}
                 saving={saving}
                 code={form.code}
                 onSaveAndDownload={handleSaveAndDownloadGpx}
                 downloadingGpx={downloadingGpx}
               />
             )}
-            <SaveButton onSave={handleSave} saving={saving} canSave={canSave} />
+            <SaveButton onSave={triggerSave} saving={saving} canSave={canSave} />
           </div>
         )}
 
@@ -1501,7 +1564,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
               i === index ? { ...wp, [field]: value } : wp
             );
             set('waypoints', updated);
-          }} targetLanguage={form.target_language || ''} onSave={handleSave} saving={saving} onAutoSave={requestAutoSave} />
+          }} targetLanguage={form.target_language || ''} onSave={triggerSave} saving={saving} onAutoSave={requestAutoSave} />
         )}
       </div>
     </div>

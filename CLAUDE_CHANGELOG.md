@@ -41,6 +41,75 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-25 (follow-up 43) — Found the actual bug: a second auto-save could arrive while an earlier one was still in flight and get silently dropped, while the screen still claimed everything was saved
+Scope: `src/components/admin/WalkEditor.jsx`. (Frontend only — no backend
+function touched.)
+
+Enda ruled out deployment/caching entirely — hard refresh every time,
+republish every time, always testing in the live app (never the Base44
+preview), closed and reopened after every republish. With that ruled
+out, this had to be a real, live bug in the code, and it was: a race
+condition inside follow-up 40's own auto-save mechanism, not caught at
+the time because it only shows up when two auto-saves land close enough
+together to overlap — exactly Enda's actual workflow (several "Save this
+line" clicks across sub-segments, then "Mark Waypoint as Done" a few
+seconds later), and not something a single isolated test of one button
+would ever surface.
+
+`handleSave` has always had a guard against two saves running at once
+(`if (saving) return false`) — necessary, since two saves racing each
+other's writes to the server would be its own kind of corruption. What
+follow-up 40 got wrong: when "Mark Waypoint as Done" fired a save while
+an earlier "Save this line" save was still talking to the server (TTS
+generation + upload + the save call itself easily takes a few seconds),
+that guard made the SECOND save do nothing at all — no error, no retry,
+no trace anywhere. Worse, the FIRST save's own success handler then
+unconditionally cleared the "Unsaved changes" flag the moment it
+finished, regardless of anything that had changed in the meantime — so
+the top bar confidently reported "All changes saved" while the
+waypoint_done edit had never actually reached the server. `form` itself
+still had the edit in memory, which is exactly what made this so
+deceptive: everything looked right for as long as that browser tab
+stayed open, and only reopening the app (fetching fresh from the server,
+per Enda's own always-close-and-reopen workflow) exposed that it had
+never actually been saved.
+
+**What changed:**
+- `requestAutoSave` no longer calls `handleSave()` directly. It now goes
+  through a new `triggerSave()` wrapper that checks a ref (`saveInFlightRef`,
+  not React state — has to be checked synchronously the instant a request
+  arrives, before any await, which state updates can't guarantee) for
+  whether a save is already in flight. If one is, the new request is
+  remembered (`queuedSaveRef`) instead of dropped, and re-run — reading
+  `form` fresh at that later point — the moment the current save
+  finishes. Every "Save Route" button and every `onSave` prop passed to
+  child components now goes through this same `triggerSave` instead of
+  calling `handleSave` directly, so a manual click racing an auto-save
+  gets the same protection.
+- `setDirty(false)` inside `handleSave`'s success path is no longer
+  unconditional. A new `editVersionRef` counter increments on every
+  single local edit (inside `set()`, the one helper nearly every field
+  and waypoint change already goes through); `handleSave` snapshots it
+  the moment it starts reading `form`, and only clears the "unsaved
+  changes" flag if that counter hasn't moved since — i.e. nothing else
+  edited `form` while this particular save was in flight. If something
+  did, the banner correctly keeps showing "Unsaved changes" until the
+  queued retry above actually saves it.
+
+Verified: `npx eslint` on WalkEditor.jsx reports only the same
+pre-existing errors/warnings confirmed harmless in earlier follow-ups
+(unused `Download`/`validateDrivingTour`/`generateGpx`/`generateKml`
+imports, unused `fileInputRef`) — nothing new. `npx vite build`
+completes cleanly. Not tested against a live Base44 session — same
+caveat as follow-ups 40-42, but this one is a timing-dependent race, so
+even a live test only proves it works for the specific gap between
+clicks tried, not every possible timing. The fix itself (queue instead
+of drop, only clear "saved" when nothing changed since) is correct
+regardless of timing, which is why it's structured that way rather than
+just narrowing the window.
+
+---
+
 ## 2026-08-25 (follow-up 42) — The two "done" buttons looked and read almost identically — renamed and recoloured the audio one so they can't be confused again
 Scope: `src/components/admin/NarrationTtsEditor.jsx`. (Frontend only — no
 backend function touched.)
