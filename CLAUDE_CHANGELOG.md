@@ -41,6 +41,54 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-25 (follow-up 41) — Not a save bug this time: the Narration & Simulate tab never had a "Mark Waypoint as Done" control at all
+Scope: `src/components/admin/TourSimulator.jsx`. (Frontend only — no
+backend function touched.)
+
+Enda reported that after follow-up 40, going through the whole sequence
+in the "Narration & Simulate" tab — including clicking "Mark as Done" —
+still left the waypoint unmarked in the Waypoints tab.
+
+This is a different problem from follow-up 40, and a simpler one once
+traced: there are two entirely separate "done" concepts in this app that
+happen to share a name.
+
+- The checkbox in the Waypoints tab (what Enda's screenshot shows) is
+  bound to `wp.waypoint_done`. The ONLY control anywhere in the codebase
+  that sets it is the "Mark Waypoint as Done" button inside
+  DrivingTourWaypointEditor.jsx's own expanded waypoint row — confirmed
+  by searching the whole codebase for every write to `waypoint_done`.
+- "Mark Segment as Done" — the button actually reachable from inside the
+  Narration & Simulate tab (it lives inside NarrationTtsEditor) — does
+  something unrelated: it renders and uploads this waypoint's combined
+  narration audio (`finalizeAndSave`, confirmed in follow-up 40's audit).
+  It has never, in this codebase's history, touched `waypoint_done`.
+
+So the sequence Enda described couldn't have worked, no matter how many
+times "Mark Segment as Done" was clicked or how correctly it saved
+(follow-up 40 confirmed it does save correctly) — the control that flips
+the Waypoints tab checkbox was never present on that screen at all. Working
+entirely from the Narration & Simulate tab, as this whole workflow is
+designed to let him do, there was no way to reach it without switching to
+the Waypoints tab and opening that specific waypoint's row separately.
+
+**What changed:** TourSimulator.jsx's waypoint audio panel now shows this
+waypoint's own done/not-done status, with a "Mark Waypoint as Done"
+button when it isn't done yet — wired to the same `waypoint_done` field
+and the same real-server-save (`onAutoSave`) as the Waypoints tab's
+button. This doesn't merge the two concepts (finishing the audio and
+marking the waypoint done are still two separate clicks, matching how the
+Waypoints tab itself already treats them as two different buttons) — it
+just makes the second one reachable from the tab Enda actually works in,
+instead of requiring a tab switch he had no reason to expect was needed.
+
+Verified: `npx eslint` on TourSimulator.jsx reports only the one
+pre-existing unused-eslint-disable warning already confirmed harmless in
+follow-up 40's audit — nothing new. `npx vite build` completes cleanly.
+Not tested against a live Base44 session, same caveat as follow-up 40.
+
+---
+
 ## 2026-08-25 (follow-up 40) — Confirmed a second, unconditional save bug ("Save This Part" never told the parent about the edit at all) and made the three script/waypoint actions save to the server for real, not just visibly
 Scope: `src/components/admin/NarrationTtsEditor.jsx`,
 `src/components/admin/WalkEditor.jsx`,

@@ -717,6 +717,38 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                 </Button>
               </div>
 
+              {/* Per Enda's follow-up 41 report: he does his whole narration workflow from
+                  this tab and never lands anywhere with a "Mark Waypoint as Done" control —
+                  that button only ever existed in the Waypoints tab's expanded row (see
+                  DrivingTourWaypointEditor.jsx). "Mark Segment as Done" below is a
+                  completely different action (finalizes this waypoint's combined audio) and
+                  was never wired to waypoint_done — so going through a full narration pass
+                  here, including that button, could never have checked the Waypoints tab's
+                  box, no matter how many times it was clicked. Giving this tab its own
+                  Mark Waypoint as Done control closes that gap directly, instead of asking
+                  Enda to keep switching tabs to do it. */}
+              {selectedWp && onWaypointUpdate && (
+                <div className="flex items-center justify-between gap-2 bg-slate-900/40 rounded-lg border border-slate-700/60 px-3 py-2">
+                  <span className={`text-xs font-medium ${selectedWp.waypoint_done ? 'text-emerald-400' : 'text-slate-400'}`}>
+                    {selectedWp.waypoint_done ? 'Waypoint marked as done' : 'Waypoint not yet marked as done'}
+                  </span>
+                  {!selectedWp.waypoint_done && (
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        onWaypointUpdate(toRawIndex(selectedWpIndex), 'waypoint_done', true);
+                        onAutoSave?.();
+                      }}
+                      variant="outline"
+                      className="bg-blue-700/30 hover:bg-blue-700/50 border-blue-600/50 text-amber-400 hover:text-amber-300 gap-2 shrink-0"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      Mark Waypoint as Done
+                    </Button>
+                  )}
+                </div>
+              )}
+
               {selectedWp && (
                 <NarrationTtsEditor
                   key={selectedWpIndex}
