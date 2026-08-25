@@ -41,6 +41,209 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-25 (follow-up 37) — "Jump to location" in the Tour Simulator now actually plays the audio; green button no longer misleadingly says "Resume" right after a jump
+Scope: `src/components/admin/TourSimulator.jsx`. (Frontend only — no
+backend function touched.)
+
+Enda finished editing the BOR1 location and wanted to check speech
+length against driving speed for it: selected BOR1 in "Jump to
+location…" and clicked Jump. Two problems: the green button read
+"Resume" instead of "Play"/"Start", and — the vital one — no audio
+played at all, so there was nothing to visually check the simulator's
+movement against.
+
+Cause of the missing audio: "Jump to location" (`jumpToLocation`) called
+`jumpToWaypoint` with no options, and `autoplay` defaults to `false` —
+it only repositions the marker and arms the trigger/boundary state, it
+never starts the sim. "Test this waypoint" (the per-waypoint button
+right beside the audio editor) already passes `autoplay: true`, so it
+plays immediately; "Jump to location" was the one path that didn't,
+which is inconsistent and is exactly what made it look broken.
+
+Cause of the "Resume" mislabel: the green button's label was driven by
+`distTraveled > 0`, but `jumpToWaypoint` sets `distTraveled` to the
+target waypoint's position on every jump, autoplay or not — so the
+button called it "Resume" even when nothing had ever actually played
+yet, which reads as if a prior run was paused when none happened.
+
+**What changed:**
+- `jumpToLocation` now calls `jumpToWaypoint(targetIndex, { autoplay:
+  true })`, matching "Test this waypoint". Jumping to a location now
+  drives straight through it, playing every one of its waypoints' audio
+  in turn (same queuing/boundary logic as before — auto-pauses at the
+  next location's `primary_start`), so BOR1a and BOR1b's full audio can
+  actually be heard and checked against the marker's movement without
+  a separate manual Start click.
+- New `hasPlayed` state, separate from `distTraveled`: only set `true`
+  inside `startSim` (a real play actually began), reset to `false` by
+  `stopSim`/Reset and by every `jumpToWaypoint` call (jumping is not
+  playing) before that jump's own autoplay, if any, sets it true again.
+  The button's label now reads `tourComplete ? 'Replay' : hasPlayed ?
+  'Resume' : 'Start'` — "Resume" only shows once playback has genuinely
+  happened and is now paused.
+
+**Why:** the simulator's whole purpose here is comparing narration
+length to driving speed by ear — a jump that repositions the map but
+plays nothing defeats that, and a wrongly-labelled button adds
+confusion about whether anything actually ran yet.
+
+**Verified:** `npx eslint` (0 errors — one pre-existing, unrelated
+`react-hooks/exhaustive-deps` warning on this file, confirmed present
+before this change too) and `npx vite build` both clean.
+
+**Not done / worth knowing for next time:** Enda mentioned "a few other
+things that need adapting" in the simulator beyond this — only the
+audio/label issue was in scope this round; flag the rest when ready so
+they can be picked up separately.
+
+---
+
+## 2026-08-24 (follow-up 36) — Two waypoints at the exact same GPS spot no longer fight over the same trigger; the later one now waits its turn instead of cutting the first one off
+Scope: `src/components/walks/DrivingTourPlayer.jsx`, `src/lib/tourLogService.js`,
+`src/components/walks/TourDebugLog.jsx`. (Frontend only — no backend
+function touched.)
+
+Follow-up 35 looked into a 403 fetching a segment's audio and, along the
+way, Enda raised a related worry: "Waypoint 1a and Waypoint 1b must be on
+the very same spot otherwise the audio for Waypoint 1b will never start."
+I checked the code and reported back that I couldn't find a mechanism
+that would actually require that — speed isn't wired into either the real
+GPS trigger logic or (thanks to an existing safeguard) the admin
+simulator's movement — and asked how exactly he'd run into it.
+
+His answer: he's looking at BOR1a-PS and BOR1b — deliberately placed at
+the EXACT same coordinates. BOR1a is the stationary "get ready, this isn't
+the moving part yet" introduction (speed 0 km/h); BOR1b is the first
+actual driving segment (speed 50 km/h, a short line of narration), placed
+at that same physical spot because that's genuinely where the drive
+begins. That's a real, sensible design choice — not a mistake to
+undo — so the real bug had to be somewhere else.
+
+Found it: because BOR1a and BOR1b sit at the identical spot, their
+trigger circles (`trigger_radius_m`, default 150m) are 100% the same
+circle — a single GPS fix satisfies BOTH conditions at once. In
+`DrivingTourPlayer.jsx`'s `evaluateTriggers`, both would then decide to
+"fire" in the very same synchronous pass (or, at worst, one GPS fix
+apart) — and the old `playTriggerAudio` always did `if
+(playerRef.current) playerRef.current.stop()` before starting the new
+clip. So whichever one fired second — BOR1b, immediately after BOR1a —
+would stop BOR1a's audio again almost the instant it had started,
+meaning the actual "get ready" introduction was never really heard at
+all before being cut off by BOR1b's short line.
+
+TourSimulator.jsx (the admin's own test-drive tool) had ALREADY solved
+this exact problem for itself — its own `audioQueueRef` queues an
+overlapping trigger instead of interrupting the current clip, playing it
+once the current one's `ended` event fires — logged there as "Overlap" in
+its trigger log. The real, live player just never got the same fix.
+Brought it in line:
+
+- New `audioQueueRef` (an ordered list of waiting `{wp, wpKey}` triggers)
+  and `currentlyPlayingWpRef` (which waypoint's clip is actually loaded/
+  playing right now, or `null`) in `DrivingTourPlayer.jsx`.
+- `playTriggerAudio` no longer stops anything — it pushes onto the queue,
+  and only actually starts playback itself when nothing else is already
+  playing (checked synchronously, so two triggers firing in the very same
+  pass — BOR1a then BOR1b — correctly queue rather than race).
+- New `playNextQueuedAudio` does the actual playing: creates the player,
+  plays it, and — from the clip's own `onEnded` (and also from a failed
+  `play()`, so one broken clip can't jam every trigger queued behind it)
+  — immediately pulls and plays whatever's next in the queue. A trigger
+  that arrives while nothing's playing starts right away, exactly as
+  before; this only changes what happens when something's ALREADY
+  playing.
+- Both `handleStart` and `handleStop` now also clear the queue and
+  `currentlyPlayingWpRef`, so a fresh start (or "Restart tour from here")
+  never inherits a stale queue from a previous run.
+- New `logAudioQueued(waypoint, behindWaypoint)` in `tourLogService.js`
+  and a matching `audio_queued` entry in `TourDebugLog.jsx` ("⏳ BOR1b —
+  waiting behind BOR1a"), so the audit log answers "why didn't X start
+  right when I expected?" honestly — it wasn't skipped, it was queued.
+
+This only changes what happens when a SECOND trigger fires while an
+earlier one is still playing — a tour with no co-located waypoints (the
+overwhelming majority of every route) behaves exactly as before, since
+the queue only ever has zero or one thing to immediately hand off to.
+
+Also removed two unused imports (`Loader2`, `X`) from
+`DrivingTourPlayer.jsx` that predate this change but were caught by
+`npx eslint` while working in this file.
+
+Verified with `npx eslint`/`npx vite build` on all three changed files
+(clean), and a standalone Node.js simulation
+(`/tmp/ttscheck2/sim15_audio_queue.mjs`) hand-mirroring the exact
+queue/currently-playing logic now in the file: BOR1a and BOR1b firing in
+the same synchronous pass results in BOR1a starting immediately and
+BOR1b queuing behind it; BOR1a "ending" then starts BOR1b automatically;
+the queue and currently-playing ref both end up empty once everything's
+played through — all as expected.
+
+## 2026-08-24 (follow-up 35) — A segment's stale audio URL no longer hard-fails Build & Play or the final save; it self-heals by regenerating just that one clip
+Scope: `src/lib/audioCombiner.js`, `src/components/admin/NarrationTtsEditor.jsx`.
+(Frontend only — no backend function touched.)
+
+Enda, with two screenshots showing "Preview failed: Could not fetch
+segment 0's audio (HTTP 403)" on his tour's first waypoint: "This is a
+problem I anticipated but didn't test yet. Every tour will have this.
+The first Waypoint will always be the explanatory audio while the user is
+getting ready, but not moving yet. So the speed for that waypoint is set
+to '0'."
+
+Investigated whether a waypoint's speed could actually be the cause: it
+isn't, at least not directly. Nothing in `NarrationTtsEditor.jsx`,
+`TtsSegmentCard.jsx`, or the `generateTts` backend function ever reads a
+waypoint's speed — there's no code path connecting the two. Two things
+are more likely actually going on, and the fix below covers both without
+needing to know for certain which:
+
+- "Segment 0" in the error doesn't necessarily mean segment 0 is uniquely
+  broken — `decodeAndBoundSegments` (audioCombiner.js) fetches every
+  text segment's audio in a loop and stops at the FIRST failure, so this
+  exact message would appear even if several — or all — segments' URLs
+  had gone bad, simply because segment 0 is always tried first.
+- Segment 0 is also, by construction, the one generated EARLIEST by
+  `handleParseAndGenerate`'s own sequential loop — so by the time a
+  narrator finally clicks Build & Play, its audio URL has been sitting
+  unused longer than any other segment's. A long, explanatory first-
+  waypoint script (his own description of exactly this waypoint) takes
+  the longest to fully generate, stretching that gap further still. If
+  whatever's serving these generated-audio URLs treats them as anything
+  less than permanently valid, segment 0 is the single most exposed
+  segment in the whole document to that, on every tour, regardless of
+  its speed setting.
+
+Rather than requiring certainty about the exact mechanism, made the
+whole pipeline self-healing instead:
+
+- `decodeAndBoundSegments` in `audioCombiner.js` now accepts an optional
+  `onRegenerateAudio(segment)` callback. On a failed fetch, if given one,
+  it awaits a fresh URL from it and retries the fetch exactly once before
+  giving up for real — bounded, no retry loop. `playSegmentsPrecisely`
+  and `combineSegmentsToWav` both now accept and forward the same option.
+- New `regenerateSegmentAudio` in `NarrationTtsEditor.jsx` re-requests one
+  segment's audio via the same `generateTts` call every other TTS request
+  already uses (same voice/language/API key), updates `segmentAudios`
+  with the fresh URL (so it's fixed going forward too, not just for this
+  one retry), and returns it. Passed as `onRegenerateAudio` into BOTH the
+  live preview (`handleBuildAndPlay`'s `playSegmentsPrecisely` call) and
+  the final save (`finalizeAndSave`'s `combineSegmentsToWav` call), since
+  either can hit the same stale URL. A regeneration that itself fails
+  (no API key, network error, etc.) is swallowed and falls through to the
+  same HTTP-status error as before — no worse than today, just with one
+  automatic self-heal attempt first.
+
+Worth Enda testing specifically: try Build & Play on a waypoint that
+ISN'T the tour's first/explanatory one. If the exact same kind of failure
+never happens there, that's consistent with the "URL sat unused longest"
+theory above. If it happens there too, the URLs Base44's file storage is
+handing back may not be reliably long-lived at all, which would be a
+bigger, separate thing worth chasing down directly — this fix would still
+help either way (any segment's stale URL now self-heals, not just
+segment 0's), but it would help to know which.
+
+Verified with `npx eslint`/`npx vite build` on both changed files
+(clean).
+
 ## 2026-08-24 (follow-up 34) — Auto-scroll to "Parse & Generate" right after a file is imported/translated
 Scope: `src/components/admin/NarrationTtsEditor.jsx` only. (Frontend only
 — no backend function touched.)

@@ -95,6 +95,12 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
   const [triggerLog, setTriggerLog] = useState([]);
   const [tourComplete, setTourComplete] = useState(false);
   const [currentSegment, setCurrentSegment] = useState(null);
+  // Tracks whether the sim has actually been played at least once since the last
+  // Reset/jump — distinct from distTraveled > 0, which becomes true the moment a jump
+  // repositions the marker, even though nothing has played yet. Drives the green
+  // button's label below: "Start" until real playback has happened, "Resume" only once
+  // it genuinely has and is now paused. See jumpToWaypoint/startSim/stopSim.
+  const [hasPlayed, setHasPlayed] = useState(false);
   const [currentBearing, setCurrentBearing] = useState(() =>
     trailPath.length >= 2
       ? calculateBearing(trailPath[0].lat, trailPath[0].lng, trailPath[1].lat, trailPath[1].lng)
@@ -246,6 +252,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
     setTriggerLog([]);
     setTourComplete(false);
     setCurrentSegment(null);
+    setHasPlayed(false);
     setCurrentBearing(initialBearingRef.current);
     if (audioRef.current) audioRef.current.pause();
     const startPos = trailPath[0];
@@ -257,10 +264,11 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
   // earlier waypoints' audio doesn't fire again). The map's own zoom/pan is left
   // completely alone (FitBounds, in TourSimulatorMap.jsx, no longer reacts to a
   // moving/re-rendering waypoints list), so an admin/narrator can zoom right in on one
-  // waypoint, jump to it, and press Start to hear exactly that waypoint's own saved
-  // audio play out against the moving marker — repeatable for every waypoint in turn.
-  // Jumping to a location's start (from the "Jump to location…" list) is just this
-  // same function called on that location's own primary_start waypoint.
+  // waypoint, jump to it, and (via autoplay — see below) immediately hear that
+  // waypoint's own saved audio play out against the moving marker — repeatable for
+  // every waypoint in turn. Jumping to a location's start (from the "Jump to
+  // location…" list) is just this same function called on that location's own
+  // primary_start waypoint.
   //
   // Every jump is scoped so the tick loop below auto-pauses at a real boundary, rather
   // than driving on uncontrolled into whatever comes next. "Jump to location…" (whole
@@ -297,10 +305,20 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
     setTriggered({ ...triggeredRef.current });
     setTriggerLog([]);
     setTourComplete(false);
+    // Landing on a waypoint via a jump is not the same as having played anything —
+    // reset the "ever played" flag so the button below reads "Start"/"Play", not a
+    // misleading "Resume", until playback (below, or manually) actually happens.
+    setHasPlayed(false);
     if (newPos) { setCurrentPos(newPos); prevPosRef.current = newPos; }
     if (autoplay) startSim();
   };
-  const jumpToLocation = (targetIndex) => jumpToWaypoint(targetIndex);
+  // Per Enda: jumping to a location should immediately play its audio, the same way
+  // "Test this waypoint" already does for a single waypoint — otherwise there's nothing
+  // to check the simulator's movement against, and a narrator has to remember a
+  // separate manual Start/Resume click just to hear anything. Auto-plays through the
+  // whole location (every waypoint up to the next primary_start), same boundary as
+  // before.
+  const jumpToLocation = (targetIndex) => jumpToWaypoint(targetIndex, { autoplay: true });
 
   // Reset when trail path changes
   useEffect(() => {
@@ -448,6 +466,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
       }
     }
     setIsPlaying(true);
+    setHasPlayed(true);
     intervalRef.current = setInterval(() => tickRef.current(), TICK_MS);
   };
 
@@ -486,7 +505,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
       <div className="flex flex-wrap items-center gap-2">
         {!isPlaying ? (
           <Button onClick={startSim} size="sm" className="bg-green-600 hover:bg-green-700 text-white gap-2">
-            <Play className="w-4 h-4" /> {tourComplete ? 'Replay' : distTraveled > 0 ? 'Resume' : 'Start'}
+            <Play className="w-4 h-4" /> {tourComplete ? 'Replay' : hasPlayed ? 'Resume' : 'Start'}
           </Button>
         ) : (
           <Button onClick={pauseSim} size="sm" className="bg-amber-500 hover:bg-amber-600 text-white gap-2">
@@ -628,6 +647,8 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
                     if (val) onWaypointUpdate(selectedWpIndex, 'trigger_audio', true);
                   }}
                   fixedLanguage={targetLanguage}
+                  waypointSegmentId={selectedWp.segment_id}
+                  waypointSegmentTitle={selectedWp.segment_title}
                 />
               )}
             </div>
