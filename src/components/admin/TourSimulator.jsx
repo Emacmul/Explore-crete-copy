@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Play, Pause, Square, Gauge, Clock, Volume2, AlertTriangle, CheckCircle2, MapPin, Radio, Flag, ChevronDown, ChevronUp } from 'lucide-react';
+import { Play, Pause, Square, Gauge, Clock, Volume2, AlertTriangle, CheckCircle2, MapPin, Radio, Flag, ChevronDown, ChevronUp, Save, Loader2 } from 'lucide-react';
 import { calculateBearing, isBearingInRange } from '@/lib/routeExport';
 import TourSimulatorMap from './TourSimulatorMap';
 import NarrationTtsEditor from './NarrationTtsEditor';
@@ -61,7 +61,7 @@ function fmtTime(ms) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
-export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }) {
+export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, onSave, saving }) {
   const trailPath = form.trail_path || [];
   // Filtering out waypoints with no usable lat/lng means every index used inside this
   // component (selectedWpIndex, the map's per-marker index, jumpToWaypoint's
@@ -596,8 +596,29 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
             <CheckCircle2 className="w-4 h-4" /> Complete
           </span>
         )}
+        {/* Per Enda's follow-up 39 report: this "Narration & Simulate" tab had no way to
+            save at all — every script/audio edit made here only ever lived in this
+            browser tab's memory until you switched to a different tab that happened to
+            have its own Save Route button. Editing an entire location's worth of
+            waypoints from this screen and never once landing on a save opportunity is
+            exactly how a morning's work can vanish. Now this tab can save itself,
+            directly, without navigating anywhere else. Only rendered when a parent
+            actually wires up onSave (the top-level Narration & Simulate tab does; the
+            scoped "Test Location in Simulator" dialog does too now). */}
+        {onSave && (
+          <Button
+            onClick={onSave}
+            disabled={saving}
+            size="sm"
+            className="ml-auto bg-amber-500 hover:bg-amber-600 text-white gap-2"
+            title="Save this tour to the server now. Nothing edited on this screen is safely saved until you do this."
+          >
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            Save Route
+          </Button>
+        )}
         {audioTriggerCount > 0 && (
-          <span className="ml-auto flex items-center gap-1 text-xs text-purple-300 bg-purple-900/40 px-2 py-1 rounded-full">
+          <span className="flex items-center gap-1 text-xs text-purple-300 bg-purple-900/40 px-2 py-1 rounded-full">
             <Radio className="w-3 h-3" /> {audioTriggerCount} audio trigger{audioTriggerCount !== 1 ? 's' : ''}
           </span>
         )}

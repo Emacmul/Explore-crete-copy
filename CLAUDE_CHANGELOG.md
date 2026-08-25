@@ -41,6 +41,90 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-25 (follow-up 39) — Found the real cause of the BOR1 data loss: the Narration & Simulate tab had no way to save, and nothing on screen ever said "this isn't saved yet"
+Scope: `src/components/admin/WalkEditor.jsx`, `src/components/admin/TourSimulator.jsx`,
+`src/components/admin/DrivingTourWaypointEditor.jsx`. (Frontend only — no
+backend function touched.)
+
+Enda reported follow-up 38's reassurance didn't hold: he sent a
+screenshot of BOR1's waypoint list with every "Done" checkbox empty,
+after having ticked all seven of them that morning and clicking "Save
+this line" on every text edit. Since nothing in this app resets
+`form.waypoints` while a single browser tab stays open (confirmed in
+follow-up 38's audit), seeing them come back unchecked at all points to
+this being a genuinely fresh load of server data, not the same in-memory
+session — i.e. the saves really never reached the server.
+
+Re-audited with that new fact in hand. Both "Save this line" (inside
+NarrationTtsEditor — generates fresh TTS audio for one edited line and
+folds it into this waypoint's script) and "Mark Waypoint as Done" (in
+DrivingTourWaypointEditor) only ever update the in-memory `form` state
+sitting in WalkEditor.jsx. Both are correctly wired — the data really
+does reach `form.waypoints` — but neither one calls the server. Only
+"Save Route" (`handleSave` → `saveWalkForBackend`) actually persists
+anything, and it's a separate, easy-to-miss action elsewhere on the page.
+Two labels that both read as final ("Save", "Done") never actually save
+anything by themselves — that's a real, confusing design gap on its own.
+
+But the bigger finding: **the "Narration & Simulate" tab — described in
+this very file's own comments as "the actual working screen for
+translating/narrating a driving tour" — had NO save mechanism reachable
+from it at all.** TourSimulator.jsx never received an `onSave` prop, had
+no Save Route button, nothing. A cloned driving tour also opens directly
+onto this tab by default (`isClonedDrivingTour` in WalkEditor.jsx) — so a
+narrator (or Enda editing as one) doing a whole session of script edits
+and location tests from that one tab, exactly the workflow this screen is
+built for, could work for hours with genuinely nowhere on screen to save,
+and no indication that was even a problem. Editing every segment in BOR1
+this way and never once landing on a tab with a Save Route button would
+produce exactly what was reported: real edits, still in memory the whole
+session, that never once reached the server — then gone the moment the
+tab closed or the session ended.
+
+**What changed:**
+- TourSimulator.jsx now accepts `onSave`/`saving` props and renders its
+  own "Save Route" button directly in its toolbar when they're provided
+  — so the Narration & Simulate tab (and the "Test Location in Simulator"
+  dialog) can save without navigating anywhere else. Wired up from
+  WalkEditor.jsx (passing `handleSave`/`saving`) and from
+  DrivingTourWaypointEditor.jsx (passing through the `onSave`/`saving` it
+  already receives from WalkEditor for its own modal).
+- New always-visible indicator in WalkEditor's top bar — present on
+  every tab, not just the ones with their own Save button — reading
+  either "Unsaved changes — click Save Route" (amber) or "All changes
+  saved" (green). Backed by a new `dirty` flag that flips true on every
+  local edit (`set()`, the one helper nearly every field/waypoint change
+  already runs through) and clears only once a save has actually
+  succeeded against the server.
+- Closing the tab, refreshing, or navigating away while `dirty` is true
+  now triggers the browser's own "you have unsaved changes" confirmation
+  (`beforeunload`), so the exact accident this session hit — a morning of
+  edits sitting only in a browser tab — has a last line of defence even
+  if the tab/banner is missed.
+
+**Not done / worth knowing for next time:** this doesn't make "Save this
+line" or "Mark Waypoint as Done" auto-save to the server by themselves —
+the fix is making the unsaved state impossible to miss (and impossible to
+walk away from unwarned) rather than changing what those two buttons do.
+If it happens again despite the new banner, real auto-save after those
+actions is the next thing to reach for. Also worth Enda re-confirming
+with the API/backend directly whether `saveWalkForBackend` calls were
+ever actually reaching the server this morning (a session/token issue
+would show as a "Save failed" toast, which is easy to miss while moving
+fast) — the fixes above close the tab-with-no-save-button gap for
+certain, but a separate save-request failure on top of that hasn't been
+ruled out from code alone.
+
+**Verified:** `npx eslint` and `npx vite build` on all three changed
+files — no new errors or warnings introduced (a handful of pre-existing,
+unrelated unused-import errors in WalkEditor.jsx and
+DrivingTourWaypointEditor.jsx were already present before this session
+and are untouched; one of them, an unused `AlertTriangle` import in
+WalkEditor.jsx, is now actually used by the new banner and so no longer
+flagged). Not verified against a live Base44 session.
+
+---
+
 ## 2026-08-25 (follow-up 38) — Deep audit of the Tour Simulator after Enda reported BOR1's edits "disappearing" and still no audio after follow-up 37
 Scope: `src/components/admin/TourSimulator.jsx`. (Frontend only — no
 backend function touched.)

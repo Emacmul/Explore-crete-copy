@@ -818,6 +818,8 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                             if (val) updateWaypoint(index, 'trigger_audio', true);
                           }}
                           fixedLanguage={targetLanguage}
+                          waypointSegmentId={wp.segment_id}
+                          waypointSegmentTitle={wp.segment_title}
                         />
 
                         {/* Editable: Audio Trigger Fields */}
@@ -932,6 +934,8 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                             if (val) updateWaypoint(index, 'trigger_audio', true);
                           }}
                           fixedLanguage={targetLanguage}
+                          waypointSegmentId={wp.segment_id}
+                          waypointSegmentTitle={wp.segment_title}
                         />
 
                         {/* Audio activation radius and bearing */}
@@ -1078,7 +1082,7 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                     }} onWaypointUpdate={(idx, field, value) => {
                       const origIdx = (testSegment.startIndex || 0) + idx;
                       updateWaypoint(origIdx, field, value);
-                    }} targetLanguage={targetLanguage} />
+                    }} targetLanguage={targetLanguage} onSave={onSave} saving={saving} />
                   </DialogContent>
                 </Dialog>
               )}

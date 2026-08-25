@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { getNarratorAuthPayload } from '@/lib/useNarratorApiKeys';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -63,6 +63,23 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   console.log('WalkEditor mounted/rendering');
   const [form, setForm] = useState({ ...EMPTY_WALK, ...walk });
   const [saving, setSaving] = useState(false);
+  // Per Enda's follow-up 39 report: a full morning of editing BOR1 (scripts, audio,
+  // "Mark Waypoint as Done") never reached the server. "Save this line" and "Mark
+  // Waypoint as Done" both sound final but only ever update this in-memory `form` —
+  // the actual Save Route action (below) is a separate step, and the Narration &
+  // Simulate tab didn't even have one to reach (see the onSave prop added to
+  // TourSimulator further down). `dirty` tracks whether anything has changed since
+  // the last successful save, so that gap is now visible instead of silent: a banner
+  // in the top bar (below) and a close-tab/refresh warning (see the effect below) —
+  // rather than everyone just having to trust that clicking Save Route wasn't
+  // necessary.
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => {
+    if (!dirty) return;
+    const handler = (e) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [dirty]);
   // Per Enda: once a tour has been cloned for translation, opening it should land
   // straight on "Narration & Simulate" — that's the working screen for the whole
   // translation job — rather than anywhere else. Only applies to a driving tour clone;
@@ -90,7 +107,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
     }
   };
 
-  const set = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
+  const set = (field, value) => { setForm(prev => ({ ...prev, [field]: value })); setDirty(true); };
   const isDrivingAudioTour = form.route_type === 'driving_audio_tour';
   // Per Enda: a soft heads-up only, not a hard block — "Translation finished" can still
   // be ticked at any point even if some waypoints aren't marked done yet (useful for a
@@ -653,6 +670,10 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
     try {
       const wasNewTour = !form.id;
       const saved = await onSave(data);
+      // Everything currently in `form` reached the server successfully at this point —
+      // clear the unsaved-changes flag (see `dirty` above) so the banner/close-tab
+      // warning don't linger claiming there's still something at risk.
+      setDirty(false);
       // Keep the form's own id in sync with what was actually persisted, so the *next* save
       // updates this same record instead of accidentally creating a second one.
       if (saved?.id && saved.id !== form.id) {
@@ -837,6 +858,20 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
           <h2 className="text-xl font-bold text-white">
             {form.id ? `Editing: ${form.code || form.name}` : 'New Route'}
           </h2>
+          {/* Per Enda's follow-up 39 report: a morning of edits (scripts, audio, "Mark
+              Waypoint as Done") never reached the server, and there was no way to tell
+              from the screen that anything was still unsaved — every tab's individual
+              "Save this line"/"Mark ... Done" controls sound final but only change what's
+              in this browser tab's memory (see the `dirty` state above). This is always
+              visible, on every tab, not just the ones with their own Save Route button —
+              closing the tab or navigating away is also now blocked with a browser
+              confirmation while this reads "Unsaved changes" (see the beforeunload effect
+              above). */}
+          {form.id && (
+            dirty
+              ? <span className="flex items-center gap-1.5 text-xs font-medium text-amber-400 bg-amber-900/20 border border-amber-700/40 rounded-full px-2.5 py-1"><AlertTriangle className="w-3 h-3" /> Unsaved changes — click Save Route</span>
+              : <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-400 bg-emerald-900/20 border border-emerald-700/40 rounded-full px-2.5 py-1"><CheckCircle2 className="w-3 h-3" /> All changes saved</span>
+          )}
           {form.clone_of && (
             <div className="flex items-center gap-2 ml-2 bg-slate-700/60 border border-purple-700/50 rounded-lg px-3 py-1.5">
               <input
@@ -1433,12 +1468,16 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
           // Per Enda: this is the actual working screen for translating/narrating a
           // driving tour — full width, nothing else competing for space. The map and
           // the script/break-tag editor sit side by side inside TourSimulator itself.
+          // onSave/saving are passed through here (follow-up 39) because this screen
+          // used to have no save mechanism at all — every edit made here only ever
+          // lived in this browser tab until you happened to switch to a different tab
+          // that had its own Save Route button.
           <TourSimulator form={form} onWaypointUpdate={(index, field, value) => {
             const updated = form.waypoints.map((wp, i) =>
               i === index ? { ...wp, [field]: value } : wp
             );
             set('waypoints', updated);
-          }} targetLanguage={form.target_language || ''} />
+          }} targetLanguage={form.target_language || ''} onSave={handleSave} saving={saving} />
         )}
       </div>
     </div>
