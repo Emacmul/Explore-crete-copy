@@ -41,6 +41,106 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-25 (follow-up 40) — Confirmed a second, unconditional save bug ("Save This Part" never told the parent about the edit at all) and made the three script/waypoint actions save to the server for real, not just visibly
+Scope: `src/components/admin/NarrationTtsEditor.jsx`,
+`src/components/admin/WalkEditor.jsx`,
+`src/components/admin/DrivingTourWaypointEditor.jsx`,
+`src/components/admin/TourSimulator.jsx`. (Frontend only — no backend
+function touched.)
+
+Enda reported follow-up 39's fix didn't hold either: a full pass through
+BOR1a-PS — several sub-segments, "Save this line" clicked and re-listened
+to about four times, "Mark this segment as Done" clicked — and afterwards
+the Waypoints tab still showed nothing as done, and the imported text box
+still had the deliberately-left test phrase "Like mountains" still in it,
+along with other test errors that had supposedly been edited out. That's
+concrete proof edits were being lost before they even reached
+`form.waypoints`, not just failing to reach the server after reaching
+`form.waypoints` (which is as far as follow-up 39's audit checked).
+
+Went through every function in NarrationTtsEditor.jsx that claims to save
+something, tracing each one to confirm — not assume — whether it actually
+calls `onScriptChange`/`onAudioChange` (the only way anything in this
+component reaches the parent's `form` at all).
+
+**Confirmed bug, not speculation:** `commitSubsectionEdit` — the function
+behind the "Save This Part" button — regenerated audio, updated its own
+local `segments`/`subsectionTexts` state (so the card visibly showed the
+new text and a working Play button, looking exactly like a successful
+save), and then returned, without ever calling `onScriptChange`. Every
+other commit path in the file (the top script box, a subsection box's
+plain typing, "Save this line") does call it; this one alone didn't. An
+edit made through "Save This Part" specifically never reached
+`form.waypoints` — not "wasn't saved to the server yet," genuinely
+discarded the moment that render ended. Given Enda's description ("a few
+sub segments and a good few edits"), this is almost certainly what most
+of the BOR1a-PS session went through.
+
+Also found, while reading the same code, a smaller but real issue in
+`commitSegmentEdit` ("Save this line"): its call to `onScriptChange` sat
+inside a `setSubsectionTexts(prev => ...)` state-updater callback — a
+side-effecting call nested inside a pure-update function, which React is
+allowed to invoke more than once for the same commit (Strict Mode
+double-invocation, or an interrupted-and-restarted Concurrent render).
+No evidence this actually fired twice for Enda, but it's exactly the kind
+of thing that looks fine in normal testing and misbehaves under load —
+moved the `onScriptChange` call out to plain sequential code, called
+exactly once, with a defensive fallback added for the one edge case
+(`ownerIndex === -1`) where the owning subsection isn't found, which
+should be impossible given how `chunkBySizes` groups segments but is now
+guaranteed safe either way.
+
+Did not find a bug in `handleMarkAsDone` ("Mark Segment as Done" —
+finalizes this waypoint's combined audio). It's correctly gated: the
+button only renders at all once a full listen pass is done and nothing's
+been edited since, so it can't be clicked and silently no-op. It's worth
+naming here because "Mark this segment as Done" in Enda's report could
+mean this OR "Mark Waypoint as Done" in the Waypoints tab (the
+`waypoint_done` checkbox) — both exist, sound alike, and both got the
+fix below regardless, so which one he meant doesn't change the outcome.
+
+**What changed, beyond the `commitSubsectionEdit` and `commitSegmentEdit`
+fixes above:** even a perfectly-wired `onScriptChange`/`onAudioChange`
+call only ever updates WalkEditor's in-memory `form` — follow-up 39
+already established that reaching `form` is not the same as reaching the
+server, and left that gap to be closed by remembering to click Save
+Route. Closed it instead: "Save this line," "Save This Part," "Mark
+Segment as Done," and "Mark Waypoint as Done" now each request a real
+server save automatically, right when they succeed, via a new
+`onAutoSave` prop threaded from WalkEditor.jsx down through
+DrivingTourWaypointEditor.jsx and TourSimulator.jsx into
+NarrationTtsEditor.jsx (and to DrivingTourWaypointEditor's own "Mark
+Waypoint as Done" button directly). The Save Route button and the
+"Unsaved changes" indicator from follow-up 39 both stay — this doesn't
+remove a manual save option, it just means the four actions that already
+read as final now actually are, without depending on a follow-up click
+elsewhere.
+
+That auto-save is implemented as a queued flag (`pendingAutoSave` in
+WalkEditor.jsx) picked up by a `useEffect`, not a direct call to
+`handleSave()` from inside these handlers. Calling `handleSave()`
+synchronously from the same handler that just called `setForm(...)`
+would read the OLD `form` — React batches the state update, so `form` in
+that same handler hasn't changed yet — and would have silently persisted
+stale data while looking exactly like a correct save of the new edit.
+Queuing the flag and acting on it in an effect (which only runs after the
+state update has actually committed) avoids that race entirely.
+
+Verified: `npx eslint` on all four touched files — the only errors/
+warnings reported are the same pre-existing ones confirmed via `git
+stash` comparison (unused `Textarea`/`Download`/
+`validateDrivingTour`/`generateGpx`/`generateKml` imports, unused
+`fileInputRef`/`segGroup` vars, one pre-existing unused eslint-disable
+directive in TourSimulator.jsx) — nothing new introduced. `npx vite
+build` completes cleanly. Not done: this has not been tested against a
+live Base44 session (no server to test against from here) — the
+`commitSubsectionEdit` fix is a certain, traceable code bug either way,
+but the end-to-end "does Save This Part now actually survive a page
+reload" path should get one real test on BOR1 or a similar location
+before trusting it fully.
+
+---
+
 ## 2026-08-25 (follow-up 39) — Found the real cause of the BOR1 data loss: the Narration & Simulate tab had no way to save, and nothing on screen ever said "this isn't saved yet"
 Scope: `src/components/admin/WalkEditor.jsx`, `src/components/admin/TourSimulator.jsx`,
 `src/components/admin/DrivingTourWaypointEditor.jsx`. (Frontend only — no

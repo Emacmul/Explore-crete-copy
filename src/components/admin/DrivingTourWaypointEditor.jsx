@@ -191,7 +191,7 @@ const routeWaypoints = async (points) => {
   return res.data.trail;
 };
 
-export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCode, tourCategory, onSave, saving, userRole = 'admin', focusWaypointIndex, onTrailPathChange, trailPath, defaultDrivingSpeedKmh, targetLanguage }) {
+export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCode, tourCategory, onSave, saving, onAutoSave, userRole = 'admin', focusWaypointIndex, onTrailPathChange, trailPath, defaultDrivingSpeedKmh, targetLanguage }) {
   const isNarrator = userRole === 'narrator';
   // WBT is always fixed at 3.5 km/h. DDV falls back to the Admin-set default
   // driving speed from the Details tab (form.default_driving_speed_kmh) until a
@@ -817,6 +817,7 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                             updateWaypoint(index, 'audio_clip_url', val);
                             if (val) updateWaypoint(index, 'trigger_audio', true);
                           }}
+                          onAutoSave={onAutoSave}
                           fixedLanguage={targetLanguage}
                           waypointSegmentId={wp.segment_id}
                           waypointSegmentTitle={wp.segment_title}
@@ -933,6 +934,7 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                             updateWaypoint(index, 'audio_clip_url', val);
                             if (val) updateWaypoint(index, 'trigger_audio', true);
                           }}
+                          onAutoSave={onAutoSave}
                           fixedLanguage={targetLanguage}
                           waypointSegmentId={wp.segment_id}
                           waypointSegmentTitle={wp.segment_title}
@@ -993,6 +995,11 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                       <Button
                         onClick={() => {
                           updateWaypoint(index, 'waypoint_done', true);
+                          // Per follow-up 40: this used to only flip the flag in this
+                          // component's own in-memory form — request a real server save
+                          // right now instead of relying on the narrator to separately
+                          // remember to click Save Route afterwards.
+                          onAutoSave?.();
                           setExpanded(null);
                         }}
                         variant="outline"
@@ -1082,7 +1089,7 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                     }} onWaypointUpdate={(idx, field, value) => {
                       const origIdx = (testSegment.startIndex || 0) + idx;
                       updateWaypoint(origIdx, field, value);
-                    }} targetLanguage={targetLanguage} onSave={onSave} saving={saving} />
+                    }} targetLanguage={targetLanguage} onSave={onSave} saving={saving} onAutoSave={onAutoSave} />
                   </DialogContent>
                 </Dialog>
               )}

@@ -164,7 +164,7 @@ function deriveSubsections(segments, subsectionSizes) {
   return chunkIntoSubsections(segments);
 }
 
-export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, onAudioChange, fixedLanguage, waypointSegmentId, waypointSegmentTitle }) {
+export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, onAudioChange, onAutoSave, fixedLanguage, waypointSegmentId, waypointSegmentTitle }) {
   const { keys: apiKeys } = useNarratorApiKeys();
   const [selectedVoice, setSelectedVoice] = useState('NEUTRAL');
   const [selectedLanguage, setSelectedLanguage] = useState(fixedLanguage || 'English');
@@ -597,6 +597,23 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
 
     setSegments(newSegments);
     setSegmentAudios(newSegmentAudios);
+    // This was missing entirely before this fix: every OTHER commit path in this file
+    // (the top box, a per-subsection box's plain typing, a per-line "Save this line")
+    // tells the parent about a text change via onScriptChange — this one, "Save This
+    // Part", never did. It regenerated audio and updated this component's own local
+    // segments/subsectionTexts (so the card visibly showed the new text and a working
+    // Play button, looking exactly like a real save), but the parent's own copy of this
+    // waypoint's narration_script never changed — meaning it was never actually
+    // persisted anywhere outside this one render of this one component. Reported by
+    // Enda as "Save this line pretended to save" — this function is what "a few sub
+    // segments" almost certainly went through, and this is the confirmed reason none of
+    // it survived.
+    onScriptChange(rebuildScript(newSegments));
+    // Per follow-up 40: don't just hand the edit to the parent's in-memory `form` and
+    // leave it there hoping the narrator remembers to click Save Route — request an
+    // actual server save right now, the same way "Mark Waypoint as Done" and "Save
+    // this line" do.
+    onAutoSave?.();
 
     return { segments: newSegments, segmentAudios: newSegmentAudios };
   };
@@ -748,16 +765,28 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
 
       // Keep the owning subsection's own box (and the parent's full script) in sync —
       // see the comment above for why this matters even when freshSegs.length === 1.
+      //
+      // onScriptChange used to be called from INSIDE the setSubsectionTexts updater
+      // above — a side-effecting call (it ultimately calls setForm/setDirty in
+      // WalkEditor, two renders up) sitting inside a state updater function, which React
+      // is allowed to invoke more than once for the same update in some circumstances
+      // (Strict Mode double-invoking to surface exactly this kind of impurity; a
+      // Concurrent render that gets interrupted and restarted). Moved out to plain,
+      // ordinary code below instead, called exactly once — reading the CURRENT
+      // subsectionTexts directly rather than through an updater's `prev`, which is
+      // equally correct here since nothing else can change it between the last render
+      // and this point (every other control on this panel is locked while a commit like
+      // this one is in flight).
       const ownerIndex = subsections.findIndex((sub) => sub.some((s) => s.id === segmentId));
       if (ownerIndex !== -1) {
         const updatedOwnerSegs = subsections[ownerIndex].flatMap((s) => (s.id === segmentId ? freshSegs : [s]));
         const updatedOwnerText = rebuildScript(updatedOwnerSegs);
-        setSubsectionTexts((prev) => {
-          const base = prev && prev.length === subsections.length ? prev : subsections.map(rebuildScript);
-          const updated = base.map((t, i) => (i === ownerIndex ? updatedOwnerText : t));
-          onScriptChange(updated.join('\n\n'));
-          return updated;
-        });
+        const base = subsectionTexts && subsectionTexts.length === subsections.length
+          ? subsectionTexts
+          : subsections.map(rebuildScript);
+        const updatedTexts = base.map((t, i) => (i === ownerIndex ? updatedOwnerText : t));
+        setSubsectionTexts(updatedTexts);
+        onScriptChange(updatedTexts.join('\n\n'));
         // Same reasoning as commitSubsectionEdit: tell the effect this subsection's
         // new true segment count directly, instead of leaving it to infer sizing
         // from box text elsewhere (see deriveSubsections' comment for why that was
@@ -766,6 +795,14 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
           ? subsectionSizes
           : subsections.map((s) => s.length);
         setSubsectionSizes(baseSizes.map((sz, i) => (i === ownerIndex ? updatedOwnerSegs.length : sz)));
+      } else {
+        // Should not happen in practice (chunkBySizes always appends any leftover
+        // segments as a trailing subsection rather than dropping them — see its own
+        // comment), but "should not happen" is exactly the kind of assumption that
+        // silently lost real work before. Guaranteed fallback: the parent still gets
+        // told about this edit either way, from the definitely-correct newSegments,
+        // rather than the edit only ever being saved in the lucky case.
+        onScriptChange(rebuildScript(newSegments));
       }
 
       setSegments(newSegments);
@@ -781,6 +818,10 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
       // can turn one line into several, and every piece that came out of THIS edit
       // should carry the bookmark.
       setLastEditedSegmentIds(new Set(freshSegs.map((s) => s.id)));
+      // Per follow-up 40: same reasoning as commitSubsectionEdit above — request a
+      // real server save now instead of leaving this edit sitting only in the
+      // parent's in-memory form until Save Route happens to get clicked.
+      onAutoSave?.();
     } catch (err) {
       setError(`Could not save this line: ${getFnErrorMessage(err)}`);
     }
@@ -937,6 +978,53 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     audio.play().catch(() => setCurrentPlayingIndex(null));
   };
 
+  // Per Enda's follow-up 35 report: he hit "Preview failed: Could not fetch segment 0's
+  // audio (HTTP 403)" on his tour's first waypoint (the longer "get ready" script
+  // recorded before the tour starts moving) and initially suspected that waypoint's
+  // speed being set to 0 was the cause. It isn't — nothing in this file, TtsSegmentCard,
+  // or the generateTts backend function ever reads a waypoint's speed at all, so there's
+  // no code path for it to matter here. "Segment 0" is simply whichever segment
+  // decodeAndBoundSegments (audioCombiner.js) happens to reach FIRST in its fetch loop —
+  // it stops at the first failure, so this same message would appear even if several
+  // segments' URLs had gone bad, not only the very first one. The more likely real
+  // cause is ordinary staleness: segment 0 is generated earliest by
+  // handleParseAndGenerate's own loop, so by the time a narrator finally clicks Build &
+  // Play its own audio URL has been sitting unused the LONGEST of any segment in the
+  // document — worst-case exposure to whatever invalidates a generated-audio URL over
+  // time. Rather than requiring certainty about the exact mechanism, this makes the
+  // whole pipeline self-healing: passed to audioCombiner.js's onRegenerateAudio option
+  // (see decodeAndBoundSegments there), it re-requests fresh audio for just the one
+  // segment that failed to fetch and updates segmentAudios with the new URL so the
+  // caller can retry — used by both the live preview (handleBuildAndPlay below) and the
+  // final save (finalizeAndSave just below), since either can hit the same stale URL.
+  const regenerateSegmentAudio = async (seg) => {
+    if (seg.type !== 'text' || !apiKeys.google_tts_api_key) return null;
+    try {
+      const languageCode = LANG_TO_CODE[selectedLanguage] || 'en-US';
+      const response = await withTimeout(
+        base44.functions.invoke('generateTts', {
+          text: seg.content,
+          gender: selectedVoice,
+          language_code: languageCode,
+          apiKey: apiKeys.google_tts_api_key,
+          ...getNarratorAuthPayload(),
+        }),
+        TTS_CALL_TIMEOUT_MS,
+        "Re-generating this line's audio took too long — try again."
+      );
+      const freshUrl = response.data?.url;
+      if (!freshUrl) return null;
+      setSegmentAudios((prev) => ({ ...prev, [seg.id]: freshUrl }));
+      return freshUrl;
+    } catch {
+      // Swallowed deliberately — the caller (decodeAndBoundSegments) treats a null
+      // return the same as "couldn't get a fresh URL" and falls through to its own
+      // normal HTTP-status error, which is exactly what should surface to the narrator
+      // if even a fresh regeneration attempt doesn't work.
+      return null;
+    }
+  };
+
   // Builds the final combined file and saves it — the action behind "Mark Segment as
   // Done" (see handleMarkAsDone below). Decodes fresh here rather than reusing any
   // earlier precomputed clips, since combineSegmentsToWav already supports decoding on
@@ -954,7 +1042,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     setGeneratingCombined(true);
     addLog('Rendering combined audio file…');
     try {
-      const wavBlob = await combineSegmentsToWav(segsToUse, audiosToUse);
+      const wavBlob = await combineSegmentsToWav(segsToUse, audiosToUse, undefined, { onRegenerateAudio: regenerateSegmentAudio });
       addLog(`Combined audio rendered (${(wavBlob.size / 1024 / 1024).toFixed(2)} MB). Uploading…`);
       const audioBase64 = await blobToBase64(wavBlob);
       // A longer ceiling than the per-line/per-segment calls above — this uploads the
@@ -989,6 +1077,9 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
         setEditingSegmentId(null);
         setPlayedSegmentIds(new Set());
         setLastEditedSegmentIds(new Set());
+        // Per follow-up 40: Mark Segment as Done finalizes the combined audio for this
+        // waypoint — request a real server save now, same as the other commit paths.
+        onAutoSave?.();
       } else {
         addLog('Combined audio: no URL returned from upload.');
         setError('Combined audio failed: upload did not return a file URL.');
@@ -1044,7 +1135,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
         // in this step still surfaces a clear, recoverable error instead of freezing
         // the panel again.
         playback = await withTimeout(
-          playSegmentsPrecisely(targetSegments, segmentAudios, {}),
+          playSegmentsPrecisely(targetSegments, segmentAudios, { onRegenerateAudio: regenerateSegmentAudio }),
           20000,
           "Loading this part's audio took too long (check your connection) — nothing has been lost, just try again."
         );

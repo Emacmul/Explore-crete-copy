@@ -719,6 +719,29 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
     }
   };
 
+  // Per Enda's follow-up 40 report: "Save this line", "Save This Part" and "Mark
+  // Waypoint as Done" all sound final, but none of them used to call the server at
+  // all — they only ever updated this component's own `form` state (see `dirty`
+  // above). Rather than leaving that gap to be closed by remembering to click Save
+  // Route afterwards, those three actions now request a real save automatically.
+  //
+  // This can't just call handleSave() directly from inside updateWaypoint/onChange —
+  // those run inside the SAME synchronous handler that just called setForm, and
+  // setForm's update hasn't been applied to `form` yet at that point (React batches
+  // it) — calling handleSave() there would read the OLD, pre-edit `form` and silently
+  // persist stale data while looking exactly like a real, successful save of the NEW
+  // edit. Queuing a flag and acting on it in an effect avoids that: this effect only
+  // runs AFTER the state update that set the flag has actually committed, so by the
+  // time it calls handleSave(), `form` in this render is guaranteed to already include
+  // whatever change requested the save.
+  const [pendingAutoSave, setPendingAutoSave] = useState(false);
+  useEffect(() => {
+    if (!pendingAutoSave) return;
+    setPendingAutoSave(false);
+    handleSave();
+  }, [pendingAutoSave]);
+  const requestAutoSave = () => setPendingAutoSave(true);
+
   // Publish/Unpublish for a master (non-clone) tour — the same "must not go live
   // with AI-drafted audio still in place" rule a Narrator's clone already gets via
   // the Review/Publish flow, now applied to a tour an Admin builds directly too.
@@ -1422,6 +1445,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 defaultDrivingSpeedKmh={form.default_driving_speed_kmh}
                 onSave={handleSave}
                 saving={saving}
+                onAutoSave={requestAutoSave}
                 userRole={userRole}
                 focusWaypointIndex={focusWaypointIndex}
                 targetLanguage={form.target_language || ''}
@@ -1477,7 +1501,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
               i === index ? { ...wp, [field]: value } : wp
             );
             set('waypoints', updated);
-          }} targetLanguage={form.target_language || ''} onSave={handleSave} saving={saving} />
+          }} targetLanguage={form.target_language || ''} onSave={handleSave} saving={saving} onAutoSave={requestAutoSave} />
         )}
       </div>
     </div>

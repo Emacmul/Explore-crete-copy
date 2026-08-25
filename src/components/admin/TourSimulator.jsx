@@ -61,7 +61,7 @@ function fmtTime(ms) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
-export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, onSave, saving }) {
+export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, onSave, saving, onAutoSave }) {
   const trailPath = form.trail_path || [];
   // Filtering out waypoints with no usable lat/lng means every index used inside this
   // component (selectedWpIndex, the map's per-marker index, jumpToWaypoint's
@@ -727,6 +727,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                     onWaypointUpdate(toRawIndex(selectedWpIndex), 'audio_clip_url', val);
                     if (val) onWaypointUpdate(toRawIndex(selectedWpIndex), 'trigger_audio', true);
                   }}
+                  onAutoSave={onAutoSave}
                   fixedLanguage={targetLanguage}
                   waypointSegmentId={selectedWp.segment_id}
                   waypointSegmentTitle={selectedWp.segment_title}
