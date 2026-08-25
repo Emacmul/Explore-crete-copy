@@ -37,7 +37,6 @@ export default async function(req) {
     const actor = await resolveActor(base44, body);
     if (!actor) return Response.json({ error: 'Not authorized' }, { status: 403 });
 
-
     const all = await base44.asServiceRole.entities.Walk.list('-created_date');
 
     if (actor.kind === 'admin') {
