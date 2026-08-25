@@ -41,6 +41,93 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-25 (follow-up 38) — Deep audit of the Tour Simulator after Enda reported BOR1's edits "disappearing" and still no audio after follow-up 37
+Scope: `src/components/admin/TourSimulator.jsx`. (Frontend only — no
+backend function touched.)
+
+Enda spent a morning editing every segment in location BOR1 (scripts,
+audio, "Mark Waypoint as Done" on every waypoint), saved, then opened the
+Tour Simulator, selected BOR1 and hit Jump. The green button correctly
+said "Pause" and the car started moving (follow-up 37's autoplay fix
+working) — but still no audio, and the waypoint edits appeared to be
+gone. Asked for a full audit rather than another single-symptom fix.
+
+**Traced the whole data path end to end** — WalkEditor.jsx's `form`
+state, DrivingTourWaypointEditor.jsx's `updateWaypoint`/`onChange`,
+TourSimulator.jsx, saveWalkForBackend/entry.ts — looking specifically
+for anything that could reset or partially overwrite `form.waypoints`.
+Found no mechanism by which opening the simulator or clicking Jump can
+wipe or reset the waypoints array or any waypoint field: WalkEditor
+never remounts on tab switch (same component instance, same `form`
+state the whole time you're in the editor), DrivingTourWaypointEditor
+is a purely controlled component with no local copy of its own, and
+TourSimulator only ever calls `onWaypointUpdate` for one field on one
+waypoint at a time — it never sends a full-array replace. `saveWalkForBackend`'s
+admin branch is an unrestricted `Walk.update`, and WalkEditor's
+`handleSave` always sends the complete, current `form.waypoints` on
+every save. **This means the edits are very likely still safe on the
+server** — see "What to check right now" below for how to confirm that
+without redoing anything.
+
+**Two real, confirmed bugs found and fixed**, either of which alone
+explains "no audio" (independent of whether anything was actually
+lost):
+
+1. **Index misalignment between the simulator's own list and the real
+   waypoints array.** TourSimulator built its working list with
+   `waypoints = form.waypoints.filter(wp => wp.lat && wp.lng)` and then
+   used positions in THAT filtered list as if they were positions in
+   the real array — for the "Waypoint Audio & Break Tags" panel
+   (`onWaypointUpdate(selectedWpIndex, ...)`) and for the map's
+   drag-to-edit bearing/radius handles in TourSimulatorMap.jsx. If even
+   one earlier waypoint has a blank/NaN lat or lng at that moment (e.g.
+   someone is mid-edit, having just cleared a coordinate field to paste
+   a new one, and switches tabs before finishing), every waypoint after
+   it shifts by one position in the filtered list, and every edit made
+   through the simulator from then on writes onto the WRONG waypoint in
+   the real array — the one on screen looks unchanged while a different
+   one silently gets overwritten. Fixed by having TourSimulator track
+   each filtered waypoint's real array index (`waypointsWithIndex` /
+   `toRawIndex`) and translate every `onWaypointUpdate` call through it,
+   instead of assuming the two indices line up.
+2. **Every `audio.play()` call swallowed its own failure.** Both places
+   TourSimulator starts a clip (`audioRef.current.play()`) ended in
+   `.catch(() => {})` — a stale/expired `audio_clip_url`, a browser
+   autoplay block, a missing file, a decode error, anything at all,
+   vanished with zero feedback. This is exactly what makes "the marker
+   moved but I heard nothing" undiagnosable from the UI. Now a failed
+   play() logs the real error to the console, shows a toast ("Audio
+   failed to play — BOR1b: <reason>"), and puts a red banner in the
+   simulator's toolbar naming the waypoint and the reason, staying up
+   until the next successful play, a jump, or a reset.
+
+**What to check right now, before doing any more editing:** reload the
+BOR1 tour fresh from the Admin tour list (not just switch tabs — a full
+reopen, so it's pulling from the server, not whatever's sitting in this
+browser tab's memory) and see whether the scripts, audio and "Done"
+ticks are still there. If they are, nothing was actually lost — the
+"gone" appearance was the simulator misbehaving, not the data.
+If they're genuinely missing on the server, that points to a save that
+silently failed earlier (watch for a red "Save failed — nothing was
+saved" toast, easy to miss while moving fast through many waypoints) —
+worth flagging back here if that's what's found, since that's a
+different bug than the two above and I haven't been able to reproduce a
+save failure from reading the code alone. Also worth checking on the
+next real test: open a waypoint's audio panel and confirm
+`trigger_audio` actually got set (it should auto-set the moment
+`audio_clip_url` is filled in) — if a waypoint has audio attached but
+was never actually flagged to trigger, the simulator silently skips it
+with no error, which the fixes above don't cover (a real remaining gap,
+noted for next time rather than guessed at).
+
+**Verified:** `npx eslint` (0 errors — same single pre-existing,
+unrelated warning on this file as follow-up 37) and `npx vite build`
+both clean. Not verified against a live Base44 session — Enda should
+re-test BOR1 in the simulator and report back what the red banner (if
+any) actually says.
+
+---
+
 ## 2026-08-25 (follow-up 37) — "Jump to location" in the Tour Simulator now actually plays the audio; green button no longer misleadingly says "Resume" right after a jump
 Scope: `src/components/admin/TourSimulator.jsx`. (Frontend only — no
 backend function touched.)

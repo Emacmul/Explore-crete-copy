@@ -6,6 +6,7 @@ import { Play, Pause, Square, Gauge, Clock, Volume2, AlertTriangle, CheckCircle2
 import { calculateBearing, isBearingInRange } from '@/lib/routeExport';
 import TourSimulatorMap from './TourSimulatorMap';
 import NarrationTtsEditor from './NarrationTtsEditor';
+import { toast } from '@/components/ui/use-toast';
 
 const ROLE_LABEL = { primary_start: 'Start', primary_stop: 'Stop', secondary: 'Point' };
 
@@ -62,7 +63,26 @@ function fmtTime(ms) {
 
 export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }) {
   const trailPath = form.trail_path || [];
-  const waypoints = (form.waypoints || []).filter(wp => wp.lat && wp.lng);
+  // Filtering out waypoints with no usable lat/lng means every index used inside this
+  // component (selectedWpIndex, the map's per-marker index, jumpToWaypoint's
+  // targetIndex, etc.) is a position in THIS filtered list — which only equals the
+  // waypoint's real position in form.waypoints when nothing before it got filtered
+  // out. If even one earlier waypoint is mid-edit with a blank/NaN lat or lng (e.g.
+  // someone has just cleared the field to paste in new coordinates), every waypoint
+  // after it shifts by one here, and calling onWaypointUpdate with that shifted index
+  // silently edits the WRONG waypoint in the real array — the one this panel shows
+  // stays unchanged while some other one quietly gets overwritten. rawWaypointIndex
+  // keeps each filtered entry's real index alongside it so every onWaypointUpdate call
+  // below can be translated back to the real array position instead of assuming the
+  // two line up.
+  const waypointsWithIndex = useMemo(
+    () => (form.waypoints || [])
+      .map((wp, rawWaypointIndex) => ({ wp, rawWaypointIndex }))
+      .filter(({ wp }) => wp.lat && wp.lng),
+    [form.waypoints]
+  );
+  const waypoints = useMemo(() => waypointsWithIndex.map(({ wp }) => wp), [waypointsWithIndex]);
+  const toRawIndex = (filteredIndex) => waypointsWithIndex[filteredIndex]?.rawWaypointIndex ?? filteredIndex;
   const isWalkingTour = form.tour_category !== 'DDV';
 
   // Which waypoint's own script/audio is currently open in the editor beside the map.
@@ -93,6 +113,14 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
   const [simTime, setSimTime] = useState(0);
   const [triggered, setTriggered] = useState({});
   const [triggerLog, setTriggerLog] = useState([]);
+  // Set whenever audio.play() actually rejects — wrong/expired audio_clip_url, a
+  // browser autoplay block, a decode failure, etc. Every play() call in this
+  // component used to swallow that rejection silently (`.catch(() => {})`), which is
+  // exactly why "the marker moved but I never heard anything" had no explanation
+  // anywhere — see reportAudioError below. Cleared on the next successful play and
+  // whenever the sim is reset/jumped, so a stale error doesn't linger once whatever
+  // caused it has been fixed and re-tested.
+  const [audioError, setAudioError] = useState(null);
   const [tourComplete, setTourComplete] = useState(false);
   const [currentSegment, setCurrentSegment] = useState(null);
   // Tracks whether the sim has actually been played at least once since the last
@@ -133,6 +161,24 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
   // that boundary waypoint's own audio from triggering early, before the boundary check
   // below has actually paused there.
   const scopedTestRef = useRef(null);
+
+  // Every audio.play() call in this component used to end in `.catch(() => {})` —
+  // whatever went wrong (a stale/expired audio_clip_url, the browser's autoplay
+  // policy blocking a play() that didn't originate from a direct click, a missing
+  // file, a decode error) vanished silently. That's exactly what makes "the marker
+  // moved but I never heard anything" impossible to diagnose from the UI alone.
+  // Surfaces the real error both ways: a toast right when it happens, and a
+  // banner in the toolbar (see audioError below) that stays up until the next
+  // successful play, a jump, or a reset clears it.
+  const reportAudioError = (waypointIndex, err) => {
+    const wp = waypoints[waypointIndex];
+    const label = wp?.segment_id || wp?.name || `waypoint ${waypointIndex + 1}`;
+    const reason = err?.message || 'the browser blocked it, the file is missing, or the saved link has expired';
+    console.error(`[TourSimulator] Could not play audio for ${label} (${wp?.audio_clip_url || 'no URL'}):`, err);
+    setAudioError(`Could not play "${label}"'s audio — ${reason}.`);
+    toast({ variant: 'destructive', title: 'Audio failed to play', description: `${label}: ${reason}` });
+  };
+
   const handleAudioEndedRef = useRef(null);
   handleAudioEndedRef.current = () => {
     activeAudioWpIndexRef.current = null;
@@ -141,7 +187,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
       if (audioRef.current) {
         audioRef.current.src = next.url;
         activeAudioWpIndexRef.current = next.index;
-        audioRef.current.play().catch(() => {});
+        audioRef.current.play().then(() => setAudioError(null)).catch((err) => reportAudioError(next.index, err));
       }
     }
   };
@@ -253,6 +299,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
     setTourComplete(false);
     setCurrentSegment(null);
     setHasPlayed(false);
+    setAudioError(null);
     setCurrentBearing(initialBearingRef.current);
     if (audioRef.current) audioRef.current.pause();
     const startPos = trailPath[0];
@@ -309,6 +356,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
     // reset the "ever played" flag so the button below reads "Start"/"Play", not a
     // misleading "Resume", until playback (below, or manually) actually happens.
     setHasPlayed(false);
+    setAudioError(null);
     if (newPos) { setCurrentPos(newPos); prevPosRef.current = newPos; }
     if (autoplay) startSim();
   };
@@ -401,7 +449,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
         } else {
           audioRef.current.src = wp.audio_clip_url;
           activeAudioWpIndexRef.current = i;
-          audioRef.current.play().catch(() => {});
+          audioRef.current.play().then(() => setAudioError(null)).catch((err) => reportAudioError(i, err));
         }
       }
       setTriggered({ ...triggeredRef.current });
@@ -555,6 +603,18 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
         )}
       </div>
 
+      {/* Previously a failed audio.play() (autoplay blocked, missing file, expired
+          link, etc.) failed completely silently — the marker would move with no audio
+          and nothing on screen said why. This banner is that missing feedback: it
+          stays up from the moment a play() call actually fails until the next
+          successful play, jump, or reset. */}
+      {audioError && (
+        <div className="flex items-center gap-2 bg-red-900/30 border border-red-700/50 rounded-lg px-3 py-2 text-red-300 text-sm">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          {audioError}
+        </div>
+      )}
+
       {/* Per Enda: the map sits on the left and the waypoint audio / break-tag editor
           sits directly beside it on the right, at the SAME scroll position — not just
           somewhere else on a wider page — so a break tag can be adjusted and
@@ -572,7 +632,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
             currentPos={currentPos}
             currentBearing={currentBearing}
             isWalkingTour={isWalkingTour}
-            onWaypointUpdate={onWaypointUpdate}
+            onWaypointUpdate={onWaypointUpdate ? (i, field, value) => onWaypointUpdate(toRawIndex(i), field, value) : undefined}
             breaks={form.trail_breaks}
           />
         </div>
@@ -641,10 +701,10 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage }
                   key={selectedWpIndex}
                   script={selectedWp.narration_script || ''}
                   audioUrl={selectedWp.audio_clip_url || ''}
-                  onScriptChange={(val) => onWaypointUpdate(selectedWpIndex, 'narration_script', val)}
+                  onScriptChange={(val) => onWaypointUpdate(toRawIndex(selectedWpIndex), 'narration_script', val)}
                   onAudioChange={(val) => {
-                    onWaypointUpdate(selectedWpIndex, 'audio_clip_url', val);
-                    if (val) onWaypointUpdate(selectedWpIndex, 'trigger_audio', true);
+                    onWaypointUpdate(toRawIndex(selectedWpIndex), 'audio_clip_url', val);
+                    if (val) onWaypointUpdate(toRawIndex(selectedWpIndex), 'trigger_audio', true);
                   }}
                   fixedLanguage={targetLanguage}
                   waypointSegmentId={selectedWp.segment_id}
