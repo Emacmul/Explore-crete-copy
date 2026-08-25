@@ -41,6 +41,28 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-25 (follow-up 49) — Trigger radius circle now shows for every waypoint, not just ones that already have audio
+Scope: `src/components/admin/TourSimulatorMap.jsx`. (Frontend only — no
+backend function touched.)
+
+Enda, after follow-up 48's map-zoom-to-location work: the reddish
+translucent trigger-radius circle should be visible around every
+waypoint once zoomed in, not just something you find out about as a
+number after opening the editor.
+
+**What changed:** the circle's `hasAudio &&` gate is removed — it now
+renders for every waypoint with coordinates, using the same
+`trigger_radius_m` (falling back to the existing 30m default) as before.
+Left the drag-to-resize handle and the bearing arrow exactly as they
+were, still tied to `hasAudio` — those are editing tools for a waypoint
+that actually has something to gate, not general-purpose visual
+feedback, so no reason to change them along with this.
+
+Verified: `npx eslint` on TourSimulatorMap.jsx reports zero issues.
+`npx vite build` completes cleanly.
+
+---
+
 ## 2026-08-25 (follow-up 48) — Map redesign for the speech/speed-matching phase: started on the clear parts (no more autoplay on Jump, map zooms to the location, Primary/Secondary marker styling), left the ambiguous parts for tomorrow
 Scope: `src/components/admin/TourSimulator.jsx`,
 `src/components/admin/TourSimulatorMap.jsx`. (Frontend only — no backend

@@ -190,20 +190,25 @@ export default function TourSimulatorMap({ trailPath, waypoints, triggered, curr
           <React.Fragment key={wp.segment_id || `${wp.lat},${wp.lng},${i}`}>
             <Marker position={[wp.lat, wp.lng]} icon={wpIcon(colour, emoji, size)} />
 
-            {/* Pastel red radius circle — scales with zoom (uses metres) */}
-            {hasAudio && (
-              <Circle
-                center={[wp.lat, wp.lng]}
-                radius={radius}
-                pathOptions={{
-                  color: '#ff6b6b',
-                  fillColor: '#ff6b6b',
-                  fillOpacity: 0.1,
-                  weight: 1.5,
-                  dashArray: '4, 4',
-                }}
-              />
-            )}
+            {/* Pastel red radius circle — scales with zoom (uses metres). Per Enda's
+                follow-up 49 report: shown for every waypoint now, not just ones that
+                already have audio — the trigger radius should be visible at a glance,
+                not something you only find out about as a number after opening the
+                editor. Whether a circle can actually be DRAGGED to resize (the handle
+                marker below) is a separate concern and stays tied to hasAudio — no
+                point offering a resize handle for a radius that doesn't gate anything
+                yet. */}
+            <Circle
+              center={[wp.lat, wp.lng]}
+              radius={radius}
+              pathOptions={{
+                color: '#ff6b6b',
+                fillColor: '#ff6b6b',
+                fillOpacity: 0.1,
+                weight: 1.5,
+                dashArray: '4, 4',
+              }}
+            />
 
             {/* White bearing arrow through the circle + drag handles */}
             {hasAudio && (
