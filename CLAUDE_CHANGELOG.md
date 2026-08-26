@@ -41,6 +41,68 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-26 (follow-up 68) — "Jump to location" still missing after the follow-up 64 fix: added a visible reason instead of a silent gap
+Scope: `src/components/admin/TourSimulator.jsx`. (Frontend only — no
+backend function touched.)
+
+Enda reported "Jump to location…" and its Jump button are still not
+showing in the Narrate & Simulate tab, even after importing and
+pushing follow-up 64's fix.
+
+What I checked, all from the current code:
+- Re-read `WalkEditor.jsx`'s `onWaypointUpdate` handler line by line —
+  the follow-up 64 fix (rebuilding the waypoints array inside
+  `setForm`'s functional updater, off `prev`) is present and correct,
+  unchanged since it was delivered.
+- Grepped every place `waypoint_done` is set anywhere in the admin
+  code. Nothing sets it to `false` except the Waypoints tab's own
+  "untick to edit again" checkbox, which is a deliberate user action —
+  no other code path silently reverts it.
+- Re-read the "Jump to location…" gate itself: the whole control is
+  only rendered when at least one location has EVERY waypoint in its
+  stretch marked Done (`locationTargets.length > 0`) — one unticked
+  waypoint anywhere in a location hides the entire control, with
+  nothing shown to explain why.
+- Confirmed `trailPath` (the route line) has to have at least 2 points
+  for this list to compute at all — not the cause here, since the
+  route is clearly drawn on the map in Enda's screenshot.
+
+Conclusion: the fix itself is working correctly — it stops the race
+that silently reverts `waypoint_done` from happening again. It does
+NOT retroactively re-tick a waypoint that already got silently
+reverted before the fix was deployed (the exact incident from follow-up
+64's report, dragging the map's bearing arrow / radius handle). If
+that happened, whichever waypoint got un-ticked is still un-ticked in
+the saved data now, and needs to be manually re-ticked once in the
+Waypoints tab — the fix only prevents it happening again from here on.
+
+Since the control was giving no clue why it was missing, added a
+second thing in its place: when no location is complete yet, a small
+amber note now shows which location is closest and how many of its
+waypoints are still not marked Done (hover for the full breakdown if
+more than one location is affected). This didn't exist before — the
+control just silently vanished with nothing in its place.
+
+Verified: wrote and ran a standalone Node script
+(`/tmp/verify/location_status_check.mjs`) that models the exact new
+logic against the old one. Confirmed the new `locationTargets` output
+is byte-for-byte identical to the old computation for a fully-done
+location (no regression), and confirmed a second scenario — one
+waypoint in an otherwise-done location left un-ticked, modelling
+Enda's exact situation — correctly reports "1 more waypoint marked
+Done" for that location instead of silently showing nothing. `npx
+eslint` shows the same single pre-existing warning as the `git stash`
+baseline (unrelated, unused eslint-disable directive), no new issues.
+`rm -rf dist && npx vite build` completed cleanly (exit 0).
+
+Also, on Enda's side note that the tab "now fills the full width of
+the screen, probably accidental": it isn't — `WalkEditor.jsx`'s render
+for this tab has been full-width by design since before this session's
+work on it (see its own comment: "full width, nothing else competing
+for space"). Nothing in follow-ups 61–68 touched that layout.
+
+---
+
 ## 2026-08-26 (follow-up 67) — Fixed the divider grouping key: it was firing before every waypoint, not just between locations
 Scope: `src/components/admin/DrivingTourWaypointEditor.jsx`. (Frontend
 only — no backend function touched.)

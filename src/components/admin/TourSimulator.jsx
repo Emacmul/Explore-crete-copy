@@ -350,7 +350,12 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // it's "complete" only when EVERY waypoint in that whole stretch has waypoint_done set,
   // not just its own primary_start point. An empty stretch (shouldn't happen, but a
   // primary_start with nothing after it before the next one) is never treated as complete.
-  const locationTargets = useMemo(() => {
+  // Per Enda's report: the dropdown just silently disappearing when a location isn't
+  // complete gives no clue why — he had to come back and ask. locationStatus computes
+  // every primary_start location's done/not-done breakdown in one pass (both the
+  // ready-to-jump list and the still-incomplete one derive from this single source, so
+  // they can never disagree with each other about what "complete" means).
+  const locationStatus = useMemo(() => {
     if (trailPath.length < 2) return [];
     const primaryStarts = waypoints
       .map((wp, index) => ({ wp, index }))
@@ -359,15 +364,20 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
       .map(({ wp, index }, i) => {
         const nextBoundaryIndex = primaryStarts[i + 1]?.index ?? waypoints.length;
         const locationWaypoints = waypoints.slice(index, nextBoundaryIndex);
-        const isComplete = locationWaypoints.length > 0 && locationWaypoints.every(w => w.waypoint_done);
+        const notDoneCount = locationWaypoints.filter(w => !w.waypoint_done).length;
         return {
           wp, index, cumDist: cumDistForWaypoint(wp),
           label: wp.segment_id || wp.segment_title || wp.name || `Location ${index + 1}`,
-          isComplete,
+          isComplete: locationWaypoints.length > 0 && notDoneCount === 0,
+          notDoneCount,
+          total: locationWaypoints.length,
         };
-      })
-      .filter(t => t.isComplete);
+      });
   }, [waypoints, trailPath, breakSet]);
+  const locationTargets = useMemo(() => locationStatus.filter(t => t.isComplete), [locationStatus]);
+  // Shown next to the toolbar only when nothing is jumpable yet, so it's obvious WHY —
+  // instead of the whole control just vanishing with no explanation.
+  const incompleteLocations = useMemo(() => locationStatus.filter(t => !t.isComplete), [locationStatus]);
   const [jumpTargetIndex, setJumpTargetIndex] = useState('');
 
   // If the location currently picked in "Jump to location…" drops out of the (now
@@ -838,6 +848,18 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
               Jump
             </Button>
           </div>
+        )}
+        {locationTargets.length === 0 && incompleteLocations.length > 0 && (
+          <span
+            className="flex items-center gap-1.5 text-amber-400 text-xs bg-slate-800/60 rounded-lg border border-slate-600 px-2.5 h-8"
+            title={incompleteLocations
+              .map(t => `${t.label}: ${t.notDoneCount} of ${t.total} waypoint${t.total === 1 ? '' : 's'} not yet marked Done`)
+              .join('\n')}
+          >
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+            No location ready to jump to yet — {incompleteLocations[0].label} needs {incompleteLocations[0].notDoneCount} more waypoint{incompleteLocations[0].notDoneCount === 1 ? '' : 's'} marked Done
+            {incompleteLocations.length > 1 && ` (+${incompleteLocations.length - 1} more, hover for details)`}
+          </span>
         )}
         {tourComplete && (
           <span className="flex items-center gap-1.5 text-green-400 text-sm">
