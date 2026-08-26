@@ -41,6 +41,77 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-26 (follow-up 55) — "Jump to location…" only ever lists finished locations
+Scope: `src/components/admin/TourSimulator.jsx`. (Frontend only — no
+backend function touched.)
+
+Enda: the "Jump to location…" field above the map should only ever show
+completely finished locations — never one still being edited, and never
+one that hasn't been touched at all yet.
+
+**What changed:** `locationTargets` (the list that field is built from)
+now filters out any location where at least one of its waypoints isn't
+marked done. A location's own extent is the same boundary the simulator
+already uses to drive itself (`nextLocationBoundary`): from that
+location's `primary_start` waypoint up to, but not including, the very
+next `primary_start`. "Complete" means every waypoint in that whole
+stretch has `waypoint_done` set — not just the location's own
+`primary_start` point. If the location currently selected in the field
+drops out of the list (e.g. a waypoint's done state gets unticked to fix
+something, un-finishing that location), the selection now clears itself
+instead of leaving a hidden location's index sitting there.
+
+This only touches the "Jump to location…" field — the "Waypoint Audio &
+Break Tags" picker (follow-up 54, same file) already lists every
+waypoint regardless of done state, by design, since that's the actual
+working screen for finishing them; nothing about that was changed here.
+
+**Verified:** `npx eslint` reports the same pre-existing
+unused-eslint-disable warning as before (unrelated to this change) and
+zero new issues. `npx vite build` completes cleanly.
+
+---
+
+## 2026-08-26 (follow-up 54) — "Waypoint Audio & Break Tags" dropdown: green primary labels, greyed/italic done entries, and enforced sequential ordering
+Scope: `src/components/admin/TourSimulator.jsx`. (Frontend only — no
+backend function touched.)
+
+Enda asked for three changes to the waypoint picker inside "Waypoint
+Audio & Break Tags" (the Select beside the map in Narration & Simulate):
+
+- Primary waypoints (`primary_start` / `primary_stop`) now render in
+  green (`text-green-400 font-medium`) so they're spottable at a glance
+  in a long list of secondary points.
+- A waypoint already marked done (`waypoint_done`) now renders greyed
+  out and italic (`text-slate-500 italic`) instead — still fully
+  selectable and re-editable, just visually out of the way once it's no
+  longer what needs attention. Done overrides the green primary styling
+  when a waypoint is both.
+- Sequential ordering is now enforced, not just displayed: a waypoint
+  can't be opened here until every waypoint before it in the trail is
+  marked done. A locked entry shows a lock icon, is disabled in the
+  dropdown (can't be clicked or reached by keyboard), and its title
+  explains why. Asked Enda directly whether this should just guarantee
+  display order or actually block out-of-order picking — he confirmed
+  blocking is what he wants, so narrators/admins are made to work
+  through a location's waypoints top to bottom here.
+- If a waypoint gets unlocked/relocked out from under whatever's
+  currently open (e.g. an earlier waypoint's "done" is unticked to go
+  back and fix something, locking everything after it again), the
+  editor now snaps back to the furthest waypoint that's still actually
+  unlocked instead of leaving something unreachable selected.
+
+This only gates the "Waypoint Audio & Break Tags" picker in
+TourSimulator.jsx — nothing about `waypoint_done` itself, the Waypoints
+tab's own done checkbox, or how any other screen handles waypoint order
+was touched.
+
+**Verified:** `npx eslint` on the file reports the same pre-existing
+unused-eslint-disable warning as before (line 426, unrelated to this
+change) and zero new issues. `npx vite build` completes cleanly.
+
+---
+
 ## 2026-08-26 (follow-up 53) — Found the actual cause of BOR1a-PS's missing audio: "Finalize Narration Audio" set three fields with three separate calls that each silently overwrote the last, keeping only the third
 Scope: `src/components/admin/DrivingTourWaypointEditor.jsx`,
 `src/components/admin/WalkEditor.jsx`, `src/components/admin/TourSimulator.jsx`.

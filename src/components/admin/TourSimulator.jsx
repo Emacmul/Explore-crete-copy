@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Play, Pause, Square, Gauge, Clock, Volume2, AlertTriangle, CheckCircle2, MapPin, Radio, Flag, ChevronDown, ChevronUp, Save, Loader2 } from 'lucide-react';
+import { Play, Pause, Square, Gauge, Clock, Volume2, AlertTriangle, CheckCircle2, MapPin, Radio, Flag, ChevronDown, ChevronUp, Save, Loader2, Lock } from 'lucide-react';
 import { calculateBearing, isBearingInRange } from '@/lib/routeExport';
 import TourSimulatorMap from './TourSimulatorMap';
 import NarrationTtsEditor from './NarrationTtsEditor';
@@ -89,9 +89,38 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // Defaults to the first waypoint so there's always something to work with as soon as
   // the panel appears.
   const [selectedWpIndex, setSelectedWpIndex] = useState(0);
+
+  // Per Enda: the "Waypoint Audio & Break Tags" dropdown below must be worked through
+  // top to bottom — a waypoint can't be opened here until every waypoint before it in
+  // the trail is marked done. lockedWpIndexes[i] is true the moment ANY earlier
+  // waypoint (0..i-1) isn't done yet; index 0 has no priors, so it's never locked.
+  // Recomputed from scratch off `waypoints` every render pass it changes, so ticking
+  // or unticking "done" anywhere immediately unlocks/relocks everything after it.
+  const lockedWpIndexes = useMemo(() => {
+    const locked = new Array(waypoints.length).fill(false);
+    let allPriorDone = true;
+    for (let i = 0; i < waypoints.length; i++) {
+      locked[i] = !allPriorDone;
+      if (!waypoints[i]?.waypoint_done) allPriorDone = false;
+    }
+    return locked;
+  }, [waypoints]);
+
   useEffect(() => {
-    if (selectedWpIndex >= waypoints.length) setSelectedWpIndex(0);
-  }, [waypoints.length, selectedWpIndex]);
+    if (selectedWpIndex >= waypoints.length) { setSelectedWpIndex(0); return; }
+    // If whatever's currently open just got locked (e.g. an earlier waypoint's "done"
+    // was unticked to go back and fix something), snap back to the furthest waypoint
+    // that's still actually unlocked, instead of leaving a locked, unreachable one
+    // selected in the editor beside the map.
+    if (lockedWpIndexes[selectedWpIndex]) {
+      let lastUnlocked = 0;
+      for (let i = 0; i < lockedWpIndexes.length; i++) {
+        if (lockedWpIndexes[i]) break;
+        lastUnlocked = i;
+      }
+      setSelectedWpIndex(lastUnlocked);
+    }
+  }, [waypoints.length, selectedWpIndex, lockedWpIndexes]);
   const selectedWp = waypoints[selectedWpIndex] || null;
 
   // Per Enda: the map + break-tag editor is THE working screen — everything else
@@ -264,17 +293,43 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // Every primary_start location, with how far along the trail it sits — lets the narrator jump
   // the simulation straight to their own location instead of always having to play through
   // every location before it first.
+  //
+  // Per Enda: this list must only ever show a location that's completely finished — never
+  // one still being worked on, and never one that hasn't been touched at all yet. A
+  // location's own extent is the same "from this primary_start up to (but not including)
+  // the very next one" boundary nextLocationBoundary uses to drive the simulator itself —
+  // it's "complete" only when EVERY waypoint in that whole stretch has waypoint_done set,
+  // not just its own primary_start point. An empty stretch (shouldn't happen, but a
+  // primary_start with nothing after it before the next one) is never treated as complete.
   const locationTargets = useMemo(() => {
     if (trailPath.length < 2) return [];
-    return waypoints
+    const primaryStarts = waypoints
       .map((wp, index) => ({ wp, index }))
-      .filter(({ wp }) => wp.waypoint_role === 'primary_start')
-      .map(({ wp, index }) => ({
-        wp, index, cumDist: cumDistForWaypoint(wp),
-        label: wp.segment_id || wp.segment_title || wp.name || `Location ${index + 1}`,
-      }));
+      .filter(({ wp }) => wp.waypoint_role === 'primary_start');
+    return primaryStarts
+      .map(({ wp, index }, i) => {
+        const nextBoundaryIndex = primaryStarts[i + 1]?.index ?? waypoints.length;
+        const locationWaypoints = waypoints.slice(index, nextBoundaryIndex);
+        const isComplete = locationWaypoints.length > 0 && locationWaypoints.every(w => w.waypoint_done);
+        return {
+          wp, index, cumDist: cumDistForWaypoint(wp),
+          label: wp.segment_id || wp.segment_title || wp.name || `Location ${index + 1}`,
+          isComplete,
+        };
+      })
+      .filter(t => t.isComplete);
   }, [waypoints, trailPath, breakSet]);
   const [jumpTargetIndex, setJumpTargetIndex] = useState('');
+
+  // If the location currently picked in "Jump to location…" drops out of the (now
+  // finished-only) list above — e.g. someone unticks a waypoint's done state to go back
+  // and fix something, un-finishing that whole location — clear the stale selection
+  // instead of leaving a hidden location's index sitting in the field.
+  useEffect(() => {
+    if (jumpTargetIndex !== '' && !locationTargets.some(t => t.index === Number(jumpTargetIndex))) {
+      setJumpTargetIndex('');
+    }
+  }, [locationTargets, jumpTargetIndex]);
 
   useEffect(() => { speedRef.current = speed; }, [speed]);
   useEffect(() => { multRef.current = simMult; }, [simMult]);
@@ -705,31 +760,55 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                     <SelectValue placeholder="Select a waypoint…" />
                   </SelectTrigger>
                   <SelectContent>
-                    {waypoints.map((wp, i) => (
-                      <SelectItem key={i} value={String(i)}>
-                        {/* Per Enda's follow-up 52 report: follow-up 50 disabled a
-                            primary_start entry here entirely, reasoning that its speech
-                            doesn't need testing against a driving speed since it plays
-                            while parked. True as far as it goes, but wrong conclusion —
-                            its audio is exactly as essential as any other waypoint's
-                            (it's the first thing a customer ever hears), and this panel
-                            is the actual working screen for writing/recording/finalizing
-                            that audio. Disabling selection here made it unreachable from
-                            the screen editors actually live in, for no real reason — the
-                            only thing that's genuinely inapplicable to a static point is
-                            the driving-speed test, handled below by disabling just "Test
-                            this waypoint" for one, not by blocking the whole editor.
-                            Per Enda: segment_id alone (e.g. "BOR1") is shared by every
-                            point in a whole location, so a list of secondary points all
-                            showed the exact same label. wp.name carries each point's own
-                            proper code (e.g. "BOR1b"), plus its own name/title where one
-                            was given — that's what actually tells one point apart from
-                            another. */}
-                        {wp.name || wp.segment_id || `Waypoint ${i + 1}`}
-                        {' — '}{ROLE_LABEL[wp.waypoint_role] || 'Point'}
-                        {wp.audio_clip_url ? ' 🔊' : ''}
-                      </SelectItem>
-                    ))}
+                    {waypoints.map((wp, i) => {
+                      const isPrimary = wp.waypoint_role === 'primary_start' || wp.waypoint_role === 'primary_stop';
+                      const isDone = !!wp.waypoint_done;
+                      const isLocked = lockedWpIndexes[i];
+                      return (
+                        <SelectItem
+                          key={i}
+                          value={String(i)}
+                          disabled={isLocked}
+                          // Per Enda: primary waypoints (Start/Stop) stand out in green so
+                          // they're spottable at a glance in a long list of secondary
+                          // points. A waypoint already marked done fades to grey italic
+                          // instead — still fully selectable/re-editable, just visually out
+                          // of the way once it's no longer what needs attention. Done wins
+                          // over the green primary styling since "already finished" is the
+                          // more useful thing to signal once it's true.
+                          className={isDone ? 'text-slate-500 italic' : isPrimary ? 'text-green-400 font-medium' : undefined}
+                          title={isLocked ? 'Locked — finish every earlier waypoint first' : undefined}
+                        >
+                          {/* Per Enda's follow-up 52 report: follow-up 50 disabled a
+                              primary_start entry here entirely, reasoning that its speech
+                              doesn't need testing against a driving speed since it plays
+                              while parked. True as far as it goes, but wrong conclusion —
+                              its audio is exactly as essential as any other waypoint's
+                              (it's the first thing a customer ever hears), and this panel
+                              is the actual working screen for writing/recording/finalizing
+                              that audio. Disabling selection here made it unreachable from
+                              the screen editors actually live in, for no real reason — the
+                              only thing that's genuinely inapplicable to a static point is
+                              the driving-speed test, handled below by disabling just "Test
+                              this waypoint" for one, not by blocking the whole editor.
+                              Per Enda: segment_id alone (e.g. "BOR1") is shared by every
+                              point in a whole location, so a list of secondary points all
+                              showed the exact same label. wp.name carries each point's own
+                              proper code (e.g. "BOR1b"), plus its own name/title where one
+                              was given — that's what actually tells one point apart from
+                              another.
+                              Per Enda's later request: this list is now also gated
+                              sequentially — a locked entry (isLocked) shows a lock icon and
+                              can't be opened until every waypoint before it is done; the
+                              disabled prop above is what actually blocks the click/keyboard
+                              selection, this icon+title just explain why. */}
+                          {isLocked && <Lock className="inline-block w-3 h-3 mr-1 -mt-0.5 text-slate-500" />}
+                          {wp.name || wp.segment_id || `Waypoint ${i + 1}`}
+                          {' — '}{ROLE_LABEL[wp.waypoint_role] || 'Point'}
+                          {wp.audio_clip_url ? ' 🔊' : ''}
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
                 {/* Per Enda: jumps the marker to just this waypoint, plays its own saved
