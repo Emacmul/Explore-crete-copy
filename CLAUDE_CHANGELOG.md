@@ -41,6 +41,141 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-26 (follow-up 58) — New purpose-built speed-matching panel: leg-scoped map, read-only text + pause sliders, "Test this subsegment", a real Save
+Scope: `src/components/admin/WaypointPaceEditor.jsx` (NEW),
+`src/components/admin/TourSimulator.jsx`. (Frontend only — no backend
+function touched.)
+
+Follow-up 57 fixed the parked-vs-driving confusion; Enda came back with
+exact requirements for the rest, after the first round of clarifying
+questions turned out to be answered better by seeing what was actually
+wrong with the current screen than by more questions: "As it stands,
+there is no way for an editor to change the pauses between sub segments
+to make the segment audio match the segment driving time." The old
+"Waypoint Audio & Break Tags" panel embedded the FULL Narration Script &
+TTS editor (import/translate, voice/language, per-line wording edits,
+the whole Parse & Generate/Build & Play/Mark as Done cycle) — built for
+WRITING a script in the first place, not for this. Neither the pause
+sliders nor the driving time to compare them against were ever shown
+together, and the map stayed zoomed to the whole location instead of
+the one leg being tested.
+
+**What changed:**
+- New `WaypointPaceEditor.jsx`, deliberately self-contained rather than
+  extending `NarrationTtsEditor.jsx` (which has been through 30+ rounds
+  of careful listen/edit-phase-locking bug fixes that have nothing to do
+  with a screen that never allows editing text at all). Shows the
+  selected waypoint's own script split into its text/pause pieces
+  (`parseScript`, same as `NarrationTtsEditor`) — text pieces READ-ONLY,
+  no import/translate/voice/language/wording controls anywhere; only a
+  pause's own duration slider is ever adjustable. Audio for the
+  (unchanged) text pieces regenerates automatically the moment a
+  waypoint is opened here — a mechanical necessity for combining/
+  previewing, since only the FINAL combined file is ever persisted
+  anywhere, never the individual pieces.
+- "Test this subsegment" (renamed from "Test this waypoint", moved into
+  this new panel): builds a LIVE combined preview in-browser
+  (`combineSegmentsToWav`, the exact renderer Mark Segment as Done
+  already uses) from whatever the sliders currently say — even if never
+  saved — and hands its object URL up to `TourSimulator` via a new
+  `jumpToWaypoint(index, { audioOverrideUrl })` param. A new
+  `previewAudioOverrideRef`, consulted only by the geofence/audio-
+  trigger step in `tickRef`, substitutes that URL in for just this one
+  waypoint's own clip for this one run — every other waypoint, and every
+  ordinary run with no override, is completely unaffected. Repeatable as
+  many times as it takes; nothing is saved by testing.
+- "Save pause timing": renders the same combined file again, uploads it
+  for real (`uploadNarrationAudio`), and only then calls back up with the
+  real uploaded URL AND the updated `narration_script` (so the new pause
+  durations are reflected in the saved text too, not just the audio) —
+  in ONE atomic `onWaypointUpdate` call (learning directly from follow-up
+  53's bug: three separate calls for related fields silently raced each
+  other and only the last survived), followed immediately by
+  `onAutoSave()`. Per Enda: "really saved, not an imaginary save like we
+  have been fighting for the last day with audios."
+- `TourSimulator.jsx`'s map now auto-zooms to just the SELECTED
+  waypoint's own leg (its coordinates through the very next waypoint's)
+  every time the dropdown selection changes, instead of staying at
+  whatever "Jump to location…" last set — a new effect keyed on
+  `selectedWpIndex`. "Jump to location…" (top toolbar) is untouched and
+  still zooms to a whole location, for a full run-through separate from
+  this per-leg tuning tool.
+- "Simulation details" now starts OPEN by default (`showDetails`), not
+  collapsed — per Enda, the real-time/driving-time numbers in it are
+  exactly what this workflow needs visible, not tucked away.
+- The simulator's speed multiplier is now permanently fixed at 1× — the
+  "Simulation Speed" 1/2/5/10× picker is gone entirely, along with the
+  redundant "sim time at N×" readout (identical to real time now that N
+  is always 1). Per Enda: "the editor should never have the choice
+  between different simulation speeds" — a sped-up test finishing "on
+  time" proves nothing about whether it will for a real customer at real
+  speed.
+
+**Verified:** `npx eslint` on both files reports only the same
+pre-existing style of "unused eslint-disable directive" warning already
+present elsewhere in this codebase (harmless, zero real issues). `npx
+vite build` completes cleanly. Confirmed by reading (not just assuming)
+that both places `<TourSimulator>` is embedded (`WalkEditor.jsx`'s
+"narrate" tab, and `DrivingTourWaypointEditor.jsx`'s "Test Location in
+Simulator" dialog) already pass an `onWaypointUpdate` that accepts a
+single object of several fields in one call — the exact form
+`WaypointPaceEditor`'s save now uses — since follow-up 53; no wiring
+changes were needed at either call site. NOT tested against a real live
+narration in the Base44 app — worth Enda trying one full tune-a-pause →
+Test this subsegment → Save pause timing round trip before relying on
+it for real work.
+
+---
+
+## 2026-08-26 (follow-up 57) — Vehicle no longer drives through a primary_start's own audio: it now stays parked until that clip finishes
+Scope: `src/components/admin/TourSimulator.jsx`. (Frontend only — no
+backend function touched.)
+
+Enda: he imported BOR1, hit "Jump" then "Start", and the simulated car
+drove straight through BOR1a-PS's own "welcome" narration instead of
+staying put while it played — confusing, since the real customer is
+still parked in the car park at that point and hasn't started driving
+yet. He explicitly did NOT want BOR1a-PS skipped/ignored to sidestep
+this (editors need to see and hear it, same as a real customer would) —
+just for the vehicle to hold position for as long as that one clip is
+actually playing, then move on once it's done.
+
+**What changed:** `tickRef` (the simulation's own per-tick movement
+step) now checks, before doing anything else, whether the waypoint whose
+audio is CURRENTLY playing (`activeAudioWpIndexRef` — already tracked
+for the audio-queueing/interruption logic) is a `primary_start`. If so,
+the tick does nothing to position/distance at all — no movement, no
+geofence or speed-zone checks — and returns early; `simTime` still
+advances so the driving-time estimate keeps counting real elapsed time
+through the stop. The very next tick after that clip ends re-evaluates
+the same check and finds nothing active, so ordinary movement resumes
+immediately and automatically — no separate "resume driving" step
+needed. This applies to every `primary_start` in a tour uniformly (every
+location's own start point), not just BOR1a specifically, since the same
+"customer hasn't started driving yet" reasoning applies to a
+mid-tour location's start too.
+
+Deliberately keyed off which waypoint's audio is actually the one
+playing right now, not "is the car merely near a primary_start's
+coordinates" — a secondary point's own audio playing while sitting close
+to a co-located primary_start must not freeze the vehicle.
+
+This is the first of three changes from the same request — the other
+two (a locked, sliders-only view of a waypoint's script for matching
+pause length to driving time, and restricting ordinary movement to one
+secondary-waypoint-to-the-next hop at a time during that work) need a
+design decision from Enda before being built — see the chat reply for
+the specific questions asked. Flagging here so a later session doesn't
+assume the whole request is done just because this file changed.
+
+**Verified:** `npx eslint` reports the same pre-existing
+unused-eslint-disable warning as before (unrelated) and zero new issues.
+`npx vite build` completes cleanly. Not tested against a real live
+narration in the Base44 app — worth Enda confirming the parked/driving
+transition feels right at BOR1a→BOR1b before relying on it further.
+
+---
+
 ## 2026-08-26 (follow-up 56) — Corrected follow-up 54: a primary waypoint stays green even once done — italic layers on top instead of replacing the colour
 Scope: `src/components/admin/TourSimulator.jsx`. (Frontend only — no
 backend function touched.)

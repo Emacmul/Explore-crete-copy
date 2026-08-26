@@ -5,7 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Play, Pause, Square, Gauge, Clock, Volume2, AlertTriangle, CheckCircle2, MapPin, Radio, Flag, ChevronDown, ChevronUp, Save, Loader2, Lock } from 'lucide-react';
 import { calculateBearing, isBearingInRange } from '@/lib/routeExport';
 import TourSimulatorMap from './TourSimulatorMap';
-import NarrationTtsEditor from './NarrationTtsEditor';
+import WaypointPaceEditor from './WaypointPaceEditor';
 import { toast } from '@/components/ui/use-toast';
 
 const ROLE_LABEL = { primary_start: 'Start', primary_stop: 'Stop', secondary: 'Point' };
@@ -123,11 +123,13 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   }, [waypoints.length, selectedWpIndex, lockedWpIndexes]);
   const selectedWp = waypoints[selectedWpIndex] || null;
 
-  // Per Enda: the map + break-tag editor is THE working screen — everything else
-  // (stats, the driving-time progress bar, the script-timing estimate, the trigger
-  // log) is secondary, reference-only information, tucked away collapsed by default
-  // so it never sits above, or otherwise crowds, the actual workspace.
-  const [showDetails, setShowDetails] = useState(false);
+  // Per Enda's later request: this section (stats, the driving-time progress bar, the
+  // trigger log) now carries the ACTUAL numbers a narrator needs while speed-matching —
+  // in particular the sim-time/real-time readout that shows whether a leg's audio really
+  // finishes near when the car reaches the next waypoint — so it must be open by
+  // default, not collapsed away. Still collapsible (a narrator who genuinely doesn't
+  // need it can still tuck it away), just not hidden by default any more.
+  const [showDetails, setShowDetails] = useState(true);
 
   // Speed is never user-editable here — an Admin sets it at tour creation, and the
   // Simulator only ever displays whatever's been set. WBT is always fixed at
@@ -135,7 +137,15 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // last-resort fallback if that hasn't been set) and then auto-advances through
   // each segment's own avg_segment_speed_kmh as the marker reaches it, below.
   const [speed, setSpeed] = useState(form.tour_category === 'WBT' ? 3.5 : (Number(form.default_driving_speed_kmh) || 50));
-  const [simMult, setSimMult] = useState(5);
+  // Per Enda's later request: speed-matching a waypoint's audio against real driving
+  // time is meaningless at any speed other than real time — a sped-up run finishing
+  // "on time" proves nothing about whether it actually will for a real customer. Fixed
+  // at 1× always now; the picker that used to let this change (1/2/5/10×, in the
+  // Simulation details section below) is gone. Left as real state (not a bare literal)
+  // only because multRef/the tick math below still read it as one value among several —
+  // simplest, lowest-risk change is pinning what it's SET to, not ripping out every
+  // place that reads it.
+  const [simMult] = useState(1);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentPos, setCurrentPos] = useState(trailPath[0] || null);
   const [distTraveled, setDistTraveled] = useState(0);
@@ -197,6 +207,15 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // that boundary waypoint's own audio from triggering early, before the boundary check
   // below has actually paused there.
   const scopedTestRef = useRef(null);
+  // Per Enda: "Test this subsegment" (WaypointPaceEditor, beside the map) needs to play
+  // a freshly-combined LIVE preview of whatever the pause sliders currently say — built
+  // in-browser from segments that haven't been saved anywhere yet — through this exact
+  // same simulator engine, not the waypoint's own (stale, already-saved) audio_clip_url.
+  // {index, url} for exactly one waypoint at a time; only ever set by jumpToWaypoint's
+  // own audioOverrideUrl param below (which also clears it on every OTHER jump/test, so
+  // a stale preview can never leak into an unrelated run), and consulted by the geofence
+  // check in tickRef above.
+  const previewAudioOverrideRef = useRef(null);
 
   // Every audio.play() call in this component used to end in `.catch(() => {})` —
   // whatever went wrong (a stale/expired audio_clip_url, the browser's autoplay
@@ -354,6 +373,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     audioQueueRef.current = [];
     activeAudioWpIndexRef.current = null;
     scopedTestRef.current = null;
+    previewAudioOverrideRef.current = null;
     setDistTraveled(0);
     setSimTime(0);
     setTriggered({});
@@ -390,7 +410,14 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // from triggering its own audio during this run (see the geofence check further
   // down), so a test can never bleed into whatever comes after the boundary starting to
   // play too early.
-  const jumpToWaypoint = (targetIndex, { autoplay = false, scopeToThisWaypoint = false } = {}) => {
+  // audioOverrideUrl (per Enda's "Test this subsegment" request, WaypointPaceEditor):
+  // when set, this ONE run plays that URL for targetIndex's own audio instead of its
+  // real (possibly stale, possibly not-yet-saved) audio_clip_url — see
+  // previewAudioOverrideRef above and the geofence check in tickRef that consults it.
+  // Always set here, even to null, so every OTHER caller (Jump to location, a plain
+  // re-test with no override) correctly clears out whatever a PREVIOUS test's override
+  // left behind, rather than a stale preview silently leaking into an unrelated run.
+  const jumpToWaypoint = (targetIndex, { autoplay = false, scopeToThisWaypoint = false, audioOverrideUrl = null } = {}) => {
     const wp = waypoints[targetIndex];
     if (!wp) return;
     pauseSim();
@@ -403,6 +430,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     passedSegmentsRef.current = new Set();
     audioQueueRef.current = [];
     activeAudioWpIndexRef.current = null;
+    previewAudioOverrideRef.current = audioOverrideUrl ? { index: targetIndex, url: audioOverrideUrl } : null;
     const boundary = scopeToThisWaypoint ? nextWaypointBoundary(targetIndex) : nextLocationBoundary(targetIndex);
     scopedTestRef.current = {
       segmentEndDist: boundary?.dist ?? null,
@@ -446,6 +474,24 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     if (bounds.length > 0) setMapFocusBounds(bounds);
   };
 
+  // Per Enda: the map beside "Waypoint Audio & Break Tags" must always be zoomed to just
+  // the CURRENTLY selected waypoint's own leg — from wherever it sits to the very next
+  // waypoint in the list — never the whole location. A whole-location view (still what
+  // "Jump to location…" above sets, for a full run-through) hides exactly the thing this
+  // panel exists to get right: whether the car's own short, real movement across ONE
+  // stretch lines up with ONE waypoint's own audio. Re-fits every time the selected
+  // waypoint changes, including on first load — this panel is shown by default now, not
+  // opted into. The very last waypoint in the whole tour has no "next" to include; a
+  // single-point bounds still centres/zooms on it correctly.
+  useEffect(() => {
+    const wp = waypoints[selectedWpIndex];
+    if (!wp || !wp.lat || !wp.lng) return;
+    const next = waypoints[selectedWpIndex + 1];
+    const bounds = [[wp.lat, wp.lng]];
+    if (next && next.lat && next.lng) bounds.push([next.lat, next.lng]);
+    setMapFocusBounds(bounds);
+  }, [selectedWpIndex, waypoints]);
+
   // Reset when trail path changes
   useEffect(() => {
     stopSim();
@@ -465,6 +511,29 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   }, []);
 
   tickRef.current = () => {
+    // Per Enda: while a primary_start waypoint's own audio is the one actually playing
+    // right now (activeAudioWpIndexRef — set the moment its clip starts, in the geofence
+    // check further down, and cleared by handleAudioEndedRef once it finishes), the
+    // vehicle must stay exactly where it is. The customer is still parked in the
+    // location's car park at that point — they haven't started driving yet — so letting
+    // the marker glide forward underneath a still-playing "welcome" narration is
+    // confusing to watch. Movement resumes the instant that clip ends and control moves
+    // on (to a different waypoint's already-queued clip, or to nothing) — no separate
+    // "resume" logic needed, since this same check just stops matching on the very next
+    // tick. Deliberately keyed off which waypoint's audio is ACTUALLY playing, not just
+    // "are we near a primary_start" — a secondary point's audio playing while lingering
+    // close to a primary_start's own coordinates (e.g. a co-located pair) must not freeze
+    // anything.
+    // simTime still advances through this stop (so the driving-time estimate keeps
+    // counting real elapsed time), but distTraveled/currentPos are left completely
+    // untouched — no geofence/speed-zone checks run either, since position hasn't moved.
+    const activeWp = activeAudioWpIndexRef.current != null ? waypoints[activeAudioWpIndexRef.current] : null;
+    if (activeWp?.waypoint_role === 'primary_start') {
+      simTimeRef.current += TICK_MS * multRef.current;
+      setSimTime(simTimeRef.current);
+      return;
+    }
+
     const speedMs = (speedRef.current * 1000) / 3600;
     const delta = speedMs * multRef.current * (TICK_MS / 1000);
     const newDist = distRef.current + delta;
@@ -500,7 +569,17 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
 
     // Check geofences
     waypoints.forEach((wp, i) => {
-      if (!wp.trigger_audio || !wp.audio_clip_url) return;
+      // Per Enda: "Test this subsegment" (WaypointPaceEditor) needs to drive this exact
+      // same geofence/queue machinery against a freshly-combined LIVE preview — whatever
+      // the pause sliders currently say, before it's been saved anywhere — not the stale
+      // audio_clip_url already on the waypoint. previewAudioOverrideRef (set by
+      // jumpToWaypoint's own audioOverrideUrl param, below) carries that one-off URL for
+      // exactly the ONE waypoint index it was built for; everything else about this
+      // waypoint (trigger_audio, radius, bearing, once-only) is completely unaffected —
+      // an override only ever substitutes WHICH clip plays, never whether/when it does.
+      const overrideUrl = previewAudioOverrideRef.current?.index === i ? previewAudioOverrideRef.current.url : null;
+      const audioUrlToPlay = overrideUrl || wp.audio_clip_url;
+      if (!wp.trigger_audio || !audioUrlToPlay) return;
       if (wp.trigger_once !== false && triggeredRef.current[i]) return;
       // Belongs to the NEXT location, not the one currently being tested (see
       // nextLocationBoundary) — don't let it start playing early, before the boundary
@@ -523,9 +602,9 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
       const wasPlaying = audioRef.current && !audioRef.current.paused;
       if (audioRef.current) {
         if (wasPlaying) {
-          audioQueueRef.current.push({ url: wp.audio_clip_url, index: i });
+          audioQueueRef.current.push({ url: audioUrlToPlay, index: i });
         } else {
-          audioRef.current.src = wp.audio_clip_url;
+          audioRef.current.src = audioUrlToPlay;
           activeAudioWpIndexRef.current = i;
           audioRef.current.play().then(() => setAudioError(null)).catch((err) => reportAudioError(i, err));
         }
@@ -603,7 +682,6 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
 
   const progressPct = pathData.total > 0 ? Math.min(100, (distTraveled / pathData.total) * 100) : 0;
   const realDurationSec = pathData.total > 0 && speed > 0 ? (pathData.total / 1000) / speed * 3600 : 0;
-  const simDurationSec = realDurationSec / simMult;
   const audioTriggerCount = waypoints.filter(wp => wp.trigger_audio).length;
 
   if (trailPath.length < 2) {
@@ -820,83 +898,33 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                     })}
                   </SelectContent>
                 </Select>
-                {/* Per Enda: jumps the marker to just this waypoint, plays its own saved
-                    audio, and drives on — same as a normal run — all the way to the very
-                    NEXT waypoint in the list (whatever its role), auto-pausing there. That
-                    way speech length can actually be checked against driving speed one
-                    waypoint at a time: watch whether the audio has already finished, or is
-                    still going, by the time the car reaches the next point, rather than the
-                    drive being cut short the instant the audio itself ends. Zoom in on the
-                    map first — this never resets that zoom. Repeat for each waypoint in
-                    turn. Disabled when this waypoint has no saved audio yet, since there'd
-                    be nothing to test.
-                    Also disabled for a primary_start point (e.g. BOR1a) — per Enda's
-                    follow-up 52 report, that's the ONLY thing about a static point that's
-                    actually inapplicable here: the customer hears it while parked, before
-                    any driving starts, so "does it finish before the car reaches the next
-                    point" isn't a real question for it. This is not a comment on the audio
-                    itself, which matters exactly as much as any other waypoint's — writing,
-                    recording, and finalizing it above works completely normally. Listening
-                    back to it doesn't need this button either — NarrationTtsEditor has its
-                    own playback controls regardless of role. */}
-                <Button
-                  size="sm"
-                  onClick={() => jumpToWaypoint(selectedWpIndex, { autoplay: true, scopeToThisWaypoint: true })}
-                  disabled={!selectedWp?.audio_clip_url || selectedWp?.waypoint_role === 'primary_start'}
-                  className="bg-blue-700/30 hover:bg-blue-700/50 border border-blue-600/50 text-white shrink-0 whitespace-nowrap"
-                  title={
-                    selectedWp?.waypoint_role === 'primary_start'
-                      ? "Not applicable here — this point is heard while parked, before any driving starts, so there's no driving speed to test its speech against. Writing/recording its audio above is unaffected."
-                      : 'Jump to this waypoint, play its saved audio, and drive on to the next waypoint — without resetting the map zoom'
-                  }
-                >
-                  Test this waypoint
-                </Button>
               </div>
 
-              {/* Per Enda's follow-up 45 report: follow-up 41 put a second "Mark Waypoint
-                  as Done" button in this tab, right next to Finalize Narration Audio —
-                  reasonable at the time, since this tab had no way to mark a waypoint
-                  done at all. Follow-up 44 changed that: Finalize Narration Audio now
-                  marks the waypoint done itself, automatically, the moment it succeeds.
-                  That made this a second button doing the same thing, sitting right next
-                  to the first one — exactly the kind of duplicate control that caused the
-                  original "Mark Segment as Done" vs "Mark Waypoint as Done" confusion this
-                  whole thread has been about. Removed rather than left as a redundant
-                  manual option — the one place left to hand-mark a waypoint done without
-                  going through narration is the Waypoints tab's own button, a different
-                  tab entirely, not a second click sitting beside the one that already does
-                  it here. */}
-
+              {/* Per Enda's later request: this whole panel is now a purpose-built
+                  speed-matching tool, not the full wording/TTS editor it used to embed —
+                  see WaypointPaceEditor's own file comment for the full reasoning. The
+                  waypoint dropdown above stays (so the narrator always knows which
+                  waypoint they're tuning); everything below it is that waypoint's own
+                  read-only text + adjustable pause sliders, its own "Test this
+                  subsegment" (renamed from "Test this waypoint" — same underlying
+                  jumpToWaypoint call, scoped to just this leg, just now able to carry a
+                  LIVE, not-yet-saved preview via audioOverrideUrl) and its own real
+                  "Save pause timing" action. Disabled/greyed exactly like the old button
+                  was for a primary_start point (e.g. BOR1a) — per Enda's follow-up 52
+                  report, a static point's driving-speed comparison genuinely doesn't
+                  apply (the customer hears it while parked, before any driving starts),
+                  though its own pause timing can still be tuned same as any other
+                  waypoint's, same as before. */}
               {selectedWp && (
-                <NarrationTtsEditor
+                <WaypointPaceEditor
                   key={selectedWpIndex}
-                  script={selectedWp.narration_script || ''}
-                  audioUrl={selectedWp.audio_clip_url || ''}
-                  onScriptChange={(val) => onWaypointUpdate(toRawIndex(selectedWpIndex), 'narration_script', val)}
-                  onAudioChange={(val) => {
-                    // Per Enda's follow-up 53 report: these three fields are set
-                    // atomically in ONE onWaypointUpdate call now — three separate calls
-                    // here used to each rebuild the full waypoints array from the same
-                    // stale `form.waypoints` snapshot (WalkEditor.jsx hadn't re-rendered
-                    // between them yet), so only the LAST call's version of this waypoint
-                    // survived — silently discarding audio_clip_url and trigger_audio,
-                    // keeping only waypoint_done. That's what let a waypoint look "done"
-                    // while its audio quietly went missing.
-                    onWaypointUpdate(toRawIndex(selectedWpIndex), val
-                      // Per Enda's follow-up 44 report: three rounds running, "finished
-                      // narrating this waypoint" and "waypoint marked as done" turned out
-                      // to be the exact same moment in his own head, not two separate
-                      // steps — this fires only once, right when Finalize Narration Audio
-                      // (onAudioChange with a real url) actually succeeds, so it can't
-                      // fire early on a half-finished pass.
-                      ? { audio_clip_url: val, trigger_audio: true, waypoint_done: true }
-                      : { audio_clip_url: val });
-                  }}
-                  onAutoSave={onAutoSave}
+                  waypoint={selectedWp}
                   fixedLanguage={targetLanguage}
-                  waypointSegmentId={selectedWp.segment_id}
-                  waypointSegmentTitle={selectedWp.segment_title}
+                  onSave={(updates) => onWaypointUpdate(toRawIndex(selectedWpIndex), updates)}
+                  onAutoSave={onAutoSave}
+                  onTestSubsegment={(previewUrl) => jumpToWaypoint(selectedWpIndex, { autoplay: true, scopeToThisWaypoint: true, audioOverrideUrl: previewUrl })}
+                  testDisabled={selectedWp.waypoint_role === 'primary_start'}
+                  testDisabledReason="Not applicable here — this point is heard while parked, before any driving starts, so there's no driving speed to test its speech against. Its pause timing above can still be tuned normally."
                 />
               )}
             </div>
@@ -957,27 +985,16 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                   style={{ width: `${progressPct}%` }}
                 />
               </div>
-              <div className="flex justify-between text-xs text-slate-500 mt-1">
+              {/* Per Enda's later request: there is no longer any speed multiplier to
+                  report alongside this — the simulator always runs at real, 1× time now
+                  (see the simMult comment above its declaration), specifically so this
+                  number is a true measurement of whether a waypoint's audio actually
+                  finishes near when the car reaches the next one, not an estimate scaled
+                  up from a sped-up test run. The old "Simulation Speed" 1/2/5/10× picker
+                  that used to sit here is gone along with it — there is no choice to make
+                  any more. */}
+              <div className="flex justify-end text-xs text-slate-500 mt-1">
                 <span>~{fmtTime(realDurationSec * 1000)} real time</span>
-                <span>~{fmtTime(simDurationSec * 1000)} sim time at {simMult}×</span>
-              </div>
-            </div>
-
-            {/* Simulation speed multiplier — how fast the marker itself moves */}
-            <div>
-              <Label className="text-slate-400 text-xs mb-1.5 block">Simulation Speed</Label>
-              <div className="flex gap-2">
-                {[1, 2, 5, 10].map(m => (
-                  <Button
-                    key={m}
-                    size="sm"
-                    variant={simMult === m ? 'default' : 'outline'}
-                    onClick={() => setSimMult(m)}
-                    className={simMult === m ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'border-slate-500 text-slate-300'}
-                  >
-                    {m}×
-                  </Button>
-                ))}
               </div>
             </div>
 
