@@ -41,6 +41,40 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-26 (follow-up 66) — Added a visible divider between location groups in the Waypoints tab
+Scope: `src/components/admin/DrivingTourWaypointEditor.jsx`. (Frontend
+only — no backend function touched.)
+
+Enda's report, with a screenshot: the waypoint list runs one location
+straight into the next with no visual break. The bold location code on
+each row, and the colour dot for Primary vs Secondary, weren't enough
+— he called it a "visual jigsaw puzzle."
+
+Fix: a thin horizontal line with the location's code, drawn above the
+first waypoint of every location group after the first one. Uses
+`segmentGroups` (already computed in this file, grouped by
+`segment_number`) to detect "this row starts a new group" — no new
+grouping logic needed. This is the same "one location = one
+segment_number" grouping the removed follow-up 65 button used, just
+read directly off the existing `segmentGroups` map instead of a
+separate `locationGroups`/`parseLocationPrefix` computation.
+
+Side note: this also gives the `segGroup` variable on this line a real
+use — it was flagged as an unused-var warning in both the follow-up 65
+lint check and every check before it; that warning is gone now that
+it's actually read.
+
+Verified: `npx eslint` shows only the one pre-existing, unrelated
+`Textarea`-unused-import error — the `segGroup` warning is resolved,
+not reintroduced elsewhere. `rm -rf dist && npx vite build` completed
+cleanly (exit 0). Confirmed via `git log -p` that a non-Draggable
+element as a sibling inside this same `@hello-pangea/dnd` list was
+already shipped and working here before (the follow-up 65 button that
+was just removed sat in exactly that position), so this divider uses
+a pattern already proven safe in this file, not a new risk.
+
+---
+
 ## 2026-08-26 (follow-up 65) — Removed "Test Location in Simulator" from the Waypoints tab (redundant with Narrate & Simulate)
 Scope: `src/components/admin/DrivingTourWaypointEditor.jsx`. (Frontend
 only — no backend function touched.)

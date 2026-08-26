@@ -640,8 +640,23 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
            {waypoints.map((wp, index) => {
              const colour = wp.waypoint_colour || autoColour(wp.waypoint_role);
              const segGroup = segmentGroups[wp.segment_number];
+             // Per Enda: a colour dot alone doesn't read as "new location" at a
+             // glance — draw a visible divider line above the first waypoint of
+             // every location group after the first, labelled with that
+             // location's code, so the list doesn't look like one continuous
+             // run of waypoints.
+             const isNewLocation = segGroup && index === segGroup.startIndex && index > 0;
              return (
               <React.Fragment key={index}>
+              {isNewLocation && (
+                <div className="flex items-center gap-3 pt-4 pb-1 px-1">
+                  <div className="h-px flex-1 bg-slate-600" />
+                  <span className="text-xs font-semibold text-slate-400 tracking-wider uppercase shrink-0">
+                    {wp.segment_id || `Location ${wp.segment_number}`}
+                  </span>
+                  <div className="h-px flex-1 bg-slate-600" />
+                </div>
+              )}
               <Draggable draggableId={`wp-${index}`} index={index} isDragDisabled={isNarrator}>
                 {(dragProvided, snapshot) => (
               <div
