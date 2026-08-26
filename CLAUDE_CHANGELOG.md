@@ -41,6 +41,82 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-26 (follow-up 61) — NOT a fix: instrumented the actual failing request, because static reading alone couldn't pin down the cause
+Scope: `base44/functions/manageApiKeys/entry.ts` (**backend function —
+needs a manual redeploy in Base44**, see the standing rule at the top of
+this file), `src/lib/useNarratorApiKeys.js`, `src/components/admin/WaypointPaceEditor.jsx`.
+
+Enda reported the "No Google TTS API key found" message a third time
+and gave a direct, binding instruction: stop guessing, trace this all
+the way down, and don't hand back another "fix" until it's actually
+proven. In response, before writing a single line of behaviour change,
+traced every layer this request touches:
+
+- Re-read `manageApiKeys/entry.ts`'s full identification logic (admin
+  via `base44.auth.me()`, narrator via `verifyEmailFromToken`).
+- Re-read `BackendShell.jsx` and `ApiKeysDialog.jsx` and confirmed BOTH
+  already run their own independent `useNarratorApiKeys()` instance on
+  every single page load, simultaneously, with no problem — so a second
+  simultaneous hook instance (what follow-up 58 added) isn't inherently
+  the cause.
+- Read the actual `@base44/sdk` source (`functions.js`, `client.js`,
+  `axios-client.js`, `auth-utils.js`) to rule out a client-side
+  response mix-up between concurrent calls — confirmed each
+  `functions.invoke()` is an independent request; nothing is shared or
+  cached across calls.
+- Traced every place in this codebase that does its own "find or create
+  AppUser by email" (`manageApiKeys`, `ensureAppUserOnboarding`,
+  `narrLogin`, `saveTranslation`, `backendActor.ts`, `appUserAuth.ts`,
+  `syncAppUsersFromWordPress`) — found no enforced uniqueness anywhere,
+  and explicit proof elsewhere in this codebase
+  (`syncAppUsersFromWordPress`, `listAppUsersAdmin` both passing an
+  explicit sort to `.filter()`) that an unsorted `.filter()` result's
+  order isn't guaranteed. This made "two AppUser records under the same
+  email, `matches[0]` picking a different one per call" the leading
+  theory — until Enda checked the "Manage Users" screen himself and
+  confirmed he appears exactly once, as admin. Theory ruled out by his
+  own direct check, not by more code-reading.
+- Confirmed (real, but separately) that `manageApiKeys`'s narrator
+  fallback (`verifyEmailFromToken`, which validates against WordPress)
+  can never actually succeed for a genuine Narr Studio login —
+  `narrLogin.ts` issues a random `crypto.randomUUID()` pair as the
+  session token, not a WordPress JWT, so it fails WordPress's own
+  validation every time. Real bug, but produces "Not authorized," not
+  the blank-key message Enda is actually seeing — so it doesn't fit the
+  reported symptom and hasn't been touched yet, on purpose, to avoid
+  muddying the evidence trail below.
+- Confirmed the exact error string in Enda's screenshots
+  ("...found for your account **yet**... via "API Keys" **in the
+  header**") only exists in the client-side pre-flight check, never in
+  `generateTts`'s own error text — so the key genuinely came back blank
+  from `manageApiKeys`'s own GET action for that one request; this
+  isn't a downstream TTS failure being mislabelled.
+
+None of this produced a theory that both fits the exact symptom AND
+survives Enda's own direct check. Rather than ship a fourth guess, this
+change adds NO behaviour change at all — `manageApiKeys`'s GET action
+now also returns a small `_diag` object (how the caller was identified:
+admin-session or narrator-token; the resolved email; how many AppUser
+records were found for it; which record id) alongside the existing
+fields, and the 403 "Not authorized" path now also returns `_diag`
+(whether a token was even present, and `auth.me()`'s own error if it
+threw). `useNarratorApiKeys.js` captures this into a new `diag` return
+value; `WaypointPaceEditor.jsx` appends it, in plain readable text,
+directly onto the on-screen error message for both the "no key found"
+and "key check failed" cases — no devtools needed. This changes nothing
+about who can access what; `save` is untouched. It's a diagnostic,
+explicitly temporary, meant to be removed once the real cause is
+confirmed — the next time this message appears, it will carry hard
+evidence (exactly how the request identified itself and what it found)
+instead of another round of guessing.
+
+Told Enda plainly: this is not a fix, and not to be treated as one —
+it needs the backend redeploy like any `base44/functions/` change, and
+the next step is to reproduce the failure once more and report back the
+full bracketed `[diag: ...]` text that appears.
+
+---
+
 ## 2026-08-26 (follow-up 60) — Follow-up 59 fixed the timing race but missed a second cause: a genuinely FAILED key check looked identical to "no key exists"
 Scope: `src/components/admin/WaypointPaceEditor.jsx`. (Frontend only —
 no backend function touched.)

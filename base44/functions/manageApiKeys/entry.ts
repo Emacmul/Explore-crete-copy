@@ -21,17 +21,37 @@ export default async function(req) {
 
     // Identify the caller — admin via a real Base44 session, narrator via the same
     // email+token pattern used everywhere else in this app.
+    //
+    // TEMPORARY DIAGNOSTIC (see CLAUDE_CHANGELOG.md, follow-up 61): Enda has reported
+    // three times that this GET action comes back with a blank google_tts_api_key even
+    // though a real key is saved — and has confirmed there is only ONE AppUser record
+    // under his email (admin role), which rules out the leading theory (a duplicate
+    // account record). Every other angle traced through this file, useNarratorApiKeys.js,
+    // the SDK's own request code, and the auth chain checks out in isolation, which means
+    // the next real step is catching the ACTUAL failing request in the act rather than
+    // theorizing further. `identifiedVia`/`matchCount` below are read-only, additive,
+    // and change NOTHING about who gets access to what — save is untouched — they just
+    // surface, in the one place this already fails, exactly how the caller was identified
+    // and what was found, so the next time "No Google TTS API key found" appears it comes
+    // with hard evidence instead of another guess. Safe to remove once the real cause is
+    // confirmed and fixed.
     let email = null;
+    let identifiedVia = 'none';
+    let authMeError = null;
     try {
       const me = await base44.auth.me();
-      if (me && me.email) email = me.email.toLowerCase();
-    } catch { /* no Base44 session — try the narrator token path below */ }
+      if (me && me.email) { email = me.email.toLowerCase(); identifiedVia = 'admin-session'; }
+    } catch (e) { authMeError = e?.message || String(e); /* no Base44 session — try the narrator token path below */ }
 
     if (!email) {
       email = await verifyEmailFromToken(token, Deno.env.get('WC_SITE_URL'));
+      if (email) identifiedVia = 'narrator-token';
     }
     if (!email) {
-      return Response.json({ error: 'Not authorized' }, { status: 403 });
+      return Response.json({
+        error: 'Not authorized',
+        _diag: { identifiedVia: 'none', tokenPresent: !!token, authMeError },
+      }, { status: 403 });
     }
 
     const matches = await base44.asServiceRole.entities.AppUser.filter({ email });
@@ -41,6 +61,12 @@ export default async function(req) {
       return Response.json({
         google_tts_api_key: record?.google_tts_api_key || '',
         groq_api_key: record?.groq_api_key || '',
+        _diag: {
+          identifiedVia,
+          resolvedEmail: email,
+          matchCount: Array.isArray(matches) ? matches.length : -1,
+          recordId: record?.id || null,
+        },
       });
     }
 

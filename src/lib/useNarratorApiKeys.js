@@ -32,18 +32,29 @@ export function useNarratorApiKeys() {
   // fully re-established, a network hiccup, etc.) can never result in blank fields
   // silently overwriting a real saved key.
   const [loadedOk, setLoadedOk] = useState(false);
+  // TEMPORARY DIAGNOSTIC (see CLAUDE_CHANGELOG.md, follow-up 61): manageApiKeys now
+  // echoes back, on every 'get', exactly how it identified the caller and what it found
+  // (see that function's own comment for why) — captured here, additively, so any
+  // consumer of this hook can surface it. Not used to decide anything; purely evidence
+  // for the still-open "No Google TTS API key found despite a real key existing" report.
+  const [diag, setDiag] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     setLoadedOk(false);
+    setDiag(null);
     try {
       const res = await base44.functions.invoke('manageApiKeys', { action: 'get', token: getNarratorToken() });
-      if (res?.data?.error) throw new Error(res.data.error);
+      if (res?.data?.error) {
+        setDiag(res?.data?._diag || null);
+        throw new Error(res.data.error);
+      }
       setKeys({
         google_tts_api_key: res?.data?.google_tts_api_key || '',
         groq_api_key: res?.data?.groq_api_key || '',
       });
+      setDiag(res?.data?._diag || null);
       setLoadedOk(true);
     } catch (err) {
       setError(err.message || 'Could not load your saved API keys.');
@@ -66,7 +77,7 @@ export function useNarratorApiKeys() {
     setKeys((prev) => ({ ...prev, ...updates }));
   }, [loadedOk]);
 
-  return { keys, loading, error, loadedOk, saveKeys, reload: load };
+  return { keys, loading, error, loadedOk, saveKeys, reload: load, diag };
 }
 
 // Small helper reused by every admin/narrator tool that calls a backend function
