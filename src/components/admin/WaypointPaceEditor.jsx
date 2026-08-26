@@ -69,7 +69,20 @@ const VOICE = 'NEUTRAL';
  * something sitting only in memory until Save Route happens to be clicked separately.
  */
 export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, onAutoSave, onTestSubsegment, testDisabled, testDisabledReason }) {
-  const { keys: apiKeys } = useNarratorApiKeys();
+  // Per Enda's report: this panel opened straight to "No Google TTS API key found for
+  // your account yet" even though a real key WAS saved and had worked fine moments
+  // earlier in the old (pre-follow-up-58) editor. Real bug, not a lost key: this
+  // component calls useNarratorApiKeys() itself — a brand-new instance every time,
+  // since the parent remounts this whole component fresh via `key={selectedWpIndex}`
+  // (see TourSimulator.jsx) — and that hook's own key fetch (manageApiKeys) is async;
+  // `keys.google_tts_api_key` starts out '' and only becomes real once `loading` flips
+  // to false. The effect below used to run unconditionally on mount (`[]` deps),
+  // reading `apiKeys.google_tts_api_key` from that still-empty first render — so it
+  // reported "no key" before the real one had even arrived, every single time a
+  // waypoint was opened here. `loading` (renamed keysLoading here to not collide with
+  // this component's own audio-loading state) is now an explicit gate: nothing runs
+  // until the key fetch has actually finished, one way or the other.
+  const { keys: apiKeys, loading: keysLoading } = useNarratorApiKeys();
   const [segments, setSegments] = useState(null);
   const [segmentAudios, setSegmentAudios] = useState({});
   const [loading, setLoading] = useState(false);
@@ -78,16 +91,23 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
   const [error, setError] = useState('');
   const [dirty, setDirty] = useState(false);
   const lastPreviewUrlRef = useRef(null);
+  // Guards the generation pass below to actually running at most once per mount, now
+  // that the effect can no longer rely on `[]` deps alone to mean "exactly once" — it
+  // must also re-run the instant keysLoading flips from true to false.
+  const startedRef = useRef(false);
 
   const script = waypoint?.narration_script || '';
 
-  // Runs once per mount — the parent renders this component with `key={selectedWpIndex}`
-  // (see TourSimulator.jsx), so switching to a different waypoint in the dropdown fully
-  // remounts this component fresh rather than this effect needing to re-detect a change
-  // itself. Loads (regenerates) audio for every text piece in this waypoint's own
-  // script, exactly once, so the pause sliders below have something real to preview and
-  // combine against straight away.
+  // Runs once per mount, as soon as the API key fetch above has actually resolved — the
+  // parent renders this component with `key={selectedWpIndex}` (see TourSimulator.jsx),
+  // so switching to a different waypoint in the dropdown fully remounts this component
+  // fresh rather than this effect needing to re-detect a waypoint change itself. Loads
+  // (regenerates) audio for every text piece in this waypoint's own script, exactly
+  // once, so the pause sliders below have something real to preview and combine
+  // against straight away.
   useEffect(() => {
+    if (keysLoading || startedRef.current) return;
+    startedRef.current = true;
     let cancelled = false;
     const parsed = parseScript(script);
     if (parsed.length === 0) return;
@@ -125,8 +145,7 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
       }
     })();
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [keysLoading, apiKeys.google_tts_api_key, script, fixedLanguage]);
 
   // Revoke whatever live-preview blob URL this component created, on unmount (switching
   // waypoints) or before building a fresh one — an object URL left un-revoked keeps its

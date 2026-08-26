@@ -41,6 +41,47 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-26 (follow-up 59) — Fixed follow-up 58: WaypointPaceEditor reported "No Google TTS API key found" even with a real, working key saved
+Scope: `src/components/admin/WaypointPaceEditor.jsx`. (Frontend only —
+no backend function touched.)
+
+Enda, from a screenshot: the new speed-matching panel showed "No Google
+TTS API key found for your account yet" on open, despite a real key
+being saved and working fine moments earlier in the old editor.
+
+**Cause:** `WaypointPaceEditor` calls `useNarratorApiKeys()` itself — a
+brand-new hook instance every time, since the parent remounts this whole
+component fresh via `key={selectedWpIndex}` (TourSimulator.jsx, so
+switching waypoints gets a clean slate). That hook's own key fetch
+(`manageApiKeys`) is async — `keys.google_tts_api_key` starts as `''`
+and only becomes real once the hook's `loading` flips to `false`. The
+generation effect that checks for a key ran unconditionally on mount
+(`[]` deps), reading `apiKeys.google_tts_api_key` from that still-empty
+first render — so it reported "no key" before the real one had even
+arrived back from the server, every single time a waypoint was opened.
+`NarrationTtsEditor.jsx` never hit this because it only ever checks the
+key inside a button click handler (Parse & Generate, etc.), by which
+point the async fetch has long since finished — this new panel is the
+first place in the app that checks it eagerly on mount.
+
+**What changed:** the hook's own `loading` (destructured here as
+`keysLoading`, to not collide with this component's own audio-loading
+state) now gates the whole generation effect — nothing runs until the
+key fetch has actually resolved, one way or the other. A `startedRef`
+guard keeps the pass running at most once per mount despite the effect
+now needing to depend on `keysLoading` (previously it relied on `[]`
+deps alone to mean "exactly once," which no longer holds once a real
+dependency is added).
+
+**Verified:** `npx eslint` on the file reports zero issues (no more
+disabled-lint-rule warning either — the effect's dependency array is now
+complete and correct, nothing needed suppressing). `npx vite build`
+completes cleanly. Not yet confirmed against a real live account in the
+Base44 app — worth Enda re-opening this panel once to confirm the key
+error is gone and a waypoint's text/sliders load normally.
+
+---
+
 ## 2026-08-26 (follow-up 58) — New purpose-built speed-matching panel: leg-scoped map, read-only text + pause sliders, "Test this subsegment", a real Save
 Scope: `src/components/admin/WaypointPaceEditor.jsx` (NEW),
 `src/components/admin/TourSimulator.jsx`. (Frontend only — no backend
