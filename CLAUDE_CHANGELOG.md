@@ -41,6 +41,35 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-26 (follow-up 56) — Corrected follow-up 54: a primary waypoint stays green even once done — italic layers on top instead of replacing the colour
+Scope: `src/components/admin/TourSimulator.jsx`. (Frontend only — no
+backend function touched.)
+
+Enda, from a screenshot of the "Waypoint Audio & Break Tags" dropdown:
+follow-up 54 made a done waypoint switch to plain grey, primary or not —
+so a finished location's own start point (e.g. `BOR2a-PS`) loses its
+green the moment it's marked done. The whole point of colouring primary
+points green is so an editor can spot a finished location at a glance
+from its start point alone, without scanning every point after it to
+confirm the location's actually done. Early in a tour (`BOR1a`) that's
+still obvious from position on screen; by `BOR13` or later it isn't, and
+losing the green there is exactly the confusion this was supposed to
+prevent.
+
+**What changed:** a primary waypoint (`primary_start` / `primary_stop`)
+now stays green (`text-green-400 font-medium`) always, whether it's done
+or not. Italic still layers on top once it's done, same "finished"
+signal as every other waypoint — only the colour itself is pinned for
+primaries now, italic is additive rather than replacing it. A
+non-primary (secondary) point is unaffected: still switches to plain
+grey italic once done, exactly as follow-up 54 already had it.
+
+**Verified:** `npx eslint` reports the same pre-existing
+unused-eslint-disable warning as before (unrelated) and zero new issues.
+`npx vite build` completes cleanly.
+
+---
+
 ## 2026-08-26 (follow-up 55) — "Jump to location…" only ever lists finished locations
 Scope: `src/components/admin/TourSimulator.jsx`. (Frontend only — no
 backend function touched.)

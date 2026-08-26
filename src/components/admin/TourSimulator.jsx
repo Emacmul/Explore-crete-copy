@@ -769,14 +769,23 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                           key={i}
                           value={String(i)}
                           disabled={isLocked}
-                          // Per Enda: primary waypoints (Start/Stop) stand out in green so
-                          // they're spottable at a glance in a long list of secondary
-                          // points. A waypoint already marked done fades to grey italic
-                          // instead — still fully selectable/re-editable, just visually out
-                          // of the way once it's no longer what needs attention. Done wins
-                          // over the green primary styling since "already finished" is the
-                          // more useful thing to signal once it's true.
-                          className={isDone ? 'text-slate-500 italic' : isPrimary ? 'text-green-400 font-medium' : undefined}
+                          // Per Enda's follow-up: a primary waypoint (Start/Stop) stays
+                          // green ALWAYS, done or not — that's what lets an editor spot a
+                          // finished location at a glance by its own start point (e.g.
+                          // "BOR2a-PS"), without having to hunt through every point after it
+                          // to confirm the location's actually done. Losing the green the
+                          // moment it's marked done defeated that — early in the tour
+                          // (BOR1a) it's still obvious from position, but by BOR13 or later
+                          // it isn't, and that ambiguity is exactly the confusion this is
+                          // for. Italic still layers on top of the green once done, same as
+                          // every other waypoint, as the "already finished" signal — only the
+                          // colour itself is pinned for primaries. A non-primary point still
+                          // switches to plain grey italic once done, same as before.
+                          className={
+                            isPrimary
+                              ? `text-green-400 font-medium${isDone ? ' italic' : ''}`
+                              : isDone ? 'text-slate-500 italic' : undefined
+                          }
                           title={isLocked ? 'Locked — finish every earlier waypoint first' : undefined}
                         >
                           {/* Per Enda's follow-up 52 report: follow-up 50 disabled a
