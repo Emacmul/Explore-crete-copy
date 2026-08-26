@@ -43,7 +43,6 @@ export default async function(req) {
       if (me && me.email) { email = me.email.toLowerCase(); identifiedVia = 'admin-session'; }
     } catch (e) { authMeError = e?.message || String(e); /* no Base44 session — try the narrator token path below */ }
 
-
     if (!email) {
       email = await verifyEmailFromToken(token, Deno.env.get('WC_SITE_URL'));
       if (email) identifiedVia = 'narrator-token';
