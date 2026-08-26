@@ -180,18 +180,25 @@ export default function TourSimulatorMap({ trailPath, waypoints, triggered, curr
         const emoji = isTriggered ? '✅' : (hasAudio ? '🔊' : '');
         const radius = Number(wp.trigger_radius_m) || 30;
         const bearingDir = Number(wp.bearing_direction) || 0;
-        // Per Enda: a location's primary_start point (e.g. BOR1a) is static — the
-        // customer listens to it parked, before the car/walker starts moving — so
-        // matching its speech against a driving/walking speed is meaningless, and it
-        // should never be draggable here (bearing + trigger-radius handles below are
-        // both about tuning a moving-vehicle geofence). It stays plotted and visible
-        // for context (see the reduced opacity on its own marker below), but only its
-        // first secondary point — the actual first point the simulated speed relates
-        // to — is editable. Since a primary_start and its first secondary point are
-        // co-located (same lat/lng), this is also what resolves the "which of the two
-        // stacked markers did you mean" question from the changelog: only one of them
-        // ever accepts a drag, so there's nothing left to disambiguate.
-        const canEdit = !!onWaypointUpdate && wp.waypoint_role !== 'primary_start';
+        // Per Enda's follow-up 52 report, correcting follow-up 50: a primary_start
+        // point (e.g. BOR1a) being "static" only means there's no driving speed to
+        // test its SPEECH against — it says nothing about its trigger geofence, which
+        // still controls exactly when its (essential) audio starts playing, same as
+        // any other waypoint. Follow-up 50 wrongly grouped the two together and made
+        // bearing/trigger-radius here non-draggable for a primary_start too; reverted
+        // — canEdit is back to being role-independent, so both handles work normally
+        // regardless of role.
+        //
+        // NOTE — this also un-does the side effect follow-up 50 leaned on to resolve
+        // changelog item 2 (a primary_start and its first secondary point sit at the
+        // exact same lat/lng, so their markers/handles stack). With both editable
+        // again, two co-located, both-draggable handles is a real open question once
+        // more — Leaflet will just hand a drag to whichever marker happens to be on
+        // top / gets clicked, which can make fine-tuning one of the pair fiddly. Not
+        // a data risk like the editor-lockout was, just a UI-precision one — left
+        // alone for now rather than guessing at a toggle/offset mechanism nobody's
+        // asked for yet.
+        const canEdit = !!onWaypointUpdate;
         const isMuted = wp.waypoint_role === 'primary_start';
 
         const bearingTipPos = destinationPoint(wp.lat, wp.lng, bearingDir, radius);

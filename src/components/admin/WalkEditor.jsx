@@ -1653,9 +1653,20 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
           // used to have no save mechanism at all — every edit made here only ever
           // lived in this browser tab until you happened to switch to a different tab
           // that had its own Save Route button.
-          <TourSimulator form={form} onWaypointUpdate={(index, field, value) => {
+          <TourSimulator form={form} onWaypointUpdate={(index, fieldOrFields, value) => {
+            // Per Enda's follow-up 53 report: same fix as DrivingTourWaypointEditor's
+            // updateWaypoint (see the long comment there) — this now also accepts an
+            // object of several field:value pairs applied together in one rebuild, so
+            // TourSimulator's onAudioChange (which used to make three separate calls
+            // in a row, each racing the same stale `form.waypoints` snapshot and
+            // silently discarding the earlier two) can set them all atomically
+            // instead. The old (index, field, value) form still works unchanged for
+            // every other caller (the map's bearing/trigger-radius drag handlers).
+            const fields = (fieldOrFields && typeof fieldOrFields === 'object')
+              ? fieldOrFields
+              : { [fieldOrFields]: value };
             const updated = form.waypoints.map((wp, i) =>
-              i === index ? { ...wp, [field]: value } : wp
+              i === index ? { ...wp, ...fields } : wp
             );
             set('waypoints', updated);
           }} targetLanguage={form.target_language || ''} onSave={triggerSave} saving={saving} onAutoSave={requestAutoSave} />

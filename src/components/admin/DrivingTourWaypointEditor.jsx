@@ -351,27 +351,61 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
     if (expanded === index) setExpanded(null);
   };
 
-  const updateWaypoint = (index, field, value) => {
+  // Per Enda's follow-up 53 report: this is the actual cause of BOR1a-PS's audio
+  // going missing after a clean re-record — traced from a DevTools Network tab
+  // screenshot showing uploadNarrationAudio and saveWalkForBackend BOTH succeeding
+  // (200s, a real URL came back), which ruled out a network/save failure and
+  // pointed upstream, into how the three fields below get applied to `form` before
+  // any save ever fires.
+  //
+  // `updateWaypoint(index, field, value)` used to always rebuild the FULL waypoints
+  // array from this component's own `waypoints` PROP — fine for a single call, but
+  // "Finalize Narration Audio" makes THREE calls back-to-back in one synchronous
+  // handler (audio_clip_url, then trigger_audio, then waypoint_done — see
+  // onAudioChange below), and `waypoints` doesn't change between them: this
+  // component hasn't re-rendered yet, so all three calls read the exact same
+  // snapshot. Each one computed a brand-new full array from that SAME stale
+  // snapshot and handed it to `onChange` — so the SECOND call's array has
+  // trigger_audio set but was built from a version of the waypoint that never had
+  // audio_clip_url on it yet, and the THIRD call's array (waypoint_done) was built
+  // from that same original snapshot too. Whichever call's array reaches WalkEditor
+  // LAST wins outright for this waypoint (nothing merges them) — so the actual
+  // audio_clip_url and trigger_audio changes from calls one and two were silently
+  // overwritten back to nothing by call three's own snapshot, the moment the
+  // waypoint_done call went out. waypoint_done itself DID stick (it was the last
+  // call), which is exactly why the waypoint could look "done" while its audio
+  // stayed missing — the save that followed faithfully persisted this already-wrong
+  // form, which is why the network trace showed nothing failing.
+  //
+  // Fix: `updateWaypoint` now also accepts an object of several field:value pairs,
+  // applied together in ONE array rebuild — so a caller that needs to change more
+  // than one field on the same waypoint (like onAudioChange below) does it in a
+  // single call instead of several racing ones. The old (index, field, value) form
+  // still works unchanged for every other caller in this file.
+  const updateWaypoint = (index, fieldOrFields, value) => {
+    const fields = (fieldOrFields && typeof fieldOrFields === 'object')
+      ? fieldOrFields
+      : { [fieldOrFields]: value };
     const updated = waypoints.map((wp, i) => {
       if (i !== index) return wp;
-      const next = { ...wp, [field]: value };
-      if (field === 'waypoint_role') {
-        next.waypoint_colour = autoColour(value);
-        next.type = value;
+      const next = { ...wp, ...fields };
+      if ('waypoint_role' in fields) {
+        next.waypoint_colour = autoColour(fields.waypoint_role);
+        next.type = fields.waypoint_role;
       }
-      if (field === 'segment_number' || field === 'waypoint_role') {
+      if ('segment_number' in fields || 'waypoint_role' in fields) {
         next.segment_id = buildSegmentId(tourCode, next.segment_number) || '';
         next.name = next.segment_title || next.name;
       }
-      if (field === 'segment_title') {
-        next.name = value;
+      if ('segment_title' in fields) {
+        next.name = fields.segment_title;
       }
       // Any audio_clip_url change made through the normal editing flow — a fresh
       // TTS render, a manual re-upload, clearing it — means whatever is now
       // attached is no longer the vetted PCV (Professional Cloned Voice) replacement. Only the
       // Update Audio tool (a separate screen, outside this editor) is allowed
       // to set final_audio_applied back to true.
-      if (field === 'audio_clip_url') {
+      if ('audio_clip_url' in fields) {
         next.final_audio_applied = false;
       }
       return next;
@@ -824,16 +858,19 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                           audioUrl={wp.audio_clip_url || ''}
                           onScriptChange={(val) => updateWaypoint(index, 'narration_script', val)}
                           onAudioChange={(val) => {
-                            updateWaypoint(index, 'audio_clip_url', val);
-                            if (val) {
-                              updateWaypoint(index, 'trigger_audio', true);
+                            // Per Enda's follow-up 53 report: these three fields are set
+                            // atomically in ONE updateWaypoint call now — see the long
+                            // comment on updateWaypoint above for why three SEPARATE calls
+                            // here used to silently discard audio_clip_url and
+                            // trigger_audio, keeping only waypoint_done (the last call).
+                            updateWaypoint(index, val
                               // Per Enda's follow-up 44 report: "finished narrating this
                               // waypoint" and "waypoint marked as done" are the same
                               // moment in practice, not two separate steps — this fires
                               // only once, right when Finalize Narration Audio actually
                               // succeeds (a real url comes back), same as TourSimulator.jsx.
-                              updateWaypoint(index, 'waypoint_done', true);
-                            }
+                              ? { audio_clip_url: val, trigger_audio: true, waypoint_done: true }
+                              : { audio_clip_url: val });
                           }}
                           onAutoSave={onAutoSave}
                           fixedLanguage={targetLanguage}
@@ -949,16 +986,19 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                           audioUrl={wp.audio_clip_url || ''}
                           onScriptChange={(val) => updateWaypoint(index, 'narration_script', val)}
                           onAudioChange={(val) => {
-                            updateWaypoint(index, 'audio_clip_url', val);
-                            if (val) {
-                              updateWaypoint(index, 'trigger_audio', true);
+                            // Per Enda's follow-up 53 report: these three fields are set
+                            // atomically in ONE updateWaypoint call now — see the long
+                            // comment on updateWaypoint above for why three SEPARATE calls
+                            // here used to silently discard audio_clip_url and
+                            // trigger_audio, keeping only waypoint_done (the last call).
+                            updateWaypoint(index, val
                               // Per Enda's follow-up 44 report: "finished narrating this
                               // waypoint" and "waypoint marked as done" are the same
                               // moment in practice, not two separate steps — this fires
                               // only once, right when Finalize Narration Audio actually
                               // succeeds (a real url comes back), same as TourSimulator.jsx.
-                              updateWaypoint(index, 'waypoint_done', true);
-                            }
+                              ? { audio_clip_url: val, trigger_audio: true, waypoint_done: true }
+                              : { audio_clip_url: val });
                           }}
                           onAutoSave={onAutoSave}
                           fixedLanguage={targetLanguage}

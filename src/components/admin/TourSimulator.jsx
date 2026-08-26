@@ -89,20 +89,9 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // Defaults to the first waypoint so there's always something to work with as soon as
   // the panel appears.
   const [selectedWpIndex, setSelectedWpIndex] = useState(0);
-  // Per Enda: a primary_start point (e.g. BOR1a) is static — its own intro plays
-  // before the car/walker moves, so there's no driving/walking speed for its speech
-  // to be tested against, and it's authored on the Waypoints tab like every other
-  // waypoint anyway. This panel exists specifically for the edit-script → simulate →
-  // check-it-against-speed loop, so a primary_start is excluded from it (see the
-  // disabled SelectItem below) — this just keeps the default selection off of one
-  // whenever the waypoint list changes under it (e.g. on load, or a role edited
-  // elsewhere), landing on the first point that loop actually applies to instead.
   useEffect(() => {
-    if (selectedWpIndex >= waypoints.length || waypoints[selectedWpIndex]?.waypoint_role === 'primary_start') {
-      const firstEditable = waypoints.findIndex(wp => wp.waypoint_role !== 'primary_start');
-      setSelectedWpIndex(firstEditable >= 0 ? firstEditable : 0);
-    }
-  }, [waypoints, selectedWpIndex]);
+    if (selectedWpIndex >= waypoints.length) setSelectedWpIndex(0);
+  }, [waypoints.length, selectedWpIndex]);
   const selectedWp = waypoints[selectedWpIndex] || null;
 
   // Per Enda: the map + break-tag editor is THE working screen — everything else
@@ -716,29 +705,31 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                     <SelectValue placeholder="Select a waypoint…" />
                   </SelectTrigger>
                   <SelectContent>
-                    {waypoints.map((wp, i) => {
-                      // Per Enda: shown here for clarity — so the full location structure
-                      // is still visible, and its own saved script/audio can still be
-                      // eyeballed — but not selectable, since this panel's whole purpose
-                      // (test the script against a driving/walking speed) doesn't apply to
-                      // a static, parked intro point. disabled dims it via SelectItem's
-                      // own built-in styling, matching the muted marker on the map.
-                      const isStatic = wp.waypoint_role === 'primary_start';
-                      return (
-                        <SelectItem key={i} value={String(i)} disabled={isStatic}>
-                          {/* Per Enda: segment_id alone (e.g. "BOR1") is shared by every
-                              point in a whole location, so a list of secondary points all
-                              showed the exact same label. wp.name carries each point's own
-                              proper code (e.g. "BOR1b"), plus its own name/title where one
-                              was given — that's what actually tells one point apart from
-                              another. */}
-                          {wp.name || wp.segment_id || `Waypoint ${i + 1}`}
-                          {' — '}{ROLE_LABEL[wp.waypoint_role] || 'Point'}
-                          {wp.audio_clip_url ? ' 🔊' : ''}
-                          {isStatic ? ' (static — edit on Waypoints tab)' : ''}
-                        </SelectItem>
-                      );
-                    })}
+                    {waypoints.map((wp, i) => (
+                      <SelectItem key={i} value={String(i)}>
+                        {/* Per Enda's follow-up 52 report: follow-up 50 disabled a
+                            primary_start entry here entirely, reasoning that its speech
+                            doesn't need testing against a driving speed since it plays
+                            while parked. True as far as it goes, but wrong conclusion —
+                            its audio is exactly as essential as any other waypoint's
+                            (it's the first thing a customer ever hears), and this panel
+                            is the actual working screen for writing/recording/finalizing
+                            that audio. Disabling selection here made it unreachable from
+                            the screen editors actually live in, for no real reason — the
+                            only thing that's genuinely inapplicable to a static point is
+                            the driving-speed test, handled below by disabling just "Test
+                            this waypoint" for one, not by blocking the whole editor.
+                            Per Enda: segment_id alone (e.g. "BOR1") is shared by every
+                            point in a whole location, so a list of secondary points all
+                            showed the exact same label. wp.name carries each point's own
+                            proper code (e.g. "BOR1b"), plus its own name/title where one
+                            was given — that's what actually tells one point apart from
+                            another. */}
+                        {wp.name || wp.segment_id || `Waypoint ${i + 1}`}
+                        {' — '}{ROLE_LABEL[wp.waypoint_role] || 'Point'}
+                        {wp.audio_clip_url ? ' 🔊' : ''}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 {/* Per Enda: jumps the marker to just this waypoint, plays its own saved
@@ -750,13 +741,26 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                     drive being cut short the instant the audio itself ends. Zoom in on the
                     map first — this never resets that zoom. Repeat for each waypoint in
                     turn. Disabled when this waypoint has no saved audio yet, since there'd
-                    be nothing to test. */}
+                    be nothing to test.
+                    Also disabled for a primary_start point (e.g. BOR1a) — per Enda's
+                    follow-up 52 report, that's the ONLY thing about a static point that's
+                    actually inapplicable here: the customer hears it while parked, before
+                    any driving starts, so "does it finish before the car reaches the next
+                    point" isn't a real question for it. This is not a comment on the audio
+                    itself, which matters exactly as much as any other waypoint's — writing,
+                    recording, and finalizing it above works completely normally. Listening
+                    back to it doesn't need this button either — NarrationTtsEditor has its
+                    own playback controls regardless of role. */}
                 <Button
                   size="sm"
                   onClick={() => jumpToWaypoint(selectedWpIndex, { autoplay: true, scopeToThisWaypoint: true })}
                   disabled={!selectedWp?.audio_clip_url || selectedWp?.waypoint_role === 'primary_start'}
                   className="bg-blue-700/30 hover:bg-blue-700/50 border border-blue-600/50 text-white shrink-0 whitespace-nowrap"
-                  title="Jump to this waypoint, play its saved audio, and drive on to the next waypoint — without resetting the map zoom"
+                  title={
+                    selectedWp?.waypoint_role === 'primary_start'
+                      ? "Not applicable here — this point is heard while parked, before any driving starts, so there's no driving speed to test its speech against. Writing/recording its audio above is unaffected."
+                      : 'Jump to this waypoint, play its saved audio, and drive on to the next waypoint — without resetting the map zoom'
+                  }
                 >
                   Test this waypoint
                 </Button>
@@ -783,17 +787,23 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                   audioUrl={selectedWp.audio_clip_url || ''}
                   onScriptChange={(val) => onWaypointUpdate(toRawIndex(selectedWpIndex), 'narration_script', val)}
                   onAudioChange={(val) => {
-                    onWaypointUpdate(toRawIndex(selectedWpIndex), 'audio_clip_url', val);
-                    if (val) {
-                      onWaypointUpdate(toRawIndex(selectedWpIndex), 'trigger_audio', true);
+                    // Per Enda's follow-up 53 report: these three fields are set
+                    // atomically in ONE onWaypointUpdate call now — three separate calls
+                    // here used to each rebuild the full waypoints array from the same
+                    // stale `form.waypoints` snapshot (WalkEditor.jsx hadn't re-rendered
+                    // between them yet), so only the LAST call's version of this waypoint
+                    // survived — silently discarding audio_clip_url and trigger_audio,
+                    // keeping only waypoint_done. That's what let a waypoint look "done"
+                    // while its audio quietly went missing.
+                    onWaypointUpdate(toRawIndex(selectedWpIndex), val
                       // Per Enda's follow-up 44 report: three rounds running, "finished
                       // narrating this waypoint" and "waypoint marked as done" turned out
                       // to be the exact same moment in his own head, not two separate
                       // steps — this fires only once, right when Finalize Narration Audio
                       // (onAudioChange with a real url) actually succeeds, so it can't
                       // fire early on a half-finished pass.
-                      onWaypointUpdate(toRawIndex(selectedWpIndex), 'waypoint_done', true);
-                    }
+                      ? { audio_clip_url: val, trigger_audio: true, waypoint_done: true }
+                      : { audio_clip_url: val });
                   }}
                   onAutoSave={onAutoSave}
                   fixedLanguage={targetLanguage}

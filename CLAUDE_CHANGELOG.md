@@ -41,6 +41,154 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-26 (follow-up 53) — Found the actual cause of BOR1a-PS's missing audio: "Finalize Narration Audio" set three fields with three separate calls that each silently overwrote the last, keeping only the third
+Scope: `src/components/admin/DrivingTourWaypointEditor.jsx`,
+`src/components/admin/WalkEditor.jsx`, `src/components/admin/TourSimulator.jsx`.
+(Frontend only — no backend function touched.)
+
+Follow-up 52 left this open rather than guess. Enda sent a DevTools Network
+tab screenshot from a fresh, clean re-record of BOR1a-PS's audio (Waypoints
+tab, no other edits in the mix): `uploadNarrationAudio` (200, a real file
+URL came back — 29.4s, slow but successful) immediately followed by
+`saveWalkForBackend` (200, a full walk object came back). Nothing failed at
+the network level, which ruled out follow-up 51's bug (that one only bites
+when a SECOND save overlaps a first one — this was one clean save) and
+pointed upstream of the network entirely: something was wrong with what
+got sent, not whether it arrived.
+
+**The bug:** "Finalize Narration Audio" succeeding calls `onAudioChange`,
+which — in both `DrivingTourWaypointEditor.jsx`'s `updateWaypoint` and the
+equivalent handler inside `WalkEditor.jsx` (used by `TourSimulator.jsx`) —
+used to make THREE separate calls in a row for the same waypoint:
+`audio_clip_url`, then `trigger_audio`, then `waypoint_done`. Each call
+independently rebuilt the ENTIRE waypoints array from this component's own
+`waypoints` prop — but that prop doesn't change between the three calls;
+no re-render has happened yet, they're still inside the same synchronous
+handler. So all three calls read the exact same, now-stale snapshot: the
+second call's rebuilt array has `trigger_audio: true` but was built from a
+version of the waypoint that never had `audio_clip_url` set, and the
+third call's array (`waypoint_done: true`) was built from that same
+original snapshot too — no `audio_clip_url`, no `trigger_audio` either.
+Nothing merges these three arrays; each `onChange`/`set('waypoints', …)`
+call just replaces the waypoint outright, so whichever call's array
+arrives LAST wins completely. `waypoint_done` was the last call, which is
+exactly why the waypoint could look "done" while its audio was silently
+gone — and why the save that followed was entirely honest: it faithfully
+persisted the already-wrong form, which is why nothing showed up as
+failed anywhere.
+
+Confirmed this wasn't speculation before writing the fix: reproduced the
+exact three-call sequence in an isolated script (outside the app) against
+both a "buggy" version (three separate calls) and a "fixed" version (one
+call, one rebuild) — the buggy run reproduced the precise symptom
+(`audio_clip_url: ''`, `waypoint_done: true`), the fixed run didn't.
+
+**What changed:** `updateWaypoint` (DrivingTourWaypointEditor.jsx) and the
+inline `onWaypointUpdate` handler (WalkEditor.jsx, passed to
+TourSimulator.jsx) now also accept an object of several field:value pairs,
+applied together in ONE array rebuild — so a caller needing to change more
+than one field on the same waypoint does it in a single atomic call
+instead of several racing ones. The old `(index, field, value)` two-arg
+form still works unchanged for every other caller in both files (every
+individual input's onChange, the map's bearing/trigger-radius drag
+handlers) — nothing else needed to change. Both "Finalize Narration Audio"
+wirings (DrivingTourWaypointEditor.jsx ×2 — narrator and admin branches —
+and TourSimulator.jsx) now set all three fields in one call.
+
+This bug predates today — it's been there since follow-up 44 introduced
+setting `waypoint_done` alongside `audio_clip_url`/`trigger_audio` in the
+same handler. Any waypoint marked done with its audio quietly missing,
+anywhere in the tour catalog, is a candidate for having hit this same
+thing — worth a look at the Admin dashboard's "Audio Still Needed" list
+generally, not just BOR1a-PS.
+
+Verified: `npx eslint` on all three files reports only the same
+pre-existing unused-import errors confirmed harmless in earlier
+follow-ups — nothing new. `npx vite build` completes cleanly. The core
+bug and its fix were both proven with a standalone reproduction outside
+the app, in addition to the usual build/lint checks and the live network
+trace that led here.
+
+---
+
+## 2026-08-26 (follow-up 52) — Corrected follow-up 50: a static primary_start point's audio is exactly as essential as any other waypoint's — only the driving-speed test doesn't apply to it, not the ability to write/record/trigger it
+Scope: `src/components/admin/TourSimulator.jsx`,
+`src/components/admin/TourSimulatorMap.jsx`. (Frontend only — no backend
+function touched.)
+
+Enda, after BOR1a-PS's re-recorded audio still showed as missing on the
+Admin dashboard even after a clean re-save and a hard refresh + republish
+(traced separately — see below): "It's indeed so that BOR1a-PS is a
+'static' point in that sense that the audio does not affect the speech/
+speed relationship because the user hasn't started moving yet. But that
+doesn't mean the audio isn't necessary, it is, in fact it's vital for the
+end user to get it. And if the editor (narrator or admin) doesn't see or
+hear it, that is just a recipe for total confusion."
+
+Follow-up 50 conflated two separate things under "static, so not
+editable": (1) whether this point's speech-length needs testing against a
+driving speed — genuinely inapplicable, since the customer hears it while
+parked, before any driving starts — and (2) whether its script/audio can
+be written, recorded, and finalized at all, and whether its trigger
+geofence (bearing/radius — what decides WHEN that essential audio starts
+playing) can be tuned. Those are not the same thing, and (2) was wrongly
+disabled along with (1).
+
+**What changed (reverting the wrong part of follow-up 50, keeping the
+right part):**
+- `TourSimulator.jsx`: the "Waypoint Audio & Break Tags" selector no
+  longer disables a primary_start entry — every waypoint is selectable
+  and its NarrationTtsEditor fully usable again, same as before follow-up
+  50. The default-selection effect no longer steers away from a
+  primary_start on load either — back to the plain "reset if out of
+  range" it was originally.
+- `TourSimulatorMap.jsx`: `canEdit` (bearing + trigger-radius drag
+  handles) is role-independent again — a primary_start's geofence can be
+  tuned exactly like any other waypoint's, since that's what controls
+  when its audio actually triggers, nothing to do with driving speed.
+- Left alone, because it's still correct: the muted (55% opacity) marker
+  on the map is purely cosmetic and blocks nothing, so it stays as a
+  visual cue distinguishing a primary_start from its co-located secondary
+  point. "Test this waypoint" stays disabled for a primary_start
+  specifically — of everything follow-up 50 touched, that's the one
+  actual case where the driving-speed comparison doesn't correspond to
+  anything real (the vehicle is still parked while this plays); its
+  tooltip now says so explicitly instead of leaving it looking like an
+  unexplained restriction. Listening to a primary_start's audio doesn't
+  need this button anyway — NarrationTtsEditor has its own playback
+  controls regardless of role.
+- Noted but NOT solved: reverting `canEdit` also un-does the side effect
+  follow-up 50 leaned on for closing follow-up 48's open "co-located
+  marker toggle" question. With both a primary_start and its co-located
+  first secondary point draggable again, which of the two stacked
+  bearing/radius handles a drag actually grabs is back to being
+  ambiguous — a real UI-precision annoyance, but not a data risk the way
+  the editor lockout was, so left alone rather than guessing at a toggle/
+  offset mechanism nobody's asked for.
+
+**Separately — the actual cause of BOR1a-PS's missing audio staying
+missing after a clean re-record is still unconfirmed.** Enda re-recorded
+it through the Waypoints tab (not the screen this follow-up touches, so
+this fix doesn't explain or resolve that on its own), saved, did a hard
+refresh and republish, and the Admin dashboard still showed it missing.
+Traced every step of that path (`DrivingTourWaypointEditor.jsx`'s
+`updateWaypoint` → `onChange` → `WalkEditor.jsx`'s `set()`/`triggerSave`
+→ `saveWalkForBackend`'s admin branch, an unrestricted
+`Walk.update(id, patch)`) and it all looks correct; also checked
+`sw.js`, which is deliberately network-first for navigations and doesn't
+intercept the POST calls the save/read functions use, so it shouldn't be
+serving stale code or data after a genuine reload either. Nothing wrong
+was found in the code read so far — which means either the diagnosis
+needs a live look at what actually happens in the browser at the moment
+of that save (network tab, what the save call returns), or there's a bug
+still not found. Flagging honestly rather than guessing further without
+more to go on.
+
+Verified: `npx eslint` on both files reports zero issues. `npx vite
+build` completes cleanly.
+
+---
+
 ## 2026-08-25 (follow-up 51) — Properly fixed the "flagged as saved but wasn't" bug: found a real, still-live version of it one layer underneath follow-up 43's own fix
 Scope: `src/components/admin/WalkEditor.jsx`. (Frontend only — no backend
 function touched.)
