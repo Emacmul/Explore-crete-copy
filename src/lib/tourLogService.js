@@ -98,6 +98,20 @@ export function logAudioSkip(waypoint, reason) {
   });
 }
 
+// Per Enda's follow-up 36 report: two waypoints can share the exact same coordinates
+// (a stationary intro and the first moving segment at the same real-world spot), so
+// their trigger circles can both be satisfied by one GPS fix. Rather than the second
+// one interrupting the first, it's now queued to play once the first one finishes (see
+// playTriggerAudio in DrivingTourPlayer.jsx) — this records that queuing decision so
+// "why didn't waypoint X start right when I expected it to?" has a clear answer in the
+// log: it wasn't skipped, it was waiting its turn behind another clip.
+export function logAudioQueued(waypoint, behindWaypoint) {
+  addEntry('audio_queued', {
+    waypointId: waypoint.segment_id || waypoint.name || 'unnamed',
+    behindWaypointId: behindWaypoint.segment_id || behindWaypoint.name || 'unnamed',
+  });
+}
+
 export function logWarning(message) {
   addEntry('warning', { message });
 }

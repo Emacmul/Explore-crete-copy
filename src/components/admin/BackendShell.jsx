@@ -458,7 +458,14 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
           </p>
         </main>
       ) : (
-      <main className="max-w-6xl mx-auto p-4">
+      // Per Enda: the Preview tab of the tour editor (Map Preview + Simulate Tour) was
+      // still being squeezed narrow even after WalkEditor's own width was widened,
+      // because THIS wrapper — used for every screen in the panel, not just the
+      // editor — was independently capping everything at ~1152px. While a specific
+      // walk is open for editing, width is left entirely to WalkEditor's own
+      // per-tab sizing instead; every other screen (the tour list, dashboard, etc.)
+      // keeps this reading-width cap unchanged.
+      <main className={editingWalk !== null ? 'p-4' : 'max-w-6xl mx-auto p-4'}>
         {editingWalk !== null ? (
           <WalkEditor
             walk={editingWalk}

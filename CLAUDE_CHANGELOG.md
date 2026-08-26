@@ -41,6 +41,129 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-26 (follow-up 64) — Found the real cause of "everything gone again": a stale-snapshot race, same root class as follow-up 53, in a place that fix never reached
+Scope: `src/components/admin/WalkEditor.jsx`. (Frontend only — no
+backend function touched.)
+
+Enda ruled out Use Bearing (confirmed off everywhere), then reported
+that going back to check a waypoint's bearing/radius by dragging the
+map's white arrow or red circle handle made "Jump to location…" and
+its Jump button disappear entirely.
+
+Root cause, confirmed by reading the actual code: "Jump to location…"
+only lists a location once EVERY waypoint in it is marked done
+(`waypoint_done`). The handler WalkEditor.jsx hands to TourSimulator's
+`onWaypointUpdate` rebuilt the whole waypoints array from `form.waypoints`
+read directly out of its own closure — a snapshot of whatever `form`
+was on the render that created that exact function. Two calls to it
+close enough together that React hadn't yet re-rendered (and so
+refreshed that closure) in between — a map drag right after another
+drag, or a drag landing while WaypointPaceEditor's own Save (a real
+network upload, not instant) was still in flight — each rebuilt the
+FULL array from that same stale snapshot; whichever call's update
+landed last simply overwrote the array with a version that never saw
+the other call's change, silently reverting it — including
+`waypoint_done` on a waypoint that had just been marked done, which is
+exactly what un-completes the location and makes "Jump to location…"
+vanish.
+
+This is the identical root cause follow-up 53 already fixed once — a
+rebuild computed from a stale snapshot instead of the true latest
+state — but that fix only combined MULTIPLE FIELDS FROM ONE ACTION
+into a single call; it did nothing for two genuinely SEPARATE,
+independent actions (a map drag and a Save) racing each other, which
+is what's happening here.
+
+Fixed properly this time: the whole array rebuild now happens inside
+`setForm`'s own updater function, working off `prev` instead of the
+outer `form` closure. React guarantees updater functions run against
+the true latest state, in order, no matter how many are queued before
+a render — so no call can silently overwrite another's change again,
+regardless of timing. Verified with an executed simulation
+(`/tmp/verify/race_check3.mjs`, not part of this repo) that reproduces
+Enda's exact symptom (`waypoint_done` silently reverting) with the old
+pattern and confirms both concurrent updates survive with the new one.
+
+**Not yet fixed, same risk, flagged for a decision:** `DrivingTourWaypointEditor.jsx`'s
+own `updateWaypoint` (used by the Waypoints tab, and by extension its
+own embedded "Test Location in Simulator" dialog) has the identical
+shape — it rebuilds from a `waypoints` PROP, not a functional updater.
+Fixing that properly means changing `updateWaypoint`'s own signature
+and every call site inside that ~1000-line, many-times-audited file,
+not a small change — left alone for now since there's no confirmed
+report of it actually happening there yet, and this is a materially
+bigger change to make without one. Told Enda plainly this second spot
+exists and asked whether to fix it now or wait and see if it actually
+bites.
+
+---
+
+## 2026-08-26 (follow-up 63) — "Replay" did nothing after a scoped jump/test finished; investigated (not yet resolved) trigger-radius and audio-order reports
+Scope: `src/components/admin/TourSimulator.jsx`,
+`src/components/admin/WaypointPaceEditor.jsx`. (Frontend only — no
+backend function touched.)
+
+Enda started real leg-by-leg testing on BOR1 (the first time this
+particular workflow has actually been exercised end to end) and
+reported four things: BOR1c and BOR1d's audio playing in the wrong
+order despite being correctly ordered in the list; trigger radius "not
+being respected anywhere"; the car stopping at a leg's boundary while
+its audio keeps playing past that point; and no obvious single-click
+way to repeat a test.
+
+**Fixed, verified:** the "Replay" button. Once a jump/test run actually
+finished, `distRef` was left sitting exactly at the stop point — so
+clicking "Replay" just resumed ticking from there, instantly re-hit the
+same "already arrived" check, and did nothing visible. Root cause:
+`jumpToWaypoint` did all its own resetting AND called `startSim`, so
+reusing it from inside `startSim`'s own replay handling would have
+called `startSim` from within `startSim` — recursion. Pulled the actual
+reset out into its own `resetToWaypoint`, which never calls `startSim`;
+`jumpToWaypoint` now just calls `resetToWaypoint` then optionally
+`startSim`, and `startSim` itself now checks `tourComplete` and a new
+`lastJumpRef` (what the last jump/test actually was) to genuinely redo
+a whole-location "Jump to location…" run or rewind a true full-trail
+run to its start. A single-waypoint "Test this subsegment" run (a LIVE,
+possibly-still-unsaved preview built from the pause sliders) is
+deliberately NOT auto-replayed here — only WaypointPaceEditor's own
+button can rebuild that preview from the sliders' current values, so
+the toolbar button is disabled with an explanatory tooltip in that one
+state instead, pointing at the button that actually does it (which was
+already single-click repeatable — the tooltip there now says so
+explicitly). Verified with an executed simulation of all three branches
+(`/tmp/verify/replay_check.mjs`, not part of this repo) confirming no
+recursion and correct behaviour in each case, on top of a clean lint +
+build.
+
+**Investigated, not a code bug found, needs more evidence:** traced the
+trigger-radius path fully — `AudioTriggerFields.jsx` stores it as a
+Number, `TourSimulatorMap.jsx` draws it as an actual, draggable circle
+on the map using that same value, and the tick loop's geofence check
+uses each waypoint's own `trigger_radius_m` (default 30m) against the
+real haversine distance to the car — found no bug in any of it. Two
+things that could produce what Enda's describing without being a code
+bug: a waypoint with "Use Bearing" on will not fire even inside its
+radius circle if the car's movement direction doesn't match; and
+`cumDistForWaypoint`'s "nearest trail-path vertex" approach can mis-
+order two closely-spaced waypoints if the trail path polyline is coarse
+near them, which would also fire their audio out of list order without
+either one's radius being "wrong." Not able to confirm or rule out
+either without live data — asked Enda to check BOR1c/BOR1d's Use
+Bearing setting and to read the Trigger Log (already in Simulation
+Details) after a run, which reports the exact distance each trigger
+fired at.
+
+**Clarified, not changed pending Enda's answer:** audio continuing
+after the car stops at a leg's boundary is the deliberate design — see
+the original "Test this waypoint" comment already in this file's
+history ("watch whether the audio has already finished, or is still
+going, by the time the car reaches the next point, rather than the
+drive being cut short the instant the audio itself ends"). Left
+unchanged and asked Enda directly whether he wants this to actually
+stop the audio at the boundary instead, rather than guessing either way.
+
+---
+
 ## 2026-08-26 (follow-up 62) — The speed-matching panel (WaypointPaceEditor) was showing IMMEDIATELY on opening the tab, not just after a jump
 Scope: `src/components/admin/TourSimulator.jsx`. (Frontend only — no
 backend function touched.)

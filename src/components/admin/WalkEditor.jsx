@@ -1654,21 +1654,45 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
           // lived in this browser tab until you happened to switch to a different tab
           // that had its own Save Route button.
           <TourSimulator form={form} onWaypointUpdate={(index, fieldOrFields, value) => {
-            // Per Enda's follow-up 53 report: same fix as DrivingTourWaypointEditor's
-            // updateWaypoint (see the long comment there) — this now also accepts an
-            // object of several field:value pairs applied together in one rebuild, so
+            // Per Enda's follow-up 53 report: this now also accepts an object of
+            // several field:value pairs applied together in one rebuild, so
             // TourSimulator's onAudioChange (which used to make three separate calls
-            // in a row, each racing the same stale `form.waypoints` snapshot and
-            // silently discarding the earlier two) can set them all atomically
-            // instead. The old (index, field, value) form still works unchanged for
-            // every other caller (the map's bearing/trigger-radius drag handlers).
+            // in a row) can set them all atomically instead. The old (index, field,
+            // value) form still works unchanged for every other caller (the map's
+            // bearing/trigger-radius drag handlers, WaypointPaceEditor's Save).
+            //
+            // Per Enda's follow-up 64 report (dragging the map's bearing arrow, then
+            // the radius handle, made "Jump to location…" disappear entirely — i.e.
+            // waypoint_done silently reverted on an already-finished waypoint): this
+            // used to read `form.waypoints` directly here, from this closure — a
+            // snapshot of whatever `form` was on the render that created this exact
+            // function. Two calls to this handler close enough together that React
+            // hadn't yet re-rendered (and so refreshed this closure) in between —
+            // one map drag right after another, or a drag landing while
+            // WaypointPaceEditor's own async Save (a real network upload, not
+            // instant) was still in flight — each rebuilt the FULL waypoints array
+            // from that same stale snapshot, so whichever call's setForm landed last
+            // simply overwrote the array with a version that never saw the other
+            // call's change at all, silently reverting it. Same underlying cause as
+            // follow-up 53 (a rebuild working from a stale snapshot instead of the
+            // real latest state) — that fix combined multiple fields into one call,
+            // which doesn't help here since the two racing calls are genuinely
+            // separate, independent actions, not fields from the same action. Fixed
+            // properly this time: the whole rebuild now happens inside setForm's own
+            // updater function, off `prev` — React guarantees updater functions
+            // always run against the true latest state, in the order they were
+            // queued, even when several are queued before a render happens, so no
+            // call can ever silently overwrite another's change again, no matter how
+            // close together they fire.
             const fields = (fieldOrFields && typeof fieldOrFields === 'object')
               ? fieldOrFields
               : { [fieldOrFields]: value };
-            const updated = form.waypoints.map((wp, i) =>
-              i === index ? { ...wp, ...fields } : wp
-            );
-            set('waypoints', updated);
+            setForm(prev => ({
+              ...prev,
+              waypoints: prev.waypoints.map((wp, i) => (i === index ? { ...wp, ...fields } : wp)),
+            }));
+            editVersionRef.current += 1;
+            setDirty(true);
           }} targetLanguage={form.target_language || ''} onSave={triggerSave} saving={saving} onAutoSave={requestAutoSave} />
         )}
       </div>

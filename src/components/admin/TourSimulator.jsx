@@ -232,6 +232,20 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // a stale preview can never leak into an unrelated run), and consulted by the geofence
   // check in tickRef above.
   const previewAudioOverrideRef = useRef(null);
+  // Per Enda's report: after a scoped jump/test actually finished (the car stopped at
+  // its boundary), clicking the toolbar's own big green button — which by then reads
+  // "Replay" — did nothing at all. distRef was already sitting exactly at that boundary,
+  // so the very next tick just re-triggered the same "already arrived" check and
+  // stopped again instantly, with no visible movement or audio. Remembers what the last
+  // jump/test actually was, so "Replay" can genuinely redo it instead of silently
+  // failing. `hasOverride` marks a single-waypoint "Test this subsegment" run
+  // specifically (a LIVE, possibly-stale WAV built from whatever the pause sliders said
+  // at THAT click) — deliberately never auto-replayed from here, since only
+  // WaypointPaceEditor's own button can rebuild it from the sliders' CURRENT values;
+  // replaying the stored one here could silently replay timing the narrator has since
+  // changed. Cleared by Reset (stopSim), same "back to a clean slate" moment as
+  // everything else there.
+  const lastJumpRef = useRef(null);
 
   // Every audio.play() call in this component used to end in `.catch(() => {})` —
   // whatever went wrong (a stale/expired audio_clip_url, the browser's autoplay
@@ -391,6 +405,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     activeAudioWpIndexRef.current = null;
     scopedTestRef.current = null;
     previewAudioOverrideRef.current = null;
+    lastJumpRef.current = null;
     setDistTraveled(0);
     setSimTime(0);
     setTriggered({});
@@ -434,10 +449,14 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // Always set here, even to null, so every OTHER caller (Jump to location, a plain
   // re-test with no override) correctly clears out whatever a PREVIOUS test's override
   // left behind, rather than a stale preview silently leaking into an unrelated run.
-  const jumpToWaypoint = (targetIndex, { autoplay = false, scopeToThisWaypoint = false, audioOverrideUrl = null } = {}) => {
+  // The actual repositioning/reset a jump does — pulled out on its own, separate from
+  // jumpToWaypoint below, specifically so startSim's own "Replay" handling (further
+  // down) can redo a jump WITHOUT calling jumpToWaypoint itself, which would call
+  // startSim again and recurse. Pure state-setting only; never touches isPlaying or the
+  // tick interval — callers decide when to actually start ticking.
+  const resetToWaypoint = (targetIndex, { scopeToThisWaypoint = false, audioOverrideUrl = null } = {}) => {
     const wp = waypoints[targetIndex];
-    if (!wp) return;
-    pauseSim();
+    if (!wp) return false;
     const cumDist = cumDistForWaypoint(wp);
     const newPos = posAtDistance(pathData.segments, pathData.total, cumDist);
     distRef.current = cumDist;
@@ -465,6 +484,13 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     setHasPlayed(false);
     setAudioError(null);
     if (newPos) { setCurrentPos(newPos); prevPosRef.current = newPos; }
+    lastJumpRef.current = { targetIndex, scopeToThisWaypoint, hasOverride: !!audioOverrideUrl };
+    return true;
+  };
+
+  const jumpToWaypoint = (targetIndex, { autoplay = false, scopeToThisWaypoint = false, audioOverrideUrl = null } = {}) => {
+    pauseSim();
+    if (!resetToWaypoint(targetIndex, { scopeToThisWaypoint, audioOverrideUrl })) return;
     if (autoplay) startSim();
   };
   // Per Enda's follow-up 48 report: reversing follow-up 37's own change here —
@@ -680,6 +706,37 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
 
   const startSim = () => {
     if (pathData.total === 0 || trailPath.length < 2) return;
+    // Per Enda's report: this button reads "Replay" once a run has actually finished
+    // (tourComplete) — but distRef was already sitting exactly at wherever that run
+    // stopped, so simply resuming ticking from there just re-triggered the same
+    // "already arrived" check on the very next tick and stopped again instantly, with
+    // nothing visible happening. Genuinely redo whatever that run was instead.
+    if (tourComplete) {
+      if (lastJumpRef.current && !lastJumpRef.current.hasOverride) {
+        // A whole-location "Jump to location…" run (or a plain "Test this waypoint"-
+        // style jump with no live preview) — safe to redo exactly, since it only ever
+        // plays each waypoint's own real, already-saved audio_clip_url.
+        resetToWaypoint(lastJumpRef.current.targetIndex, { scopeToThisWaypoint: lastJumpRef.current.scopeToThisWaypoint });
+      } else if (!lastJumpRef.current) {
+        // The true end of the whole trail, reached by plain playback from the start —
+        // rewind to the real beginning rather than doing nothing.
+        distRef.current = 0;
+        simTimeRef.current = 0;
+        triggeredRef.current = {};
+        passedSegmentsRef.current = new Set();
+        const startPos = trailPath[0];
+        if (startPos) { setCurrentPos(startPos); prevPosRef.current = startPos; }
+        setDistTraveled(0);
+        setSimTime(0);
+        setTriggered({});
+        setTriggerLog([]);
+      }
+      // else: lastJumpRef.current.hasOverride is true — a single-waypoint "Test this
+      // subsegment" run. Deliberately left alone here (the button below is disabled for
+      // exactly this state) — only WaypointPaceEditor's own button can rebuild that
+      // preview from the pause sliders' CURRENT values; redoing it from here would risk
+      // silently replaying timing the narrator has since changed.
+    }
     setTourComplete(false);
     if (!isWalkingTour && speedZones.length > 0) {
       const firstZone = speedZones[0];
@@ -732,7 +789,18 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
           workspace down the page or requires scrolling to reach it. */}
       <div className="flex flex-wrap items-center gap-2">
         {!isPlaying ? (
-          <Button onClick={startSim} size="sm" className="bg-green-600 hover:bg-green-700 text-white gap-2">
+          <Button
+            onClick={startSim}
+            size="sm"
+            // Per Enda's report: a just-finished single-waypoint "Test this subsegment"
+            // run (a LIVE, possibly-still-unsaved preview) can't be redone from this
+            // button — see startSim's own comment for why. Disabled with a clear pointer
+            // to the button that actually repeats it, rather than left clickable and
+            // silently doing nothing.
+            disabled={tourComplete && !!lastJumpRef.current?.hasOverride}
+            title={tourComplete && lastJumpRef.current?.hasOverride ? 'To repeat this subsegment test, use "Test this subsegment" in the panel on the right — it rebuilds the preview from the sliders\' current settings.' : undefined}
+            className="bg-green-600 hover:bg-green-700 text-white gap-2"
+          >
             <Play className="w-4 h-4" /> {tourComplete ? 'Replay' : hasPlayed ? 'Resume' : 'Start'}
           </Button>
         ) : (

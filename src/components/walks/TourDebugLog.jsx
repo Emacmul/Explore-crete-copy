@@ -14,6 +14,7 @@ const ENTRY_META = {
   trigger_check: { icon: Radio, color: 'text-purple-400' },
   audio_play: { icon: Volume2, color: 'text-green-400' },
   audio_skip: { icon: Volume2, color: 'text-slate-500' },
+  audio_queued: { icon: Volume2, color: 'text-amber-400' },
   warning: { icon: AlertTriangle, color: 'text-amber-400' },
 };
 
@@ -54,6 +55,8 @@ function entryLabel(entry) {
       return `✓ ${d.waypointId}`;
     case 'audio_skip':
       return `✗ ${d.waypointId} (${d.reason})`;
+    case 'audio_queued':
+      return `⏳ ${d.waypointId} — waiting behind ${d.behindWaypointId}`;
     case 'warning':
       return d.message;
     default:

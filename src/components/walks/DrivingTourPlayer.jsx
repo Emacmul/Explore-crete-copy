@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
-import { Play, Pause, Square, Loader2, Bug, X } from 'lucide-react';
+import { Play, Pause, Square, Bug } from 'lucide-react';
 import * as gpsService from '@/lib/gpsService';
 import * as audioService from '@/lib/audioService';
 import * as tourLogService from '@/lib/tourLogService';
@@ -85,6 +85,19 @@ export default function DrivingTourPlayer({ walk }) {
   const triggeredRef = useRef(new Set());
   const statusRef = useRef('idle');
   const passedSecondaryRef = useRef(passedSecondaryIds);
+  // Per Enda's follow-up 36 report: two waypoints can legitimately share the EXACT same
+  // GPS coordinates — e.g. BOR1a-PS (the stationary "get ready" intro, speed 0 km/h)
+  // and BOR1b (the first moving segment, speed 50 km/h), both placed at the same real-
+  // world spot on purpose. Their trigger circles are then 100% identical, so a single
+  // GPS fix can satisfy BOTH at once. audioQueueRef holds every {wp, wpKey} waiting its
+  // turn; currentlyPlayingWpRef is the waypoint whose clip is the one actually loaded/
+  // playing right now (null when nothing is). See playTriggerAudio/playNextQueuedAudio
+  // below — this queues an overlapping trigger instead of interrupting whatever's
+  // already playing, the same approach TourSimulator.jsx already uses for its own test
+  // playback (its audioQueueRef/handleAudioEndedRef), just not one this real, live
+  // player had until now.
+  const audioQueueRef = useRef([]);
+  const currentlyPlayingWpRef = useRef(null);
 
   // Trigger waypoints that have audio enabled
   const triggerWaypoints = (walk.waypoints || []).filter(wp => wp.trigger_audio && wp.lat && wp.lng);
@@ -193,17 +206,25 @@ export default function DrivingTourPlayer({ walk }) {
     prevPosRef.current = { lat, lng };
   }, [triggerWaypoints, secondaryWaypoints, persistPassedSecondary]);
 
-  const playTriggerAudio = useCallback((wp, wpKey) => {
-    // Stop any currently playing audio
-    if (playerRef.current) {
-      playerRef.current.stop();
+  // Actually starts (or advances to) the next queued clip — called once at the top of
+  // playTriggerAudio when nothing else is playing, and again from onEnded/a failed
+  // play() below so the queue keeps draining on its own without playTriggerAudio ever
+  // having to be re-invoked.
+  const playNextQueuedAudio = useCallback(() => {
+    const next = audioQueueRef.current.shift();
+    if (!next) {
+      currentlyPlayingWpRef.current = null;
+      return;
     }
+    const { wp, wpKey } = next;
+    currentlyPlayingWpRef.current = wp;
 
     const player = audioService.createPlayer(wp.audio_clip_url);
     playerRef.current = player;
 
     player.onEnded(() => {
       tourLogService.logAudioPlay(wp, wp.audio_clip_url);
+      playNextQueuedAudio();
     });
 
     player.play().then(() => {
@@ -211,13 +232,31 @@ export default function DrivingTourPlayer({ walk }) {
       setLastTriggered(wp.segment_id || wp.name || wpKey);
     }).catch((err) => {
       tourLogService.logAudioSkip(wp, `playback_error: ${err?.message || 'unknown'}`);
+      // A clip that fails to load/play must not jam every trigger queued behind it —
+      // move straight on to whatever's next, exactly as if this one had played and
+      // ended normally.
+      playNextQueuedAudio();
     });
+  }, []);
+
+  const playTriggerAudio = useCallback((wp, wpKey) => {
+    // Per the comment on audioQueueRef/currentlyPlayingWpRef above: queue this behind
+    // whatever's currently playing rather than stopping it — this is what lets BOR1a's
+    // full introduction actually be heard even though BOR1b sits at the identical spot
+    // and becomes eligible to fire at essentially the same moment.
+    if (currentlyPlayingWpRef.current) {
+      tourLogService.logAudioQueued(wp, currentlyPlayingWpRef.current);
+    }
+    audioQueueRef.current.push({ wp, wpKey });
+    if (!currentlyPlayingWpRef.current) {
+      playNextQueuedAudio();
+    }
 
     if (wp.trigger_once !== false) {
       triggeredRef.current.add(wpKey);
       setTriggeredWpIds(new Set(triggeredRef.current));
     }
-  }, []);
+  }, [playNextQueuedAudio]);
 
   // seedKeys (optional): waypoint keys to mark as "already triggered" before GPS tracking
   // begins. Used by "Restart tour from here" below so picking up mid-route doesn't replay
@@ -233,6 +272,8 @@ export default function DrivingTourPlayer({ walk }) {
     triggeredRef.current = new Set(seedKeys || []);
     setTriggeredWpIds(new Set(triggeredRef.current));
     prevPosRef.current = null;
+    audioQueueRef.current = [];
+    currentlyPlayingWpRef.current = null;
     setStatus('running');
 
     watchIdRef.current = gpsService.watchPosition(
@@ -283,6 +324,8 @@ export default function DrivingTourPlayer({ walk }) {
       playerRef.current.destroy();
       playerRef.current = null;
     }
+    audioQueueRef.current = [];
+    currentlyPlayingWpRef.current = null;
     tourLogService.stopSession();
     setStatus('idle');
     setCurrentPos(null);

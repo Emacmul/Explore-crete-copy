@@ -120,15 +120,32 @@ function findSoundBounds(buffer, thresholdDb = SILENCE_THRESHOLD_DB) {
 // Decodes every text segment's clip once (via whichever AudioContext the caller is
 // already using) and trims each to its real speech bounds. Shared by both the live
 // preview and the final saved file so the two can never drift apart.
-async function decodeAndBoundSegments(segments, segmentAudioUrls, audioCtx) {
+//
+// Per Enda's follow-up 35 report: a segment's own generated-audio URL can go bad
+// between being generated and actually being fetched here — he hit an HTTP 403 on his
+// tour's first waypoint (a longer "get ready" script recorded before the tour starts
+// moving), reported as "segment 0" simply because that's whichever segment this loop
+// happens to reach first, not because segment 0 specifically is special — ANY segment
+// can go stale the same way, on any waypoint. onRegenerateAudio (optional — only the
+// live callers below actually provide it) lets the caller re-request a fresh URL for
+// one segment and gets exactly one retry with it before this gives up for real, so one
+// bad URL doesn't hard-fail an entire pass that would otherwise have worked fine.
+async function decodeAndBoundSegments(segments, segmentAudioUrls, audioCtx, { onRegenerateAudio } = {}) {
   const decoded = {};
   for (const seg of segments) {
     if (seg.type !== 'text') continue;
-    const url = segmentAudioUrls[seg.id];
+    let url = segmentAudioUrls[seg.id];
     if (!url) {
       throw new Error(`Segment ${seg.id} has no generated audio yet — click "Parse & Generate" again first.`);
     }
-    const res = await fetchWithTimeout(url);
+    let res = await fetchWithTimeout(url);
+    if (!res.ok && onRegenerateAudio) {
+      const freshUrl = await onRegenerateAudio(seg);
+      if (freshUrl) {
+        url = freshUrl;
+        res = await fetchWithTimeout(url);
+      }
+    }
     if (!res.ok) throw new Error(`Could not fetch segment ${seg.id}'s audio (HTTP ${res.status}).`);
     const arrayBuffer = await res.arrayBuffer();
     decoded[seg.id] = await audioCtx.decodeAudioData(arrayBuffer);
@@ -177,14 +194,14 @@ function buildSchedule(segments, decoded, bounds) {
  * finishes on its own, and `decoded`/`bounds` so a follow-up combineSegmentsToWav()
  * call can reuse them instead of re-fetching and re-decoding every clip again.
  */
-export async function playSegmentsPrecisely(segments, segmentAudioUrls, { onSegmentChange } = {}) {
+export async function playSegmentsPrecisely(segments, segmentAudioUrls, { onSegmentChange, onRegenerateAudio } = {}) {
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
   if (!AudioContextClass) {
     throw new Error('This browser does not support the audio playback needed for an accurate preview.');
   }
 
   const ctx = new AudioContextClass();
-  const { decoded, bounds } = await decodeAndBoundSegments(segments, segmentAudioUrls, ctx);
+  const { decoded, bounds } = await decodeAndBoundSegments(segments, segmentAudioUrls, ctx, { onRegenerateAudio });
   const { items, totalSeconds } = buildSchedule(segments, decoded, bounds);
 
   const leadIn = 0.05; // tiny safety margin so the very first source isn't scheduled in the past
@@ -242,7 +259,7 @@ export async function playSegmentsPrecisely(segments, segmentAudioUrls, { onSegm
  * (the normal path — preview runs first) so nothing is re-fetched or re-decoded;
  * decodes fresh only if called on its own.
  */
-export async function combineSegmentsToWav(segments, segmentAudioUrls, precomputed) {
+export async function combineSegmentsToWav(segments, segmentAudioUrls, precomputed, { onRegenerateAudio } = {}) {
   const OfflineAudioContextClass = window.OfflineAudioContext || window.webkitOfflineAudioContext;
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
   if (!OfflineAudioContextClass || !AudioContextClass) {
@@ -256,7 +273,7 @@ export async function combineSegmentsToWav(segments, segmentAudioUrls, precomput
       ({ decoded, bounds } = precomputed);
     } else {
       probeCtx = new AudioContextClass();
-      ({ decoded, bounds } = await decodeAndBoundSegments(segments, segmentAudioUrls, probeCtx));
+      ({ decoded, bounds } = await decodeAndBoundSegments(segments, segmentAudioUrls, probeCtx, { onRegenerateAudio }));
     }
 
     const decodedBuffers = Object.values(decoded);

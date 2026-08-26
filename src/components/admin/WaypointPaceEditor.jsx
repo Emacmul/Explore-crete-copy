@@ -345,7 +345,7 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
             size="sm"
             onClick={handleTest}
             disabled={loading || testing || saving || testDisabled}
-            title={testDisabled ? testDisabledReason : 'Drive from this waypoint to the next one, playing this exact pause timing'}
+            title={testDisabled ? testDisabledReason : 'Drive from this waypoint to the next one, playing this exact pause timing — click again any time, including after moving a slider, to re-test'}
             className="bg-blue-700/30 hover:bg-blue-700/50 border border-blue-600/50 text-white gap-2"
           >
             {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
