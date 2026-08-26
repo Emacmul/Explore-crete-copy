@@ -46,6 +46,7 @@ function mergeNarratorWaypoints(existingWaypoints: any[], incomingWaypoints: any
   });
 }
 
+
 // Segment scripts are keyed by segment_number (falling back to segment_id),
 // not fragile to array order the way waypoints are. A narrator may freely
 // rewrite the draft/finalized workflow fields — combine, edit break tags,
