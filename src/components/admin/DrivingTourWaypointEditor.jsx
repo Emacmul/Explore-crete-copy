@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Plus, Trash2, ChevronDown, ChevronUp, Info, Loader2,
-  Upload, FileCheck, Save, Flag, Square, Circle, GripVertical, Play, Compass,
+  Upload, FileCheck, Save, Flag, Square, Circle, GripVertical, Compass,
   ImagePlus, X, Lock, CheckCircle2,
 } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
@@ -16,8 +16,6 @@ import { compressImage, MAX_WAYPOINT_IMAGES, getWaypointImages } from '@/lib/way
 import { base44 } from '@/api/base44Client';
 import AudioTriggerFields from './AudioTriggerFields';
 import NarrationTtsEditor from './NarrationTtsEditor';
-import TourSimulator from './TourSimulator';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
 
@@ -49,44 +47,6 @@ const EMPTY_WP = {
 
 function autoColour(role) {
   return getRoleColour(role);
-}
-
-const R_EARTH_M = 6371000;
-function haversineM(lat1, lng1, lat2, lng2) {
-  const toRad = d => (d * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a = Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  return 2 * R_EARTH_M * Math.asin(Math.sqrt(a));
-}
-
-/**
- * Cut out just the stretch of the tour's real (road-following) trail line that covers one
- * location, instead of drawing straight lines directly between that location's own waypoints.
- * Falls back to the old straight-line behaviour only if there's no usable trail line at all
- * (e.g. an older tour that hasn't been re-imported since the trail-line import fix).
- */
-function sliceTrailForLocation(trailPath, locationWaypoints) {
-  if (!trailPath || trailPath.length < 2 || locationWaypoints.length === 0) {
-    return locationWaypoints.map(p => ({ lat: p.lat, lng: p.lng }));
-  }
-  const nearestIndex = (lat, lng) => {
-    let bestIdx = 0, bestD = Infinity;
-    trailPath.forEach((pt, i) => {
-      const d = haversineM(lat, lng, pt.lat, pt.lng);
-      if (d < bestD) { bestD = d; bestIdx = i; }
-    });
-    return bestIdx;
-  };
-  const first = locationWaypoints[0];
-  const last = locationWaypoints[locationWaypoints.length - 1];
-  const startIdx = nearestIndex(first.lat, first.lng);
-  const endIdx = nearestIndex(last.lat, last.lng);
-  const lo = Math.min(startIdx, endIdx);
-  const hi = Math.max(startIdx, endIdx);
-  const slice = trailPath.slice(lo, hi + 1);
-  return slice.length > 1 ? slice : locationWaypoints.map(p => ({ lat: p.lat, lng: p.lng }));
 }
 
 const VALID_ROLES = ['primary_start', 'primary_stop', 'secondary'];
@@ -173,17 +133,6 @@ function sortWaypointsByName(points) {
   });
 }
 
-/**
- * Extract the location prefix from a waypoint name or segment_id.
- * e.g. "BRZ1a Bikakis Bakery" → "BRZ1", "BRZ12h" → "BRZ12"
- * Returns null if the name doesn't match the convention.
- */
-function parseLocationPrefix(wp) {
-  const source = wp.segment_id || wp.name || '';
-  const m = source.match(/^([A-Z]{3})0*(\d+)/);
-  return m ? `${m[1]}${parseInt(m[2], 10)}` : null;
-}
-
 // Build a road-following polyline between ordered waypoints (OSRM) for a driving tour
 // whose GPX import had no recorded track/route line.
 const routeWaypoints = async (points) => {
@@ -191,7 +140,7 @@ const routeWaypoints = async (points) => {
   return res.data.trail;
 };
 
-export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCode, tourCategory, onSave, saving, onAutoSave, userRole = 'admin', focusWaypointIndex, onTrailPathChange, trailPath, defaultDrivingSpeedKmh, targetLanguage }) {
+export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCode, tourCategory, onSave, saving, onAutoSave, userRole = 'admin', focusWaypointIndex, onTrailPathChange, defaultDrivingSpeedKmh, targetLanguage }) {
   const isNarrator = userRole === 'narrator';
   // WBT is always fixed at 3.5 km/h. DDV falls back to the Admin-set default
   // driving speed from the Details tab (form.default_driving_speed_kmh) until a
@@ -203,7 +152,6 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
   const [showAddForm, setShowAddForm] = useState(false);
   const [addError, setAddError] = useState('');
   const [gpxImportResult, setGpxImportResult] = useState(null);
-  const [testSegment, setTestSegment] = useState(null);
 
   // Group consecutive waypoints by segment_number
   const segmentGroups = useMemo(() => {
@@ -216,39 +164,6 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
     });
     return groups;
   }, [waypoints]);
-
-  // Group consecutive waypoints by location prefix (e.g. BRZ1a, BRZ1b → location "BRZ1")
-  // A location spans one or more consecutive segments that share the same numeric prefix.
-  const locationGroups = useMemo(() => {
-    const groups = [];
-    let current = null;
-    waypoints.forEach((wp, index) => {
-      const loc = parseLocationPrefix(wp);
-      if (!current || current.location !== loc) {
-        current = {
-          location: loc,
-          startIndex: index,
-          endIndex: index,
-          waypoints: [wp],
-        };
-        groups.push(current);
-      } else {
-        current.endIndex = index;
-        current.waypoints.push(wp);
-      }
-    });
-    return groups;
-  }, [waypoints]);
-
-  // A location is testable once every waypoint in it has been marked Done — per Enda,
-  // that's the real "I'm finished with this one" signal, not just having some audio
-  // attached (an early AI draft counts as audio but isn't necessarily ready to test
-  // against). Applies identically for an Admin and a Narrator; nothing here is
-  // role-gated.
-  const isLocationTestable = (group) => {
-    if (!group || group.waypoints.length === 0) return false;
-    return group.waypoints.every(wp => wp.waypoint_done);
-  };
 
   useEffect(() => {
     if (focusWaypointIndex != null) {
@@ -725,8 +640,6 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
            {waypoints.map((wp, index) => {
              const colour = wp.waypoint_colour || autoColour(wp.waypoint_role);
              const segGroup = segmentGroups[wp.segment_number];
-             const locGroup = locationGroups.find(g => index >= g.startIndex && index <= g.endIndex);
-             const isLastOfLocation = locGroup && index === locGroup.endIndex;
              return (
               <React.Fragment key={index}>
               <Draggable draggableId={`wp-${index}`} index={index} isDragDisabled={isNarrator}>
@@ -1093,35 +1006,6 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
               </div>
                 )}
               </Draggable>
-              {/* Per Enda: a narrator needs the exact same "test in simulator" access an
-                  Admin has, to fit break-tag pause durations to their own recorded
-                  speech pace — the only thing they still can't touch is the tour's
-                  average driving speed, which TourSimulator already treats as
-                  read-only/display-only for absolutely everyone (see its own
-                  comments), so no separate gate is needed for that here. */}
-              {isLastOfLocation && locGroup && (
-                <div className="pl-1 pr-1 pb-1 pt-1">
-                  <Button
-                    disabled={!isLocationTestable(locGroup)}
-                    onClick={() => setTestSegment({
-                       startIndex: locGroup.startIndex,
-                       title: locGroup.location || `Location ${wp.segment_number}`,
-                       trailPath: sliceTrailForLocation(trailPath, locGroup.waypoints),
-                       waypoints: locGroup.waypoints.map(p => ({ ...p, trigger_audio: true })),
-                     })}
-                    title={isLocationTestable(locGroup)
-                      ? `Test all ${locGroup.waypoints.length} waypoints in location ${locGroup.location} in the simulator`
-                      : `Location ${locGroup.location} needs every waypoint marked Done before testing`}
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <Play className="w-4 h-4" />
-                    Test Location {locGroup.location} in Simulator
-                    <span className="ml-1 text-emerald-200 text-xs">
-                      ({locGroup.waypoints.filter(w => w.waypoint_done).length}/{locGroup.waypoints.length} done)
-                    </span>
-                  </Button>
-                </div>
-              )}
               </React.Fragment>
               );
               })}
@@ -1136,29 +1020,11 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                   scripts into one script that was never actually wired back onto any
                   waypoint's own audio — editing break tags there didn't change what the
                   simulator or the real tour played. It's been removed from here. Break
-                  tags and audio are now edited directly per waypoint above (or via "Test
-                  Location in Simulator" below), which already writes straight onto the
-                  same audio_clip_url field the simulator and the live tour actually play,
-                  with no limit on how many times it can be edited and re-tested. */}
-
-              {testSegment && (
-                <Dialog open={!!testSegment} onOpenChange={() => setTestSegment(null)}>
-                  <DialogContent className="max-w-6xl bg-slate-900 border-slate-700 max-h-[90vh] overflow-y-auto">
-                    <DialogHeader>
-                      <DialogTitle className="text-white">Location Simulator — {testSegment.title}</DialogTitle>
-                    </DialogHeader>
-                    <TourSimulator form={{
-                      trail_path: testSegment.trailPath,
-                      waypoints: testSegment.waypoints,
-                      code: tourCode,
-                      tour_category: tourCategory,
-                    }} onWaypointUpdate={(idx, field, value) => {
-                      const origIdx = (testSegment.startIndex || 0) + idx;
-                      updateWaypoint(origIdx, field, value);
-                    }} targetLanguage={targetLanguage} onSave={onSave} saving={saving} onAutoSave={onAutoSave} />
-                  </DialogContent>
-                </Dialog>
-              )}
+                  tags and audio are now edited directly per waypoint above. Testing
+                  against real narration pacing is done in the "Narrate & Simulate" tab,
+                  which every Admin and Narrator uses for that purpose — see follow-up 65
+                  in the changelog for why the separate "Test Location in Simulator"
+                  popup that used to live here was removed. */}
               </div>
               );
               }

@@ -41,6 +41,75 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-26 (follow-up 65) — Removed "Test Location in Simulator" from the Waypoints tab (redundant with Narrate & Simulate)
+Scope: `src/components/admin/DrivingTourWaypointEditor.jsx`. (Frontend
+only — no backend function touched.)
+
+Enda's request: he and other admins always work in the "Narrate &
+Simulate" tab so they get the same reactions a narrator gets, so the
+separate "Test Location in Simulator" popup in the Waypoints tab was
+pure duplication of the same feature — two things doing the same job,
+with two different chances to break. He asked for it to be removed,
+on condition it didn't break anything else.
+
+Before removing anything, I checked every piece this feature touched,
+to see what else depended on it:
+- The button that opened it, and the `Dialog` that held its embedded
+  `TourSimulator`, were the only two places `testSegment` state was
+  read or set.
+- `isLocationTestable` and `sliceTrailForLocation` (plus its
+  `haversineM`/`R_EARTH_M` helpers) were each called from exactly one
+  place — inside this feature — nowhere else in the file.
+- `locationGroups` (the per-location grouping) and `parseLocationPrefix`
+  (the helper it used) were each consumed by exactly one thing —
+  `locationGroups` itself was only read to build this button.
+- The `locGroup`/`isLastOfLocation` values computed per row in the
+  waypoint list were only used to decide whether to show this one
+  button — no other row rendering (headers, dividers, styling) depended
+  on them.
+- The `TourSimulator` import and the `Dialog`/`DialogContent`/
+  `DialogHeader`/`DialogTitle`/`Play` imports were each used only inside
+  this feature.
+
+All of that came back clean — nothing else in the file reads any of it.
+So I removed, together, as one self-contained feature: the button, the
+dialog, the `testSegment` state, `isLocationTestable`,
+`sliceTrailForLocation`, `haversineM`/`R_EARTH_M`, `locationGroups`,
+`parseLocationPrefix`, the per-row `locGroup`/`isLastOfLocation`
+derivation, and the now-unused imports listed above. I also dropped the
+`trailPath` prop from this component's signature, since slicing the
+trail for the removed dialog was its only use here — the parent
+(`WalkEditor.jsx`) still passes it in, which is harmless, since an
+unread destructured prop is simply ignored.
+
+Reworded the one remaining comment that referenced "Test Location in
+Simulator" (explaining why the old Segment Script Manager was removed)
+so it no longer points at a feature that's now gone, and instead points
+at the Narrate & Simulate tab as where testing now happens.
+
+One honest caveat: `updateWaypoint` — the function this dialog used to
+call, and the same closure-based stale-snapshot pattern flagged as a
+risk in follow-up 64 — is untouched and still used by many OTHER
+controls in this same file (image upload, "Mark Waypoint as Done", and
+most of the per-field edit controls throughout the Waypoints tab). This
+removal eliminates the specific exposure that came through the
+simulator dialog, since that dialog's `onWaypointUpdate` callback doing
+two competing updates close together was the concrete failure mode
+that produced "Jump to location" vanishing in follow-up 64. It does
+NOT fix `updateWaypoint`'s underlying pattern for its other, still-in-use
+call sites — that risk still exists there, unfixed, exactly as flagged
+before. Only the WalkEditor.jsx narrate-tab path (follow-up 64) has the
+actual fix applied.
+
+Verified: `npx eslint` on the touched file shows the exact same
+pre-existing issues as a `git stash` baseline (1 error: unused
+`Textarea` import; 1 warning: unused `segGroup` var) — no new errors or
+warnings from this change. `rm -rf dist && npx vite build` completed
+cleanly (exit 0), producing a normal bundle. Grepped the whole file
+afterwards for every removed symbol name — no leftover references.
+
+---
+
 ## 2026-08-26 (follow-up 64) — Found the real cause of "everything gone again": a stale-snapshot race, same root class as follow-up 53, in a place that fix never reached
 Scope: `src/components/admin/WalkEditor.jsx`. (Frontend only — no
 backend function touched.)
