@@ -41,6 +41,72 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-26 (follow-up 62) — The speed-matching panel (WaypointPaceEditor) was showing IMMEDIATELY on opening the tab, not just after a jump
+Scope: `src/components/admin/TourSimulator.jsx`. (Frontend only — no
+backend function touched.)
+
+Enda tested follow-up 61's diagnostic live (redeployed manageApiKeys,
+hard refresh, live app, not the Base44 preview) and hit something worse
+than the key error: opening "Narrate and Simulate" dropped straight
+into the leg-scoped speed-matching panel (read-only text + pause
+sliders) for whatever waypoint happens to be selected by default —
+before any "Jump to location…" had ever been used — and it was slow to
+open, because that panel eagerly regenerates TTS audio for every text
+piece the moment it mounts. Enda was direct about the stakes: this is
+exactly the kind of surprise that would put a non-technical narrator
+into "panic stations."
+
+Root cause: follow-up 58 replaced the tab's ONLY right-hand panel with
+WaypointPaceEditor outright — so it was literally the only thing that
+could ever render there, regardless of whether any testing/jumping had
+actually happened. It was only ever meant to be the SECOND-session
+tool, engaged once a narrator jumps into a location to check its
+driving-speed timing — not the tab's default, always-on view.
+
+Fix: reintroduced NarrationTtsEditor (the original full script/audio
+editor this tab always showed before follow-up 58, restored with its
+exact former props/behaviour, including marking a waypoint done the
+moment Finalize Narration Audio succeeds) as the DEFAULT panel. Added
+`speedMatchMode` state, false on every fresh mount/trail-path change/
+Reset. `jumpToLocation` (the actual "Jump to location…" + Jump action)
+is now the only thing that sets it true — and now also snaps the
+waypoint dropdown to the jumped-to location's own start point first,
+so the panel that appears matches where the car actually just jumped
+to, rather than whatever was left selected in the dropdown from
+browsing. The render is now a straight `speedMatchMode ? WaypointPaceEditor
+: NarrationTtsEditor` switch, both keyed by `selectedWpIndex` so
+switching between them (or between waypoints) always remounts clean.
+Reset (the Square button) is the way back out of speed-match mode.
+
+This also fixes the "took ages to load" complaint as a side effect —
+NarrationTtsEditor never calls out to Google TTS on mount, only from
+an explicit button click, so opening the tab is instant again.
+
+Traced the map-zoom interaction this touches: `jumpToLocation` sets a
+whole-location `mapFocusBounds` for the run-through, and the existing
+leg-focus effect (keyed on `selectedWpIndex`) narrows that to just the
+current-to-next leg immediately after, once the dropdown is synced to
+the jump target — this matches follow-up 58's own explicit spec ("the
+map should zoom tightly to just the current waypoint-to-next-waypoint
+leg, not the whole location"), not a new conflict.
+
+Not able to live-test this in the actual Base44 app from here, same as
+every other change this session — verified by tracing every path
+through this component that speedMatchMode and the jump flow touch
+(fresh mount, dropdown-only browsing, Jump, Test this subsegment,
+Reset, and the map-focus interaction above), and by a clean lint +
+build. Told Enda plainly this needs his own live check before being
+treated as settled, exactly as instructed.
+
+Also relevant: follow-up 61's diagnostic (see below) is still in
+place, but WaypointPaceEditor — and so the API-key check it runs —
+now only ever mounts once speedMatchMode is actually true, i.e. after
+a real "Jump to location…" + Jump. If the "No Google TTS API key
+found" message still appears once that's actually exercised, the same
+`[diag: ...]` text is still what's needed back.
+
+---
+
 ## 2026-08-26 (follow-up 61) — NOT a fix: instrumented the actual failing request, because static reading alone couldn't pin down the cause
 Scope: `base44/functions/manageApiKeys/entry.ts` (**backend function —
 needs a manual redeploy in Base44**, see the standing rule at the top of

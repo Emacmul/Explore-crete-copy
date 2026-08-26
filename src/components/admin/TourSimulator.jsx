@@ -6,6 +6,7 @@ import { Play, Pause, Square, Gauge, Clock, Volume2, AlertTriangle, CheckCircle2
 import { calculateBearing, isBearingInRange } from '@/lib/routeExport';
 import TourSimulatorMap from './TourSimulatorMap';
 import WaypointPaceEditor from './WaypointPaceEditor';
+import NarrationTtsEditor from './NarrationTtsEditor';
 import { toast } from '@/components/ui/use-toast';
 
 const ROLE_LABEL = { primary_start: 'Start', primary_stop: 'Stop', secondary: 'Point' };
@@ -89,6 +90,21 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // Defaults to the first waypoint so there's always something to work with as soon as
   // the panel appears.
   const [selectedWpIndex, setSelectedWpIndex] = useState(0);
+
+  // Per Enda's report (follow-up 61 live-testing): follow-up 58 made the leg-scoped
+  // speed-matching panel (WaypointPaceEditor) the ONLY thing this tab ever shows beside
+  // the map — so opening "Narrate and Simulate" landed straight in it, before any actual
+  // testing had started, eagerly regenerating TTS audio for whatever waypoint happens to
+  // be selected (index 0 by default) and taking real time to do it. That's not what this
+  // panel is for: it's the SECOND-session, driving-speed-matching tool, only meaningful
+  // once a narrator has actually said "I want to test/tune THIS location now" via "Jump
+  // to location…" + Jump. Before that, this tab must open exactly as it always did — the
+  // full script/audio editor (NarrationTtsEditor), for reading through and writing
+  // narration, with no eager TTS calls at all (it only ever calls out on an explicit
+  // button click). speedMatchMode starts false every time (a fresh tab, or a fresh trail
+  // path), flips true the moment jumpToLocation actually runs, and flips back false on
+  // Reset — same "back to the start state" moment stopSim already represents.
+  const [speedMatchMode, setSpeedMatchMode] = useState(false);
 
   // Per Enda: the "Waypoint Audio & Break Tags" dropdown below must be worked through
   // top to bottom — a waypoint can't be opened here until every waypoint before it in
@@ -365,6 +381,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
 
   const stopSim = () => {
     setIsPlaying(false);
+    setSpeedMatchMode(false);
     if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
     distRef.current = 0;
     simTimeRef.current = 0;
@@ -467,6 +484,13 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // location" can never drift from the simulator's.
   const jumpToLocation = (targetIndex) => {
     jumpToWaypoint(targetIndex);
+    // This is the actual moment a narrator has said "I want to test/tune this location
+    // now" — see the speedMatchMode comment above its declaration. Also snaps the
+    // waypoint dropdown to this location's own start point, so the panel that's about to
+    // switch in opens already showing the location just jumped to, not whatever was
+    // selected before.
+    setSpeedMatchMode(true);
+    setSelectedWpIndex(targetIndex);
     const boundary = nextLocationBoundary(targetIndex);
     const endIndex = boundary ? boundary.waypointIndex : waypoints.length;
     const locationWaypoints = waypoints.slice(targetIndex, endIndex);
@@ -900,22 +924,18 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                 </Select>
               </div>
 
-              {/* Per Enda's later request: this whole panel is now a purpose-built
-                  speed-matching tool, not the full wording/TTS editor it used to embed —
-                  see WaypointPaceEditor's own file comment for the full reasoning. The
-                  waypoint dropdown above stays (so the narrator always knows which
-                  waypoint they're tuning); everything below it is that waypoint's own
-                  read-only text + adjustable pause sliders, its own "Test this
-                  subsegment" (renamed from "Test this waypoint" — same underlying
-                  jumpToWaypoint call, scoped to just this leg, just now able to carry a
-                  LIVE, not-yet-saved preview via audioOverrideUrl) and its own real
-                  "Save pause timing" action. Disabled/greyed exactly like the old button
-                  was for a primary_start point (e.g. BOR1a) — per Enda's follow-up 52
-                  report, a static point's driving-speed comparison genuinely doesn't
-                  apply (the customer hears it while parked, before any driving starts),
-                  though its own pause timing can still be tuned same as any other
-                  waypoint's, same as before. */}
-              {selectedWp && (
+              {/* Per Enda's follow-up 61 live-testing report: this panel must NOT default
+                  to the purpose-built speed-matching tool (WaypointPaceEditor) — that's a
+                  SECOND-session tool, only relevant once a narrator has actually jumped
+                  into a location to test/tune its driving-speed timing (see
+                  speedMatchMode above). Every other time — which is every time this tab
+                  is first opened — this must be exactly the same full wording/TTS editor
+                  (NarrationTtsEditor) it always was, with no eager TTS calls at all
+                  (unlike WaypointPaceEditor, it only ever calls out on an explicit button
+                  click), so opening this tab is instant again. The waypoint dropdown
+                  above is shared by both modes, so the narrator always knows which
+                  waypoint they're looking at either way. */}
+              {selectedWp && (speedMatchMode ? (
                 <WaypointPaceEditor
                   key={selectedWpIndex}
                   waypoint={selectedWp}
@@ -926,7 +946,27 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                   testDisabled={selectedWp.waypoint_role === 'primary_start'}
                   testDisabledReason="Not applicable here — this point is heard while parked, before any driving starts, so there's no driving speed to test its speech against. Its pause timing above can still be tuned normally."
                 />
-              )}
+              ) : (
+                <NarrationTtsEditor
+                  key={selectedWpIndex}
+                  script={selectedWp.narration_script || ''}
+                  audioUrl={selectedWp.audio_clip_url || ''}
+                  onScriptChange={(val) => onWaypointUpdate(toRawIndex(selectedWpIndex), 'narration_script', val)}
+                  onAudioChange={(val) => {
+                    // Same atomic-update reasoning as follow-up 53 — see that entry in
+                    // CLAUDE_CHANGELOG.md. Marks the waypoint done the moment Finalize
+                    // Narration Audio actually succeeds (a real url comes back), same as
+                    // this always did before follow-up 58 replaced this embed.
+                    onWaypointUpdate(toRawIndex(selectedWpIndex), val
+                      ? { audio_clip_url: val, trigger_audio: true, waypoint_done: true }
+                      : { audio_clip_url: val });
+                  }}
+                  onAutoSave={onAutoSave}
+                  fixedLanguage={targetLanguage}
+                  waypointSegmentId={selectedWp.segment_id}
+                  waypointSegmentTitle={selectedWp.segment_title}
+                />
+              ))}
             </div>
           ) : (
             <div className="h-full flex items-center justify-center text-slate-500 text-sm border border-dashed border-slate-600 rounded-lg p-4">
