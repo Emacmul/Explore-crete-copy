@@ -69,48 +69,65 @@ const VOICE = 'NEUTRAL';
  * something sitting only in memory until Save Route happens to be clicked separately.
  */
 export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, onAutoSave, onTestSubsegment, testDisabled, testDisabledReason }) {
-  // Per Enda's report: this panel opened straight to "No Google TTS API key found for
-  // your account yet" even though a real key WAS saved and had worked fine moments
-  // earlier in the old (pre-follow-up-58) editor. Real bug, not a lost key: this
-  // component calls useNarratorApiKeys() itself — a brand-new instance every time,
-  // since the parent remounts this whole component fresh via `key={selectedWpIndex}`
-  // (see TourSimulator.jsx) — and that hook's own key fetch (manageApiKeys) is async;
-  // `keys.google_tts_api_key` starts out '' and only becomes real once `loading` flips
-  // to false. The effect below used to run unconditionally on mount (`[]` deps),
-  // reading `apiKeys.google_tts_api_key` from that still-empty first render — so it
-  // reported "no key" before the real one had even arrived, every single time a
-  // waypoint was opened here. `loading` (renamed keysLoading here to not collide with
-  // this component's own audio-loading state) is now an explicit gate: nothing runs
-  // until the key fetch has actually finished, one way or the other.
-  const { keys: apiKeys, loading: keysLoading } = useNarratorApiKeys();
+  // Per Enda's report (follow-up 59): this panel opened straight to "No Google TTS API
+  // key found for your account yet" even with a real key saved. Follow-up 59 fixed the
+  // FIRST cause (reading the key before its own async fetch had resolved at all — see
+  // keysLoading below) but Enda reported the exact same message again after that fix
+  // shipped. Verified with an isolated, executed simulation of this exact race (not
+  // just re-reading the code) before writing this comment: follow-up 59's own fix DOES
+  // correctly wait out a slow-but-successful load, at any delay tested. What it didn't
+  // cover — and what the simulation caught — is a load that FAILS outright (a network
+  // hiccup, or the browser session not being fully established yet on an eager,
+  // automatic-on-mount fetch like this one, unlike the old editor's fetch which always
+  // had a manual click's worth of extra time to settle first). `useNarratorApiKeys`
+  // already distinguishes this case for exactly this reason — `loading:false` does NOT
+  // mean the load succeeded, only `loadedOk:true` does (see that hook's own comments,
+  // and the 2026-08-19 API key audit in CLAUDE_CHANGELOG.md, which hit this identical
+  // false-negative shape in ApiKeysDialog and fixed it the same way). This component
+  // was checking `apiKeys.google_tts_api_key` without ever checking `loadedOk` first,
+  // so a genuinely FAILED fetch looked byte-for-byte identical to "no key exists" —
+  // actively misleading when a real key IS saved and the check itself just failed.
+  const { keys: apiKeys, loading: keysLoading, loadedOk: keysLoadedOk, error: keysError, reload: reloadKeys } = useNarratorApiKeys();
   const [segments, setSegments] = useState(null);
   const [segmentAudios, setSegmentAudios] = useState({});
   const [loading, setLoading] = useState(false);
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  // True only for the "the key CHECK ITSELF failed" case above — distinct from a plain
+  // "no key saved" error, since only this one can be fixed by simply trying again
+  // (retryable via reloadKeys, wired to a visible Retry button below) rather than by
+  // adding a key that may already be there.
+  const [keyCheckFailed, setKeyCheckFailed] = useState(false);
   const [dirty, setDirty] = useState(false);
   const lastPreviewUrlRef = useRef(null);
   // Guards the generation pass below to actually running at most once per mount, now
   // that the effect can no longer rely on `[]` deps alone to mean "exactly once" — it
-  // must also re-run the instant keysLoading flips from true to false.
+  // must also re-run the instant keysLoading flips from true to false, or when a retry
+  // (see handleRetryKeyCheck below) resets it back to false deliberately.
   const startedRef = useRef(false);
 
   const script = waypoint?.narration_script || '';
 
-  // Runs once per mount, as soon as the API key fetch above has actually resolved — the
-  // parent renders this component with `key={selectedWpIndex}` (see TourSimulator.jsx),
-  // so switching to a different waypoint in the dropdown fully remounts this component
-  // fresh rather than this effect needing to re-detect a waypoint change itself. Loads
-  // (regenerates) audio for every text piece in this waypoint's own script, exactly
-  // once, so the pause sliders below have something real to preview and combine
-  // against straight away.
+  // Runs once per mount (or once per retry — see handleRetryKeyCheck), as soon as the
+  // API key fetch above has actually resolved ONE WAY OR THE OTHER — the parent renders
+  // this component with `key={selectedWpIndex}` (see TourSimulator.jsx), so switching to
+  // a different waypoint in the dropdown fully remounts this component fresh rather
+  // than this effect needing to re-detect a waypoint change itself. Loads (regenerates)
+  // audio for every text piece in this waypoint's own script, exactly once, so the
+  // pause sliders below have something real to preview and combine against straight
+  // away.
   useEffect(() => {
     if (keysLoading || startedRef.current) return;
     startedRef.current = true;
     let cancelled = false;
     const parsed = parseScript(script);
     if (parsed.length === 0) return;
+    if (!keysLoadedOk) {
+      setKeyCheckFailed(true);
+      setError(`Could not check your saved API key (${keysError || 'unknown error'}) — this is NOT the same as having no key saved, the check itself just failed. Try again below.`);
+      return;
+    }
     if (!apiKeys.google_tts_api_key) {
       setError('No Google TTS API key found for your account yet. Add your own key via "API Keys" in the header.');
       return;
@@ -145,7 +162,20 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
       }
     })();
     return () => { cancelled = true; };
-  }, [keysLoading, apiKeys.google_tts_api_key, script, fixedLanguage]);
+  }, [keysLoading, keysLoadedOk, keysError, apiKeys.google_tts_api_key, script, fixedLanguage]);
+
+  // Undoes the guard above so the effect runs again — used only for the "the key check
+  // itself failed" case (keyCheckFailed), never for "no key saved" (adding a key
+  // doesn't need a retry click here; it needs the API Keys dialog). Calls the hook's
+  // own reload(), which flips keysLoading back to true and then, on completion, false
+  // again — startedRef being reset first is what lets that second "false" actually be
+  // acted on instead of being swallowed by the same-run guard.
+  const handleRetryKeyCheck = () => {
+    startedRef.current = false;
+    setKeyCheckFailed(false);
+    setError('');
+    reloadKeys();
+  };
 
   // Revoke whatever live-preview blob URL this component created, on unmount (switching
   // waypoints) or before building a fresh one — an object URL left un-revoked keeps its
@@ -250,7 +280,13 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
 
       {error && (
         <div className="flex items-center gap-2 bg-red-900/30 border border-red-700/50 rounded-lg px-3 py-2 text-red-300 text-sm">
-          <AlertTriangle className="w-4 h-4 shrink-0" /> {error}
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span className="flex-1">{error}</span>
+          {keyCheckFailed && (
+            <Button size="sm" variant="outline" onClick={handleRetryKeyCheck} className="border-red-500 text-red-200 hover:bg-red-900/40 shrink-0">
+              Retry
+            </Button>
+          )}
         </div>
       )}
 

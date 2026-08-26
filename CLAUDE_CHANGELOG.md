@@ -41,6 +41,63 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-26 (follow-up 60) — Follow-up 59 fixed the timing race but missed a second cause: a genuinely FAILED key check looked identical to "no key exists"
+Scope: `src/components/admin/WaypointPaceEditor.jsx`. (Frontend only —
+no backend function touched.)
+
+Enda reported the exact same "No Google TTS API key found" message
+again after follow-up 59 shipped, and — rightly — asked for this to be
+actually checked before being handed back as fixed again. Before
+touching any code this time, wrote and ran a standalone, executed
+simulation of the precise async race (see the commit/PR for
+`/tmp/verify/race_check.mjs` if it survived — not part of this repo,
+just a throwaway harness) reproducing `useNarratorApiKeys`'s own
+load-state transitions and this component's guard logic side by side,
+under a fast-resolving key, a slow-resolving key, a genuinely-empty key,
+and a failed fetch.
+
+**Result:** follow-up 59's own fix is correct as far as it goes — a
+real key, fast or slow, is never falsely reported missing, confirmed by
+running it, not by re-reading it. But the simulation also proved a
+SECOND, separate cause the previous fix didn't cover: when the key
+fetch itself fails outright (a network hiccup, or — plausibly, given
+this is now an eager, automatic-on-mount fetch, unlike the old editor's
+which always had a manual click's worth of extra time to settle first —
+the browser session not being fully established yet), the code showed
+the exact same "No Google TTS API key found" message as a genuinely
+empty key. `useNarratorApiKeys` already distinguishes this internally —
+`loading:false` does not mean the load succeeded, only `loadedOk:true`
+does (the 2026-08-19 API key audit in this changelog hit this identical
+false-negative shape in `ApiKeysDialog` and fixed it the same way) — but
+this component was checking `apiKeys.google_tts_api_key` without ever
+checking `loadedOk` first.
+
+**What changed:** the effect now checks `loadedOk` before checking the
+key itself. A failed check shows a clearly DIFFERENT, explicit message
+("Could not check your saved API key… this is NOT the same as having no
+key saved") with its own **Retry** button (wired to the hook's own
+`reload()`) — retrying an actual key that IS there just needs the check
+to succeed, not the "API Keys" dialog. A genuinely empty key (load
+succeeded, nothing saved) still shows the original message with no
+Retry button, since trying again wouldn't change that.
+
+**Verified:** the same standalone simulation, extended to also assert a
+failed-then-retried fetch actually recovers, and that a genuinely empty
+key still gets the plain (non-retryable) message — all four scenarios
+pass. `npx eslint` on the file reports zero issues. `npx vite build`
+completes cleanly.
+
+**If this is STILL wrong:** the one thing this fix can't rule out from
+here is identity — `manageApiKeys` looks up the saved key by whichever
+email is actually authenticated for THIS request (a real admin session,
+or a narrator's own email+token). If the key was ever saved while
+logged in one way and this screen is being tested via the other (a
+narrator link vs. a full admin login), the server would honestly return
+an empty key for THAT identity — not a bug, but worth ruling out
+directly: which one is Enda testing as?
+
+---
+
 ## 2026-08-26 (follow-up 59) — Fixed follow-up 58: WaypointPaceEditor reported "No Google TTS API key found" even with a real, working key saved
 Scope: `src/components/admin/WaypointPaceEditor.jsx`. (Frontend only —
 no backend function touched.)
