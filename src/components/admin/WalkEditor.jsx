@@ -624,7 +624,19 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   };
 
   const handleSave = async () => {
-    if (saving) return false; // guard against a double-click or double-invocation firing two saves at once
+    // Per Enda's follow-up 51 report: the old guard here (`if (saving) return
+    // false`) checked React's own `saving` STATE — fine for a plain double-click,
+    // but this function is now only ever called from triggerSave's retry loop
+    // (see saveInFlightRef/handleSaveRef below), back-to-back with no render in
+    // between guaranteed to have landed yet. `saving` lagging by even one render
+    // behind could make this trip on a legitimate retry and silently skip it —
+    // dirty would stay correctly true so nothing would be falsely reported as
+    // saved, but the edit would just sit there unsaved until something else
+    // happened to trigger another save. saveInFlightRef (a ref, updated
+    // synchronously, not on a render) is the real guard against overlapping
+    // saves now, so this state-based one was removed rather than left as a
+    // second, less reliable copy of the same check.
+    //
     // Snapshot of editVersionRef the moment THIS save starts reading `form` — see
     // the comment on setDirty(false) below for what this is for.
     const editVersionAtSaveStart = editVersionRef.current;
@@ -796,20 +808,64 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   // the same tick a request comes in — React state updates aren't visible until
   // the next render, which would let two requests slip through before either saw
   // the other's flag.
+  //
+  // Per Enda's follow-up 51 report ("properly fix" the save mechanism): audited
+  // this again from scratch rather than trust follow-up 43's own account of it,
+  // and found a real, still-live version of the exact same bug, one layer deeper.
+  // `handleSave` is a brand-new function every render (it closes over THAT
+  // render's own `form`) — and so is `triggerSave`. The retry below used to read
+  // `triggerSave()` — but a function calling itself by name always re-invokes the
+  // SAME closure it's already running as, not "whichever render's triggerSave is
+  // current". So if a second edit landed while a save was still talking to the
+  // server, the retry meant to pick that edit up actually re-ran the ORIGINAL,
+  // stale `handleSave` — re-persisting the form as it was when the FIRST save
+  // started. The second edit never reached the server, and the version-check
+  // below only catches an edit that lands DURING the retry's own round trip, not
+  // the fact that the retry itself was already working from old data — so "All
+  // changes saved" still showed. Confirmed with an isolated closure
+  // reproduction (outside this app) before writing this fix, matching Enda's
+  // actual workflow exactly: an edit auto-saves, another edit lands moments
+  // later — well within a TTS-generation-plus-upload round trip — and the second
+  // one silently never reaches the server.
+  //
+  // Fix: `handleSaveRef` always points at the CURRENT render's `handleSave`
+  // (reassigned every render, below), so any call to `handleSaveRef.current()` —
+  // whether the first attempt or a retry — always closes over the freshest
+  // `form`, never a stale one. `triggerSave` is also restructured from
+  // self-recursion into a loop inside one async call, and now returns a real
+  // Promise<boolean> every caller can await instead of firing into the void —
+  // needed so `handleSaveAndDownloadGpx` below can wait for a real save to
+  // finish instead of calling `handleSave()` directly, which was its own
+  // separate way of bypassing this whole mechanism.
+  const handleSaveRef = useRef(handleSave);
+  handleSaveRef.current = handleSave;
+
   const saveInFlightRef = useRef(false);
   const queuedSaveRef = useRef(false);
-  const triggerSave = async () => {
+  const inFlightSaveRef = useRef(null);
+  const triggerSave = () => {
     if (saveInFlightRef.current) {
+      // A save is already running — flag that it needs to run again once it
+      // finishes (it will re-read `form` fresh at that point, via handleSaveRef,
+      // so this caller's own edit is guaranteed to be included), and hand back
+      // that SAME cycle's promise so this caller finds out the real outcome too,
+      // rather than this call silently doing nothing.
       queuedSaveRef.current = true;
-      return;
+      return inFlightSaveRef.current;
     }
-    saveInFlightRef.current = true;
-    await handleSave();
-    saveInFlightRef.current = false;
-    if (queuedSaveRef.current) {
-      queuedSaveRef.current = false;
-      triggerSave(); // reads `form` fresh at this later point, not whatever it was when queued
-    }
+    const run = async () => {
+      saveInFlightRef.current = true;
+      let result = await handleSaveRef.current();
+      while (queuedSaveRef.current) {
+        queuedSaveRef.current = false;
+        result = await handleSaveRef.current(); // always the latest form, never stale
+      }
+      saveInFlightRef.current = false;
+      inFlightSaveRef.current = null;
+      return result;
+    };
+    inFlightSaveRef.current = run();
+    return inFlightSaveRef.current;
   };
 
   const [pendingAutoSave, setPendingAutoSave] = useState(false);
@@ -903,11 +959,21 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   // actually succeeded — builds a GPX file from the just-saved data and downloads it
   // to the user's Downloads folder. Walk/Hike only; driving tours have their own
   // export panel already.
+  //
+  // Per Enda's follow-up 51 report: this used to call handleSave() directly — the
+  // one other place in this file doing that, and it had the exact same problem
+  // triggerSave exists to prevent. Clicking this while an auto-save was already
+  // mid-flight (e.g. right after editing something) relied on the `saving` REACT
+  // STATE check just below to catch it — but that's a step behind the real,
+  // synchronous guard (saveInFlightRef) triggerSave actually uses, so a genuine
+  // race could still slip two saves at the server at once. Routed through the
+  // same triggerSave() every other save path uses instead, so this is
+  // coordinated with everything else rather than its own separate hole.
   const handleSaveAndDownloadGpx = async () => {
     if (downloadingGpx || saving) return;
     setDownloadingGpx(true);
     try {
-      const success = await handleSave();
+      const success = await triggerSave();
       if (!success) return;
 
       const gpxContent = generateWalkGpx(form);

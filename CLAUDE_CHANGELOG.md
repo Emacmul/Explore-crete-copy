@@ -41,6 +41,83 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-25 (follow-up 51) — Properly fixed the "flagged as saved but wasn't" bug: found a real, still-live version of it one layer underneath follow-up 43's own fix
+Scope: `src/components/admin/WalkEditor.jsx`. (Frontend only — no backend
+function touched.)
+
+Enda asked for this to be genuinely, properly fixed rather than assumed
+done because a changelog entry said so. Re-audited follow-up 43's own
+save-queueing mechanism from scratch instead of trusting its account of
+itself, and found a real bug still living inside the fix that was
+supposed to have closed this off.
+
+**The bug:** `handleSave` is a brand-new function every render (it
+closes over that render's own `form`), and so is `triggerSave`. The
+retry inside `triggerSave` called itself by name
+(`if (queuedSaveRef.current) { ...; triggerSave(); }`) — but in
+JavaScript, a function calling itself by name always re-invokes the
+SAME closure it's already running as, never "whichever render's version
+is current". So when a second edit landed while an earlier save was
+still talking to the server (exactly Enda's real workflow — "Save this
+line" on one segment, then another edit moments later, well within a
+TTS-generation-plus-upload round trip), the retry meant to pick up that
+second edit actually re-ran the FIRST, stale `handleSave` — re-saving
+the form as it was before the second edit, not after. The second edit
+never reached the server, and the version-check that was supposed to
+catch this only looks at whether anything changed DURING the retry's
+own round trip, not whether the retry itself was already working from
+old data — so "All changes saved" still showed regardless. Confirmed
+this wasn't speculation: reproduced it in an isolated closure test
+outside the app first (same pattern, fresh "renders" creating fresh
+closures around a shared ref-based queue), watched it fail exactly as
+described, then confirmed the fix below makes the same test pass.
+
+Also found, auditing every direct caller of `handleSave`: "Save &
+Download GPX" (`handleSaveAndDownloadGpx`) called `handleSave()`
+directly, entirely bypassing `triggerSave`'s save-in-flight protection.
+It only had a same-render `saving` REACT STATE check standing in for
+that, one step behind the real synchronous guard — a real race could
+still have fired two saves at the server at once.
+
+**What changed:**
+- `handleSaveRef` is a ref reassigned on every single render to point at
+  that render's own `handleSave` — so a call to `handleSaveRef.current()`
+  always closes over the freshest `form`, whether it's the first attempt
+  or a retry.
+- `triggerSave` no longer recurses into itself. It's now a loop inside
+  one `run()` call: keep calling `handleSaveRef.current()` for as long as
+  `queuedSaveRef` says another edit arrived, and return the result of the
+  last one. Every caller — the Save button, every `onAutoSave`, and now
+  `handleSaveAndDownloadGpx` — gets a real `Promise<boolean>` back
+  instead of firing into the void, and a caller that arrives while a
+  save is already running gets handed that SAME running cycle's promise
+  (after flagging it to run again), rather than being silently dropped.
+- `handleSaveAndDownloadGpx` now calls `triggerSave()` instead of
+  `handleSave()` directly, so it's coordinated with every other save
+  path instead of being its own separate hole.
+- Removed `handleSave`'s own `if (saving) return false` guard. It
+  checked React's `saving` STATE, which isn't guaranteed to have
+  re-rendered between one retry-loop iteration and the next (they're
+  sequenced by plain JS `await`, not by React's render cycle) — a stale
+  read there could spuriously skip a legitimate retry. `saveInFlightRef`
+  (a ref, updated synchronously, not on a render) is the real guard
+  against overlapping saves now; this was a second, less reliable copy
+  of the same check, not an extra safety net.
+
+Verified: `npx eslint` on WalkEditor.jsx reports only the same
+pre-existing unused-import errors already confirmed harmless in earlier
+follow-ups (`Download`, `validateDrivingTour`, `generateGpx`,
+`generateKml`) — nothing new. `npx vite build` completes cleanly. The
+core closure-staleness bug and its fix were both proven with a
+standalone reproduction outside the app (not this codebase) before and
+after the change, in addition to the usual build/lint checks — this is
+a timing-dependent race, so even a live test in Base44 would only prove
+it works for whatever specific gap between edits got tried, not every
+possible timing; the isolated reproduction is what actually proves the
+mechanism itself is correct regardless of timing.
+
+---
+
 ## 2026-08-25 (follow-up 50) — A location's static primary_start point (e.g. BOR1a) is no longer editable in the Simulator, and this is also what resolves follow-up 48's open "co-located marker toggle" question
 Scope: `src/components/admin/TourSimulator.jsx`,
 `src/components/admin/TourSimulatorMap.jsx`. (Frontend only — no backend
