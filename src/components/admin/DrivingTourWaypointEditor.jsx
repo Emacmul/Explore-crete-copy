@@ -153,11 +153,19 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
   const [addError, setAddError] = useState('');
   const [gpxImportResult, setGpxImportResult] = useState(null);
 
-  // Group consecutive waypoints by segment_number
+  // Group consecutive waypoints by their DISPLAYED location label (segment_id,
+  // e.g. "BOR1" — see the bold text on each row), not the raw segment_number.
+  // segment_id is always derived via buildSegmentId(), which normalises
+  // segment_number through parseInt() — so "01" and "1" both display as
+  // "BOR1". Grouping on the raw segment_number string instead would treat
+  // those as two different groups even though they show the same label,
+  // which is exactly what caused every single waypoint to get its own
+  // divider line (see follow-up 67). Falls back to segment_number only for
+  // the rare waypoint that has no segment_id yet.
   const segmentGroups = useMemo(() => {
     const groups = {};
     waypoints.forEach((wp, index) => {
-      const seg = wp.segment_number;
+      const seg = wp.segment_id || wp.segment_number;
       if (!groups[seg]) groups[seg] = { segmentNumber: seg, startIndex: index, endIndex: index, waypoints: [] };
       groups[seg].endIndex = index;
       groups[seg].waypoints.push(wp);
@@ -639,7 +647,7 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
               <div ref={provided.innerRef} {...provided.droppableProps} className="space-y-2">
            {waypoints.map((wp, index) => {
              const colour = wp.waypoint_colour || autoColour(wp.waypoint_role);
-             const segGroup = segmentGroups[wp.segment_number];
+             const segGroup = segmentGroups[wp.segment_id || wp.segment_number];
              // Per Enda: a colour dot alone doesn't read as "new location" at a
              // glance — draw a visible divider line above the first waypoint of
              // every location group after the first, labelled with that
@@ -650,11 +658,11 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
               <React.Fragment key={index}>
               {isNewLocation && (
                 <div className="flex items-center gap-3 pt-4 pb-1 px-1">
-                  <div className="h-px flex-1 bg-slate-600" />
-                  <span className="text-xs font-semibold text-slate-400 tracking-wider uppercase shrink-0">
+                  <div className="h-px flex-1 bg-amber-500/70" />
+                  <span className="text-xs font-semibold text-amber-400 tracking-wider uppercase shrink-0">
                     {wp.segment_id || `Location ${wp.segment_number}`}
                   </span>
-                  <div className="h-px flex-1 bg-slate-600" />
+                  <div className="h-px flex-1 bg-amber-500/70" />
                 </div>
               )}
               <Draggable draggableId={`wp-${index}`} index={index} isDragDisabled={isNarrator}>

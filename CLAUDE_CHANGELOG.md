@@ -41,6 +41,54 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-26 (follow-up 67) — Fixed the divider grouping key: it was firing before every waypoint, not just between locations
+Scope: `src/components/admin/DrivingTourWaypointEditor.jsx`. (Frontend
+only — no backend function touched.)
+
+Enda's report, with a screenshot: the follow-up 66 divider was showing
+above every single waypoint, not just between locations — so BOR1f and
+BOR1g each got their own "BOR1" divider, instead of one divider before
+the whole BOR1 group. Same for BOR2's rows. This left the exact
+muddled look the divider was meant to fix.
+
+Root cause, found by reading the actual code (not guessed): the
+follow-up 66 divider read grouping from `segmentGroups`, a `useMemo`
+that has been in this file since before any of my work on it — grouped
+by the RAW `wp.segment_number` string. But the bold label every row
+actually displays is `wp.segment_id`, which is built by
+`buildSegmentId()` and normalises `segment_number` through
+`parseInt()` — so segment_number values of `"01"` and `"1"` both
+display as the same "BOR1" label, but as raw strings they are NOT
+equal, so `segmentGroups` was putting them in two different groups.
+Any waypoint whose stored `segment_number` differs in formatting from
+its neighbours — leading zero, or typed without one after a manual
+edit — got treated as the start of a brand new group, hence a divider
+before it. `segmentGroups` was already flagged as unused code by eslint
+in every lint check before follow-up 66 (the "segGroup" warning) — it
+had never actually been relied on before, so this bug was never
+exposed until now.
+
+Fix: group by `wp.segment_id` instead (falling back to
+`segment_number` only when a waypoint has no segment_id yet). Since
+segment_id is exactly the label already shown on screen, two waypoints
+now group together if and only if they show the same location label —
+which is the one guarantee that actually matters here. Also changed
+the divider's colour to amber/yellow on Enda's request, so it reads as
+clearly and immediately visible.
+
+Verified: wrote and ran a standalone Node script
+(`/tmp/verify/divider_check.mjs`) modelling this exact scenario —
+waypoints in one location with mixed `"01"`/`"1"`-style segment_number
+formatting — using the app's real `buildSegmentId()` logic. Confirmed
+the old raw-segment_number grouping reproduces the exact reported bug
+(a divider before every row except the very first), and the new
+segment_id-based grouping produces a divider only where the location
+actually changes. `npx eslint` shows only the same pre-existing,
+unrelated `Textarea`-unused-import error. `rm -rf dist && npx vite
+build` completed cleanly (exit 0).
+
+---
+
 ## 2026-08-26 (follow-up 66) — Added a visible divider between location groups in the Waypoints tab
 Scope: `src/components/admin/DrivingTourWaypointEditor.jsx`. (Frontend
 only — no backend function touched.)
