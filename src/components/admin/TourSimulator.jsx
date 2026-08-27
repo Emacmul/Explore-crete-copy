@@ -397,6 +397,22 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     return { startIndex: current.index, endIndex: current.endIndex, label: current.label };
   }, [locationStatus, selectedWpIndex]);
 
+  // Per Enda: the tour's very first location is always built the same way — its
+  // Primary-Start waypoint (e.g. BOR1a) is a static point where nothing moves (the
+  // narrator welcomes people and gives them a moment to get ready), and the very next
+  // waypoint (BOR1b) is where the drive actually begins — so, by design, those two
+  // sit at the exact same coordinates. "This will never happen in any other
+  // location" (his words) — every other location's own Primary-Start point is
+  // somewhere the vehicle actually is before it starts moving, so it never coincides
+  // with the next waypoint. Two markers stacked on the same spot reads as a single
+  // confusing blob, so whenever waypoint 1 (BOR1b) is the one open for editing —
+  // via "Jump to location…" (see jumpToLocation below) or picked directly from the
+  // dropdown — waypoint 0 (BOR1a) fades out on the map instead of competing with it
+  // for attention. Still visible, just no longer looks like an unexplained
+  // duplicate. Index 1 only ever means "location 1's second waypoint" because a
+  // tour's first waypoint is always location 1's own Primary-Start.
+  const dimWaypointIndex = (waypoints.length > 1 && selectedWpIndex === 1) ? 0 : null;
+
   // If the location currently picked in "Jump to location…" drops out of the (now
   // finished-only) list above — e.g. someone unticks a waypoint's done state to go back
   // and fix something, un-finishing that whole location — clear the stale selection
@@ -543,7 +559,16 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     // switch in opens already showing the location just jumped to, not whatever was
     // selected before.
     setSpeedMatchMode(true);
-    setSelectedWpIndex(targetIndex);
+    // Per Enda: location 1 is the one exception — its Primary-Start (index 0) is a
+    // static "welcome, get ready" point that never moves, so there's no driving leg
+    // to speed-match its speech against, and it sits at the exact same coordinates
+    // as index 1 (see dimWaypointIndex above). Editing focus after "Jump to
+    // location…" should land on index 1 instead for location 1 specifically — every
+    // other location's Primary-Start is the point that actually needs focus, since
+    // only location 1 has this static-then-moving pair.
+    const isFirstLocationInTour = targetIndex === 0;
+    const focusIndex = (isFirstLocationInTour && waypoints.length > 1) ? targetIndex + 1 : targetIndex;
+    setSelectedWpIndex(focusIndex);
     const boundary = nextLocationBoundary(targetIndex);
     const endIndex = boundary ? boundary.waypointIndex : waypoints.length;
     const locationWaypoints = waypoints.slice(targetIndex, endIndex);
@@ -982,6 +1007,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
             onWaypointUpdate={onWaypointUpdate ? (i, field, value) => onWaypointUpdate(toRawIndex(i), field, value) : undefined}
             breaks={form.trail_breaks}
             focusBounds={mapFocusBounds}
+            dimWaypointIndex={dimWaypointIndex}
             // Same gating as the bounds effect above: only during ordinary browsing
             // (not playing, not mid pace-test) does the map hide everything outside the
             // open waypoint's own location. `waypoints`/`triggered`/onWaypointUpdate's

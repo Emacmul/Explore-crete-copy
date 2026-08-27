@@ -41,6 +41,63 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-27 (follow-up 74) — Location 1's overlapping first two waypoints no longer look like one confusing blob
+Scope: `src/components/admin/TourSimulator.jsx`,
+`src/components/admin/TourSimulatorMap.jsx`. (Frontend only — no
+backend function touched.)
+
+Enda's report: every tour's very first location has its Primary-Start
+waypoint (e.g. BOR1a-PS) and the very next waypoint (BOR1b) sitting at
+the exact same coordinates, by design — 1a is a static point where the
+narrator welcomes people and nothing moves; 1b is where the drive
+actually begins. This never happens at any other location. On the map
+the two markers stack exactly on top of each other, reading as one
+confusing blob — and "Jump to location…" for location 1 was opening
+the editor on 1a, the static point, rather than 1b, where the actual
+driving leg (and any speed-matching) begins.
+
+Two changes, both scoped specifically to this one pair:
+
+**Editing focus.** `jumpToLocation`'s target-index logic (in
+`TourSimulator.jsx`) now checks `targetIndex === 0` — the tour's very
+first waypoint is always location 1's own Primary-Start, so this
+reliably means "this jump is location 1." Only in that one case,
+editing focus (`selectedWpIndex`) lands on index 1 instead of index 0.
+Every other location's jump is completely unchanged — still focuses
+its own Primary-Start, exactly as before. The actual simulated
+drive/audio playback (`jumpToWaypoint`, called just above this) still
+starts from index 0 as it always did, so location 1's real welcome
+narration still plays first in sequence — only the script/audio
+EDITOR panel's default focus moved, nothing about playback.
+
+**Map fading.** New `dimWaypointIndex`, derived from
+`selectedWpIndex`: whenever waypoint 1 (BOR1b) is the one currently
+open for editing, waypoint 0 (BOR1a) renders at 0.2 opacity in
+`TourSimulatorMap.jsx` — noticeably fainter than the existing 0.55
+every Primary-Start already renders at — instead of the ordinary
+mute level. Still on the map, still clickable/draggable, just visibly
+receding behind BOR1b rather than competing with it for attention.
+Because this is derived straight from `selectedWpIndex` rather than a
+separate "just jumped" flag, it applies consistently — after "Jump to
+location…" (which is what was reported) and equally if BOR1b is ever
+selected directly from the "Waypoint Audio & Break Tags" dropdown
+without going through Jump — same overlap, same fix, no separate case
+to fall through.
+
+Verified: `npx eslint` diff against baseline showed nothing new — the
+one pre-existing `react-hooks/exhaustive-deps` warning in
+`TourSimulator.jsx` is identical, just shifted down a few lines by the
+new code above it. Clean `vite build`. Wrote and ran a Node.js script
+modeling both pieces of logic against a realistic 3-location, 7-
+waypoint tour: confirmed jumping to location 1 focuses index 1 while
+locations 2 and 3 still focus their own Primary-Start unchanged;
+confirmed dimming fires only when index 1 is selected and never for
+any other selection (including index 0 itself, index 2, or anything
+in locations 2/3); and confirmed a degenerate single-waypoint tour
+doesn't crash either check. Then re-read the actual edited files and
+confirmed every line matches what the verification script modeled,
+line for line.
+
 ## 2026-08-27 (follow-up 73) — Finalizing a waypoint's narration now auto-advances to the next one
 Scope: `src/components/admin/TourSimulator.jsx`. (Frontend only — no
 backend function touched.)

@@ -197,7 +197,7 @@ function sliceTrailToRange(trailPath, waypoints, focusRange) {
   return slice.length > 1 ? slice : trailPath;
 }
 
-export default function TourSimulatorMap({ trailPath, waypoints, triggered, currentPos, currentBearing, isWalkingTour, onWaypointUpdate, breaks, focusBounds, focusRange }) {
+export default function TourSimulatorMap({ trailPath, waypoints, triggered, currentPos, currentBearing, isWalkingTour, onWaypointUpdate, breaks, focusBounds, focusRange, dimWaypointIndex }) {
   // Per Enda's report: general script/audio browsing should show only the current
   // location's own waypoints and road, not the whole multi-location tour. `waypoints`
   // itself is deliberately left untouched below (still the full array, so `i` in the
@@ -271,6 +271,13 @@ export default function TourSimulatorMap({ trailPath, waypoints, triggered, curr
         // asked for yet.
         const canEdit = !!onWaypointUpdate;
         const isMuted = wp.waypoint_role === 'primary_start';
+        // Per Enda: location 1's Primary-Start (BOR1a-PS) and its very next waypoint
+        // (BOR1b) always sit at the exact same coordinates — see TourSimulator.jsx's
+        // dimWaypointIndex for the full explanation. Rendered noticeably fainter than
+        // the ordinary primary_start mute (0.55) whenever this is that marker, so it
+        // visibly recedes behind BOR1b instead of the two reading as one confusing
+        // stacked blob — still on the map, just no longer competing for attention.
+        const isOverlapDimmed = dimWaypointIndex != null && i === dimWaypointIndex;
 
         const bearingTipPos = destinationPoint(wp.lat, wp.lng, bearingDir, radius);
         const bearingTailPos = destinationPoint(wp.lat, wp.lng, bearingDir + 180, radius);
@@ -278,7 +285,7 @@ export default function TourSimulatorMap({ trailPath, waypoints, triggered, curr
 
         return (
           <React.Fragment key={wp.segment_id || `${wp.lat},${wp.lng},${i}`}>
-            <Marker position={[wp.lat, wp.lng]} icon={wpIcon(colour, emoji, size, isMuted ? 0.55 : 1)} />
+            <Marker position={[wp.lat, wp.lng]} icon={wpIcon(colour, emoji, size, isOverlapDimmed ? 0.2 : (isMuted ? 0.55 : 1))} />
 
             {/* Pastel red radius circle — scales with zoom (uses metres). Per Enda's
                 follow-up 49 report: shown for every waypoint now, not just ones that
