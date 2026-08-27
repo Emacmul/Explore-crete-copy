@@ -18,6 +18,36 @@ import AudioTriggerFields from './AudioTriggerFields';
 import NarrationTtsEditor from './NarrationTtsEditor';
 import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
+import { downloadScriptAsOdt } from '@/lib/odtExporter';
+
+// Per Enda: once he marks a waypoint's narration text/breaks as finished, its script
+// should auto-export as a .odt file — this becomes the master file he hands to
+// Narrators via Narrator Scripts & TTS -> Translate Script, instead of him separately
+// maintaining a matching .odt file by hand. Naming mirrors how Enda already names his
+// own master .odt files: location code + this waypoint's letter position within that
+// location (BOR1, BOR1a, BOR1b, ...), its role, and its title, so the file is
+// identifiable without opening it.
+function sanitizeFilenamePart(str) {
+  return (str || '').replace(/[\\/:*?"<>|]/g, '-').trim();
+}
+
+function letterForIndexInGroup(index, segGroup) {
+  if (!segGroup) return '';
+  const pos = index - segGroup.startIndex;
+  if (pos < 0) return '';
+  if (pos < 26) return String.fromCharCode(97 + pos); // a, b, c, ...
+  return `-${pos + 1}`; // extremely long location group — fall back to a number
+}
+
+function buildNarrationExportFilename(wp, segGroup, index) {
+  const locationLabel = wp.segment_id || (wp.segment_number ? `Location ${wp.segment_number}` : `Waypoint ${index + 1}`);
+  const letter = letterForIndexInGroup(index, segGroup);
+  const roleLabel = getRoleLabel(wp.waypoint_role);
+  const parts = [`${locationLabel}${letter}`, roleLabel, wp.segment_title]
+    .filter(Boolean)
+    .map(sanitizeFilenamePart);
+  return `${parts.join(' - ')}.odt`;
+}
 
 const ROLES = [
   { value: 'primary_start', label: 'Primary-Start', icon: Flag },
@@ -1002,6 +1032,19 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                           // right now instead of relying on the narrator to separately
                           // remember to click Save Route afterwards.
                           onAutoSave?.();
+                          // Per Enda (follow-up 72): auto-export the finished script as
+                          // a .odt the moment a waypoint is marked done — see
+                          // buildNarrationExportFilename/downloadScriptAsOdt above.
+                          // !isNarrator guards this even though this button only ever
+                          // renders for an admin today (the Waypoints tab itself is
+                          // hidden from narrators in WalkEditor.jsx) — cheap insurance
+                          // against this component ever being reused for a narrator
+                          // view later. Skipped entirely when there's no script text
+                          // yet, so marking a GPS-only waypoint (no narration) done
+                          // never downloads an empty file.
+                          if (!isNarrator && (wp.narration_script || '').trim()) {
+                            downloadScriptAsOdt(wp.narration_script, buildNarrationExportFilename(wp, segGroup, index));
+                          }
                           setExpanded(null);
                         }}
                         variant="outline"

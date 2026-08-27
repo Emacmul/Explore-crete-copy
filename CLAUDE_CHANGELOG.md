@@ -41,6 +41,72 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-27 (follow-up 72) — Marking a waypoint done now auto-exports its script as a .odt
+Scope: `src/lib/odtExporter.js` (new),
+`src/components/admin/DrivingTourWaypointEditor.jsx`. (Frontend only —
+no backend function touched.)
+
+Enda's report: as Admin, once he finishes editing a waypoint's
+narration text and `<break>` tags, that finished text needs to be
+exported as a .odt file — that's the file he currently maintains by
+hand and hands to Narrators (via Narrator Scripts & TTS -> Translate
+Script -> Import File) as their master English script. Without
+auto-export he has to keep a separate .odt file in sync by hand
+alongside whatever's typed into the app. He also asked that every
+`<break>` tag land on its own separate line in the exported file.
+
+**Why .odt, not .docx.** This app already has a .docx exporter
+(`src/lib/docxExporter.js`, used elsewhere for backup/download), but
+Enda's own master scripts — and `src/lib/fileTextExtractor.js`'s
+existing .odt import path, added specifically to read them — are
+.odt/LibreOffice files. Built a new, parallel `odtExporter.js` that
+hand-builds a real ODF (OpenDocument Text) archive the same way
+`docxExporter.js` hand-builds a .docx: mimetype + manifest.xml +
+content.xml + styles.xml + meta.xml, reusing the existing store-only
+ZIP writer (`createZip`, from `docxExporter.js`).
+
+**Where it triggers.** Wired into the existing "Mark Waypoint as
+Done" button in the Waypoints tab (`DrivingTourWaypointEditor.jsx`) —
+the only place `waypoint_done` can be switched ON (the row's own
+checkbox can only switch it back off). The moment that button is
+clicked: the waypoint is marked done and saved (unchanged), and now
+also — if there's any narration text at all — its script downloads as
+a .odt file. A waypoint with no narration text (e.g. a GPS-only
+Secondary point) downloads nothing.
+
+**Break tags, one per line.** `splitScriptIntoExportLines()` in
+`odtExporter.js` scans for every `<break .../>` tag (matching any
+time/strength attribute form) and forces each one onto its own
+paragraph line, regardless of how it was actually typed in the
+textarea — text before it, the tag itself, and text after it always
+end up as three separate lines (or however many the surrounding text
+itself breaks into). Break tags are written into the file as escaped,
+literal text (same approach `docxExporter.js` already uses), so
+they read back as real `<break .../>` text rather than being
+interpreted as XML.
+
+**Filename.** Mirrors how Enda already names his own master files by
+hand: location code + this waypoint's letter position within that
+location (e.g. `BOR1a`, `BOR1b`, reusing the same per-location
+grouping the divider lines already use — see follow-up 67) + role +
+title, e.g. `BOR1a - Primary-Start - Lidl (Tsemes) car park.odt`.
+
+Verified: `npx eslint` on both files showed nothing new (the one
+existing `Textarea` unused-import warning in
+`DrivingTourWaypointEditor.jsx` is pre-existing, confirmed identical
+via `git stash`). Clean `vite build`. Wrote and ran a Node.js script
+that calls the real, unmodified `buildScriptOdtBlob()` directly,
+hand-parses the resulting ZIP bytes, and confirms: `mimetype` is the
+first entry and stored uncompressed (ODF requirement), all required
+ODF parts are present, and every `<break>` tag — several different
+attribute forms, including two back-to-back with no text between them
+— ends up as its own paragraph, never sharing a line with narration
+text. Went a step further and actually opened the generated file with
+LibreOffice itself (`soffice --headless --convert-to txt`, available
+in this environment) rather than only trusting my own parser — the
+real LibreOffice-converted output confirmed the exact same one-tag-
+per-line structure.
+
 ## 2026-08-27 (follow-up 71) — Cloning a tour now resets narration text and audio to virgin state
 Scope: `base44/functions/cloneWalkForBackend/entry.ts`. **Backend
 function change — needs Enda's manual redeploy step before it takes
