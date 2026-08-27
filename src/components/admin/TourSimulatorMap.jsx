@@ -42,7 +42,23 @@ function FocusBounds({ focusBounds }) {
   const map = useMap();
   useEffect(() => {
     if (focusBounds && focusBounds.length > 0) {
-      map.fitBounds(L.latLngBounds(focusBounds), { padding: [60, 60], maxZoom: 17 });
+      // Per Enda's report: opening a location didn't actually zoom in tight — he had to
+      // zoom in manually about 4x to reach the view this should already open with.
+      // Leaflet computes fitBounds against whatever pixel size the map container has AT
+      // THE MOMENT this runs; in a CSS grid layout like this one (the map is one column
+      // of a two-column grid next to the script editor), that size can still be
+      // settling for a frame or two right after mount, so the very first fit can be
+      // computed against a container that isn't at its final size yet — a manual zoom
+      // works fine because by then the layout has long since settled. invalidateSize()
+      // forces Leaflet to re-measure the container right before fitting, and the
+      // requestAnimationFrame defers this one extra frame so that re-measure happens
+      // after the browser has actually finished laying the grid out — the standard fix
+      // for a map mounted inside a layout whose size isn't known synchronously at mount.
+      const frame = requestAnimationFrame(() => {
+        map.invalidateSize();
+        map.fitBounds(L.latLngBounds(focusBounds), { padding: [60, 60], maxZoom: 17 });
+      });
+      return () => cancelAnimationFrame(frame);
     }
   }, [map, focusBounds]);
   return null;
@@ -61,13 +77,19 @@ function FitBounds({ trailPath, waypoints }) {
   // path at all yet, so it's read directly inside the effect (not via a dependency)
   // and the effect itself now only re-runs when the map instance or the trail path
   // itself actually changes — never on a normal playback tick — so a manual zoom/pan
-  // is preserved through Start/Pause/Reset.
+  // is preserved through Start/Pause/Reset. Same invalidateSize()/requestAnimationFrame
+  // reasoning as FocusBounds above — this is the very first fit to run at all, so it's
+  // the one most likely to land before the grid layout has finished settling.
   useEffect(() => {
     const pts = trailPath?.length > 0
       ? trailPath.map(p => [p.lat, p.lng])
       : waypoints?.map(w => [w.lat, w.lng]);
     if (pts?.length > 0) {
-      map.fitBounds(L.latLngBounds(pts), { padding: [50, 50] });
+      const frame = requestAnimationFrame(() => {
+        map.invalidateSize();
+        map.fitBounds(L.latLngBounds(pts), { padding: [50, 50] });
+      });
+      return () => cancelAnimationFrame(frame);
     }
   }, [map, trailPath]);
   return null;

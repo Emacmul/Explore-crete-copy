@@ -797,6 +797,28 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     intervalRef.current = setInterval(() => tickRef.current(), TICK_MS);
   };
 
+  // Per Enda's report: the toolbar's own Start button used to always drive the WHOLE
+  // multi-location tour from the very beginning, even while the editor was clearly
+  // scoped to one location already (the map itself only shows that location — see
+  // currentLocationRange above). A genuinely fresh Start — never played yet, not mid
+  // pace-test, not already complete — now instead starts a SCOPED run of just the
+  // currently open location: reusing jumpToWaypoint/resetToWaypoint's existing
+  // scoped-boundary machinery, the exact same mechanism "Jump to location…" already
+  // uses, not a new one — so the car plays only that location's own waypoints' audio
+  // and auto-pauses at its own last waypoint, instead of driving on into the next
+  // location. jumpToWaypoint sets lastJumpRef as a side effect, so startSim's own
+  // existing Replay handling (above) already knows how to redo this exact same scoped
+  // run with no extra code needed. Resuming an already-paused run (hasPlayed already
+  // true) and replaying an already-completed one (tourComplete already true) are both
+  // untouched — only a genuinely fresh Start click is redirected here.
+  const handleStartClick = () => {
+    if (!hasPlayed && !tourComplete && !speedMatchMode && currentLocationRange) {
+      jumpToWaypoint(currentLocationRange.startIndex, { autoplay: true });
+      return;
+    }
+    startSim();
+  };
+
   const pauseSim = () => {
     setIsPlaying(false);
     if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
@@ -831,7 +853,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
       <div className="flex flex-wrap items-center gap-2">
         {!isPlaying ? (
           <Button
-            onClick={startSim}
+            onClick={handleStartClick}
             size="sm"
             // Per Enda's report: a just-finished single-waypoint "Test this subsegment"
             // run (a LIVE, possibly-still-unsaved preview) can't be redone from this

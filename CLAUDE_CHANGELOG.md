@@ -41,6 +41,82 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-27 (follow-up 70) — Map now actually zooms in on load; "Start" now scopes to the current location too
+Scope: `src/components/admin/TourSimulator.jsx`,
+`src/components/admin/TourSimulatorMap.jsx`. (Frontend only — no
+backend function touched.)
+
+Enda tried follow-up 69 and reported two things: the map's marker/road
+scoping worked, but it never actually zoomed in — he had to zoom in
+manually about 4x to reach the view it should have opened with. And
+he asked for a second thing: pressing Start (not just "Jump to
+location…") should also play only the current location's own audio
+and stop the car at that location's own last point.
+
+**The zoom.** Root cause: `FitBounds`/`FocusBounds` (both in
+`TourSimulatorMap.jsx`) call Leaflet's `map.fitBounds()` inside a
+`useEffect`, computed against whatever pixel size the map container
+has AT THAT EXACT MOMENT. This map sits in a CSS grid, one column next
+to the script editor — that layout can still be settling for a frame
+or two right after mount, so the very first `fitBounds` call can be
+computed against a container that isn't at its final size yet, which
+is exactly the kind of thing a manual zoom (which happens long after
+layout has settled) doesn't run into. This is a well-documented
+Leaflet-in-a-resizable-layout gotcha, and it has a standard fix: call
+`map.invalidateSize()` to force Leaflet to re-measure the container,
+deferred one animation frame (`requestAnimationFrame`) so it runs
+after the browser has actually finished laying the grid out, right
+before every `fitBounds` call. Added to both `FitBounds` (the initial
+whole-trail fit) and `FocusBounds` (the location/leg fit that follows
+it).
+
+I can trace this fix in the code and it matches the textbook cause for
+this exact symptom, but I can't execute the live Leaflet map here to
+watch it happen — asking Enda to confirm the zoom now lands correctly
+on open, rather than claiming certainty I can't back up from a static
+read.
+
+**Start now scopes to the current location.** New `handleStartClick`,
+used only by the toolbar's Start/Resume/Replay button. A genuinely
+fresh Start — never played yet, not mid pace-test (`speedMatchMode`),
+not already complete — now calls `jumpToWaypoint(currentLocationRange
+.startIndex, { autoplay: true })` instead of a plain unscoped
+`startSim()`. This is the exact same scoped-boundary machinery "Jump
+to location…" already uses (`resetToWaypoint`'s `nextLocationBoundary`
+call), not a new mechanism — so the car now drives only the current
+location's own stretch and auto-pauses at its own last waypoint,
+instead of carrying on into the next location. Because
+`jumpToWaypoint` sets `lastJumpRef` as a side effect, "Replay" after
+that run completes already knows how to redo the same scoped run via
+`startSim`'s own existing follow-up 63 logic — no extra code needed
+there. Resuming a paused run and replaying a completed one are both
+left alone; only a genuinely fresh click is redirected. When there's
+no `currentLocationRange` (e.g. a tour with no primary_start markers)
+or while actively pace-testing one leg, Start falls back to its old,
+unscoped behaviour exactly as before.
+
+Trade-off worth flagging: this means there's currently no single
+"Start" click left in this tab that drives the WHOLE multi-location
+tour start to finish in one continuous run — every fresh Start is now
+location-scoped. Given the ~90-minute real-time estimate for a full
+run and Enda's own described per-location workflow, this seems like
+the right default, but noting it in case a genuine full-tour run is
+ever needed from here (the Preview tab may already serve that
+purpose — not investigated as part of this change).
+
+Verified: wrote and ran a standalone Node script
+(`/tmp/verify/start_scope_check.mjs`) modelling `handleStartClick`'s
+full decision logic against five scenarios — fresh Start, Resume after
+pause, Replay after completion, Start after a full Reset, and pressing
+Start right after "Jump to location…" (which must NOT re-jump on top
+of the jump that already happened) — all five behaved exactly as
+intended. `npx eslint` on both touched files shows only the one
+pre-existing, unrelated warning also present in the `git stash`
+baseline — no new issues. `rm -rf dist && npx vite build` completed
+cleanly (exit 0).
+
+---
+
 ## 2026-08-27 (follow-up 69) — Map now scopes to the current location while browsing; explained "Unsaved changes", the audio trigger count, and the stats row
 Scope: `src/components/admin/TourSimulator.jsx`,
 `src/components/admin/TourSimulatorMap.jsx`. (Frontend only — no
