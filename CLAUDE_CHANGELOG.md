@@ -41,6 +41,49 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-27 (follow-up 73) — Finalizing a waypoint's narration now auto-advances to the next one
+Scope: `src/components/admin/TourSimulator.jsx`. (Frontend only — no
+backend function touched.)
+
+Enda's report, again from Anoushka's walkthrough: after clicking
+Finalize Narration Audio on a waypoint, the "Waypoint Audio & Break
+Tags" panel just sat there on that same, now-finished waypoint —
+nothing stopped a narrator from staying put and importing a different
+file through Translate Script, overwriting the work they just
+finalized (or picking a different waypoint from the dropdown first,
+same risk either way).
+
+Fix: `onAudioChange` — the callback `NarrationTtsEditor` calls with a
+real URL only once, exactly when `finalizeAndSave` (bound to the
+"Finalize Narration Audio" button) actually succeeds — now also
+advances `selectedWpIndex` to the next waypoint in the list, provided
+there is one. Confirmed by reading `NarrationTtsEditor.jsx` that this
+is the ONLY call site for `onAudioChange`, so this can't misfire from
+some other action (Build & Play preview, a draft save, etc.) — it
+only ever fires on a genuine finalize.
+
+Advancing is always safe the moment it happens: the existing
+sequential lock (`lockedWpIndexes`) only locks a waypoint while any
+EARLIER one isn't done yet, and finalizing always means the waypoint
+being left was itself only reachable because everything before it was
+already done — so the very next one is guaranteed unlocked. Falls
+through to doing nothing if this was the last waypoint in the list, or
+if `val` is falsy (an audio-clear, not a finalize) — never advances on
+those. `NarrationTtsEditor`/`WaypointPaceEditor` are already keyed on
+`selectedWpIndex`, so moving to the next one remounts a completely
+fresh editor — no imported text, script, or draft audio carries over
+from the waypoint that was just finished.
+
+Verified: `npx eslint` diff against baseline showed nothing new (the
+one pre-existing `react-hooks/exhaustive-deps` warning is identical
+before/after). Clean `vite build`. Wrote and ran a Node.js script
+modeling the exact logic plus the pre-existing lock computation it
+depends on — checked: advances by one on a real finalize; stays put on
+the last waypoint; never advances on an audio-clear; and, swept across
+tours of 1–12 waypoints finalizing every possible position, confirmed
+the waypoint advanced to is never locked immediately afterward. All
+checks passed.
+
 ## 2026-08-27 (follow-up 72) — Marking a waypoint done now auto-exports its script as a .odt
 Scope: `src/lib/odtExporter.js` (new),
 `src/components/admin/DrivingTourWaypointEditor.jsx`. (Frontend only —

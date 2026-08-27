@@ -1112,6 +1112,29 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                     onWaypointUpdate(toRawIndex(selectedWpIndex), val
                       ? { audio_clip_url: val, trigger_audio: true, waypoint_done: true }
                       : { audio_clip_url: val });
+                    // Per Enda (follow-up 73, from Anoushka's walkthrough): after a
+                    // real Finalize Narration Audio success, this panel used to just
+                    // sit on the now-finished waypoint — nothing stopped a narrator
+                    // from staying right there and importing a different file into
+                    // Translate Script, overwriting what was just finalized. `val` is
+                    // only truthy here on an actual finalize success (the one call
+                    // site is finalizeAndSave in NarrationTtsEditor.jsx, only reached
+                    // via its "Finalize Narration Audio" button) — never on a plain
+                    // audio-clear. Advancing to the next waypoint in this same
+                    // (already-filtered, already lat/lng-valid) `waypoints` list is
+                    // always safe to do unconditionally the moment that happens: the
+                    // sequential lock (lockedWpIndexes above) only locks a waypoint
+                    // while any EARLIER one isn't done yet, and every waypoint up to
+                    // and including this one is now done, so the next index is
+                    // guaranteed unlocked as soon as this state update lands. The
+                    // NarrationTtsEditor/WaypointPaceEditor below is keyed on
+                    // selectedWpIndex, so moving to a new index remounts it fresh —
+                    // no imported text, script, or audio state carries over from the
+                    // waypoint that was just finished. Stays put if this was the last
+                    // waypoint in the list — nothing further to advance to.
+                    if (val && selectedWpIndex + 1 < waypoints.length) {
+                      setSelectedWpIndex(selectedWpIndex + 1);
+                    }
                   }}
                   onAutoSave={onAutoSave}
                   fixedLanguage={targetLanguage}
