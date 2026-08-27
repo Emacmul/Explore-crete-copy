@@ -41,6 +41,73 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-27 (follow-up 71) — Cloning a tour now resets narration text and audio to virgin state
+Scope: `base44/functions/cloneWalkForBackend/entry.ts`. **Backend
+function change — needs Enda's manual redeploy step before it takes
+effect. See STANDING RULE above.**
+
+Enda reported, from Anoushka's first end-to-end walkthrough: when a
+Narrator clones a tour to translate it, the clone opens showing the
+master's English script text AND the master's English audio. Neither
+should be there — a fresh clone should start virgin, with the
+Narrator's own translated text and audio still to be created.
+
+Root cause, confirmed by reading the function directly: the clone's
+`waypoints` field was built as a bare shallow copy of the master's
+waypoints (`.map(w => ({ ...w }))`), so it carried over
+`narration_script`, `audio_clip_url`, `trigger_audio`, and
+`waypoint_done` verbatim from the master. `final_audio_applied` was
+carried over too, even though it's admin-only and never sent to a
+Narrator's browser at all.
+
+Confirmed this is safe by reading `TranslationPanel.jsx` in full: a
+Narrator's real workflow is Import File (an external document Enda
+sends them, never anything from the tour's own stored data) → pick
+"Translate to" → Translate & Load, which only THEN writes
+`narration_script`. The master's stored `narration_script` was never
+actually read by that workflow, so blanking it on clone changes
+nothing about how translation works.
+
+Fix: the `waypoints` mapping in the clone object now explicitly resets
+five fields to virgin defaults: `narration_script: ''`,
+`audio_clip_url: ''`, `trigger_audio: false`, `waypoint_done: false`,
+`final_audio_applied: false`. `trigger_audio` and `final_audio_applied`
+reset alongside `audio_clip_url` because every place in this codebase
+that attaches real audio sets `audio_clip_url` / `trigger_audio` /
+`waypoint_done` together as one linked unit (see
+`DrivingTourWaypointEditor.jsx`, `TourSimulator.jsx`), and
+`updateWaypoint` separately flips `final_audio_applied` to false
+whenever `audio_clip_url` changes — so all five belong to the same
+"audio state," and a clone with some of them true and none of the
+others would be a state that shouldn't otherwise exist.
+
+Deliberately left untouched: `lat`, `lng`, `waypoint_role`,
+`segment_number`/`segment_id`/`segment_title`, `trigger_radius_m`,
+`trigger_once`, `use_bearing`, `bearing_direction`,
+`bearing_tolerance`, `avg_segment_speed_kmh`, `image_urls`,
+`description`. These are geographic/tour-design work — where the
+geofence sits, how wide it is, the road's driving speed, reference
+photos — that's identical no matter which language is being narrated.
+Resetting them would force every Narrator to redo physical-world
+tuning Enda already did once, which nobody asked for. `trail_path` and
+`segment_scripts` mappings were left as plain copies for the same
+reason — neither is language-specific.
+
+Also checked `Walk.description` / `Walk.safety_notes` (top-level, not
+per-waypoint): confirmed via `WalkEditor.jsx` these only render on the
+"General" tab, which is already hidden from Narrators entirely — so
+out of scope, nothing to reset there.
+
+Verified: `npx tsc --noEmit` on this file before (via `git stash`) and
+after the edit produced byte-identical output — the same single
+pre-existing, expected `npm:`-import resolution error, no new errors.
+Wrote and ran a standalone Node.js script
+(`/tmp/verify/clone_virgin_check.mjs`) modeling the exact transform
+against three realistic waypoints (one with complete master audio, one
+partially done, one the master hadn't started audio for) — confirmed
+all five target fields become virgin defaults and all thirteen other
+listed fields stay byte-for-byte unchanged. Script ran and passed.
+
 ## 2026-08-27 (follow-up 70) — Map now actually zooms in on load; "Start" now scopes to the current location too
 Scope: `src/components/admin/TourSimulator.jsx`,
 `src/components/admin/TourSimulatorMap.jsx`. (Frontend only — no
