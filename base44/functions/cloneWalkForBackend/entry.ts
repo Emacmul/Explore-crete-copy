@@ -128,7 +128,42 @@ export default async function(req) {
       creem_product_id: undefined,
       pushback_reason: '',
       trail_path: (original.trail_path || []).map((p: any) => ({ ...p })),
-      waypoints: (original.waypoints || []).map((w: any) => ({ ...w })),
+      // Per Enda's report (via Anoushka's first end-to-end run-through): a fresh
+      // translation clone must start "virgin" for narration content — never carrying
+      // over the master's English script or audio. A narrator gets the English
+      // source as a separate file from Enda and brings it in themselves through the
+      // Translate Script panel (Import File -> pick "Translate to" -> Translate &
+      // Load) — narration_script must be empty until they actually do that, not
+      // pre-filled with the master's English text.
+      //
+      // waypoint_done and final_audio_applied both track completion of THIS clone's
+      // own narration work specifically, so a freshly-cloned waypoint has done
+      // neither yet, regardless of the master's own state. trigger_audio resets
+      // alongside audio_clip_url because every place in this codebase that ever
+      // actually attaches real audio sets both together in the same call (see
+      // DrivingTourWaypointEditor.jsx / TourSimulator.jsx's onAudioChange:
+      // `{ audio_clip_url: val, trigger_audio: true, waypoint_done: true }`) — the
+      // two are always meant to travel together, so a clone with trigger_audio true
+      // and no audio_clip_url would be a state that shouldn't otherwise ever exist,
+      // and would still make that waypoint look like it expects/has audio when it
+      // has none.
+      //
+      // Deliberately NOT reset: lat/lng, waypoint_role, segment_number/segment_id/
+      // segment_title, trigger_radius_m, trigger_once, use_bearing,
+      // bearing_direction, bearing_tolerance, avg_segment_speed_kmh, image_urls,
+      // description. These are real geographic/tour-design work (where the geofence
+      // sits, how wide it is, the road's driving speed, reference photos) that's the
+      // same regardless of which language is being narrated — resetting them would
+      // force every narrator to redo physical-world tuning Enda already did once,
+      // which nobody has asked for.
+      waypoints: (original.waypoints || []).map((w: any) => ({
+        ...w,
+        narration_script: '',
+        audio_clip_url: '',
+        trigger_audio: false,
+        waypoint_done: false,
+        final_audio_applied: false,
+      })),
       segment_scripts: (original.segment_scripts || []).map((s: any) => ({ ...s })),
     };
 
