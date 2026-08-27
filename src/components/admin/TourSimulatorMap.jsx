@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { MapContainer, TileLayer, Polyline, Marker, Circle, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -146,7 +146,46 @@ function handleIcon(colour) {
   });
 }
 
-export default function TourSimulatorMap({ trailPath, waypoints, triggered, currentPos, currentBearing, isWalkingTour, onWaypointUpdate, breaks, focusBounds }) {
+// Per Enda's report: when the map is scoped to just one location (focusRange, set by
+// TourSimulator.jsx during ordinary script/audio browsing), the drawn road should only
+// cover that location's own stretch — not the whole tour's trail. Finds the trail-path
+// vertex nearest each end of the location (the same "nearest vertex" approach
+// cumDistForWaypoint in TourSimulator.jsx uses for trigger-distance calculations) and
+// slices the polyline between them. Falls back to the full trailPath whenever there's no
+// focusRange, or the location's own waypoints can't be matched onto the trail for any
+// reason — never silently draws nothing.
+function sliceTrailToRange(trailPath, waypoints, focusRange) {
+  if (!focusRange || !trailPath || trailPath.length < 2) return trailPath;
+  const first = waypoints[focusRange.startIndex];
+  const last = waypoints[Math.max(focusRange.startIndex, focusRange.endIndex - 1)];
+  if (!first?.lat || !first?.lng || !last?.lat || !last?.lng) return trailPath;
+  const nearestIndex = (lat, lng) => {
+    let bestIdx = 0, bestD = Infinity;
+    trailPath.forEach((pt, i) => {
+      const d = haversine(lat, lng, pt.lat, pt.lng);
+      if (d < bestD) { bestD = d; bestIdx = i; }
+    });
+    return bestIdx;
+  };
+  const startIdx = nearestIndex(first.lat, first.lng);
+  const endIdx = nearestIndex(last.lat, last.lng);
+  const lo = Math.min(startIdx, endIdx);
+  const hi = Math.max(startIdx, endIdx);
+  const slice = trailPath.slice(lo, hi + 1);
+  return slice.length > 1 ? slice : trailPath;
+}
+
+export default function TourSimulatorMap({ trailPath, waypoints, triggered, currentPos, currentBearing, isWalkingTour, onWaypointUpdate, breaks, focusBounds, focusRange }) {
+  // Per Enda's report: general script/audio browsing should show only the current
+  // location's own waypoints and road, not the whole multi-location tour. `waypoints`
+  // itself is deliberately left untouched below (still the full array, so `i` in the
+  // marker loop stays aligned with `triggered`'s keys and with onWaypointUpdate's
+  // expected index) — only the drawn polyline is scoped here, and each marker below
+  // checks focusRange itself before rendering.
+  const displayTrailPath = useMemo(
+    () => sliceTrailToRange(trailPath, waypoints, focusRange),
+    [trailPath, waypoints, focusRange]
+  );
   const center = trailPath.length > 0
     ? [trailPath[0].lat, trailPath[0].lng]
     : waypoints.length > 0
@@ -162,8 +201,13 @@ export default function TourSimulatorMap({ trailPath, waypoints, triggered, curr
       <FitBounds trailPath={trailPath} waypoints={waypoints} />
       <FocusBounds focusBounds={focusBounds} />
 
-      {trailPath.length > 1 &&
-        splitTrailRuns(trailPath, breaks).map((run, i) =>
+      {displayTrailPath.length > 1 &&
+        // `breaks` holds indices into the FULL trailPath — meaningless against a
+        // location-scoped slice, so it's skipped whenever focusRange narrowed the
+        // polyline (a break landing inside one location's own stretch is rare; drawing
+        // that stretch as one continuous line in that case is a minor, honest trade-off,
+        // not a data problem).
+        splitTrailRuns(displayTrailPath, focusRange ? [] : breaks).map((run, i) =>
           run.length > 1 ? (
             <Polyline
               key={i}
@@ -174,6 +218,11 @@ export default function TourSimulatorMap({ trailPath, waypoints, triggered, curr
         )}
 
       {waypoints.map((wp, i) => {
+        // `i` is this waypoint's real position in the FULL array — deliberately never
+        // filtered/re-indexed (see the note on `displayTrailPath` above) — so this is a
+        // pure "skip drawing" check, not a slice; triggered[i] and onWaypointUpdate(i, …)
+        // below both still line up correctly for whichever waypoints DO get drawn.
+        if (focusRange && (i < focusRange.startIndex || i >= focusRange.endIndex)) return null;
         const isTriggered = triggered[i];
         const hasAudio = wp.trigger_audio && wp.audio_clip_url;
         const { colour, size } = roleMarkerStyle(wp.waypoint_role);

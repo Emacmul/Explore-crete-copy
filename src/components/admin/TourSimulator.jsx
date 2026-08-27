@@ -366,7 +366,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
         const locationWaypoints = waypoints.slice(index, nextBoundaryIndex);
         const notDoneCount = locationWaypoints.filter(w => !w.waypoint_done).length;
         return {
-          wp, index, cumDist: cumDistForWaypoint(wp),
+          wp, index, endIndex: nextBoundaryIndex, cumDist: cumDistForWaypoint(wp),
           label: wp.segment_id || wp.segment_title || wp.name || `Location ${index + 1}`,
           isComplete: locationWaypoints.length > 0 && notDoneCount === 0,
           notDoneCount,
@@ -379,6 +379,23 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // instead of the whole control just vanishing with no explanation.
   const incompleteLocations = useMemo(() => locationStatus.filter(t => !t.isComplete), [locationStatus]);
   const [jumpTargetIndex, setJumpTargetIndex] = useState('');
+
+  // Per Enda's report: the map used to always show the whole tour (or, while
+  // speed-matching one leg, just that one leg) no matter which location's waypoint was
+  // open in "Waypoint Audio & Break Tags" — so a narrator writing BOR1's script had no
+  // way to tell, at a glance, that they were even looking at BOR1's own stretch of road.
+  // This finds which location (which primary_start's range) currently contains
+  // selectedWpIndex, so the map below can scope itself to just that location — always
+  // anchored on that location's own green Start point.
+  const currentLocationRange = useMemo(() => {
+    let current = null;
+    for (const loc of locationStatus) {
+      if (loc.index <= selectedWpIndex) current = loc;
+      else break;
+    }
+    if (!current) return null;
+    return { startIndex: current.index, endIndex: current.endIndex, label: current.label };
+  }, [locationStatus, selectedWpIndex]);
 
   // If the location currently picked in "Jump to location…" drops out of the (now
   // finished-only) list above — e.g. someone unticks a waypoint's done state to go back
@@ -534,23 +551,37 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     if (bounds.length > 0) setMapFocusBounds(bounds);
   };
 
-  // Per Enda: the map beside "Waypoint Audio & Break Tags" must always be zoomed to just
-  // the CURRENTLY selected waypoint's own leg — from wherever it sits to the very next
-  // waypoint in the list — never the whole location. A whole-location view (still what
-  // "Jump to location…" above sets, for a full run-through) hides exactly the thing this
-  // panel exists to get right: whether the car's own short, real movement across ONE
-  // stretch lines up with ONE waypoint's own audio. Re-fits every time the selected
-  // waypoint changes, including on first load — this panel is shown by default now, not
-  // opted into. The very last waypoint in the whole tour has no "next" to include; a
-  // single-point bounds still centres/zooms on it correctly.
+  // Per Enda: while actually pace-testing one leg (speedMatchMode — the WaypointPaceEditor
+  // panel), the map must stay zoomed to just the CURRENTLY selected waypoint's own leg —
+  // from wherever it sits to the very next waypoint in the list — never the whole
+  // location. A whole-location view hides exactly the thing THAT panel exists to get
+  // right: whether the car's own short, real movement across ONE stretch lines up with
+  // ONE waypoint's own audio. Unchanged from before.
+  //
+  // Per Enda's later report: outside of that pace-testing view — ordinary script/audio
+  // browsing, which is the DEFAULT state this tab opens in — the map should instead show
+  // the WHOLE location the open waypoint belongs to (every waypoint from that location's
+  // own green Start point up to, but not including, the next location's Start), not a
+  // single leg and not the entire multi-location tour. Re-fits every time the selected
+  // waypoint (or which location it's in) changes, including on first load. Left alone
+  // entirely while a run is actually playing, so this never fights a live full-tour
+  // drive or a "Jump to location…" scoped run's own view.
   useEffect(() => {
-    const wp = waypoints[selectedWpIndex];
-    if (!wp || !wp.lat || !wp.lng) return;
-    const next = waypoints[selectedWpIndex + 1];
-    const bounds = [[wp.lat, wp.lng]];
-    if (next && next.lat && next.lng) bounds.push([next.lat, next.lng]);
-    setMapFocusBounds(bounds);
-  }, [selectedWpIndex, waypoints]);
+    if (isPlaying) return;
+    if (speedMatchMode) {
+      const wp = waypoints[selectedWpIndex];
+      if (!wp || !wp.lat || !wp.lng) return;
+      const next = waypoints[selectedWpIndex + 1];
+      const bounds = [[wp.lat, wp.lng]];
+      if (next && next.lat && next.lng) bounds.push([next.lat, next.lng]);
+      setMapFocusBounds(bounds);
+      return;
+    }
+    if (!currentLocationRange) return;
+    const locationWaypoints = waypoints.slice(currentLocationRange.startIndex, currentLocationRange.endIndex);
+    const bounds = locationWaypoints.filter(wp => wp.lat && wp.lng).map(wp => [wp.lat, wp.lng]);
+    if (bounds.length > 0) setMapFocusBounds(bounds);
+  }, [selectedWpIndex, waypoints, speedMatchMode, isPlaying, currentLocationRange]);
 
   // Reset when trail path changes
   useEffect(() => {
@@ -888,7 +919,10 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
           </Button>
         )}
         {audioTriggerCount > 0 && (
-          <span className="flex items-center gap-1 text-xs text-purple-300 bg-purple-900/40 px-2 py-1 rounded-full">
+          <span
+            className="flex items-center gap-1 text-xs text-purple-300 bg-purple-900/40 px-2 py-1 rounded-full"
+            title={`${audioTriggerCount} waypoint${audioTriggerCount !== 1 ? 's' : ''} across the WHOLE tour (every location, not just the one currently open) ${audioTriggerCount !== 1 ? 'have' : 'has'} audio trigger switched on — i.e. will actually play narration when a real customer drives past.`}
+          >
             <Radio className="w-3 h-3" /> {audioTriggerCount} audio trigger{audioTriggerCount !== 1 ? 's' : ''}
           </span>
         )}
@@ -926,6 +960,12 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
             onWaypointUpdate={onWaypointUpdate ? (i, field, value) => onWaypointUpdate(toRawIndex(i), field, value) : undefined}
             breaks={form.trail_breaks}
             focusBounds={mapFocusBounds}
+            // Same gating as the bounds effect above: only during ordinary browsing
+            // (not playing, not mid pace-test) does the map hide everything outside the
+            // open waypoint's own location. `waypoints`/`triggered`/onWaypointUpdate's
+            // index `i` all stay full-array indices either way — this only controls
+            // which of them get drawn, never which array is passed.
+            focusRange={!isPlaying && !speedMatchMode ? currentLocationRange : null}
           />
         </div>
 
@@ -1088,17 +1128,26 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                 <div className="text-white text-sm font-semibold">{speed} km/h</div>
                 <div className="text-slate-500 text-xs">{form.tour_category === 'WBT' ? 'Fixed' : 'Set by Admin'}</div>
               </div>
-              <div className="bg-slate-800 rounded-lg p-2.5 text-center">
+              <div
+                className="bg-slate-800 rounded-lg p-2.5 text-center"
+                title="How much time has passed in THIS simulation run since you last pressed Start/Jump — not a real clock, and not the whole tour's driving-time estimate (see the ~h:mm figure at the bottom right)."
+              >
                 <Clock className="w-4 h-4 text-amber-400 mx-auto mb-1" />
                 <div className="text-white text-sm font-semibold">{fmtTime(simTime)}</div>
                 <div className="text-slate-500 text-xs">Sim Time</div>
               </div>
-              <div className="bg-slate-800 rounded-lg p-2.5 text-center">
+              <div
+                className="bg-slate-800 rounded-lg p-2.5 text-center"
+                title="How far the car has driven in THIS run, out of the WHOLE tour's total trail length — always the full tour distance here, regardless of which location's waypoint is open on the right."
+              >
                 <MapPin className="w-4 h-4 text-purple-400 mx-auto mb-1" />
                 <div className="text-white text-sm font-semibold">{fmtDist(distTraveled)}</div>
                 <div className="text-slate-500 text-xs">of {fmtDist(pathData.total)}</div>
               </div>
-              <div className="bg-slate-800 rounded-lg p-2.5 text-center">
+              <div
+                className="bg-slate-800 rounded-lg p-2.5 text-center"
+                title="How many of this run's audio triggers have actually fired so far, out of every waypoint in the WHOLE tour with audio trigger switched on (same total as the purple badge above) — not just the current location's."
+              >
                 <Volume2 className="w-4 h-4 text-green-400 mx-auto mb-1" />
                 <div className="text-white text-sm font-semibold">
                   {Object.keys(triggered).length}/{audioTriggerCount}

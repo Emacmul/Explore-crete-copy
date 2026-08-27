@@ -41,6 +41,109 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-27 (follow-up 69) — Map now scopes to the current location while browsing; explained "Unsaved changes", the audio trigger count, and the stats row
+Scope: `src/components/admin/TourSimulator.jsx`,
+`src/components/admin/TourSimulatorMap.jsx`. (Frontend only — no
+backend function touched.)
+
+Enda had four questions from a screenshot of the Narrate & Simulate
+tab, mid-browsing BOR1a-PS's script with nothing yet run.
+
+**"Unsaved changes" with BOR1 already marked done in the Waypoints
+tab — where's the unsaved change?** Explained, no code change: `dirty`
+tracks the WHOLE form (script text, break tags, TTS/voice settings,
+bearing/radius drags, any waypoint field on any tab), not just
+`waypoint_done`. It's set by exactly two places —
+`set(field, value)` (every tab's generic field setter) and this tab's
+own `onWaypointUpdate` handler — and cleared only by a successful save.
+It isn't a stray/spurious flag: every place that sets it corresponds
+to a real form change, so it reflects something genuinely edited since
+the last save, even if that something wasn't the waypoint's own Done
+checkbox. Clicking Save Route is always safe regardless of which tab
+raised it.
+
+**"7 audio triggers" — what's that?** Explained via a new tooltip
+(hover it): a plain count of `wp.trigger_audio === true` across the
+WHOLE tour (every location, not just the one open), i.e. how many
+waypoints will actually speak for a real customer.
+
+**Sim Time / "0m of 75.57 km" / "0/7 triggered" — what do these
+mean?** Explained via new tooltips on each tile: elapsed time in THIS
+run, distance driven of the WHOLE tour's total trail, and triggers
+fired of the WHOLE tour's total — all three are tour-wide, not scoped
+to whichever waypoint is open on the right. Nothing changed here
+beyond adding the tooltips.
+
+**Main ask: the map shows the whole 75km tour while editing one
+waypoint's script — it should show just that waypoint's own location.**
+Implemented. `currentLocationRange` (new) finds which location
+(primary_start range) contains `selectedWpIndex`; the map now scopes
+to exactly that location — every waypoint from its own green Start
+point up to (not including) the next location's Start — while doing
+ordinary script/audio browsing (`!speedMatchMode && !isPlaying`).
+Left alone in two cases on purpose: while WaypointPaceEditor is
+actively pace-testing one leg (an earlier, explicit decision — that
+view needs the tight two-point "this waypoint + the very next one"
+zoom to judge whether audio timing matches driving time, not the
+whole location), and while any run is actually playing (so this never
+fights a live full-tour drive or a "Jump to location…" scoped run's
+own camera).
+
+Implementation note on why this took care: `TourSimulatorMap.jsx`'s
+marker loop calls `onWaypointUpdate(i, …)` and reads `triggered[i]`
+using `i` as the waypoint's REAL position in the full array — the
+same index-alignment concern the `waypointsWithIndex`/`toRawIndex`
+machinery already in this file exists to protect. Naively `.slice()`-ing
+the waypoints array down to one location before passing it to the map
+would have shifted every index in the slice, so dragging a bearing
+arrow on any waypoint other than the very first of the slice would
+have silently edited the WRONG waypoint. Instead, the full `waypoints`
+array is still passed unchanged; a new `focusRange` prop tells the map
+which index range to actually DRAW, and each marker checks it and
+returns `null` if outside range — `i` itself never changes. The trail
+polyline is scoped separately (and safely, since a Polyline isn't
+index-sensitive) by finding the trail-path vertex nearest each end of
+the location and slicing between them, the same "nearest vertex"
+approach `cumDistForWaypoint` already uses elsewhere in this file.
+
+Honest caveat: the map's zoom/pan re-fit (via the existing
+`FocusBounds`/`mapFocusBounds` mechanism, unchanged in how it works)
+depends on a Leaflet effect-timing sequence I can trace in the code
+but can't execute here to confirm end-to-end. The WAYPOINTS AND ROAD
+drawn are correctly scoped to the location regardless — that doesn't
+depend on the zoom timing at all — but if the initial camera position
+doesn't also snap in tight on first load, that's worth Enda confirming
+so it can be looked at as its own item.
+
+Verified: wrote and ran a standalone Node script
+(`/tmp/verify/map_scope_check.mjs`) confirming `currentLocationRange`
+resolves the correct location for every index in a two-location test
+tour, and confirming — this was the real risk — that filtering markers
+by `focusRange` leaves each rendered marker's index exactly matching
+its real `triggered` key (a waypoint that had actually fired still
+shows as fired after filtering). `npx eslint` on both touched files
+shows only the one pre-existing, unrelated warning (unused
+eslint-disable directive) also present in the `git stash` baseline —
+no new issues. `rm -rf dist && npx vite build` completed cleanly
+(exit 0).
+
+---
+
+## 2026-08-26 — Closing the loop: BOR1c/BOR1d audio-order swap was data, not code
+No code change. Follow-up 63 left this open, with two non-bug
+hypotheses (Use Bearing; trail-path vertex imprecision) and asked Enda
+for evidence. Use Bearing was ruled out earlier. Enda has now confirmed
+the real cause: BOR1c and BOR1d had their coordinates swapped in the
+waypoint data itself at the time he originally created them — a data
+entry mistake, not a simulator or trigger-radius bug. Fixed on his end
+by correcting the coordinates; nothing in this codebase needed to
+change. Noting this here so a future session doesn't re-open the
+investigation into `cumDistForWaypoint`/trail-path ordering for this
+report — that code was already traced fully in follow-up 63 and found
+correct.
+
+---
+
 ## 2026-08-26 (follow-up 68) — "Jump to location" still missing after the follow-up 64 fix: added a visible reason instead of a silent gap
 Scope: `src/components/admin/TourSimulator.jsx`. (Frontend only — no
 backend function touched.)
