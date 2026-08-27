@@ -33,6 +33,7 @@ export default async function(req) {
       return Response.json({ error: 'originalId and targetLanguage are required' }, { status: 400 });
     }
 
+
     const original = await base44.asServiceRole.entities.Walk.get(String(originalId));
     if (!original) {
       return Response.json({ error: 'Tour not found.' }, { status: 404 });
