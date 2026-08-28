@@ -41,6 +41,65 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-28 (follow-up 79) — Pause/Reset now actually stop the audio; Reset no longer exits pace-testing mode
+Scope: `src/components/admin/TourSimulator.jsx`. (Frontend only — no
+backend function touched.)
+
+Two bugs reported together from the same live-testing session, both on
+the "Narrate and Simulate" tab, both traced to the toolbar's Pause and
+Reset ("restart") buttons.
+
+Bug 1 — "The car stops, the audio keeps playing. That should not
+happen." Confirmed in the code: `pauseSim` only ever cleared the tick
+interval that moves the car marker — it never touched the actual
+`<audio>` element, so any narration clip already playing kept going
+to its natural end completely independently of the marker. Fixed by
+having `pauseSim` pause the audio element too, remembered via a new
+`audioPausedRef` — but only when a clip was genuinely still playing at
+that instant, never for an already-silent moment, so the mirror-image
+fix on the Start/Resume side (`startSim`) knows whether there's really
+something to pick back up. Resuming now genuinely continues that exact
+clip from where it was paused, instead of leaving it silently paused
+forever while the car starts moving again.
+
+Bug 2 — "The big editable text box is editable. Only the sub segment
+boxes and pause sliders should be editable when the 'jump to' mode is
+active." Traced this by tracing every place `speedMatchMode` (the flag
+that decides which panel shows beside the map: `WaypointPaceEditor`,
+sub-segment text boxes and pause sliders only, vs the full
+`NarrationTtsEditor` with its always-editable top script box) gets
+set. `jumpToLocation` sets it true, as expected — but the Reset button
+called `stopSim`, which unconditionally set it back to false as a side
+effect of doing a full "back to the tour's start" reset. A narrator
+mid pace-test clicking what they call "restart" just wants to restart
+THAT test — not to be silently dropped back into a completely
+different editing screen. Fixed with a new `handleResetClick`: while
+actually pace-testing (`speedMatchMode` true, from a real jump),
+Reset now redoes the same scoped jump instead (reusing the exact
+"redo whatever was last jumped to" logic `startSim`'s own Replay
+handling already had), leaving `speedMatchMode` — and therefore which
+panel is showing — untouched. Outside pace-testing (ordinary
+script/audio browsing, the tab's default state), Reset is completely
+unchanged, still a full `stopSim`. The automatic "trail path changed"
+reset and the unmount cleanup still call `stopSim` directly, not the
+new function, so a genuinely changed path still always fully resets
+regardless of mode.
+
+Verified with an executed Node.js simulation (22 checks) modeling the
+exact control flow now in the file: Pause genuinely stopping a
+mid-playing clip; Resume genuinely continuing it; a Pause with nothing
+actually playing correctly NOT arming a false resume; Reset mid
+pace-test keeping `speedMatchMode` true and the panel on
+`WaypointPaceEditor`, while still stopping both the car and the audio;
+Reset outside pace-testing behaving exactly as before (full stop,
+panel back to `NarrationTtsEditor`); a defensive fallback to a full
+reset if `speedMatchMode` were ever true with no recorded jump; jumping
+to a different location after a Reset still working correctly; and a
+direct `stopSim()` call (not via the Reset button) still fully exiting
+pace-testing, as the trail-path-changed effect needs. Also cross-checked
+every changed line against the real file's own content, not just the
+simulation, to confirm the model matches what's actually shipped.
+
 ## 2026-08-28 (follow-up 78) — A break tag typed alone in a pace-matching text box now becomes a real pause
 Scope: `src/components/admin/WaypointPaceEditor.jsx`. (Frontend only —
 no backend function touched.)

@@ -199,6 +199,17 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   const initialBearingRef = useRef(currentBearing);
 
   const audioRef = useRef(null);
+  // Per Enda's report: Pause used to stop only the car's own movement (the tick
+  // interval below) — a narration clip already playing through audioRef kept going
+  // completely independently, so "the car stops, the audio keeps playing" happened on
+  // every Pause click mid-clip. Set true by pauseSim ONLY when it actually paused a
+  // clip that was genuinely still playing (never for an already-silent moment), so
+  // Resume (startSim) knows there's really something to pick back up rather than
+  // blindly restarting whatever happens to be loaded in the audio element from its
+  // very start. Cleared back to false the moment that resume happens, and by every
+  // other place that deliberately discards audio state instead of pausing it to
+  // resume later (stopSim, resetToWaypoint) — see their own comments.
+  const audioPausedRef = useRef(false);
   const intervalRef = useRef(null);
   const distRef = useRef(0);
   const prevPosRef = useRef(trailPath[0] || null);
@@ -459,6 +470,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     setAudioError(null);
     setCurrentBearing(initialBearingRef.current);
     if (audioRef.current) audioRef.current.pause();
+    audioPausedRef.current = false;
     const startPos = trailPath[0];
     if (startPos) { setCurrentPos(startPos); prevPosRef.current = startPos; }
   };
@@ -516,6 +528,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
       excludeWaypointIndex: boundary?.waypointIndex ?? null,
     };
     if (audioRef.current) audioRef.current.pause();
+    audioPausedRef.current = false;
     setDistTraveled(cumDist);
     setSimTime(0);
     setTriggered({ ...triggeredRef.current });
@@ -535,6 +548,35 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     pauseSim();
     if (!resetToWaypoint(targetIndex, { scopeToThisWaypoint, audioOverrideUrl })) return;
     if (autoplay) startSim();
+  };
+
+  // Per Enda's report: "Reset" used to always call stopSim — a full reset back to the
+  // very start of the whole tour AND, as a side effect (see stopSim/speedMatchMode's
+  // own comments), an exit out of "jump to" pace-testing mode entirely, silently
+  // swapping the purpose-built WaypointPaceEditor panel (sub-segment text boxes and
+  // pause sliders only) out for the full NarrationTtsEditor script/TTS editor with its
+  // always-visible, always-editable top script box. A narrator mid pace-test clicking
+  // what they call the "restart" button just wants to restart THIS test — not to be
+  // dropped back into a completely different editing screen they never asked to
+  // leave. So: while actually pace-testing (speedMatchMode, set by jumpToLocation),
+  // Reset now redoes the SAME scoped jump instead — the exact "redo whatever was last
+  // jumped to" logic startSim's own Replay handling already uses — leaving
+  // speedMatchMode (and therefore WaypointPaceEditor) untouched. Outside pace-testing
+  // (plain script/audio browsing, the tab's default state), Reset is completely
+  // unchanged — a full stopSim, same as always. The automatic "trail path changed"
+  // reset (the effect above) and the unmount cleanup both still call stopSim directly,
+  // not this — a trail path actually changing shape invalidates any in-progress jump
+  // regardless of mode, so that one case must always fully reset, jump-to mode
+  // included.
+  const handleResetClick = () => {
+    if (speedMatchMode && lastJumpRef.current) {
+      pauseSim();
+      resetToWaypoint(lastJumpRef.current.targetIndex, {
+        scopeToThisWaypoint: lastJumpRef.current.scopeToThisWaypoint,
+      });
+      return;
+    }
+    stopSim();
   };
   // Per Enda's follow-up 48 report: reversing follow-up 37's own change here —
   // jumping to a location must NOT autoplay any more. "The person editing this
@@ -817,6 +859,20 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
         }
       }
     }
+    // Per Enda's report: the mirror image of pauseSim's own fix below — Pause now
+    // genuinely pauses a mid-clip narration (see audioPausedRef), so Start/Resume must
+    // genuinely pick that exact same clip back up, at the position it was left, rather
+    // than leaving it silent while the car starts moving again. Only actually resumes
+    // when audioPausedRef says a real pause happened (never for an ordinary fresh
+    // start or replay, where there's nothing paused to continue) — every other place
+    // that ends a run on purpose (stopSim, resetToWaypoint, both run just above for
+    // Replay) already clears this flag first, so this is a no-op there.
+    if (audioPausedRef.current && audioRef.current) {
+      audioRef.current.play().then(() => setAudioError(null)).catch((err) => {
+        if (activeAudioWpIndexRef.current != null) reportAudioError(activeAudioWpIndexRef.current, err);
+      });
+    }
+    audioPausedRef.current = false;
     setIsPlaying(true);
     setHasPlayed(true);
     intervalRef.current = setInterval(() => tickRef.current(), TICK_MS);
@@ -844,9 +900,22 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     startSim();
   };
 
+  // Per Enda's report: this used to stop only the car's own movement (the tick
+  // interval) — any narration clip already playing through audioRef kept going
+  // completely independently of it, so the marker would freeze while the voice kept
+  // right on talking. Pausing the actual <audio> element here keeps the two in
+  // lockstep. Only remembered as a real pause (audioPausedRef) when a clip was
+  // genuinely still playing at that instant — never for an already-silent moment
+  // (nothing playing, or a clip that had already finished) — so Start/Resume
+  // (startSim above) knows there's really something to pick back up, rather than
+  // blindly restarting whatever's loaded in the audio element from its very beginning.
   const pauseSim = () => {
     setIsPlaying(false);
     if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
+    if (audioRef.current && !audioRef.current.paused) {
+      audioRef.current.pause();
+      audioPausedRef.current = true;
+    }
   };
 
   const progressPct = pathData.total > 0 ? Math.min(100, (distTraveled / pathData.total) * 100) : 0;
@@ -896,7 +965,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
             <Pause className="w-4 h-4" /> Pause
           </Button>
         )}
-        <Button onClick={stopSim} size="sm" variant="outline" className="border-slate-500 text-slate-300 gap-2">
+        <Button onClick={handleResetClick} size="sm" variant="outline" className="border-slate-500 text-slate-300 gap-2">
           <Square className="w-4 h-4" /> Reset
         </Button>
         <span className="flex items-center gap-1.5 text-slate-200 text-sm bg-slate-800/60 rounded-lg border border-slate-600 px-2.5 h-8" title={form.tour_category === 'WBT' ? 'Fixed walking speed' : 'Set by an Admin — never editable here'}>
