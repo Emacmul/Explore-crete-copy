@@ -1323,6 +1323,28 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   // 'edit' phase yet, or whenever something else on the panel is busy.
   const topScriptLocked = busy || (!!segments && editingLocked);
 
+  // Per Enda (relaying Anoushka, follow-up 75): "if she is given the opportunity to
+  // take a shortcut, temptation will at some stage strike" — the per-line and
+  // per-subsection listen-before-edit gates below already force a narrator to hear
+  // each part before touching it, but topScriptLocked alone still leaves this box
+  // itself sitting there, unlocking for the WHOLE document the instant reviewPhase
+  // reaches 'edit' — a narrator could rewrite anything through it without listening
+  // to any individual part again, defeating every one of those gates at once. Per
+  // Enda: this box "should really not be there, and should certainly not be
+  // editable" once that's possible — not just disabled, gone entirely — so a
+  // narrator is never shown an edit surface that bypasses listening.
+  //
+  // Scoped to a translation clone specifically (fixedLanguage is only ever set for
+  // one — see its own declaration above) rather than removing this box everywhere:
+  // for an Admin writing an original master script from scratch there is no import
+  // to substitute for it — this box is the only place to write or fix that text at
+  // all, and Enda's report here is specifically about a Narrator's temptation to
+  // shortcut translation review, not about changing how Admins draft their own
+  // scripts. Still shown, unchanged, for the very first pass in EITHER case (no
+  // segments yet) — that's the only way imported/typed text ever reaches this panel
+  // in the first place, clone or not.
+  const showTopScriptBox = !segments || !fixedLanguage;
+
   // Per Enda: "the ability to declare a segment as Done should only appear after a full
   // Build a play procedure, never after and editing pass" and "must never appear after
   // the first Build and Play pass". listenPassCount only ever increments on a complete,
@@ -1379,67 +1401,75 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
         disabled={passLocked}
       />
 
-      {/* Insert break tags at cursor. Per Enda's follow-up 31 redesign: these edit the
-          script directly, exactly like typing in the box below, so they're locked
-          under the exact same condition — see topScriptLocked just below. */}
-      <div className="flex items-center gap-1 flex-wrap">
-        <span className="text-xs text-slate-500">Insert pause:</span>
-        {/* 0.1s — a mid-sentence pause is often much shorter than half a second; 0.5s
-            alone made that impossible to express with a quick-insert button. */}
-        <Button type="button" size="sm" variant="ghost"
-          onClick={() => insertBreakTag('<break time="0.1s"/>')}
-          disabled={topScriptLocked}
-          className="text-slate-400 hover:text-slate-200 h-7 px-2 text-xs gap-1">
-          <Pause className="w-3 h-3" /> 0.1s
-        </Button>
-        <Button type="button" size="sm" variant="ghost"
-          onClick={() => insertBreakTag('<break time="0.5s"/>')}
-          disabled={topScriptLocked}
-          className="text-slate-400 hover:text-slate-200 h-7 px-2 text-xs gap-1">
-          <Pause className="w-3 h-3" /> 0.5s (default)
-        </Button>
-        {[1, 2, 3].map((s) => (
-          <Button key={s} type="button" size="sm" variant="ghost"
-            onClick={() => insertBreakTag(`<break time="${s}s"/>`)}
-            disabled={topScriptLocked}
-            className="text-slate-400 hover:text-slate-200 h-7 px-2 text-xs gap-1">
-            <Pause className="w-3 h-3" /> {s}s
-          </Button>
-        ))}
-      </div>
+      {/* Insert break tags at cursor, and the top script textarea itself, just below.
+          Per Enda (follow-up 75): for a translation clone, once a pass exists, this
+          whole block disappears rather than merely locking — see showTopScriptBox
+          above. Still shown for the very first pass (no segments yet) either way, and
+          always shown for an Admin's own master-script authoring (no fixedLanguage) —
+          only a Narrator reviewing a translation loses it, and only once there's
+          something to listen to first. */}
+      {showTopScriptBox && (
+        <>
+          <div className="flex items-center gap-1 flex-wrap">
+            <span className="text-xs text-slate-500">Insert pause:</span>
+            {/* 0.1s — a mid-sentence pause is often much shorter than half a second; 0.5s
+                alone made that impossible to express with a quick-insert button. */}
+            <Button type="button" size="sm" variant="ghost"
+              onClick={() => insertBreakTag('<break time="0.1s"/>')}
+              disabled={topScriptLocked}
+              className="text-slate-400 hover:text-slate-200 h-7 px-2 text-xs gap-1">
+              <Pause className="w-3 h-3" /> 0.1s
+            </Button>
+            <Button type="button" size="sm" variant="ghost"
+              onClick={() => insertBreakTag('<break time="0.5s"/>')}
+              disabled={topScriptLocked}
+              className="text-slate-400 hover:text-slate-200 h-7 px-2 text-xs gap-1">
+              <Pause className="w-3 h-3" /> 0.5s (default)
+            </Button>
+            {[1, 2, 3].map((s) => (
+              <Button key={s} type="button" size="sm" variant="ghost"
+                onClick={() => insertBreakTag(`<break time="${s}s"/>`)}
+                disabled={topScriptLocked}
+                className="text-slate-400 hover:text-slate-200 h-7 px-2 text-xs gap-1">
+                <Pause className="w-3 h-3" /> {s}s
+              </Button>
+            ))}
+          </div>
 
-      {/* Editable script textarea — same pastel yellow as every duplicate copy further
-          down (per Enda: every editable script box must look identical, so it's never
-          ambiguous which boxes on this panel are text you can type into). Per Enda's
-          follow-up 31 redesign: "no edits possible" during a listen pass has to cover
-          THIS box too, not just the per-line/per-subsection controls further down —
-          without locking it, a narrator could still freely rewrite the raw script here
-          while Build & Play is running (or before it's even been clicked), which is
-          exactly the kind of edit-without-listening the whole redesign exists to
-          prevent. Locked (topScriptLocked, see below) whenever a pass is active
-          (segments exist) and reviewPhase isn't 'edit' yet, or whenever anything else
-          on the panel is busy — but deliberately NOT locked before the very first Parse
-          & Generate (no segments yet), since that's the only way to import/write the
-          script in the first place. */}
-      <div>
-        <Textarea
-          ref={textareaRef}
-          value={script || ''}
-          onChange={handleScriptEdit}
-          placeholder={'Import a script file or write here...\n\nUse <break time="2s"/> for pauses.'}
-          rows={6}
-          disabled={topScriptLocked}
-          className="bg-amber-100 border-amber-300 text-black placeholder:text-amber-900/50 text-sm font-mono resize-y focus-visible:ring-amber-400"
-        />
-        <div className="flex items-center justify-between mt-1">
-          <span className={`text-xs ${overLimit ? 'text-red-400' : 'text-slate-500'}`}>
-            {charCount} / {MAX_CHARS} characters
-          </span>
-          {charCount > 0 && (
-            <span className="text-xs text-green-500">Free via Google TTS (1M chars/month)</span>
-          )}
-        </div>
-      </div>
+          {/* Editable script textarea — same pastel yellow as every duplicate copy further
+              down (per Enda: every editable script box must look identical, so it's never
+              ambiguous which boxes on this panel are text you can type into). Per Enda's
+              follow-up 31 redesign: "no edits possible" during a listen pass has to cover
+              THIS box too, not just the per-line/per-subsection controls further down —
+              without locking it, a narrator could still freely rewrite the raw script here
+              while Build & Play is running (or before it's even been clicked), which is
+              exactly the kind of edit-without-listening the whole redesign exists to
+              prevent. Locked (topScriptLocked, see below) whenever a pass is active
+              (segments exist) and reviewPhase isn't 'edit' yet, or whenever anything else
+              on the panel is busy — but deliberately NOT locked before the very first Parse
+              & Generate (no segments yet), since that's the only way to import/write the
+              script in the first place. */}
+          <div>
+            <Textarea
+              ref={textareaRef}
+              value={script || ''}
+              onChange={handleScriptEdit}
+              placeholder={'Import a script file or write here...\n\nUse <break time="2s"/> for pauses.'}
+              rows={6}
+              disabled={topScriptLocked}
+              className="bg-amber-100 border-amber-300 text-black placeholder:text-amber-900/50 text-sm font-mono resize-y focus-visible:ring-amber-400"
+            />
+            <div className="flex items-center justify-between mt-1">
+              <span className={`text-xs ${overLimit ? 'text-red-400' : 'text-slate-500'}`}>
+                {charCount} / {MAX_CHARS} characters
+              </span>
+              {charCount > 0 && (
+                <span className="text-xs text-green-500">Free via Google TTS (1M chars/month)</span>
+              )}
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Voice + Language */}
       <div className="grid grid-cols-2 gap-3">

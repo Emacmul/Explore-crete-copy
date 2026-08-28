@@ -41,6 +41,62 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-27 (follow-up 75) — Removed the translation-review shortcut around listen-before-edit
+Scope: `src/components/admin/NarrationTtsEditor.jsx`. (Frontend only —
+no backend function touched.)
+
+Enda relayed a request from Anoushka: she knows narrators (herself
+included) will eventually be tempted to skip ahead if a shortcut
+exists. The intended flow — import/translate a file, listen to the
+whole thing via Build & Play, only then get access to each
+subsection's own editable text after listening to ITS audio too — is
+already exactly how this panel works (confirmed: `reviewPhase`,
+`listenPassCount`, and the per-line `playedSegmentIds` gate from
+follow-ups 31/32 already enforce all of that). The gap: the big
+whole-document script textarea at the top of the panel — the one
+imported/translated text first lands in — stayed in the DOM the whole
+time and unlocked for the ENTIRE document the instant `reviewPhase`
+reached 'edit', after just one listen pass. A narrator could rewrite
+anything through it directly, bypassing every per-line/per-subsection
+listen requirement below it at once.
+
+Fix: new `showTopScriptBox = !segments || !fixedLanguage`. That box
+(and its "Insert pause" quick-buttons, which write into it) now
+disappears entirely — not just disabled, removed from the page — once
+a pass exists (`segments` truthy), but ONLY when `fixedLanguage` is
+set, i.e. only for a translation clone. Reasoning for that scope:
+`fixedLanguage` is already this codebase's existing signal for "this
+is a Narrator reviewing/translating a clone" (it's what locks the
+language picker for exactly this case already); for an Admin writing
+an original master script from scratch there's no import to
+substitute for this box — it's their only way to write or fix that
+text at all, and Enda's report here was specifically about a
+Narrator's temptation to shortcut translation review, not about
+changing how Admins draft. Still shown, unchanged, for the very first
+pass in either case (no segments yet) — that's the only way
+imported/typed text reaches this panel to begin with. The narration
+text itself stays fully visible either way, via the read-only segment
+cards Build & Play already reads through — only the unguarded edit
+surface is gone.
+
+The per-subsection "Edit this part's script" box and each line's own
+quick-edit pencil are both completely untouched — those are the
+legitimate, correctly-gated editing paths Enda confirmed already work
+right, and remain exactly as they were.
+
+Verified: `npx eslint` diff against baseline showed zero issues,
+identical before and after. Clean `vite build`. Wrote and ran a
+Node.js script modeling `showTopScriptBox` across every state that
+matters: an Admin's own script (no `fixedLanguage`) shows it always,
+pre- and post-pass alike; a Narrator/clone shows it before the first
+pass and hides it completely once one exists; and a fresh re-import
+mid-review (which resets `segments` back to `null`, the same reset
+`TranslationPanel`'s `onTranslated` already does) correctly brings it
+back for the new text. Also traced every `setSegments(...)` call site
+in the file to confirm re-parsing mid-pass ("Save & Listen Again")
+never nulls `segments` first, so the box can't flicker back into view
+during an ordinary re-parse.
+
 ## 2026-08-27 (follow-up 74) — Location 1's overlapping first two waypoints no longer look like one confusing blob
 Scope: `src/components/admin/TourSimulator.jsx`,
 `src/components/admin/TourSimulatorMap.jsx`. (Frontend only — no
