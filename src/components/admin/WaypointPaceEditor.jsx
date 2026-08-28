@@ -301,18 +301,69 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
   // building a preview around a blank line only for Save to refuse it later.
   const findEmptyTextSegment = (segs) => segs.find((seg) => seg.type === 'text' && !seg.content.trim());
 
+  // Matches ANY <break .../> tag regardless of attribute form — the same broad check
+  // narrationUtils.js's parseSSMLBreaks and odtExporter.js's export already use for
+  // "does this look like a break tag at all", not ttsParser.js's narrower one.
+  const BREAK_TAG_LOOKS_LIKE = /<break\b[^>]*\/?>/i;
+
+  // Per Anoushka's own follow-up to follow-up 77: "I'll type a <break> tag in it for
+  // 0.1s. Will that work?" — checked rather than assumed, and as originally built, no:
+  // a text segment's content is sent to Google TTS completely literally (see
+  // regenerateSegmentAudio above), so typing a break tag into one would make the
+  // narrator audibly SAY the tag's own text out loud — a worse outcome than the
+  // empty-line block she was trying to get around, not a fix for it.
+  //
+  // This makes her actual intent genuinely work instead: if a text segment's content,
+  // once trimmed, is EXACTLY one break tag and nothing else, it's converted into a
+  // real pause segment here — parseScript (the app's own canonical break-tag reader,
+  // already used to parse the whole document) reads whatever attribute form was typed
+  // and returns its duration, reused rather than re-implementing that parsing.
+  // Content and any cached audio are dropped, since a pause never needs TTS audio —
+  // genuinely equivalent to deleting the line: nothing is spoken there any more, only
+  // the pause plays. The now-converted segment re-renders as an ordinary pause slider,
+  // same as any other, giving a clear visual confirmation the conversion happened.
+  //
+  // If a break tag is typed alongside other text instead — mixed in, more than one
+  // tag, or a malformed one — this deliberately does NOT attempt to re-split that one
+  // box into several real segments (a much bigger feature nobody has asked for), and
+  // instead blocks with a clear explanation, so a stray "<break...>" can never
+  // silently reach Google TTS as literal words to pronounce.
+  const collapseBreakTagOnlySegments = (segs) => {
+    let blockedError = null;
+    let changed = false;
+    const collapsed = segs.map((seg) => {
+      if (seg.type !== 'text' || blockedError) return seg;
+      const trimmed = seg.content.trim();
+      if (!trimmed || !BREAK_TAG_LOOKS_LIKE.test(trimmed)) return seg;
+      const parsed = parseScript(trimmed);
+      if (parsed.length === 1 && parsed[0].type === 'pause') {
+        changed = true;
+        return { id: seg.id, type: 'pause', duration: parsed[0].duration };
+      }
+      blockedError = "A break tag needs to be the ONLY thing in that box to turn the line into a pause — remove the extra text around it, or remove the tag and just leave real words.";
+      return seg;
+    });
+    return { segments: collapsed, blockedError, changed };
+  };
+
   const handleTest = async () => {
     if (!segments || testing || saving) return;
-    const empty = findEmptyTextSegment(segments);
-    if (empty) {
-      setError("A line can't be left empty — type something back in, or undo the edit. To remove a line entirely, do that from the Waypoints tab instead.");
+    const { segments: normalized, blockedError, changed } = collapseBreakTagOnlySegments(segments);
+    if (blockedError) {
+      setError(blockedError);
       return;
     }
+    const empty = findEmptyTextSegment(normalized);
+    if (empty) {
+      setError("A line can't be left empty — type something back in, or undo the edit, or type a <break time=\"0.1s\"/> tag (and nothing else) into it to turn it into a pause instead.");
+      return;
+    }
+    if (changed) setSegments(normalized);
     setTesting(true);
     setError('');
     try {
-      const freshAudios = await ensureFreshSegmentAudio(segments, segmentAudios);
-      const wavBlob = await combineSegmentsToWav(segments, freshAudios, undefined, { onRegenerateAudio: regenerateSegmentAudio });
+      const freshAudios = await ensureFreshSegmentAudio(normalized, segmentAudios);
+      const wavBlob = await combineSegmentsToWav(normalized, freshAudios, undefined, { onRegenerateAudio: regenerateSegmentAudio });
       const blobUrl = URL.createObjectURL(wavBlob);
       if (lastPreviewUrlRef.current) URL.revokeObjectURL(lastPreviewUrlRef.current);
       lastPreviewUrlRef.current = blobUrl;
@@ -325,16 +376,22 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
 
   const handleSave = async () => {
     if (!segments || saving || testing) return;
-    const empty = findEmptyTextSegment(segments);
-    if (empty) {
-      setError("A line can't be left empty — type something back in, or undo the edit. To remove a line entirely, do that from the Waypoints tab instead.");
+    const { segments: normalized, blockedError, changed } = collapseBreakTagOnlySegments(segments);
+    if (blockedError) {
+      setError(blockedError);
       return;
     }
+    const empty = findEmptyTextSegment(normalized);
+    if (empty) {
+      setError("A line can't be left empty — type something back in, or undo the edit, or type a <break time=\"0.1s\"/> tag (and nothing else) into it to turn it into a pause instead.");
+      return;
+    }
+    if (changed) setSegments(normalized);
     setSaving(true);
     setError('');
     try {
-      const freshAudios = await ensureFreshSegmentAudio(segments, segmentAudios);
-      const wavBlob = await combineSegmentsToWav(segments, freshAudios, undefined, { onRegenerateAudio: regenerateSegmentAudio });
+      const freshAudios = await ensureFreshSegmentAudio(normalized, segmentAudios);
+      const wavBlob = await combineSegmentsToWav(normalized, freshAudios, undefined, { onRegenerateAudio: regenerateSegmentAudio });
       const audioBase64 = await blobToBase64(wavBlob);
       const response = await withTimeout(
         base44.functions.invoke('uploadNarrationAudio', {
@@ -353,7 +410,7 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
       // exact same class of bug the "really saved" complaint that started this whole
       // request was about, so it's done here as one single call from the start.
       onSave({
-        narration_script: rebuildScript(segments),
+        narration_script: rebuildScript(normalized),
         audio_clip_url: response.data.url,
         trigger_audio: true,
         waypoint_done: true,

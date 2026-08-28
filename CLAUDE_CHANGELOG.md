@@ -41,6 +41,58 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-28 (follow-up 78) — A break tag typed alone in a pace-matching text box now becomes a real pause
+Scope: `src/components/admin/WaypointPaceEditor.jsx`. (Frontend only —
+no backend function touched.)
+
+Anoushka's follow-up question to follow-up 77's own guardrail. That
+guardrail said a text box in the pace-matching panel can't be Tested
+or Saved while empty, since there's no way to delete a line from
+that screen, only to type into it. Her proposed workaround: "I'll
+type a `<break>` tag in it for 0.1s. Will that work?"
+
+Checked before answering, per standing rule — not assumed. As
+follow-up 77 left it, no: a text segment's content is sent to Google
+TTS completely literally (`regenerateSegmentAudio`), so typing a
+break tag into one would make the narrator audibly SAY the tag's own
+text out loud. That is worse than the empty-line block she was
+trying to route around, not a fix for it.
+
+Fix: a new `collapseBreakTagOnlySegments` step runs before both Test
+and Save. If a text segment's content, once trimmed, is EXACTLY one
+break tag and nothing else, it's converted into a real pause segment
+— `parseScript` (the app's own canonical break-tag reader) reads
+whatever attribute form was typed and supplies its duration, so
+`<break time="0.1s"/>` becomes a genuine 0.1s pause, no TTS call
+involved, nothing spoken. The segment re-renders as an ordinary pause
+slider, giving a clear visual confirmation the conversion happened.
+
+If a break tag is typed mixed in with other words, or more than one
+tag appears alone, or the tag is malformed/unsupported, this
+deliberately does NOT try to auto-split the box into several
+segments — it blocks with a clear on-screen explanation instead, so a
+stray tag can never silently reach Google TTS as literal words. A
+genuinely empty box (no break tag at all) still falls through to
+follow-up 77's original "can't be left empty" message, now also
+mentioning the break-tag option.
+
+Verified with an executed Node.js script (20 checks, all passing)
+covering: the exact 0.1s case Anoushka described; whitespace padding
+around the tag; a break tag mixed with other text (blocked); two
+break tags alone (blocked); a malformed tag (blocked, never silently
+converted); a genuinely empty line (still caught as empty, not
+mistaken for a break-tag case); ordinary text with no tag (untouched);
+an existing slider-created pause segment (left alone); every
+supported break-tag attribute form (`time="Xs"`, `time="Xms"`, bare
+`Xs`, `strength="..."`) converting to the correct duration; and a
+multi-segment save where only the break-tag line converts, its
+segment id is preserved for React key stability, and the other lines
+are untouched. Also confirmed `handleSave`'s final `onSave` call
+writes `rebuildScript` from the post-conversion segment list, not
+the stale pre-conversion one — otherwise the saved `narration_script`
+would still contain the literal break-tag text as if it were spoken
+words, defeating the fix.
+
 ## 2026-08-28 (follow-up 77) — Text is now editable in the pace-matching (speed-test) panel
 Scope: `src/components/admin/WaypointPaceEditor.jsx`. (Frontend only —
 no backend function touched.)
