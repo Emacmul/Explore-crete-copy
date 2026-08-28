@@ -41,6 +41,48 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-28 (follow-up 76) — Closed the remaining pre-Parse-and-Generate editing gap
+Scope: `src/components/admin/NarrationTtsEditor.jsx`. (Frontend only —
+no backend function touched.)
+
+Enda's immediate follow-up to follow-up 75: after "Translate & Load",
+the top script box correctly stays visible until "Parse & Generate" is
+clicked — that part's fine, he can see what got imported — but it was
+still directly EDITABLE for that whole stretch too, for a translation
+clone. `showTopScriptBox` (follow-up 75) only ever hid the box once a
+pass existed; it never touched whether the box could be typed into
+before that first pass.
+
+Root cause this box was ever editable for a Narrator at all: it never
+needed to be. 100% of a Narrator's legitimate text arrives here
+programmatically, via `TranslationPanel`'s "Translate & Load"
+(`onTranslated` → `onScriptChange`) — never by typing into this box by
+hand, at any stage.
+
+Fix: `topScriptLocked` now also locks unconditionally whenever
+`fixedLanguage` is set (a translation clone), regardless of `busy`,
+`segments`, or `editingLocked`. Previously it only locked once a pass
+existed and wasn't yet in the 'edit' phase — leaving exactly the
+pre-Parse-and-Generate gap Enda just reported wide open. Combined with
+follow-up 75's `showTopScriptBox`, the box is now, for a Narrator:
+visible-but-locked before the first Parse & Generate, and gone
+entirely afterward. For an Admin authoring an original master script
+(`fixedLanguage` unset), completely unchanged — `!!fixedLanguage` is
+always false there, so every existing admin behaviour is untouched.
+
+Verified: `npx eslint` diff against baseline showed zero issues,
+identical before and after. Clean `vite build`. Wrote and ran a Node
+script modeling `topScriptLocked` across every combination of
+busy/segments/editingLocked for both an Admin (confirmed byte-for-byte
+identical to the pre-existing behaviour in all six combinations tested)
+and a Narrator/clone (confirmed locked in all six, including the exact
+"mid-pass, edit phase" combination that used to be the escape hatch,
+AND the pre-Parse-and-Generate combination Enda just reported). Also
+grepped every use of `topScriptLocked` in the file to confirm it only
+ever gates these same four controls (the three "Insert pause" buttons
+and the textarea itself) — nothing else in the panel is affected by
+this change.
+
 ## 2026-08-27 (follow-up 75) — Removed the translation-review shortcut around listen-before-edit
 Scope: `src/components/admin/NarrationTtsEditor.jsx`. (Frontend only —
 no backend function touched.)

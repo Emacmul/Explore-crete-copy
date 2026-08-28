@@ -1321,7 +1321,19 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   // segments exist, and that box has to stay usable for the very first import/write.
   // Locked only once a pass is actually active (segments exist) and it isn't the
   // 'edit' phase yet, or whenever something else on the panel is busy.
-  const topScriptLocked = busy || (!!segments && editingLocked);
+  //
+  // Per Enda's immediate follow-up to follow-up 75: hiding this box once a pass
+  // exists (showTopScriptBox above) wasn't the whole fix — for a translation clone
+  // it's still visible AND directly editable before that first Parse & Generate, and
+  // 100% of a Narrator's legitimate text ever arrives here programmatically, via
+  // TranslationPanel's "Translate & Load" (onTranslated below) — never by typing
+  // into this box by hand. So for a clone (fixedLanguage set) it's locked
+  // unconditionally, at every stage it's ever shown, not just once a pass exists —
+  // still visible so the imported text can be checked by eye, never something a
+  // Narrator can pre-emptively rewrite before ever listening to it. Unchanged for an
+  // Admin authoring an original master script (fixedLanguage unset) — this remains
+  // their only way to write or fix that text at all.
+  const topScriptLocked = busy || (!!segments && editingLocked) || !!fixedLanguage;
 
   // Per Enda (relaying Anoushka, follow-up 75): "if she is given the opportunity to
   // take a shortcut, temptation will at some stage strike" — the per-line and
