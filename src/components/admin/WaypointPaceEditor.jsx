@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 import { Slider } from '@/components/ui/slider';
 import { Loader2, Play, Save, AlertTriangle, Clock } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
@@ -19,11 +20,12 @@ const LANG_TO_CODE = {
 };
 
 const TTS_CALL_TIMEOUT_MS = 30000;
-// Voice is fixed rather than offered as a picker — per Enda, this screen has NOTHING
-// on it beyond the already-written text and the pause sliders. Nothing about a
-// waypoint's originally-chosen voice/gender is persisted anywhere once its audio has
-// been finalized (see NarrationTtsEditor's finalizeAndSave — only the combined file
-// survives), so there is no real "original" value to default to here either way.
+// Voice is fixed rather than offered as a picker — per Enda, this screen is scoped to
+// wording and pause timing (see the file comment below), nothing about voice/language.
+// Nothing about a waypoint's originally-chosen voice/gender is persisted anywhere once
+// its audio has been finalized (see NarrationTtsEditor's finalizeAndSave — only the
+// combined file survives), so there is no real "original" value to default to here
+// either way.
 const VOICE = 'NEUTRAL';
 
 /**
@@ -41,32 +43,53 @@ const VOICE = 'NEUTRAL';
  *
  * This is that purpose-built replacement. It shows the waypoint's own script, broken
  * into its text/pause pieces exactly like NarrationTtsEditor already does elsewhere
- * (parseScript) — but READ-ONLY: no import, no translate, no voice/language picker, no
- * per-line rewording, nothing. Only a pause's own duration slider is ever adjustable.
+ * (parseScript) — no import, no translate, no voice/language picker. A pause's own
+ * duration slider is adjustable, same as always.
  *
- * Audio for the (unchanged) text pieces is regenerated automatically the moment a
- * waypoint is opened here — a mechanical necessity, not an invitation to rewrite
- * anything: only the FINAL combined file is ever persisted anywhere (see
- * NarrationTtsEditor's own finalizeAndSave), so there is no already-generated
- * per-line audio left over from the original writing session to reuse. Deliberately
- * self-contained rather than sharing NarrationTtsEditor's own state machine — that
- * file has been through 30+ rounds of careful, narrow bug fixes around its own
- * listen/edit-phase locking, and none of that machinery is relevant to a screen that
- * never allows editing text in the first place.
+ * Per Anoushka (relayed by Enda, follow-up 77), each text piece is ALSO directly
+ * editable here now — the one deliberate reversal of this file's original "wording is
+ * already final by the time you reach this screen" design (see the still-true
+ * reasoning about pause timing above). Her observation: for some languages (she
+ * narrates Czech), the same meaning and speech cadence can often be said in far fewer
+ * words — matching a subsegment's speech against the real driving time it has to fit
+ * is frequently better solved by shortening the WORDING than by only stretching or
+ * shrinking pauses, and doing that right here, immediately re-testable via "Test this
+ * subsegment", is far more useful than having to go back to the Waypoints tab, edit
+ * blind, and return to re-check the timing.
+ *
+ * Editing a segment's text immediately clears ITS OWN cached audio (handleTextChange
+ * below) — that cached clip was generated for whatever the wording used to be, and
+ * combining it against the new text on screen would produce a real mismatch between
+ * what's heard and what's written, completely silently. handleTest/handleSave both
+ * run through ensureFreshSegmentAudio first, which regenerates real TTS audio for
+ * every text segment missing from segmentAudios (precisely the ones just edited, and
+ * only those) before ever combining anything, so a stale clip can never be used by
+ * accident, on either action. Pause segments are untouched by any of this — only text
+ * segments ever have cached audio to invalidate in the first place.
+ *
+ * Audio for the (initially unedited) text pieces is regenerated automatically the
+ * moment a waypoint is opened here — a mechanical necessity: only the FINAL combined
+ * file is ever persisted anywhere (see NarrationTtsEditor's own finalizeAndSave), so
+ * there is no already-generated per-line audio left over from the original writing
+ * session to reuse. Deliberately self-contained rather than sharing NarrationTtsEditor's
+ * own state machine — that file has been through 30+ rounds of careful, narrow bug
+ * fixes around its own listen/edit-phase locking, none of which is relevant to this
+ * screen's much smaller, single-waypoint scope.
  *
  * "Test this subsegment" (rename of the old "Test this waypoint") builds a LIVE
- * preview — combining the current, possibly-still-unsaved pause durations with the
- * already-generated line audio into one WAV, entirely in-browser (combineSegmentsToWav,
- * the exact same renderer NarrationTtsEditor's own Mark Segment as Done uses) — and
- * hands its object URL up to the parent (onTestSubsegment), which plays it through the
- * Simulator's own proven drive/geofence engine via jumpToWaypoint's audioOverrideUrl,
- * scoped to just this waypoint's own leg. Nothing is saved by testing — repeatable as
- * many times as it takes. "Save pause timing" renders the same combined file again,
- * uploads it for real (uploadNarrationAudio — the exact same call finalizeAndSave
- * uses), and only THEN calls onSave with the real, uploaded URL plus the updated
- * script text (so the new pause durations are also reflected in narration_script, not
- * just the audio) — followed immediately by onAutoSave(), so this is a real save, not
- * something sitting only in memory until Save Route happens to be clicked separately.
+ * preview — combining the current, possibly-still-unsaved wording/pause durations with
+ * fresh, text-accurate line audio into one WAV, entirely in-browser
+ * (combineSegmentsToWav, the exact same renderer NarrationTtsEditor's own Mark Segment
+ * as Done uses) — and hands its object URL up to the parent (onTestSubsegment), which
+ * plays it through the Simulator's own proven drive/geofence engine via
+ * jumpToWaypoint's audioOverrideUrl, scoped to just this waypoint's own leg. Nothing is
+ * saved by testing — repeatable as many times as it takes, including after editing
+ * text. "Save changes" renders the same combined file again, uploads it for real
+ * (uploadNarrationAudio — the exact same call finalizeAndSave uses), and only THEN
+ * calls onSave with the real, uploaded URL plus the updated script text (so the new
+ * wording and pause durations are both reflected in narration_script, not just the
+ * audio) — followed immediately by onAutoSave(), so this is a real save, not something
+ * sitting only in memory until Save Route happens to be clicked separately.
  */
 export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, onAutoSave, onTestSubsegment, testDisabled, testDisabledReason }) {
   // Per Enda's report (follow-up 59): this panel opened straight to "No Google TTS API
@@ -203,6 +226,25 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
     setDirty(true);
   };
 
+  // Per Anoushka/Enda (follow-up 77) — see the file header comment above. Updates
+  // just this one segment's own wording, and immediately drops its cached audio: that
+  // clip was generated for the OLD text, and leaving it in segmentAudios would let
+  // handleTest/handleSave silently combine it against the NEW text now on screen.
+  // ensureFreshSegmentAudio (below) regenerates real audio for exactly the segments
+  // missing from segmentAudios — i.e. exactly the ones edited since the last
+  // Test/Save — the next time either button runs, so this never needs to trigger a
+  // TTS call itself, on every keystroke, here.
+  const handleTextChange = (segmentId, newContent) => {
+    setSegments((prev) => prev ? prev.map((seg) => (seg.id === segmentId ? { ...seg, content: newContent } : seg)) : prev);
+    setDirty(true);
+    setSegmentAudios((prev) => {
+      if (!(segmentId in prev)) return prev;
+      const next = { ...prev };
+      delete next[segmentId];
+      return next;
+    });
+  };
+
   // Per Enda's follow-up 35 report (same reasoning as NarrationTtsEditor's own
   // regenerateSegmentAudio): a segment's audio URL can go stale between when it was
   // generated and when it's actually needed for combining/preview. Self-heals by
@@ -231,12 +273,46 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
     }
   };
 
+  // Per Anoushka/Enda (follow-up 77) — see the file header comment above. Builds a
+  // fresh lookup object rather than trusting segmentAudios state directly: any
+  // segment just edited was already stripped out of it by handleTextChange, and a
+  // regenerate call here needs to hand combineSegmentsToWav the REAL, just-fetched
+  // URL immediately — reading segmentAudios back inside the same synchronous handler
+  // that calls setSegmentAudios wouldn't see that update yet (React batches state
+  // updates), so this reads the return value of each regenerateSegmentAudio call
+  // directly instead. A segment that already has cached audio (untouched since the
+  // last Test/Save) is left completely alone — no wasted TTS calls for wording that
+  // hasn't changed.
+  const ensureFreshSegmentAudio = async (segs, audios) => {
+    const updated = { ...audios };
+    for (const seg of segs) {
+      if (seg.type !== 'text' || updated[seg.id]) continue;
+      const freshUrl = await regenerateSegmentAudio(seg);
+      if (freshUrl) updated[seg.id] = freshUrl;
+    }
+    return updated;
+  };
+
+  // Per NarrationTtsEditor's own established rule for a per-line edit ("A line can't
+  // be saved empty") — this screen has no equivalent of that file's larger script box
+  // to delete a line through, so an emptied-out line here has no way to become a real,
+  // intentional removal; it can only ever be a stray edit. Shared by handleTest and
+  // handleSave so testing catches this exactly as early as saving does, rather than
+  // building a preview around a blank line only for Save to refuse it later.
+  const findEmptyTextSegment = (segs) => segs.find((seg) => seg.type === 'text' && !seg.content.trim());
+
   const handleTest = async () => {
     if (!segments || testing || saving) return;
+    const empty = findEmptyTextSegment(segments);
+    if (empty) {
+      setError("A line can't be left empty — type something back in, or undo the edit. To remove a line entirely, do that from the Waypoints tab instead.");
+      return;
+    }
     setTesting(true);
     setError('');
     try {
-      const wavBlob = await combineSegmentsToWav(segments, segmentAudios, undefined, { onRegenerateAudio: regenerateSegmentAudio });
+      const freshAudios = await ensureFreshSegmentAudio(segments, segmentAudios);
+      const wavBlob = await combineSegmentsToWav(segments, freshAudios, undefined, { onRegenerateAudio: regenerateSegmentAudio });
       const blobUrl = URL.createObjectURL(wavBlob);
       if (lastPreviewUrlRef.current) URL.revokeObjectURL(lastPreviewUrlRef.current);
       lastPreviewUrlRef.current = blobUrl;
@@ -249,10 +325,16 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
 
   const handleSave = async () => {
     if (!segments || saving || testing) return;
+    const empty = findEmptyTextSegment(segments);
+    if (empty) {
+      setError("A line can't be left empty — type something back in, or undo the edit. To remove a line entirely, do that from the Waypoints tab instead.");
+      return;
+    }
     setSaving(true);
     setError('');
     try {
-      const wavBlob = await combineSegmentsToWav(segments, segmentAudios, undefined, { onRegenerateAudio: regenerateSegmentAudio });
+      const freshAudios = await ensureFreshSegmentAudio(segments, segmentAudios);
+      const wavBlob = await combineSegmentsToWav(segments, freshAudios, undefined, { onRegenerateAudio: regenerateSegmentAudio });
       const audioBase64 = await blobToBase64(wavBlob);
       const response = await withTimeout(
         base44.functions.invoke('uploadNarrationAudio', {
@@ -314,9 +396,21 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
         <div className="space-y-2">
           {segments.map((seg) => (
             seg.type === 'text' ? (
-              <p key={seg.id} className="text-sm text-slate-200 bg-slate-900/40 border border-slate-700 rounded-lg p-2.5 whitespace-pre-wrap break-words">
-                {seg.content}
-              </p>
+              <div key={seg.id} className="space-y-1">
+                {/* Per Anoushka/Enda (follow-up 77): editable, not just displayed —
+                    same pastel yellow as every other editable script box in this app,
+                    so it's never ambiguous this one can be typed into. */}
+                <Textarea
+                  value={seg.content}
+                  onChange={(e) => handleTextChange(seg.id, e.target.value)}
+                  disabled={loading || saving || testing}
+                  rows={Math.max(2, Math.ceil(seg.content.length / 60))}
+                  className="bg-amber-100 border-amber-300 text-black placeholder:text-amber-900/50 text-sm resize-y focus-visible:ring-amber-400"
+                />
+                {!segmentAudios[seg.id] && !loading && (
+                  <p className="text-xs text-amber-400/80 italic">Edited — audio will regenerate the next time you Test or Save.</p>
+                )}
+              </div>
             ) : (
               <div key={seg.id} className="bg-slate-800 rounded-lg border border-slate-600 p-2.5">
                 <div className="flex items-center justify-between mb-1.5">
@@ -345,7 +439,7 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
             size="sm"
             onClick={handleTest}
             disabled={loading || testing || saving || testDisabled}
-            title={testDisabled ? testDisabledReason : 'Drive from this waypoint to the next one, playing this exact pause timing — click again any time, including after moving a slider, to re-test'}
+            title={testDisabled ? testDisabledReason : 'Drive from this waypoint to the next one, playing this exact wording and pause timing — click again any time, including after editing text or moving a slider, to re-test'}
             className="bg-blue-700/30 hover:bg-blue-700/50 border border-blue-600/50 text-white gap-2"
           >
             {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
@@ -355,11 +449,11 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
             size="sm"
             onClick={handleSave}
             disabled={loading || saving || testing || !dirty}
-            title={dirty ? 'Save this pause timing as the real, live audio for this waypoint' : 'Nothing changed yet'}
+            title={dirty ? 'Save this wording and pause timing as the real, live audio for this waypoint' : 'Nothing changed yet'}
             className="bg-amber-500 hover:bg-amber-600 text-white gap-2"
           >
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            {saving ? 'Saving…' : 'Save pause timing'}
+            {saving ? 'Saving…' : 'Save changes'}
           </Button>
         </div>
       )}

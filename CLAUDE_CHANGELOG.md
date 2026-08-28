@@ -41,6 +41,72 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-28 (follow-up 77) — Text is now editable in the pace-matching (speed-test) panel
+Scope: `src/components/admin/WaypointPaceEditor.jsx`. (Frontend only —
+no backend function touched.)
+
+Anoushka's suggestion, relayed by Enda: the pace-matching panel
+("Jump to location…" → the "Waypoint Audio & Break Tags" screen while
+tuning one waypoint against real driving time) let a narrator adjust
+pause durations only — wording was deliberately locked, on the
+reasoning that it should already be final by that point (see this
+file's own original design comment). Her observation: in some
+languages (she narrates Czech), the same meaning and cadence can
+often be said in noticeably fewer words — matching speech against
+real driving time is frequently better solved by shortening the
+WORDING than by only stretching or shrinking pauses, and doing that
+right here, immediately re-testable via "Test this subsegment", beats
+going back to the Waypoints tab, editing blind, and returning to
+re-check the timing.
+
+Each text piece is now a real editable box (same pastel-yellow
+convention as every other editable script box in this app), not a
+read-only paragraph. The one thing that had to be built carefully
+alongside it: every text segment's audio is a separately cached TTS
+clip (`segmentAudios`), generated once when the panel opens — editing
+the text without also invalidating that cache would let "Test this
+subsegment" or "Save changes" silently combine an OLD audio clip
+against the NEW wording on screen, a real, silent mismatch between
+what's written and what's heard.
+
+Fix: `handleTextChange` now clears a segment's cached audio the
+moment its text changes. New `ensureFreshSegmentAudio`, run by both
+`handleTest` and `handleSave` before any combining happens, regenerates
+real TTS audio for exactly the segments missing from the cache (i.e.
+exactly the ones edited since the last Test/Save) and leaves every
+other segment's already-correct cached audio untouched — no wasted
+TTS calls for wording that hasn't changed. Builds its result from each
+regenerate call's own return value rather than reading `segmentAudios`
+state back inside the same handler, since a `setSegmentAudios` call
+doesn't take effect synchronously within the function that made it
+(ordinary React state-update batching) — reading it back immediately
+would still see the stale value.
+
+Also added `findEmptyTextSegment`, refusing to Test or Save while any
+line has been edited down to nothing — this screen has no equivalent
+of `NarrationTtsEditor`'s larger script box to actually delete a line
+through, so a blanked-out line here can only ever be a stray edit, per
+that file's own established "a line can't be saved empty" rule.
+
+Button copy updated to match: "Save pause timing" → "Save changes",
+and both buttons' tooltips now mention wording as well as pause
+timing. The file's own header comment — which explicitly documented
+the old "wording is final by this screen" design — has been rewritten
+to explain the new reasoning and the stale-audio invalidation
+mechanism, so it doesn't mislead whoever reads it next.
+
+Verified: `npx eslint` diff against baseline showed zero issues,
+identical before and after. Clean `vite build`. Wrote and ran a Node
+script modeling `handleTextChange`/`ensureFreshSegmentAudio`/
+`findEmptyTextSegment` against a realistic 3-line, 2-pause subsegment:
+confirmed editing one line clears only that line's cached audio and
+leaves the other two untouched; confirmed regeneration touches only
+the edited line, never re-fetching an already-fresh one, even across
+two separate edit rounds; confirmed an all-whitespace line is caught
+correctly with no false positive on a normal document; and confirmed
+pause segments are never touched by any of this (no `.content` field
+ever appears on one). All checks passed.
+
 ## 2026-08-28 (follow-up 76) — Closed the remaining pre-Parse-and-Generate editing gap
 Scope: `src/components/admin/NarrationTtsEditor.jsx`. (Frontend only —
 no backend function touched.)
