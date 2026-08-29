@@ -40,22 +40,21 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
   // speaks for itself server-side.
   const narrAuth = authMode === 'narr' ? { email: user?.email, narrToken: user?.token } : {};
 
-  // Every admin/narrator has their OWN Google API key (manageApiKeys is scoped to the
-  // caller's own AppUser row — see that function and useNarratorApiKeys.js), never a
-  // shared or fallback key, so nobody accidentally burns someone else's quota. This
-  // is a genuine hard lock, not a dismissable reminder: every narrator works across
-  // all three tour types (walk/hike, WalkAbout, driving), so there's no "doesn't need
-  // a key" case here — the single Google key (enabled for both Cloud Text-to-Speech
-  // and Cloud Translation) is mandatory before anyone can use anything else in the
-  // backend. `needsApiKeySetup` stays true until that key is actually saved; the
-  // dialog itself (see ApiKeysDialog's `required` prop) can't be closed by the X
-  // button, clicking outside, or Escape while it's true, and its own Save button
-  // won't submit unless the field has something in it. `reloadMyApiKeys` is threaded
-  // into the dialog as `onSaved` so a successful save here unlocks the app
-  // immediately, with no reload needed — the dialog itself uses a separate hook
-  // instance, so without this it wouldn't know a save just happened.
+  // Every admin/narrator has their OWN Google TTS AND Groq keys (manageApiKeys is scoped
+  // to the caller's own AppUser row — see that function and useNarratorApiKeys.js), never
+  // a shared or fallback key, so nobody accidentally burns Enda's quota or a Base44 key.
+  // This is a genuine hard lock, not a dismissable reminder: every narrator works across
+  // all three tour types (walk/hike, WalkAbout, driving), so there's no "doesn't need a
+  // key" case here — both keys are mandatory before anyone can use anything else in the
+  // backend. `needsApiKeySetup` stays true until BOTH fields are actually saved; the
+  // dialog itself (see ApiKeysDialog's `required` prop) can't be closed by the X button,
+  // clicking outside, or Escape while it's true, and its own Save button won't submit
+  // unless both fields have something in them. `reloadMyApiKeys` is threaded into the
+  // dialog as `onSaved` so a successful save here unlocks the app immediately, with no
+  // reload needed — the dialog itself uses a separate hook instance, so without this it
+  // wouldn't know a save just happened.
   const { keys: myApiKeys, loadedOk: apiKeysLoadedOk, reload: reloadMyApiKeys } = useNarratorApiKeys();
-  const needsApiKeySetup = apiKeysLoadedOk && !myApiKeys.google_tts_api_key;
+  const needsApiKeySetup = apiKeysLoadedOk && (!myApiKeys.google_tts_api_key || !myApiKeys.groq_api_key);
 
   // All Walk reads/writes go through backend functions now, never the direct
   // client SDK — see base44/shared/backendActor.ts for why: a Narr Studio
@@ -452,10 +451,10 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
         // if the modal's overlay were somehow bypassed.
         <main className="max-w-6xl mx-auto p-4 flex flex-col items-center justify-center py-24 text-center gap-2">
           <KeyRound className="w-8 h-8 text-amber-400" />
-          <p className="text-white font-medium">Add your API key to continue</p>
+          <p className="text-white font-medium">Add your API keys to continue</p>
           <p className="text-slate-400 text-sm max-w-sm">
-            Every admin and narrator needs their own Google API key before using any tour
-            tools. Enter it in the dialog above to unlock the rest of this panel.
+            Every admin and narrator needs their own Google TTS and Groq keys before using
+            any tour tools. Enter both in the dialog above to unlock the rest of this panel.
           </p>
         </main>
       ) : (

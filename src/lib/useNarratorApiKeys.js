@@ -1,9 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { base44 } from '@/api/base44Client';
 
-// Each admin/narrator's own Google API key — stored server-side, tied to their own
-// account, via the manageApiKeys backend function. Used for both narration (Cloud
-// Text-to-Speech) and script translation (Cloud Translation). Previously lived only in
+// Each admin/narrator's own Google TTS and Groq API keys — stored server-side, tied to
+// their own account, via the manageApiKeys backend function. Previously lived only in
 // that one browser's localStorage, which meant clearing site data (or just opening the
 // app on a different browser or device) silently wiped it with no way to recover it.
 // Works for either caller: an admin identified by their real Base44 session, or a
@@ -22,7 +21,7 @@ function getNarratorToken() {
 }
 
 export function useNarratorApiKeys() {
-  const [keys, setKeys] = useState({ google_tts_api_key: '' });
+  const [keys, setKeys] = useState({ google_tts_api_key: '', groq_api_key: '' });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   // True only in the instant right after a GET has actually confirmed what's on the
@@ -53,6 +52,7 @@ export function useNarratorApiKeys() {
       }
       setKeys({
         google_tts_api_key: res?.data?.google_tts_api_key || '',
+        groq_api_key: res?.data?.groq_api_key || '',
       });
       setDiag(res?.data?._diag || null);
       setLoadedOk(true);

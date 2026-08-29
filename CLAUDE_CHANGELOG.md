@@ -41,6 +41,71 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-29 (follow-up 83) — REVERT of Base44 builder's second Groq→Google switch; also documents a repo-history split
+Scope: same 7 of the 8 files from follow-ups 81/82 that this switch
+touches in this codebase's current form —
+`base44/functions/translateScript/entry.ts`,
+`base44/functions/manageApiKeys/entry.ts`,
+`src/components/admin/ApiKeysDialog.jsx`,
+`src/components/admin/BackendShell.jsx`,
+`src/components/admin/TranslationPanel.jsx`,
+`src/lib/useNarratorApiKeys.js`, `src/lib/fileTextExtractor.js` — plus
+`base44/entities/AppUser.jsonc` (the `groq_api_key` field itself).
+**Backend functions touched: `translateScript`, `manageApiKeys` —
+both need Enda's manual redeploy step again.**
+
+**What happened:** after follow-up 82 restored Groq-based translation
+(above), Base44's own in-app "builder" tool — not a Claude Code
+session, a separate AI Enda has access to inside Base44 itself — made
+the exact same switch a second time, independently, still on the
+strength of Base44 support's incorrect claim that the Groq key wasn't
+really doing anything. It pushed three commits straight to GitHub:
+"Integrate Google Cloud Translation API and simplify API key
+management", "Remove Groq dependencies and consolidate API keys", and
+"Remove stale Groq API key check and update UI text" (2026-08-29,
+07:15–09:34 UTC). This also deleted `.docx`/`.odt` import entirely
+from `fileTextExtractor.js` (down to a 33-line .txt-only version,
+citing an unrelated ElevenLabs SSML change as the reason) and
+rewrote the `google_tts_api_key` field in `AppUser.jsonc` to also
+cover translation, removing the dedicated `groq_api_key` field.
+A same-day commit titled "restore Groq key" attempted a partial fix
+but didn't restore the `AppUser.jsonc` schema field or the other
+files, and a `Merge branch 'main' of ...` commit landed the whole
+tangle on `origin/main`.
+
+Per Enda: undo it, back to the last state he'd verified working live
+("fix audio stop-resume in simulator mode", GitHub commit `f7ac750`,
+2026-08-29 00:07:05). Restored those 8 files' content from `f7ac750`
+exactly (`git checkout f7ac750 -- <files>`), same byte-for-byte
+approach as follow-up 82. Two unrelated, legitimate changes that
+landed on `origin/main` *after* `f7ac750` were deliberately left
+alone rather than reverted along with everything else: the
+`isNarrator` prop that hides the bearing-direction arrow from
+narrators in `TourSimulator.jsx`/`TourSimulatorMap.jsx`/
+`WalkEditor.jsx` (matches this sandbox's own follow-up 80 almost
+verbatim), and this changelog file's own accumulated entries. Verified
+with `git diff --stat` against `origin/main` that only the intended 8
+files changed, `npx eslint` clean (same pre-existing warnings as
+always, no new ones), and `rm -rf dist && npx vite build` completes
+with no errors.
+
+**Also worth recording here, for whichever Claude instance reads this
+next:** this session's own local clone and the real `origin/main` on
+GitHub turned out to have been two separate, diverging lines of
+history since 2026-08-18 (common ancestor: "second fix text import",
+`0a0afa2`) — this sandbox kept its own "Follow-up NN" commit
+sequence that was never actually pushed anywhere, while the real,
+live app has been advancing via Enda applying changed-file folders
+through GitHub Desktop himself, plus (as of today) Base44's own
+in-app builder pushing directly. The two histories describe much of
+the same underlying work but are NOT the same commits and can drift —
+this changelog's own "follow-up" numbering is this sandbox's local
+count, not GitHub's real commit history. **Before trusting this
+sandbox's state as "what's actually live," diff this branch against
+`origin/main` first.**
+
+---
+
 ## 2026-08-29 (follow-up 82) — REVERT of follow-up 81: restored Groq-based translation
 Scope: exact revert of the 8 code files follow-up 81 touched —
 `base44/functions/translateScript/entry.ts`,
