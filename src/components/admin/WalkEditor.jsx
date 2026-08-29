@@ -1693,7 +1693,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
             }));
             editVersionRef.current += 1;
             setDirty(true);
-          }} targetLanguage={form.target_language || ''} onSave={triggerSave} saving={saving} onAutoSave={requestAutoSave} />
+          }} targetLanguage={form.target_language || ''} onSave={triggerSave} saving={saving} onAutoSave={requestAutoSave} isNarrator={isNarrator} />
         )}
       </div>
     </div>

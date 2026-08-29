@@ -197,7 +197,7 @@ function sliceTrailToRange(trailPath, waypoints, focusRange) {
   return slice.length > 1 ? slice : trailPath;
 }
 
-export default function TourSimulatorMap({ trailPath, waypoints, triggered, currentPos, currentBearing, isWalkingTour, onWaypointUpdate, breaks, focusBounds, focusRange, dimWaypointIndex }) {
+export default function TourSimulatorMap({ trailPath, waypoints, triggered, currentPos, currentBearing, isWalkingTour, onWaypointUpdate, breaks, focusBounds, focusRange, dimWaypointIndex, isNarrator }) {
   // Per Enda's report: general script/audio browsing should show only the current
   // location's own waypoints and road, not the whole multi-location tour. `waypoints`
   // itself is deliberately left untouched below (still the full array, so `i` in the
@@ -307,8 +307,20 @@ export default function TourSimulatorMap({ trailPath, waypoints, triggered, curr
               }}
             />
 
-            {/* White bearing arrow through the circle + drag handles */}
-            {hasAudio && (
+            {/* White bearing arrow through the circle + its own drag handle. Per Enda:
+                bearing_direction/bearing_tolerance are Admin-only settings, set in the
+                Waypoints tab — a narrator has no authority to activate, change, or even
+                see this, whether they're just browsing here or actively pace-testing in
+                "jump to" mode. Showing it to them anyway ("look, an arrow!" with no way
+                to know what it means or why it's pointing that way) only confuses,
+                since it's not theirs to touch. `isNarrator` hides the whole arrow (line
+                + drag handle) for a narrator; an Admin still sees and can drag it
+                exactly as before — this is a deliberate, established dual-editing
+                convenience (see DrivingTourWaypointEditor.jsx's own hint text pointing
+                Admins here), not something being removed. The trigger-radius handle
+                just below is a completely separate concern (not mentioned in Enda's
+                report) and stays visible/draggable for everyone, same as always. */}
+            {hasAudio && !isNarrator && (
               <>
                 <Polyline
                   positions={[bearingTailPos, [wp.lat, wp.lng], bearingTipPos]}
@@ -327,19 +339,21 @@ export default function TourSimulatorMap({ trailPath, waypoints, triggered, curr
                     },
                   } : undefined}
                 />
-                <Marker
-                  position={radiusHandlePos}
-                  icon={handleIcon('#ff6b6b')}
-                  draggable={canEdit}
-                  eventHandlers={canEdit ? {
-                    dragend: (e) => {
-                      const ll = e.target.getLatLng();
-                      const newRadius = haversine(wp.lat, wp.lng, ll.lat, ll.lng);
-                      onWaypointUpdate(i, 'trigger_radius_m', Math.max(10, Math.round(newRadius)));
-                    },
-                  } : undefined}
-                />
               </>
+            )}
+            {hasAudio && (
+              <Marker
+                position={radiusHandlePos}
+                icon={handleIcon('#ff6b6b')}
+                draggable={canEdit}
+                eventHandlers={canEdit ? {
+                  dragend: (e) => {
+                    const ll = e.target.getLatLng();
+                    const newRadius = haversine(wp.lat, wp.lng, ll.lat, ll.lng);
+                    onWaypointUpdate(i, 'trigger_radius_m', Math.max(10, Math.round(newRadius)));
+                  },
+                } : undefined}
+              />
             )}
           </React.Fragment>
         );

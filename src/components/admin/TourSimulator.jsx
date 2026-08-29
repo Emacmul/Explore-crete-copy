@@ -62,7 +62,7 @@ function fmtTime(ms) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
-export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, onSave, saving, onAutoSave }) {
+export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, onSave, saving, onAutoSave, isNarrator }) {
   const trailPath = form.trail_path || [];
   // Filtering out waypoints with no usable lat/lng means every index used inside this
   // component (selectedWpIndex, the map's per-marker index, jumpToWaypoint's
@@ -1083,6 +1083,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
             // index `i` all stay full-array indices either way — this only controls
             // which of them get drawn, never which array is passed.
             focusRange={!isPlaying && !speedMatchMode ? currentLocationRange : null}
+            isNarrator={isNarrator}
           />
         </div>
 

@@ -41,6 +41,242 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-29 (follow-up 82) — REVERT of follow-up 81: restored Groq-based translation
+Scope: exact revert of the 8 code files follow-up 81 touched —
+`base44/functions/translateScript/entry.ts`,
+`base44/functions/manageApiKeys/entry.ts`, `base44/shared/wpToken.ts`,
+`src/components/admin/ApiKeysDialog.jsx`,
+`src/components/admin/BackendShell.jsx`,
+`src/components/admin/TranslationPanel.jsx`,
+`src/lib/useNarratorApiKeys.js`, `src/lib/utils.js`, restored
+byte-for-byte to their state as of the end of follow-up 80, immediately
+before follow-up 81. **Backend functions touched: `translateScript`,
+`manageApiKeys` — both need Enda's manual redeploy step again, to
+restore the live Groq behaviour.**
+
+Follow-up 81 was built on Enda's own request, after he'd been told
+(by Base44) that this app's translations ran through Base44's
+InvokeLLM, not Groq — i.e. that switching translation to Google
+wouldn't lose any real functionality, just redirect it. Base44's own
+support then told Enda directly: "your translations don't actually
+use the Groq key... the Groq key is used only for audio
+speech-to-text (Whisper)."
+
+That claim doesn't match this codebase. Checked directly against the
+code and its full git history, not taken on trust either way:
+`translateScript/entry.ts` has, since it was first written, always
+called `api.groq.com/openai/v1/chat/completions` — Groq's TEXT chat
+model endpoint — with a prompt instructing it to translate the
+script and preserve every `<break>` tag. That is a translation call,
+not audio transcription. A search of the entire repository and its
+full history for `InvokeLLM` or anything Whisper/speech-to-text
+related returns zero results, in any version, ever. The Groq key
+genuinely did power every translation this app has ever done, and —
+since it called Groq directly rather than through Base44's own
+integration — none of that ever consumed a Base44 credit either.
+
+Given that, Enda asked for this reverted: restore the original,
+working Groq-based translation exactly as it was, since the reason
+for replacing it (a mistaken belief that Groq wasn't really doing
+anything) doesn't hold up. Done via `git checkout` of all 8 files
+from the commit immediately before follow-up 81 (c484465) — an exact,
+byte-for-byte restoration, not a manual re-typing of the old code,
+so there's no risk of a subtly different result. Confirmed with `git
+diff` against that commit: zero differences on every one of the 8
+files. `npx eslint` still clean (same single pre-existing warning as
+before), and `rm -rf dist && npx vite build` produced the exact same
+output bundle hash as follow-up 80's own build, confirming this really
+is byte-identical to the pre-follow-up-81 state, not just
+functionally similar.
+
+Follow-up 81's own audit work (the API-key onboarding gate requiring
+Groq, the exact Groq endpoint/model/prompt, audio generation's total
+independence from Groq) was itself accurate and remains true — this
+revert is purely about which translation backend to actually use
+going forward, now that the premise for switching away from Groq
+turned out to be based on incorrect information.
+
+## 2026-08-29 (follow-up 81) — AUDIT: the "switch to Google translation" was never actually built; Groq replaced with real Google Cloud Translation
+Scope: `base44/functions/translateScript/entry.ts`,
+`base44/functions/manageApiKeys/entry.ts`, `base44/shared/wpToken.ts`,
+`src/components/admin/ApiKeysDialog.jsx`,
+`src/components/admin/BackendShell.jsx`,
+`src/components/admin/TranslationPanel.jsx`,
+`src/lib/useNarratorApiKeys.js`, `src/lib/utils.js`. **Backend
+functions touched: `translateScript`, `manageApiKeys` — both need
+Enda's manual redeploy step.**
+
+Enda's request: "We switched the translation part of the app from
+using Base44 and paying them for each translation to using our
+Google keys and using the Google 500,000 free monthly characters.
+Check if this works now that the Groq key has been removed." — audit
+first, report findings, fix only after reporting.
+
+**Audit findings, reported to Enda before any fix:**
+
+1. The described switch had never actually been implemented anywhere
+   in this codebase. Searched every file (frontend and backend) and
+   the full git history for any trace of Google Cloud Translation —
+   none exists. `translateScript`, the one and only function that
+   translates a narration script, called Groq's chat-completions API
+   exclusively, unchanged since it was first built.
+2. Confirmed no shared/org-level Groq secret exists anywhere (no
+   `Deno.env.get('GROQ...')` in any backend function) — every Groq key
+   was strictly per-narrator, stored via `manageApiKeys`. So "the Groq
+   key has been removed" could only mean a specific person's own saved
+   key (cleared via the self-service "My API Keys" dialog, which
+   allows saving blank fields) or the underlying Groq account/key
+   itself being cancelled at Groq's end.
+3. Real, immediate consequence of that: `BackendShell.jsx`'s
+   `needsApiKeySetup` gate required BOTH a Google TTS key AND a Groq
+   key before letting anyone — admin or narrator — do ANYTHING in the
+   backend, via an un-dismissable dialog (no X button, no Escape, no
+   click-outside). Removing a Groq key didn't just break translation;
+   it locked that person out of the entire tool, every tour type,
+   until they re-entered a Groq key the switch was supposed to make
+   unnecessary.
+4. Confirmed audio generation (`generateTts` and every call site in
+   `NarrationTtsEditor.jsx`/`WaypointPaceEditor.jsx`) has zero
+   dependency on Groq anywhere in its own code path — it has used
+   Google Cloud TTS, with a per-narrator Google key, all along. That
+   part genuinely works flawlessly, unaffected by anything happening
+   to a Groq key.
+5. Flagged before building anything: Google Cloud Translation is a
+   dedicated machine-translation API, not a chat model — it has no way
+   to be told "preserve this exact tag, don't translate it" the way
+   Groq's prompt-based approach could. A naive URL swap would have
+   risked `<break>` tags being mangled or dropped by the translator.
+
+**Fix, built after Enda confirmed (via two clarifying questions) that
+he already has a Google Cloud Translation API key and wants Groq
+removed entirely, not kept as a fallback:**
+
+- `translateScript/entry.ts` rewritten to call Google Cloud
+  Translation API v2 (`translation.googleapis.com`) instead of Groq.
+  Break tags are never sent to Google at all: the script is split on
+  every `<break ...>` tag (a broad match, same shape as the existing
+  break-tag detectors in `odtExporter.js`/`WaypointPaceEditor.jsx`),
+  only the plain-text pieces between tags go to Google for
+  translation (one batched call for the whole script, via Google's
+  `q` array parameter — not one call per piece), and the original
+  tags are spliced back into the exact same positions afterward,
+  byte-for-byte untouched. Each text piece is trimmed before being
+  sent, with its original leading/trailing whitespace glued back on
+  around the translated result — caught by a failing test during
+  verification: sending the whitespace-padded piece as-is would leave
+  the script's paragraph structure hostage to Google's own
+  undocumented whitespace handling, instead of guaranteed exact.
+  `source: 'en'` is set explicitly (every master script is English —
+  never auto-detected, avoiding Google mis-guessing a short fragment).
+  Added a full language-name-to-Google-code map covering every
+  language in `src/lib/languages.js`'s `LANGUAGES` list (the existing
+  TTS `LANG_TO_CODE` maps only covered 14 of the 23 — this one
+  deliberately covers all 23, so Translation doesn't inherit that same
+  gap). A language with no mapped code, or a missing/malformed Google
+  response, now returns a clear error rather than silently mistranslating
+  or crashing.
+- `manageApiKeys/entry.ts`: `groq_api_key` replaced with
+  `google_translate_api_key` in both the get and save actions. Any
+  `groq_api_key` value already sitting on an old AppUser record is
+  left completely alone — never read, written, or deleted; genuinely
+  orphaned data, harmless, not worth a migration for.
+- `useNarratorApiKeys.js`: same field swap in the hook's own state.
+- `ApiKeysDialog.jsx`: the Groq input replaced with a Google Translate
+  API key input (same show/hide, same "no key saved yet" hint). The
+  Google TTS field's label was also tightened to "Google TTS API Key"
+  now that there are two distinct Google keys, to avoid the two being
+  confused for each other.
+- `BackendShell.jsx`: `needsApiKeySetup` now gates on
+  `google_translate_api_key` instead of `groq_api_key`; both places
+  telling an admin/narrator which keys are required were updated to
+  say "Google TTS and Google Translate keys."
+- `TranslationPanel.jsx`: the "Translate & Load" button now sends
+  `apiKeys.google_translate_api_key`; the missing-key error message
+  now names Google Translate, not Groq.
+- Cleaned up every remaining "Groq" mention across the codebase (a
+  full repo grep, not just the files above) — `wpToken.ts` and
+  `utils.js`'s own generic comments included — so nothing stale is
+  left pointing at a system this app no longer uses. The handful of
+  Groq mentions still in the code now are deliberate, historical "this
+  used to be Groq" explanations, not live references.
+
+**Verified:** an executed Node.js simulation (19 checks) of the exact
+split/trim/translate/re-pad/re-zip algorithm now in
+`translateScript/entry.ts`, against a mocked Google Translate
+response — covering a real multi-break-tag script (confirming tags
+survive untouched, in order, and the original paragraph spacing is
+preserved exactly), a script with no break tags, a script that's pure
+pauses with no words (confirming zero API calls are made for nothing),
+an unsupported language name, a malformed/short API response, a
+whitespace-only piece between two adjacent tags, and every one of the
+23 languages in `LANGUAGES` resolving to a real Google code. One test
+run caught a real bug (raw whitespace-padded pieces being sent to
+Google instead of trimmed ones) before delivery — fixed and
+re-verified, not shipped. `npx eslint` diffed clean against a
+pre-change baseline for every touched frontend file; `rm -rf dist &&
+npx vite build` succeeded. `translateScript` and `manageApiKeys` are
+both backend function changes — **both need Enda's manual redeploy
+step** (add a blank line to trigger the redeploy prompt, remove it,
+redeploy) before this takes effect live.
+
+## 2026-08-28 (follow-up 80) — Bearing direction arrow hidden from narrators in the simulator
+Scope: `src/components/admin/TourSimulatorMap.jsx`,
+`src/components/admin/TourSimulator.jsx`,
+`src/components/admin/WalkEditor.jsx`. (Frontend only — no backend
+function touched.)
+
+Per Enda: `bearing_direction`/`bearing_tolerance` are Admin-only
+settings, set in the Waypoints tab. A narrator has no authority to
+activate, change, or even see this — but the "Narrate and Simulate"
+map was showing the white bearing arrow (and letting it be dragged)
+to anyone with the map open, narrator included, whenever a waypoint
+had audio switched on. No point showing someone a control that isn't
+theirs to touch — it only invites confusion about what it means and
+whether they're supposed to do something with it.
+
+Traced where this arrow is actually drawn: `TourSimulatorMap.jsx`,
+inside the same per-waypoint block as the (separate, unrelated) radius
+drag handle — both gated only on `hasAudio`, with no admin/narrator
+distinction at all. This map is used ONLY inside `TourSimulator.jsx`
+(the "Narrate and Simulate" tab, confirmed by searching for every
+place either component is rendered), which itself is used by both
+Admin and Narrator roles — but neither `TourSimulator` nor
+`TourSimulatorMap` had ever been told which one was looking at it;
+`isNarrator` (already computed in `WalkEditor.jsx` from the user's
+role, and already used throughout `DrivingTourWaypointEditor.jsx` for
+this exact admin/narrator split) simply wasn't threaded through to
+either of them.
+
+Added `isNarrator` as a new prop, passed from `WalkEditor.jsx`'s
+existing `<TourSimulator>` render straight through to
+`<TourSimulatorMap>`. The bearing arrow (the white line through the
+circle plus its own drag-handle marker) is now only rendered when
+`!isNarrator` — completely absent from a narrator's map, not just
+non-draggable, regardless of whether they're plainly browsing or
+actively pace-testing in "jump to" mode, and regardless of whether
+bearing has actually been set on that waypoint. An Admin's view is
+completely unchanged — the arrow still shows and can still be dragged
+to adjust bearing right there, the same established dual-editing
+convenience `DrivingTourWaypointEditor.jsx`'s own hint text already
+tells Admins about ("Radius and bearing are also editable in the
+simulator"). The trigger-radius circle and its own drag handle are a
+separate, unrelated concern (not mentioned in Enda's report) and stay
+visible and draggable for everyone, unchanged.
+
+Verified with an executed Node.js simulation (13 checks) modeling the
+exact render conditions now in the file: a narrator never sees the
+arrow, with or without bearing set, with or without edit permission,
+while the radius handle and circle stay visible for them; an Admin's
+view is byte-for-byte unchanged; a waypoint with no audio at all still
+shows neither (unchanged baseline); and an undefined `isNarrator` (a
+defensive check for any caller that doesn't pass it) safely falls back
+to showing the arrow, matching the exact pre-fix behavior rather than
+silently hiding it for someone who should see it. Also cross-checked
+every changed line against the real files' own content — the full
+`isNarrator` prop chain from `WalkEditor.jsx` through `TourSimulator.jsx`
+into `TourSimulatorMap.jsx` — to confirm nothing was left
+disconnected.
+
 ## 2026-08-28 (follow-up 79) — Pause/Reset now actually stop the audio; Reset no longer exits pace-testing mode
 Scope: `src/components/admin/TourSimulator.jsx`. (Frontend only — no
 backend function touched.)
