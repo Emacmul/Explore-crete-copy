@@ -203,16 +203,40 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
     return groups;
   }, [waypoints]);
 
+  // Per Enda's report: editing must happen strictly in sequence — if an earlier
+  // waypoint (e.g. BOR3c) isn't marked Done, nobody should be able to open a LATER one
+  // (BOR3d) at all, whether to write its script or just to look at it. TourSimulator.jsx
+  // already enforces exactly this rule for its own "Jump to location…" dropdown
+  // (lockedWpIndexes there) — this is the same computation, applied here in the one
+  // place waypoints are actually authored and marked Done, which never had it at all.
+  // lockedIndexes[i] is true the moment ANY earlier waypoint (0..i-1) isn't done yet;
+  // index 0 has no priors, so it's never locked. Recomputed from scratch off
+  // `waypoints` every render pass it changes, so ticking/unticking "done" anywhere
+  // immediately locks/unlocks everything after it, same as TourSimulator.jsx's own copy.
+  const lockedIndexes = useMemo(() => {
+    const locked = new Array(waypoints.length).fill(false);
+    let allPriorDone = true;
+    for (let i = 0; i < waypoints.length; i++) {
+      locked[i] = !allPriorDone;
+      if (!waypoints[i]?.waypoint_done) allPriorDone = false;
+    }
+    return locked;
+  }, [waypoints]);
+
   useEffect(() => {
     if (focusWaypointIndex != null) {
-      setExpanded(focusWaypointIndex);
+      // Defensive only — whatever sends someone here (e.g. "continue where you left
+      // off") should always land on a legitimately reachable waypoint already, but
+      // never force one open that the sequence itself says isn't reachable yet. Still
+      // scrolls to it either way, so it's visible rather than silently doing nothing.
+      if (!lockedIndexes[focusWaypointIndex]) setExpanded(focusWaypointIndex);
       const timer = setTimeout(() => {
         const el = document.getElementById(`wp-row-${focusWaypointIndex}`);
         if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }, 150);
       return () => clearTimeout(timer);
     }
-  }, [focusWaypointIndex]);
+  }, [focusWaypointIndex, lockedIndexes]);
 
   // Auto-fill missing segment_number and segment_id on mount
   useEffect(() => {
@@ -704,11 +728,17 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                 className={`bg-slate-700/50 rounded-lg border border-slate-600 overflow-hidden ${snapshot.isDragging ? 'shadow-2xl shadow-purple-900/50 ring-2 ring-purple-500' : ''} ${focusWaypointIndex === index ? 'ring-2 ring-amber-500' : ''}`}
               >
                 <div
-                  className={`flex items-center gap-3 px-3 py-3 hover:bg-slate-700/80 ${wp.waypoint_done && expanded !== index ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                  className={`flex items-center gap-3 px-3 py-3 hover:bg-slate-700/80 ${(wp.waypoint_done || lockedIndexes[index]) && expanded !== index ? 'cursor-not-allowed' : 'cursor-pointer'}`}
                   onClick={() => {
                     if (wp.waypoint_done && expanded !== index) return;
+                    // Sequential lock — see lockedIndexes above. A not-yet-done
+                    // waypoint that sits after an unfinished earlier one can't be
+                    // opened at all, same as an already-Done one can't be re-opened
+                    // without unticking it first.
+                    if (lockedIndexes[index] && expanded !== index) return;
                     setExpanded(expanded === index ? null : index);
                   }}
+                  title={lockedIndexes[index] && !wp.waypoint_done && expanded !== index ? 'Locked — finish every earlier waypoint first' : undefined}
                 >
                   {!isNarrator && (
                     <div
@@ -760,9 +790,16 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                       className="border-amber-400 data-[state=checked]:bg-amber-400 data-[state=checked]:border-amber-400 data-[state=checked]:text-slate-900 disabled:opacity-100"
                     />
                   </span>
-                  {wp.waypoint_done && expanded !== index
-                    ? <Lock className="w-4 h-4 text-amber-400" />
-                    : (expanded === index ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />)}
+                  {wp.waypoint_done && expanded !== index ? (
+                    <Lock className="w-4 h-4 text-amber-400" />
+                  ) : lockedIndexes[index] && expanded !== index ? (
+                    // Distinct grey (not the amber "Done" lock) — this one isn't
+                    // finished, it's just not reachable YET because something earlier
+                    // in the sequence still needs finishing first.
+                    <Lock className="w-4 h-4 text-slate-500" />
+                  ) : (
+                    expanded === index ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />
+                  )}
                   {!isNarrator && (
                     <Button
                       variant="ghost" size="icon"

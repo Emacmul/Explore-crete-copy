@@ -41,6 +41,45 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-29 (follow-up 87) — the Waypoints tab never actually enforced editing in sequence
+Scope: `src/components/admin/DrivingTourWaypointEditor.jsx`.
+
+**Per Enda's report:** raised while discussing follow-up 86's synthetic test case (a
+gap where BOR3 wasn't done but BOR4 was, used only to prove the "Jump to location…"
+range-picker wouldn't jump across a gap) — Enda pointed out that state shouldn't be
+POSSIBLE in the first place: "if BOR3c isn't finished, then nobody should be able to
+start editing BOR3d." Checked directly against the code rather than assumed: he's
+right, and it wasn't possible to write for TourSimulator's own dropdown to accidentally
+exercise, because nothing stopped it from being real data.
+
+**Cause:** `TourSimulator.jsx`'s own waypoint dropdown (Narrate & Simulate tab) already
+computes and enforces exactly this — `lockedWpIndexes[i]` true whenever any earlier
+waypoint isn't done — but that's a DIFFERENT screen. The Waypoints tab
+(`DrivingTourWaypointEditor.jsx`), the one place a waypoint's script is actually
+written and `waypoint_done` gets set, only ever blocked RE-opening an already-Done row
+without unticking it first (`wp.waypoint_done && expanded !== index`). It never
+checked whether anything EARLIER in the list was still unfinished — a not-yet-done
+row could always be opened and worked on regardless of what came before it, so BOR3d
+(or any later waypoint) really could be finished while BOR3c sat untouched.
+
+**Fix:** added the same `lockedIndexes` computation TourSimulator.jsx already has
+(byte-for-byte the same algorithm, just recomputed here off this file's own
+`waypoints` prop — the same array, same order, so the two screens can never disagree
+about what's locked). The row's click-to-expand handler now also refuses to open a
+row when `lockedIndexes[index]` is true, with its own explanatory tooltip ("Locked —
+finish every earlier waypoint first") and a distinct grey lock icon (kept visually
+separate from the existing amber "Done" lock — one means finished, this one means
+not reachable yet, and conflating them would be misleading). The `focusWaypointIndex`
+auto-open effect (used by "continue where you left off"-style jumps into this tab)
+now defensively won't force-open a locked target either, though in practice whatever
+calls it should already only ever point at a legitimately reachable waypoint.
+
+**Verified:** `npx eslint` — the file has one pre-existing unrelated error (`Textarea`
+imported but unused) confirmed present in `origin/main`'s own copy before this change,
+untouched by it. `rm -rf dist && npx vite build` completes with no errors.
+
+---
+
 ## 2026-08-29 (follow-up 86) — "Jump to location…" can now play 1–3 consecutive locations
 Scope: `src/components/admin/TourSimulator.jsx`.
 
