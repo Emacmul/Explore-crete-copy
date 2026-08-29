@@ -28,6 +28,7 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'No Groq API key found for your account. Add your own key under "API Keys" in the Admin Panel header.' }, { status: 400 });
     }
 
+
     const prompt = `Translate the following narration script into ${target_language}.
 
 CRITICAL RULES:
