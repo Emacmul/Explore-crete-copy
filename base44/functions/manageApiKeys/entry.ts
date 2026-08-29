@@ -19,7 +19,6 @@ export default async function(req) {
       return Response.json({ error: 'action must be "get" or "save"' }, { status: 400 });
     }
 
-
     // Identify the caller — admin via a real Base44 session, narrator via the same
     // email+token pattern used everywhere else in this app.
     //
