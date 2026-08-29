@@ -394,11 +394,61 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
         };
       });
   }, [waypoints, trailPath, breakSet]);
-  const locationTargets = useMemo(() => locationStatus.filter(t => t.isComplete), [locationStatus]);
+
+  // Per Anoushka (relayed by Enda): after getting one location's text/speech/pace
+  // right, she had no way to hear how it actually flows into the next one or two —
+  // something re-timed or reworded in a neighbour can change how a finished location
+  // sounds right up against it, and the only way to check that was replaying the WHOLE
+  // tour from location 1 every time. jumpSpan lets "Jump to location…" target 1, 2, or
+  // 3 CONSECUTIVE locations in one continuous run instead of just one. Must be
+  // consecutive (Enda's own requirement) — this is for hearing real, adjoining road
+  // flow into the next, not an arbitrary assortment of locations.
+  const [jumpSpan, setJumpSpan] = useState(1);
+  // Every complete-locations-in-a-row starting point for the CURRENTLY selected span —
+  // a start is only offered if it and every one of the (span - 1) locations right
+  // after it are ALSO complete, so a jump can never run off the end of finished work
+  // into something still being edited. rangeLabel is the same as label for span 1;
+  // for span 2/3 it's "first → last" so the dropdown itself shows what's actually
+  // about to play.
+  const locationTargets = useMemo(() => {
+    return locationStatus
+      .map((loc, i) => ({ loc, i }))
+      .filter(({ i }) => {
+        for (let k = 0; k < jumpSpan; k++) {
+          if (!locationStatus[i + k]?.isComplete) return false;
+        }
+        return true;
+      })
+      .map(({ loc, i }) => ({
+        ...loc,
+        rangeLabel: jumpSpan === 1 ? loc.label : `${loc.label} → ${locationStatus[i + jumpSpan - 1].label}`,
+      }));
+  }, [locationStatus, jumpSpan]);
   // Shown next to the toolbar only when nothing is jumpable yet, so it's obvious WHY —
-  // instead of the whole control just vanishing with no explanation.
+  // instead of the whole control just vanishing with no explanation. Deliberately
+  // always span-1 based (a single location's own done/not-done breakdown) even when
+  // jumpSpan is 2 or 3 — "this location isn't done yet" is the same real blocker
+  // either way; a separate, narrower note further below covers the case where every
+  // individual location IS done but not `jumpSpan` of them happen to be consecutive.
   const incompleteLocations = useMemo(() => locationStatus.filter(t => !t.isComplete), [locationStatus]);
   const [jumpTargetIndex, setJumpTargetIndex] = useState('');
+
+  // Where a jump spanning `span` consecutive locations (starting at targetIndex, a
+  // primary_start waypoint index) should auto-pause — generalizes nextLocationBoundary
+  // above the same way locationTargets generalizes locationStatus for jumpSpan. span 1
+  // is exactly nextLocationBoundary's own behaviour (falls back to it if targetIndex
+  // isn't actually a location start, or the span runs past the end of locationStatus,
+  // so this can never behave worse than the original single-location boundary). Same
+  // "null means this is the tour's last location, use the ordinary end-of-trail check"
+  // contract as nextLocationBoundary.
+  const locationRangeBoundary = (targetIndex, span) => {
+    const startPos = locationStatus.findIndex(l => l.index === targetIndex);
+    if (startPos === -1) return nextLocationBoundary(targetIndex);
+    const endLoc = locationStatus[startPos + span - 1];
+    if (!endLoc) return nextLocationBoundary(targetIndex);
+    if (endLoc.endIndex >= waypoints.length) return null;
+    return { dist: cumDistForWaypoint(waypoints[endLoc.endIndex]), waypointIndex: endLoc.endIndex };
+  };
 
   // Per Enda's report: the map used to always show the whole tour (or, while
   // speed-matching one leg, just that one leg) no matter which location's waypoint was
@@ -518,7 +568,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // down) can redo a jump WITHOUT calling jumpToWaypoint itself, which would call
   // startSim again and recurse. Pure state-setting only; never touches isPlaying or the
   // tick interval — callers decide when to actually start ticking.
-  const resetToWaypoint = (targetIndex, { scopeToThisWaypoint = false, audioOverrideUrl = null } = {}) => {
+  const resetToWaypoint = (targetIndex, { scopeToThisWaypoint = false, audioOverrideUrl = null, locationSpan = 1 } = {}) => {
     const wp = waypoints[targetIndex];
     if (!wp) return false;
     const cumDist = cumDistForWaypoint(wp);
@@ -531,7 +581,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     audioQueueRef.current = [];
     activeAudioWpIndexRef.current = null;
     previewAudioOverrideRef.current = audioOverrideUrl ? { index: targetIndex, url: audioOverrideUrl } : null;
-    const boundary = scopeToThisWaypoint ? nextWaypointBoundary(targetIndex) : nextLocationBoundary(targetIndex);
+    const boundary = scopeToThisWaypoint ? nextWaypointBoundary(targetIndex) : locationRangeBoundary(targetIndex, locationSpan);
     scopedTestRef.current = {
       segmentEndDist: boundary?.dist ?? null,
       excludeWaypointIndex: boundary?.waypointIndex ?? null,
@@ -549,13 +599,13 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     setHasPlayed(false);
     setAudioError(null);
     if (newPos) { setCurrentPos(newPos); prevPosRef.current = newPos; }
-    lastJumpRef.current = { targetIndex, scopeToThisWaypoint, hasOverride: !!audioOverrideUrl };
+    lastJumpRef.current = { targetIndex, scopeToThisWaypoint, hasOverride: !!audioOverrideUrl, locationSpan };
     return true;
   };
 
-  const jumpToWaypoint = (targetIndex, { autoplay = false, scopeToThisWaypoint = false, audioOverrideUrl = null } = {}) => {
+  const jumpToWaypoint = (targetIndex, { autoplay = false, scopeToThisWaypoint = false, audioOverrideUrl = null, locationSpan = 1 } = {}) => {
     pauseSim();
-    if (!resetToWaypoint(targetIndex, { scopeToThisWaypoint, audioOverrideUrl })) return;
+    if (!resetToWaypoint(targetIndex, { scopeToThisWaypoint, audioOverrideUrl, locationSpan })) return;
     if (autoplay) startSim();
   };
 
@@ -582,6 +632,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
       pauseSim();
       resetToWaypoint(lastJumpRef.current.targetIndex, {
         scopeToThisWaypoint: lastJumpRef.current.scopeToThisWaypoint,
+        locationSpan: lastJumpRef.current.locationSpan,
       });
       return;
     }
@@ -602,8 +653,14 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // nextLocationBoundary, the exact same "where does this location end" logic the
   // scoped-playback boundary already relies on, so the map's own idea of "this
   // location" can never drift from the simulator's.
-  const jumpToLocation = (targetIndex) => {
-    jumpToWaypoint(targetIndex);
+  // span (per Anoushka/Enda, see jumpSpan above): how many CONSECUTIVE locations,
+  // starting at targetIndex, this one run should play straight through before
+  // auto-stopping — 1 is the original single-location behaviour, unchanged. Every
+  // downstream piece (the playback boundary, the map's zoom bounds) uses the same
+  // locationRangeBoundary so a 2/3-location jump genuinely plays and frames all of
+  // them, not just the first.
+  const jumpToLocation = (targetIndex, span = 1) => {
+    jumpToWaypoint(targetIndex, { locationSpan: span });
     // This is the actual moment a narrator has said "I want to test/tune this location
     // now" — see the speedMatchMode comment above its declaration. Also snaps the
     // waypoint dropdown to this location's own start point, so the panel that's about to
@@ -620,7 +677,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     const isFirstLocationInTour = targetIndex === 0;
     const focusIndex = (isFirstLocationInTour && waypoints.length > 1) ? targetIndex + 1 : targetIndex;
     setSelectedWpIndex(focusIndex);
-    const boundary = nextLocationBoundary(targetIndex);
+    const boundary = locationRangeBoundary(targetIndex, span);
     const endIndex = boundary ? boundary.waypointIndex : waypoints.length;
     const locationWaypoints = waypoints.slice(targetIndex, endIndex);
     const bounds = locationWaypoints.filter(wp => wp.lat && wp.lng).map(wp => [wp.lat, wp.lng]);
@@ -833,7 +890,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
         // A whole-location "Jump to location…" run (or a plain "Test this waypoint"-
         // style jump with no live preview) — safe to redo exactly, since it only ever
         // plays each waypoint's own real, already-saved audio_clip_url.
-        resetToWaypoint(lastJumpRef.current.targetIndex, { scopeToThisWaypoint: lastJumpRef.current.scopeToThisWaypoint });
+        resetToWaypoint(lastJumpRef.current.targetIndex, { scopeToThisWaypoint: lastJumpRef.current.scopeToThisWaypoint, locationSpan: lastJumpRef.current.locationSpan });
       } else if (!lastJumpRef.current) {
         // The true end of the whole trail, reached by plain playback from the start —
         // rewind to the real beginning rather than doing nothing.
@@ -983,6 +1040,32 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
             <span className="text-slate-500 text-xs">— {currentSegment.wp.segment_id || currentSegment.wp.segment_title || `Segment ${currentSegment.index + 1}`}</span>
           )}
         </span>
+        {locationStatus.length > 1 && (
+          // Per Anoushka/Enda: how many CONSECUTIVE locations one "Jump to location…"
+          // run should play straight through — 1 (the original single-location
+          // behaviour), 2, or 3. Only shown when there's more than one location in the
+          // tour at all; a single-location tour has nothing for 2/3 to ever mean.
+          <span
+            className="flex items-center gap-1 bg-slate-800/60 rounded-lg border border-slate-600 px-1.5 h-8 text-xs text-slate-400"
+            title="How many consecutive locations to play in one Jump"
+          >
+            Locations:
+            {[1, 2, 3].map(n => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setJumpSpan(n)}
+                className={`w-5 h-5 rounded text-xs font-medium ${
+                  jumpSpan === n
+                    ? 'bg-blue-600 text-white'
+                    : 'text-slate-300 hover:bg-slate-700'
+                }`}
+              >
+                {n}
+              </button>
+            ))}
+          </span>
+        )}
         {locationTargets.length > 0 && (
           <div className="flex items-center gap-1.5">
             <select
@@ -992,12 +1075,12 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
             >
               <option value="">Jump to location…</option>
               {locationTargets.map(t => (
-                <option key={t.index} value={t.index}>{t.label}</option>
+                <option key={t.index} value={t.index}>{t.rangeLabel}</option>
               ))}
             </select>
             <Button
               size="sm"
-              onClick={() => jumpToLocation(jumpTargetIndex)}
+              onClick={() => jumpToLocation(jumpTargetIndex, jumpSpan)}
               disabled={jumpTargetIndex === ''}
               className="bg-blue-600 hover:bg-blue-500 text-white shrink-0"
             >
@@ -1015,6 +1098,17 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
             <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
             No location ready to jump to yet — {incompleteLocations[0].label} needs {incompleteLocations[0].notDoneCount} more waypoint{incompleteLocations[0].notDoneCount === 1 ? '' : 's'} marked Done
             {incompleteLocations.length > 1 && ` (+${incompleteLocations.length - 1} more, hover for details)`}
+          </span>
+        )}
+        {/* Per Anoushka/Enda: distinct from the message above — every individual
+            location can be fully Done and still have nothing to offer for a 2/3-wide
+            jump, if the finished ones aren't sitting next to each other (e.g. one in
+            the middle got unticked to fix something). Only shown once jumpSpan > 1 and
+            there's genuinely nothing else explaining the empty dropdown. */}
+        {jumpSpan > 1 && locationTargets.length === 0 && incompleteLocations.length < locationStatus.length && (
+          <span className="flex items-center gap-1.5 text-amber-400 text-xs bg-slate-800/60 rounded-lg border border-slate-600 px-2.5 h-8">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+            No {jumpSpan} finished locations in a row yet — try 1 or 2, or finish whichever one nearby isn't done.
           </span>
         )}
         {tourComplete && (

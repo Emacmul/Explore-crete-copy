@@ -41,6 +41,48 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-29 (follow-up 86) — "Jump to location…" can now play 1–3 consecutive locations
+Scope: `src/components/admin/TourSimulator.jsx`.
+
+**Per Anoushka (relayed by Enda):** after getting one location right — text, speech,
+pace — the only way to hear how it actually flows into the next one or two was
+replaying the WHOLE tour from location 1 every time. Something re-timed or reworded in
+a neighbouring location can change how an already-finished one sounds right up
+against it, and "Jump to location…" only ever jumped to exactly one.
+
+**What changed:** a small "Locations: 1 / 2 / 3" picker next to "Jump to location…"
+sets how many CONSECUTIVE locations one Jump plays straight through before
+auto-stopping (must be consecutive — real, adjoining road, never an arbitrary
+assortment, per Enda's own requirement). The dropdown itself now shows the real
+range about to play (e.g. "BOR4 → BOR5" for span 2), and only ever offers a start
+whose own next (span − 1) locations are ALSO marked Done — picking one can never run
+a jump off the end of finished work into something still being edited, even if the
+locations on either side of a gap are each individually done (e.g. BOR1+BOR2 done,
+BOR3 not, BOR4+BOR5 done: span-2 correctly offers "BOR1 → BOR2" and "BOR4 → BOR5",
+never "BOR3 → BOR4"). A distinct hint explains the empty-dropdown case where some
+locations are done but not `span` of them happen to be consecutive, separate from the
+existing "nothing is done yet at all" hint.
+
+Reused the app's own existing per-location boundary logic rather than adding a
+parallel mechanism: `locationRangeBoundary(targetIndex, span)` generalizes
+`nextLocationBoundary` (which already knew how to find where a single jump should
+auto-stop) by walking `span` entries into the same `locationStatus` list this file
+already built for the dropdown. `resetToWaypoint`/`jumpToWaypoint`/`jumpToLocation`
+and the Reset/Replay redo-the-last-jump paths all thread a new `locationSpan` option
+through, defaulting to 1 everywhere — every OTHER existing jump in this file
+(single-waypoint pace tests, plain "Test this waypoint") is byte-for-byte unaffected,
+since span 1 reduces to exactly the old single-location behaviour.
+
+**Verified:** the boundary/valid-target logic was pulled out and run standalone
+against a synthetic 5-location tour with a deliberate gap (BOR3 marked not-done
+between two done locations on either side) — span 1 offered all 4 done locations
+individually with correct boundaries; span 2 correctly offered only "BOR1 → BOR2"
+and "BOR4 → BOR5" (never straddling BOR3); span 3 correctly offered nothing (no 3
+done locations are consecutive). `npx eslint` clean (same pre-existing warning as
+before). `rm -rf dist && npx vite build` completes with no errors.
+
+---
+
 ## 2026-08-29 (follow-up 85) — correct follow-up 84: "Unlock to edit" is Admin-only
 Scope: `src/components/admin/TourSimulator.jsx`.
 
