@@ -164,7 +164,7 @@ function deriveSubsections(segments, subsectionSizes) {
   return chunkIntoSubsections(segments);
 }
 
-export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, onAudioChange, onAutoSave, fixedLanguage, waypointSegmentId, waypointSegmentTitle }) {
+export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, onAudioChange, onAutoSave, fixedLanguage, waypointSegmentId, waypointSegmentTitle, doneLocked = false }) {
   const { keys: apiKeys } = useNarratorApiKeys();
   const [selectedVoice, setSelectedVoice] = useState('NEUTRAL');
   const [selectedLanguage, setSelectedLanguage] = useState(fixedLanguage || 'English');
@@ -1305,7 +1305,15 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   // `busy` also drives a card's own Play button and its pause Slider, and there's no
   // reason listening to (or nudging the duration of) a DIFFERENT line should be
   // blocked just because one line's own quick editor happens to be open elsewhere.
-  const passLocked = busy || editingSegmentId !== null;
+  // Per Enda's report: this whole panel had no concept of the waypoint's own Done
+  // status (wp.waypoint_done, the same flag the Waypoints tab already locks editing
+  // on) — a Done waypoint's script/audio could still be freely rewritten from here.
+  // doneLocked is passed in from TourSimulator.jsx (the only caller) and is folded
+  // directly into passLocked/editingLocked/topScriptLocked below — the three master
+  // locks nearly every mutating control on this panel already keys off — rather than
+  // added as a one-off check on individual fields, so nothing here can slip through
+  // a control this audit didn't happen to touch by name.
+  const passLocked = doneLocked || busy || editingSegmentId !== null;
 
   // Per Enda's follow-up 31 redesign: separate listening and per-line/per-subsection
   // editing are two alternating MODES, never available together — "when it is running
@@ -1313,7 +1321,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   // must be disabled. When doing a editing pass, it must obviously be enabled." Covers
   // BOTH the "actively playing" sub-state and the "parsed but Build & Play not clicked
   // yet" sub-state uniformly — both are still the 'listen' phase.
-  const editingLocked = reviewPhase !== 'edit';
+  const editingLocked = doneLocked || reviewPhase !== 'edit';
 
   // Per Enda's follow-up 31 redesign: covers the top script textarea and its "Insert
   // pause" quick-insert buttons — the ones editingLocked alone can't gate, because
@@ -1333,7 +1341,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   // Narrator can pre-emptively rewrite before ever listening to it. Unchanged for an
   // Admin authoring an original master script (fixedLanguage unset) — this remains
   // their only way to write or fix that text at all.
-  const topScriptLocked = busy || (!!segments && editingLocked) || !!fixedLanguage;
+  const topScriptLocked = doneLocked || busy || (!!segments && editingLocked) || !!fixedLanguage;
 
   // Per Enda (relaying Anoushka, follow-up 75): "if she is given the opportunity to
   // take a shortcut, temptation will at some stage strike" — the per-line and

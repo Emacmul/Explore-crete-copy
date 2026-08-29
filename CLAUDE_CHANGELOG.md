@@ -41,6 +41,57 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-29 (follow-up 84) — "Done" waypoints were never actually locked in the Narrate & Simulate tab
+Scope: `src/components/admin/TourSimulator.jsx`,
+`src/components/admin/WaypointPaceEditor.jsx`,
+`src/components/admin/NarrationTtsEditor.jsx`. Frontend only — no backend
+functions touched, no manual redeploy needed.
+
+**Per Enda's report:** in the admin panel's Narrate and Simulate tab, BOR1's
+waypoints could still be freely edited — wording, waypoint fields — despite
+being marked "Done," which is supposed to lock them until explicitly
+unlocked.
+
+**Cause:** `wp.waypoint_done` genuinely does lock editing already, but only
+in the Waypoints tab (`DrivingTourWaypointEditor.jsx` — collapses a done
+row, requires an explicit untick-to-unlock, persisted via `onAutoSave`).
+The Narrate & Simulate tab (`TourSimulator.jsx`) only ever read
+`waypoint_done` to build `lockedWpIndexes`, a *different, sequential* lock
+that controls which waypoint can be OPENED (no jumping ahead of unfinished
+earlier ones) — it never re-locks a waypoint against editing once it's the
+one already open, and by construction a Done waypoint is never in
+`lockedWpIndexes` (every waypoint before it must be Done too). Once
+selected, neither of this tab's two editors — `WaypointPaceEditor` (pause
+timing, and per follow-up 77, wording too) nor `NarrationTtsEditor` (the
+full script/audio editor) — was ever passed `waypoint_done` or checked it
+anywhere; every one of their own mutating controls was gated only by
+unrelated in-progress-pass state (`busy`, `passLocked`, `editingLocked`,
+etc.), none of which has anything to do with the waypoint's Done status.
+
+**Fix:** `TourSimulator.jsx` now computes `doneLocked = !!selectedWp?.waypoint_done`
+and passes it into both sub-editors, plus renders a locked banner (with
+an "Unlock to edit" button, right in this tab — no need to switch to the
+Waypoints tab) whenever it's true. The unlock action is the exact same
+persisted one the Waypoints tab already uses: `onWaypointUpdate(...,
+'waypoint_done', false)` + `onAutoSave()`.
+- `WaypointPaceEditor.jsx`: `doneLocked` disables the text/pause-slider
+  edits and Save; "Test this subsegment" deliberately stays available
+  (read-only preview, saves nothing, same reasoning as leaving Download
+  buttons unlocked elsewhere in this codebase).
+- `NarrationTtsEditor.jsx`: `doneLocked` is folded directly into
+  `passLocked`, `editingLocked`, and `topScriptLocked` — the three master
+  locks nearly every mutating control on this large panel already keys
+  off (including the top script textarea, Parse & Generate, Save & Listen
+  Again, Finalize Narration Audio, Save This Part, and the TranslationPanel
+  import/translate controls) — rather than touching each control
+  individually, so nothing on this panel can slip through unaudited.
+
+**Verified:** `npx eslint` clean (same single pre-existing warning as
+before, unrelated). `rm -rf dist && npx vite build` completes with no
+errors.
+
+---
+
 ## 2026-08-29 (follow-up 83) — REVERT of Base44 builder's second Groq→Google switch; also documents a repo-history split
 Scope: same 7 of the 8 files from follow-ups 81/82 that this switch
 touches in this codebase's current form —

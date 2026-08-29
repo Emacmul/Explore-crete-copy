@@ -139,6 +139,15 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   }, [waypoints.length, selectedWpIndex, lockedWpIndexes]);
   const selectedWp = waypoints[selectedWpIndex] || null;
 
+  // Per Enda's report: this tab let a Done waypoint (e.g. every one of BOR1's) be
+  // freely edited — wording, pause timing, even audio — with nothing enforcing the
+  // same "Done means locked until explicitly unlocked" rule the Waypoints tab already
+  // has for wp.waypoint_done. This is the real per-waypoint edit lock, distinct from
+  // lockedWpIndexes above (that only gates which waypoint can be OPENED, sequentially —
+  // it never re-locks the one already open once it's done). See the banner/props below
+  // for how it's actually enforced in both sub-editors.
+  const doneLocked = !!selectedWp?.waypoint_done;
+
   // Per Enda's later request: this section (stats, the driving-time progress bar, the
   // trigger log) now carries the ACTUAL numbers a narrator needs while speed-matching —
   // in particular the sim-time/real-time readout that shows whether a leg's audio really
@@ -1172,6 +1181,25 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                 </Select>
               </div>
 
+              {doneLocked && (
+                <div className="flex items-center justify-between gap-2 bg-amber-900/20 border border-amber-700/50 rounded-lg px-3 py-2">
+                  <span className="text-amber-300 text-xs flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 shrink-0" />
+                    Locked — this waypoint is marked Done. Wording, pause timing, and audio below can't be changed until you unlock it.
+                  </span>
+                  <Button
+                    type="button" size="sm" variant="outline"
+                    onClick={() => {
+                      onWaypointUpdate(toRawIndex(selectedWpIndex), 'waypoint_done', false);
+                      onAutoSave?.();
+                    }}
+                    className="bg-blue-700/30 hover:bg-blue-700/50 border-blue-600/50 text-amber-400 hover:text-amber-300 shrink-0"
+                  >
+                    Unlock to edit
+                  </Button>
+                </div>
+              )}
+
               {/* Per Enda's follow-up 61 live-testing report: this panel must NOT default
                   to the purpose-built speed-matching tool (WaypointPaceEditor) — that's a
                   SECOND-session tool, only relevant once a narrator has actually jumped
@@ -1193,12 +1221,14 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                   onTestSubsegment={(previewUrl) => jumpToWaypoint(selectedWpIndex, { autoplay: true, scopeToThisWaypoint: true, audioOverrideUrl: previewUrl })}
                   testDisabled={selectedWp.waypoint_role === 'primary_start'}
                   testDisabledReason="Not applicable here — this point is heard while parked, before any driving starts, so there's no driving speed to test its speech against. Its pause timing above can still be tuned normally."
+                  doneLocked={doneLocked}
                 />
               ) : (
                 <NarrationTtsEditor
                   key={selectedWpIndex}
                   script={selectedWp.narration_script || ''}
                   audioUrl={selectedWp.audio_clip_url || ''}
+                  doneLocked={doneLocked}
                   onScriptChange={(val) => onWaypointUpdate(toRawIndex(selectedWpIndex), 'narration_script', val)}
                   onAudioChange={(val) => {
                     // Same atomic-update reasoning as follow-up 53 — see that entry in

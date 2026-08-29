@@ -90,8 +90,20 @@ const VOICE = 'NEUTRAL';
  * wording and pause durations are both reflected in narration_script, not just the
  * audio) — followed immediately by onAutoSave(), so this is a real save, not something
  * sitting only in memory until Save Route happens to be clicked separately.
+ *
+ * doneLocked (per Enda's report): true whenever this waypoint is marked Done — the
+ * same wp.waypoint_done the Waypoints tab already locks on. Before this, nothing here
+ * checked it at all, so a "finished" waypoint's wording, pause timing, and audio could
+ * still be silently rewritten from this screen with no unlock step. Disables every
+ * mutating control below (text/pause edits, Save) the same way TourSimulator.jsx
+ * (this component's only caller) already disables the Waypoints tab's own fields —
+ * the actual unlock action (persisted untick of waypoint_done) lives up there, shared
+ * with NarrationTtsEditor, since both editors sit under the same waypoint picker.
+ * "Test this subsegment" deliberately stays available regardless — it only builds an
+ * in-browser preview and never saves anything, same reasoning as leaving read-only
+ * actions like Download unlocked elsewhere in this codebase.
  */
-export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, onAutoSave, onTestSubsegment, testDisabled, testDisabledReason }) {
+export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, onAutoSave, onTestSubsegment, testDisabled, testDisabledReason, doneLocked = false }) {
   // Per Enda's report (follow-up 59): this panel opened straight to "No Google TTS API
   // key found for your account yet" even with a real key saved. Follow-up 59 fixed the
   // FIRST cause (reading the key before its own async fetch had resolved at all — see
@@ -375,7 +387,7 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
   };
 
   const handleSave = async () => {
-    if (!segments || saving || testing) return;
+    if (!segments || saving || testing || doneLocked) return;
     const { segments: normalized, blockedError, changed } = collapseBreakTagOnlySegments(segments);
     if (blockedError) {
       setError(blockedError);
@@ -460,7 +472,7 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
                 <Textarea
                   value={seg.content}
                   onChange={(e) => handleTextChange(seg.id, e.target.value)}
-                  disabled={loading || saving || testing}
+                  disabled={loading || saving || testing || doneLocked}
                   rows={Math.max(2, Math.ceil(seg.content.length / 60))}
                   className="bg-amber-100 border-amber-300 text-black placeholder:text-amber-900/50 text-sm resize-y focus-visible:ring-amber-400"
                 />
@@ -482,7 +494,7 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
                   max={120}
                   step={0.1}
                   onValueChange={(val) => handleDurationChange(seg.id, val[0])}
-                  disabled={loading || saving || testing}
+                  disabled={loading || saving || testing || doneLocked}
                 />
               </div>
             )
@@ -505,8 +517,8 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
           <Button
             size="sm"
             onClick={handleSave}
-            disabled={loading || saving || testing || !dirty}
-            title={dirty ? 'Save this wording and pause timing as the real, live audio for this waypoint' : 'Nothing changed yet'}
+            disabled={loading || saving || testing || !dirty || doneLocked}
+            title={doneLocked ? 'Locked — unlock this waypoint above to save changes' : dirty ? 'Save this wording and pause timing as the real, live audio for this waypoint' : 'Nothing changed yet'}
             className="bg-amber-500 hover:bg-amber-600 text-white gap-2"
           >
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
