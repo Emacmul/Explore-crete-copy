@@ -1185,18 +1185,29 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                 <div className="flex items-center justify-between gap-2 bg-amber-900/20 border border-amber-700/50 rounded-lg px-3 py-2">
                   <span className="text-amber-300 text-xs flex items-center gap-1.5">
                     <Lock className="w-3.5 h-3.5 shrink-0" />
-                    Locked — this waypoint is marked Done. Wording, pause timing, and audio below can't be changed until you unlock it.
+                    Locked — this waypoint is marked Done.{' '}
+                    {isNarrator
+                      // Per Enda: a Narrator must never be able to unlock a Done
+                      // waypoint themselves — only an Admin has that authority, the
+                      // same way "Mark Waypoint as Done" itself is an Admin-only
+                      // control in the Waypoints tab. A Narrator who wants back in
+                      // has to ask an Admin to unlock it there; this tab only ever
+                      // tells them the lock exists, never offers a way past it.
+                      ? 'Wording, pause timing, and audio below can\'t be changed. Ask an Admin to unlock this waypoint if it needs more work.'
+                      : 'Wording, pause timing, and audio below can\'t be changed until you unlock it.'}
                   </span>
-                  <Button
-                    type="button" size="sm" variant="outline"
-                    onClick={() => {
-                      onWaypointUpdate(toRawIndex(selectedWpIndex), 'waypoint_done', false);
-                      onAutoSave?.();
-                    }}
-                    className="bg-blue-700/30 hover:bg-blue-700/50 border-blue-600/50 text-amber-400 hover:text-amber-300 shrink-0"
-                  >
-                    Unlock to edit
-                  </Button>
+                  {!isNarrator && (
+                    <Button
+                      type="button" size="sm" variant="outline"
+                      onClick={() => {
+                        onWaypointUpdate(toRawIndex(selectedWpIndex), 'waypoint_done', false);
+                        onAutoSave?.();
+                      }}
+                      className="bg-blue-700/30 hover:bg-blue-700/50 border-blue-600/50 text-amber-400 hover:text-amber-300 shrink-0"
+                    >
+                      Unlock to edit
+                    </Button>
+                  )}
                 </div>
               )}
 

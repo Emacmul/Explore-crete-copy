@@ -41,6 +41,32 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-29 (follow-up 85) — correct follow-up 84: "Unlock to edit" is Admin-only
+Scope: `src/components/admin/TourSimulator.jsx`.
+
+Per Enda: follow-up 84's new "Unlock to edit" button (on the locked-waypoint
+banner in the Narrate & Simulate tab) must never be visible to a Narrator —
+only an Admin has the authority to unlock a Done waypoint. A Narrator who
+wants back into one has to ask an Admin to unlock it. This is the exact
+same rule `DrivingTourWaypointEditor.jsx` (Waypoints tab) already enforces
+for its own identical Done checkbox — per that file's follow-up 47 comment,
+a Narrator can't reach that checkbox at all (no Waypoints tab access), so
+an Admin unlocking it there is the only way back in. Follow-up 84 missed
+porting that same restriction to this tab's new banner.
+
+Fix: the banner now checks the `isNarrator` prop `TourSimulator.jsx`
+already receives (threaded through from `WalkEditor.jsx`, same prop the
+bearing-arrow-hiding fix uses) — the "Unlock to edit" button only renders
+when `!isNarrator`; a Narrator instead sees the same locked message with
+"Ask an Admin to unlock this waypoint if it needs more work" in place of
+the button. No change to which waypoints are locked or how an Admin
+unlocks one — only who can see the button.
+
+**Verified:** `npx eslint` clean (same pre-existing warning as before).
+`rm -rf dist && npx vite build` completes with no errors.
+
+---
+
 ## 2026-08-29 (follow-up 84) — "Done" waypoints were never actually locked in the Narrate & Simulate tab
 Scope: `src/components/admin/TourSimulator.jsx`,
 `src/components/admin/WaypointPaceEditor.jsx`,
