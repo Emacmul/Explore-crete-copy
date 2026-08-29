@@ -8,51 +8,49 @@ import { useNarratorApiKeys } from '@/lib/useNarratorApiKeys';
 
 // required=true is a hard lock, not a dismissable reminder: every admin/narrator works
 // across all three tour types (walk/hike, WalkAbout, driving), so there's no "doesn't
-// need a key" case — both a Google TTS key AND a Groq key are mandatory before anyone
-// can do anything else in the backend. When required, this dialog cannot be closed by
-// the X button, clicking outside, or Escape (see handleOpenChange below), and Save stays
-// disabled until BOTH fields actually have something in them.
+// need a key" case — a single Google API key (enabled for both Cloud Text-to-Speech and
+// Cloud Translation) is mandatory before anyone can do anything else in the backend.
+// When required, this dialog cannot be closed by the X button, clicking outside, or
+// Escape (see handleOpenChange below), and Save stays disabled until the Google API key
+// field actually has something in it.
 export default function ApiKeysDialog({ open, onOpenChange, required = false, onSaved }) {
   const { keys, loading, error: loadError, loadedOk, saveKeys, reload } = useNarratorApiKeys();
   const [googleKey, setGoogleKey] = useState('');
-  const [groqKey, setGroqKey] = useState('');
   const [showGoogle, setShowGoogle] = useState(false);
-  const [showGroq, setShowGroq] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
 
   const handleOpenChange = (next) => {
-    if (required && !next) return; // no dismissing this one until both keys are saved
+    if (required && !next) return; // no dismissing this one until the Google key is saved
     onOpenChange(next);
   };
 
   // The keys load asynchronously from the server now, rather than being available
-  // instantly from localStorage — sync the editable fields once the real, current values
-  // actually arrive, rather than only ever capturing whatever was there on first render.
+  // instantly from localStorage — sync the editable field once the real, current value
+  // actually arrives, rather than only ever capturing whatever was there on first render.
   useEffect(() => {
     if (!loading) {
       setGoogleKey(keys.google_tts_api_key || '');
-      setGroqKey(keys.groq_api_key || '');
     }
-  }, [loading, keys.google_tts_api_key, keys.groq_api_key]);
+  }, [loading, keys.google_tts_api_key]);
 
   const handleSave = async () => {
     setError('');
     setSaved(false);
     setSaving(true);
     try {
-      await saveKeys({ google_tts_api_key: googleKey.trim(), groq_api_key: groqKey.trim() });
+      await saveKeys({ google_tts_api_key: googleKey.trim() });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
       onSaved?.();
     } catch (err) {
-      setError(err.message || 'Could not save your keys. Please try again.');
+      setError(err.message || 'Could not save your key. Please try again.');
     }
     setSaving(false);
   };
 
-  const bothKeysFilled = !!googleKey.trim() && !!groqKey.trim();
+  const googleKeyFilled = !!googleKey.trim();
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -63,20 +61,20 @@ export default function ApiKeysDialog({ open, onOpenChange, required = false, on
       >
         <DialogHeader>
           <DialogTitle className="text-white flex items-center gap-2">
-            <KeyRound className="w-4 h-4" /> {required ? 'Add Your API Keys to Continue' : 'My API Keys'}
+            <KeyRound className="w-4 h-4" /> {required ? 'Add Your API Key to Continue' : 'My API Key'}
           </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
           <p className="text-sm text-slate-400">
             {required
-              ? 'Every admin and narrator needs their own Google TTS and Groq keys before using any tour tools — every tour type needs them sooner or later. Enter both below to continue.'
-              : 'Required for narration and translation. Saved to your own account — works from any browser or device, survives clearing this site\'s data, and is never visible to other narrators.'}
+              ? 'Every admin and narrator needs their own Google API key before using any tour tools — it powers both narration (text-to-speech) and script translation. Enter it below to continue.'
+              : 'Required for narration (text-to-speech) and script translation. Saved to your own account — works from any browser or device, survives clearing this site\'s data, and is never visible to other narrators.'}
           </p>
 
           {loading ? (
             <div className="flex items-center gap-2 text-slate-400 text-sm py-4">
-              <Loader2 className="w-4 h-4 animate-spin" /> Loading your saved keys…
+              <Loader2 className="w-4 h-4 animate-spin" /> Loading your saved key…
             </div>
           ) : (
             <>
@@ -94,7 +92,7 @@ export default function ApiKeysDialog({ open, onOpenChange, required = false, on
               )}
 
               <div>
-                <Label className="text-slate-300 text-sm mb-1.5 block">Google API Key <span className="text-slate-500 font-normal">(text-to-speech)</span></Label>
+                <Label className="text-slate-300 text-sm mb-1.5 block">Google API Key <span className="text-slate-500 font-normal">(text-to-speech &amp; translation)</span></Label>
                 <div className="flex gap-2">
                   <Input
                     type={showGoogle ? 'text' : 'password'}
@@ -110,25 +108,10 @@ export default function ApiKeysDialog({ open, onOpenChange, required = false, on
                   </Button>
                 </div>
                 {loadedOk && !keys.google_tts_api_key && <p className="text-xs text-slate-500 mt-1">No key saved yet.</p>}
-              </div>
-
-              <div>
-                <Label className="text-slate-300 text-sm mb-1.5 block">Groq API Key <span className="text-slate-500 font-normal">(translation)</span></Label>
-                <div className="flex gap-2">
-                  <Input
-                    type={showGroq ? 'text' : 'password'}
-                    value={groqKey}
-                    onChange={e => setGroqKey(e.target.value)}
-                    placeholder="Paste your Groq API key"
-                    className="bg-slate-700 border-slate-500 text-white font-mono text-sm"
-                    autoComplete="off"
-                    disabled={!loadedOk}
-                  />
-                  <Button type="button" variant="outline" size="icon" className="border-slate-500 shrink-0" onClick={() => setShowGroq(s => !s)}>
-                    {showGroq ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </Button>
-                </div>
-                {loadedOk && !keys.groq_api_key && <p className="text-xs text-slate-500 mt-1">No key saved yet.</p>}
+                <p className="text-xs text-slate-500 mt-1.5">
+                  One key covers both narration and translation — enable both the Cloud
+                  Text-to-Speech and Cloud Translation APIs in the same Google Cloud project.
+                </p>
               </div>
 
               {error && (
@@ -139,7 +122,7 @@ export default function ApiKeysDialog({ open, onOpenChange, required = false, on
 
               <Button
                 onClick={handleSave}
-                disabled={saving || !loadedOk || (required && !bothKeysFilled)}
+                disabled={saving || !loadedOk || (required && !googleKeyFilled)}
                 className="w-full bg-blue-600 hover:bg-blue-500 text-white gap-2"
               >
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <CheckCircle2 className="w-4 h-4" /> : <Save className="w-4 h-4" />}
@@ -148,9 +131,9 @@ export default function ApiKeysDialog({ open, onOpenChange, required = false, on
                   : saved
                     ? 'Saved'
                     : !loadedOk
-                      ? 'Load your keys first'
-                      : required && !bothKeysFilled
-                        ? 'Enter both keys to continue'
+                      ? 'Load your key first'
+                      : required && !googleKeyFilled
+                        ? 'Enter your Google API key to continue'
                         : 'Save API Key'}
               </Button>
             </>

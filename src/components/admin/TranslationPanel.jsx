@@ -133,9 +133,9 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
   // narrators always start from an English original). If the chosen target language is
   // English too — e.g. Enda writing the English version of a tour himself, alongside a
   // Dutch one from the same import — there's genuinely nothing to translate. Skip the
-  // Groq call entirely rather than running a same-language "translation" through the
-  // model anyway: that would cost real API quota/time for a no-op, and risks the model
-  // subtly rewording text that was already exactly right, for no reason at all.
+  // Google Translate call entirely rather than running a same-language "translation"
+  // through the API anyway: that would cost real quota/time for a no-op, and risks the
+  // translation subtly rewording text that was already exactly right, for no reason at all.
   const isNoOpTranslation = targetLanguage === 'English';
 
   const handleTranslate = async () => {
@@ -148,8 +148,11 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
       onTranslated(importedText);
       return;
     }
-    if (!apiKeys.groq_api_key) {
-      setError('No Groq API key found for your account yet. Add your own key via "API Keys" in the header.');
+    // The same Google Cloud API key already used for text-to-speech powers translation
+    // too (one key, both the Cloud Translation and Cloud Text-to-Speech APIs enabled in
+    // the same project) — narrators no longer need a separate Groq key for this.
+    if (!apiKeys.google_tts_api_key) {
+      setError('No Google API key found for your account yet. Add your own key via "API Keys" in the header.');
       return;
     }
     setError('');
@@ -158,7 +161,7 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
       const response = await base44.functions.invoke('translateScript', {
         text: importedText,
         target_language: targetLanguage,
-        apiKey: apiKeys.groq_api_key,
+        apiKey: apiKeys.google_tts_api_key,
         ...getNarratorAuthPayload(),
       });
       if (response.data?.translated_text) {
@@ -181,7 +184,7 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
       </div>
 
       <div className="flex items-center gap-2 flex-wrap">
-        <input ref={fileInputRef} type="file" accept=".txt,.docx,.odt,.md,text/plain" className="hidden" onChange={handleImport} />
+        <input ref={fileInputRef} type="file" accept=".txt,text/plain" className="hidden" onChange={handleImport} />
         <Button
           type="button" size="sm" variant="outline"
           onClick={() => fileInputRef.current?.click()}

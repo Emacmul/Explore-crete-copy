@@ -4,7 +4,7 @@
   "properties": {
     "user_id": {
       "type": "string",
-      "description": "WordPress user ID (set on first login via ensureAppUserOnboarding, or by the sync). Not a Base44 user id — real customers never have a Base44 session."
+      "description": "WordPress user ID (set on first login via ensureAppUserOnboarding, or by the sync). Not a Base44 user id \u2014 real customers never have a Base44 session."
     },
     "email": {
       "type": "string",
@@ -43,19 +43,15 @@
     },
     "password": {
       "type": "string",
-      "description": "Backend password — required for Narrator and Admin roles."
+      "description": "Backend password \u2014 required for Narrator and Admin roles."
     },
     "narr_session_token": {
       "type": "string",
-      "description": "Random token issued at successful Narr Studio login, letting authenticated actions (like saving a UI translation) skip re-entering the password for the rest of that login — the password itself is genuinely verified once, at login, not bypassed."
+      "description": "Random token issued at successful Narr Studio login, letting authenticated actions (like saving a UI translation) skip re-entering the password for the rest of that login \u2014 the password itself is genuinely verified once, at login, not bypassed."
     },
     "google_tts_api_key": {
       "type": "string",
-      "description": "This admin/narrator's own Google Cloud Text-to-Speech API key, used for narration audio generation. Kept separate per person so usage and any cost stays personal to them, not shared across everyone."
-    },
-    "groq_api_key": {
-      "type": "string",
-      "description": "This admin/narrator's own Groq API key, used for the script translation feature."
+      "description": "This admin/narrator's own Google Cloud API key, used for both narration audio generation (Cloud Text-to-Speech) and script translation (Cloud Translation). Kept separate per person so usage and any cost stays personal to them, not shared across everyone."
     },
     "narr_session_expires_at": {
       "type": "string",
@@ -78,7 +74,7 @@
         "type": "string"
       },
       "default": [],
-      "description": "IDs of walks this person has purchased — set automatically when Creem confirms a payment, never edited by hand"
+      "description": "IDs of walks this person has purchased \u2014 set automatically when Creem confirms a payment, never edited by hand"
     },
     "description": {
       "type": "string",
