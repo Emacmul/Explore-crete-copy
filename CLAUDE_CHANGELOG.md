@@ -41,6 +41,25 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-29 (follow-up 89) — customer-facing label: "Save for Offline" → "Stay Safe Offline"
+Scope: `src/lib/i18n/index.js`. Frontend-only, no backend functions touched.
+
+Per Enda: renamed the button label — "sounds a lot more dedicated and friendlier."
+Also updated the two other English strings that quote the button's own name inline
+so they stay consistent with the real label: `detail.offlineWarning` (the "tap X now"
+prompt on the tour detail page) and `detail.defaultSafetyNotes` (the default safety
+notes shown before setting off). `download.savedOffline` ("Saved Offline", the
+already-downloaded state) was left as-is — not the button Enda named. Checked for any
+other hardcoded copy of this string outside the i18n dictionary (none — the button
+component reads it via the `download.saveForOffline` key only) and for translated
+copies in the `nl`/`cs` partial locale blocks further down this same file (none exist
+yet for this key — only `en` has it, so nothing else needed updating).
+
+**Verified:** `npx eslint` clean. `rm -rf dist && npx vite build` completes with no
+errors.
+
+---
+
 ## 2026-08-29 (follow-up 88) — a pause can now be removed with one click, right on its own slider
 Scope: `src/components/admin/TtsSegmentCard.jsx`, `src/components/admin/NarrationTtsEditor.jsx`,
 `src/components/admin/WaypointPaceEditor.jsx`.
