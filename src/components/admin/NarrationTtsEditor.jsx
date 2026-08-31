@@ -941,6 +941,61 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     setEditedSinceLastListen(true);
   };
 
+  // Per Anoushka/Enda: before this, removing a pause entirely meant scrolling down to
+  // whichever combined script box (top box, or a per-subsection box) happened to
+  // contain the right <break> tag, finding it among however many others the document
+  // had, and deleting it by hand there — slow, real risk of deleting the WRONG one,
+  // and it broke a narrator's editing rhythm every time. TtsSegmentCard's own trash
+  // icon (only ever shown for a pause segment — onRemove is meaningless to its text
+  // branch) calls this directly, so removal happens right where the pause already
+  // lives, with its own two-step confirm guarding against a stray click.
+  //
+  // Keeps `subsectionSizes` in sync the same way commitSubsectionEdit already does
+  // for a re-parsed subsection (see the long comment above deriveSubsections/
+  // chunkBySizes for why that matters) — the ONE subsection that owned this pause
+  // shrinks by exactly one segment; every other subsection's own size is untouched.
+  // Without this, the very next [segments]-driven re-chunk would misalign every
+  // subsection after the one that actually changed.
+  const handleRemoveSegment = (segmentId) => {
+    if (!segments) return;
+    const idx = segments.findIndex((s) => s.id === segmentId);
+    if (idx === -1) return;
+    const newSegments = segments.filter((s) => s.id !== segmentId);
+    const newAudios = { ...segmentAudios };
+    delete newAudios[segmentId];
+
+    const baseSizes = subsectionSizes && subsectionSizes.length === subsections.length
+      ? subsectionSizes
+      : subsections.map((s) => s.length);
+    let cum = 0;
+    let ownerSi = -1;
+    for (let i = 0; i < baseSizes.length; i++) {
+      if (idx < cum + baseSizes[i]) { ownerSi = i; break; }
+      cum += baseSizes[i];
+    }
+    const newSizes = ownerSi === -1 ? baseSizes : baseSizes.map((sz, i) => (i === ownerSi ? sz - 1 : sz));
+
+    if (ownerSi !== -1) {
+      setSubsectionSizes(newSizes);
+      // Refresh just the one subsection box that actually lost a segment to its new
+      // canonical text — otherwise it would keep showing the just-removed <break> tag
+      // until the next full reparse, same reasoning as commitSubsectionEdit's own
+      // setSubsectionTexts call.
+      const newChunks = chunkBySizes(newSegments, newSizes);
+      setSubsectionTexts((prev) => {
+        const base = prev && prev.length === subsections.length ? prev : subsections.map(rebuildScript);
+        return base.map((t, i) => (i === ownerSi ? rebuildScript(newChunks[ownerSi] || []) : t));
+      });
+    }
+
+    setSegments(newSegments);
+    setSegmentAudios(newAudios);
+    onScriptChange(rebuildScript(newSegments));
+    // Removing a pause changes the audio just as much as any other edit — Mark
+    // Segment as Done must wait for the next full listen pass to confirm it.
+    setEditedSinceLastListen(true);
+  };
+
   // Per Anoushka/Enda: playing one line's own clip (this) and the combined Build & Play
   // engine (handleBuildAndPlay, below) used to be two completely separate audio
   // pathways that never checked each other — clicking one while the other was
@@ -1688,6 +1743,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                           isPlaying={currentPlayingIndex === globalIdx}
                           onPlay={playSegment}
                           onDurationChange={handleDurationChange}
+                          onRemove={handleRemoveSegment}
                           controlsDisabled={busy || editingLocked}
                           isEditing={editingSegmentId === seg.id}
                           editValue={editingSegmentId === seg.id ? segmentEditText : ''}

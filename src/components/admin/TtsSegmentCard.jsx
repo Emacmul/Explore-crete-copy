@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
-import { Play, Clock, Type, Loader2, Volume2, Pencil, X, Check, MapPin } from 'lucide-react';
+import { Play, Clock, Type, Loader2, Volume2, Pencil, X, Check, MapPin, Trash2 } from 'lucide-react';
 
 // Per Anoushka, a narrator (relayed by Enda — see CLAUDE_CHANGELOG.md for the full
 // request): the whole point of a narration line is that it's language for the EAR, not
@@ -62,7 +62,18 @@ export default function TtsSegmentCard({
   onCancelEdit,
   onSaveEdit,
   isSavingEdit = false,
+  onRemove,
 }) {
+  // Per Anoushka/Enda: before this, the ONLY way to remove a pause entirely was to
+  // scroll down to the big combined script box further down this panel, find the
+  // right <break> tag among however many others are in it, and delete it there — slow,
+  // risked deleting the WRONG one once a script had several pauses, and broke a
+  // narrator's editing flow every time they needed it. onRemove (only ever passed for
+  // a pause segment — see NarrationTtsEditor.jsx's call site) puts a real "delete this
+  // one" control right on the card whose duration it already controls. confirmingRemove
+  // is local to this one card, not shared state, so confirming one pause's removal can
+  // never be accidentally triggered by clicking a DIFFERENT card's trash icon first.
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
   if (segment.type === 'text') {
     return (
       <div className={`bg-slate-800 rounded-lg border p-3 transition-colors ${
@@ -180,26 +191,63 @@ export default function TtsSegmentCard({
         <div className="flex-1">
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-xs text-slate-400">Pause</span>
-            <span className="text-xs font-medium text-amber-400">{segment.duration.toFixed(1)}s</span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-amber-400">{segment.duration.toFixed(1)}s</span>
+              {onRemove && !confirmingRemove && (
+                <button
+                  type="button"
+                  onClick={() => setConfirmingRemove(true)}
+                  disabled={controlsDisabled}
+                  title="Remove this pause completely"
+                  className="text-slate-500 hover:text-red-400 disabled:opacity-30 disabled:hover:text-slate-500 transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           </div>
-          <Slider
-            value={[segment.duration]}
-            min={0.1}
-            max={120}
-            step={0.1}
-            onValueChange={(val) => onDurationChange(segment.id, val[0])}
-            // Per the follow-up 23 audit (Bug B): dragging this while ANY commit/save/
-            // render is in flight elsewhere on the panel used to apply live (via a
-            // functional setState update) but then get silently overwritten the moment
-            // that other operation finished — it captures/writes a plain, non-functional
-            // `segments` snapshot from before the drag happened. Locked for the same
-            // window every other mutating control on the panel already locks for.
-            disabled={controlsDisabled}
-          />
-          <div className="flex justify-between mt-0.5">
-            <span className="text-[10px] text-slate-600">0.1s</span>
-            <span className="text-[10px] text-slate-600">120s</span>
-          </div>
+          {confirmingRemove ? (
+            <div className="flex items-center justify-between gap-2 bg-red-900/20 border border-red-700/50 rounded-md px-2.5 py-2">
+              <span className="text-xs text-red-300">Remove this pause? This can't be undone.</span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setConfirmingRemove(false)}
+                  className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-blue-700/30 hover:bg-blue-700/50 border border-blue-600/50 text-slate-200"
+                >
+                  <X className="w-3 h-3" /> Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setConfirmingRemove(false); onRemove(segment.id); }}
+                  className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-red-700/40 hover:bg-red-700/60 border border-red-600/50 text-red-100"
+                >
+                  <Check className="w-3 h-3" /> Yes, remove
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <Slider
+                value={[segment.duration]}
+                min={0.1}
+                max={120}
+                step={0.1}
+                onValueChange={(val) => onDurationChange(segment.id, val[0])}
+                // Per the follow-up 23 audit (Bug B): dragging this while ANY commit/save/
+                // render is in flight elsewhere on the panel used to apply live (via a
+                // functional setState update) but then get silently overwritten the moment
+                // that other operation finished — it captures/writes a plain, non-functional
+                // `segments` snapshot from before the drag happened. Locked for the same
+                // window every other mutating control on the panel already locks for.
+                disabled={controlsDisabled}
+              />
+              <div className="flex justify-between mt-0.5">
+                <span className="text-[10px] text-slate-600">0.1s</span>
+                <span className="text-[10px] text-slate-600">120s</span>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

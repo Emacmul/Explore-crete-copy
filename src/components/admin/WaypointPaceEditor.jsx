@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Slider } from '@/components/ui/slider';
-import { Loader2, Play, Save, AlertTriangle, Clock } from 'lucide-react';
+import { Loader2, Play, Save, AlertTriangle, Clock, Trash2, X, Check } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { getNarratorAuthPayload, useNarratorApiKeys } from '@/lib/useNarratorApiKeys';
 import { parseScript, rebuildScript } from '@/lib/ttsParser';
@@ -135,6 +135,16 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
   // adding a key that may already be there.
   const [keyCheckFailed, setKeyCheckFailed] = useState(false);
   const [dirty, setDirty] = useState(false);
+  // Per Anoushka/Enda: removing a pause entirely used to mean leaving this screen,
+  // going back to the Waypoints tab, scrolling to the big combined script box there,
+  // and deleting the <break> tag by hand — slow, easy to delete the WRONG one once
+  // there are several, and it broke a narrator's editing flow every time. This screen
+  // has no such fallback text box at all (see the file header comment above), so
+  // there was previously no way to remove a pause from here whatsoever, only nudge
+  // its duration. confirmRemoveId tracks which single pause segment (by id) is
+  // currently showing its "Remove this pause?" confirmation, so a stray click can
+  // never delete one by accident — only one segment's confirm is ever open at a time.
+  const [confirmRemoveId, setConfirmRemoveId] = useState(null);
   const lastPreviewUrlRef = useRef(null);
   // Guards the generation pass below to actually running at most once per mount, now
   // that the effect can no longer rely on `[]` deps alone to mean "exactly once" — it
@@ -255,6 +265,22 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
       delete next[segmentId];
       return next;
     });
+  };
+
+  // Per Anoushka/Enda — see confirmRemoveId above. Deletes the pause segment entirely
+  // (not just shrinking its duration towards the 0.1s floor, which would still leave a
+  // real, audible micro-pause). Only ever called after the two-step confirm below has
+  // actually resolved to "yes".
+  const handleRemoveSegment = (segmentId) => {
+    setSegments((prev) => prev ? prev.filter((seg) => seg.id !== segmentId) : prev);
+    setSegmentAudios((prev) => {
+      if (!(segmentId in prev)) return prev;
+      const next = { ...prev };
+      delete next[segmentId];
+      return next;
+    });
+    setDirty(true);
+    setConfirmRemoveId(null);
   };
 
   // Per Enda's follow-up 35 report (same reasoning as NarrationTtsEditor's own
@@ -486,16 +512,57 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
                   <span className="text-xs text-slate-400 flex items-center gap-1">
                     <Clock className="w-3 h-3" /> Pause
                   </span>
-                  <span className="text-xs font-medium text-amber-400">{seg.duration.toFixed(1)}s</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-amber-400">{seg.duration.toFixed(1)}s</span>
+                    {/* Per Anoushka/Enda: a real, complete removal — not just dragging
+                        the slider down towards its 0.1s floor, which still leaves an
+                        audible micro-pause behind. Two-step confirm (this button just
+                        opens it; nothing is deleted until "Yes, remove" below is
+                        actually clicked) so a stray click can't silently drop a pause
+                        a narrator meant to keep. */}
+                    {confirmRemoveId !== seg.id && (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmRemoveId(seg.id)}
+                        disabled={loading || saving || testing || doneLocked}
+                        title="Remove this pause completely"
+                        className="text-slate-500 hover:text-red-400 disabled:opacity-30 disabled:hover:text-slate-500 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <Slider
-                  value={[seg.duration]}
-                  min={0.1}
-                  max={120}
-                  step={0.1}
-                  onValueChange={(val) => handleDurationChange(seg.id, val[0])}
-                  disabled={loading || saving || testing || doneLocked}
-                />
+                {confirmRemoveId === seg.id ? (
+                  <div className="flex items-center justify-between gap-2 bg-red-900/20 border border-red-700/50 rounded-md px-2.5 py-2">
+                    <span className="text-xs text-red-300">Remove this pause? This can't be undone.</span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setConfirmRemoveId(null)}
+                        className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-blue-700/30 hover:bg-blue-700/50 border border-blue-600/50 text-slate-200"
+                      >
+                        <X className="w-3 h-3" /> Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveSegment(seg.id)}
+                        className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-red-700/40 hover:bg-red-700/60 border border-red-600/50 text-red-100"
+                      >
+                        <Check className="w-3 h-3" /> Yes, remove
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <Slider
+                    value={[seg.duration]}
+                    min={0.1}
+                    max={120}
+                    step={0.1}
+                    onValueChange={(val) => handleDurationChange(seg.id, val[0])}
+                    disabled={loading || saving || testing || doneLocked}
+                  />
+                )}
               </div>
             )
           ))}

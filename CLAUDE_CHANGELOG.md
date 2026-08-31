@@ -41,6 +41,53 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-29 (follow-up 88) — a pause can now be removed with one click, right on its own slider
+Scope: `src/components/admin/TtsSegmentCard.jsx`, `src/components/admin/NarrationTtsEditor.jsx`,
+`src/components/admin/WaypointPaceEditor.jsx`.
+
+**Per Anoushka (relayed by Enda):** to remove a `<break>` entirely, a narrator had to
+scroll down to whichever big combined script box happened to contain it, find the
+right one among however many others the document had, and delete it there by hand —
+risking deleting the WRONG one, and breaking the narrator's editing rhythm every
+time. In `WaypointPaceEditor.jsx` (the pace-testing screen) there wasn't even that
+option — that screen has no combined text box at all (per its own file header
+comment), so a pause could be nudged shorter but never actually removed from there.
+
+**Fix:** both screens' pause cards now have a small trash icon next to the duration
+readout. Clicking it opens an inline two-step confirm ("Remove this pause? This can't
+be undone." / Cancel / Yes, remove) right on that same card — nothing is deleted
+until the second click, so a stray click can't silently drop a pause a narrator meant
+to keep, and confirming one card's removal can never be triggered by clicking a
+different card's icon (each card's confirm state is its own, not shared). Removal
+deletes the pause segment outright, not just shrinks its duration toward the 0.1s
+floor (which would still leave a real, audible micro-pause behind).
+
+- `TtsSegmentCard.jsx`: new `onRemove` prop (only meaningful for a pause segment —
+  inert on the text branch), own local `confirmingRemove` state, gated by the same
+  `controlsDisabled` every other mutating control on this card already respects
+  (which already includes follow-up 84's `doneLocked`, so a Done-locked waypoint's
+  pauses can't be removed either, same as everything else on that panel).
+- `NarrationTtsEditor.jsx`: `handleRemoveSegment` deletes the segment, tells the
+  parent via `onScriptChange` same as every other edit here, and — the trickiest
+  part — keeps `subsectionSizes` in sync exactly the way `commitSubsectionEdit`
+  already does for a re-parsed subsection: finds which ONE subsection actually owned
+  the removed pause (by walking cumulative segment counts) and shrinks only that
+  subsection's frozen size by one, refreshing just its own box to the new text.
+  Every other subsection is untouched. Skipping this would have silently
+  misaligned every subsection after the one that changed on the next re-chunk.
+- `WaypointPaceEditor.jsx`: same trash-icon/confirm UI, simpler `handleRemoveSegment`
+  (this file has no subsections to keep in sync — just a flat segment list).
+
+**Verified:** the subsection-size bookkeeping was pulled out and run standalone
+against a 9-segment/3-subsection layout (sizes 3/4/2) — removing the first, middle,
+and last segment of every subsection all correctly identified the right owning
+subsection and produced sizes that still summed to the new total segment count (8),
+which is exactly what `deriveSubsections`'s own `sizesValid` check requires to avoid
+silently falling back to a full re-chunk. `npx eslint` clean on all three files (zero
+warnings). `rm -rf dist && npx vite build` completes with no errors.
+
+---
+
 ## 2026-08-29 (follow-up 87) — the Waypoints tab never actually enforced editing in sequence
 Scope: `src/components/admin/DrivingTourWaypointEditor.jsx`.
 
