@@ -1041,30 +1041,23 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
           )}
         </span>
         {locationStatus.length > 1 && (
-          // Per Anoushka/Enda: how many CONSECUTIVE locations one "Jump to location…"
-          // run should play straight through — 1 (the original single-location
-          // behaviour), 2, or 3. Only shown when there's more than one location in the
-          // tour at all; a single-location tour has nothing for 2/3 to ever mean.
-          <span
-            className="flex items-center gap-1 bg-slate-800/60 rounded-lg border border-slate-600 px-1.5 h-8 text-xs text-slate-400"
+          // Per Enda's report: the original "Locations: 1 2 3" control (three bare
+          // digit buttons right next to the word "Locations") read as if it were
+          // picking WHICH location — the first, second, or third in the tour — not
+          // how MANY consecutive ones to jump across. A plain <select> with full
+          // words on every option can't be misread the same way. Still the same
+          // jumpSpan state as before (1 is the original single-location behaviour) —
+          // only how it's presented changed, not what it does.
+          <select
+            value={jumpSpan}
+            onChange={(e) => setJumpSpan(Number(e.target.value))}
             title="How many consecutive locations to play in one Jump"
+            className="bg-slate-700 border border-slate-500 text-white text-sm rounded px-2 h-8 min-w-0"
           >
-            Locations:
-            {[1, 2, 3].map(n => (
-              <button
-                key={n}
-                type="button"
-                onClick={() => setJumpSpan(n)}
-                className={`w-5 h-5 rounded text-xs font-medium ${
-                  jumpSpan === n
-                    ? 'bg-blue-600 text-white'
-                    : 'text-slate-300 hover:bg-slate-700'
-                }`}
-              >
-                {n}
-              </button>
-            ))}
-          </span>
+            <option value={1}>Jump 1 location</option>
+            <option value={2}>Jump 2 in a row</option>
+            <option value={3}>Jump 3 in a row</option>
+          </select>
         )}
         {locationTargets.length > 0 && (
           <div className="flex items-center gap-1.5">
@@ -1088,27 +1081,21 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
             </Button>
           </div>
         )}
-        {locationTargets.length === 0 && incompleteLocations.length > 0 && (
-          <span
-            className="flex items-center gap-1.5 text-amber-400 text-xs bg-slate-800/60 rounded-lg border border-slate-600 px-2.5 h-8"
-            title={incompleteLocations
-              .map(t => `${t.label}: ${t.notDoneCount} of ${t.total} waypoint${t.total === 1 ? '' : 's'} not yet marked Done`)
-              .join('\n')}
-          >
-            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-            No location ready to jump to yet — {incompleteLocations[0].label} needs {incompleteLocations[0].notDoneCount} more waypoint{incompleteLocations[0].notDoneCount === 1 ? '' : 's'} marked Done
-            {incompleteLocations.length > 1 && ` (+${incompleteLocations.length - 1} more, hover for details)`}
-          </span>
-        )}
-        {/* Per Anoushka/Enda: distinct from the message above — every individual
-            location can be fully Done and still have nothing to offer for a 2/3-wide
-            jump, if the finished ones aren't sitting next to each other (e.g. one in
-            the middle got unticked to fix something). Only shown once jumpSpan > 1 and
-            there's genuinely nothing else explaining the empty dropdown. */}
-        {jumpSpan > 1 && locationTargets.length === 0 && incompleteLocations.length < locationStatus.length && (
+        {/* Per Enda's report: the old version of this message repeated the SAME
+            done/not-done detail the location-progress row below now shows for every
+            location at a glance (with its own per-location tooltip) — kept short here
+            on purpose so the two don't say the same thing twice. Covers both the
+            "nothing at all is done yet" case and, once jumpSpan > 1, the narrower
+            "individual locations are done, just not `jumpSpan` of them in a row" case
+            — the progress row makes a gap in the sequence visible either way, so one
+            short line pointing at it is enough. */}
+        {locationTargets.length === 0 && locationStatus.length > 0 && (
           <span className="flex items-center gap-1.5 text-amber-400 text-xs bg-slate-800/60 rounded-lg border border-slate-600 px-2.5 h-8">
             <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-            No {jumpSpan} finished locations in a row yet — try 1 or 2, or finish whichever one nearby isn't done.
+            {incompleteLocations.length === locationStatus.length
+              ? 'No location ready to jump to yet'
+              : `No ${jumpSpan} finished location${jumpSpan === 1 ? '' : 's'} in a row yet`}
+            {' '}— see progress below.
           </span>
         )}
         {tourComplete && (
@@ -1146,6 +1133,47 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
           </span>
         )}
       </div>
+
+      {/* Per Enda's report: nothing on this tab actually showed which locations were
+          finished, which still needed checking, or which of them "Jump to location…"
+          would even let you pick — a narrator had to infer all three from a single
+          amber sentence that only ever named the FIRST unfinished location. This is
+          the whole tour's location-by-location status, in trail order, all at once:
+          - Green with a check = fully Done (every one of its own waypoints marked
+            Done — the same isComplete locationStatus already computes for the
+            dropdown above, not a separate notion of "done").
+          - Grey outline = still needs checking; hover any grey one for exactly how
+            many of its own waypoints aren't marked Done yet.
+          - A blue ring = a genuinely valid start for the "Jump N in a row" setting
+            currently chosen above (locationTargets) — i.e. what you could actually
+            pick right now, at a glance, without opening the dropdown first. Only
+            green locations ever get a ring; a gap in an otherwise-green run (an
+            earlier fix, then un-ticked) correctly loses its ring the moment `jumpSpan`
+            needs more consecutive locations than are actually sitting next to it. */}
+      {locationStatus.length > 0 && (
+        <div className="flex items-center gap-1.5 flex-wrap pb-1" title="Every location in this tour, in order — green means fully Done, grey means still needs checking, a blue ring means it's a valid Jump start for the span chosen above.">
+          <span className="text-xs text-slate-500 shrink-0">Progress:</span>
+          {locationStatus.map((loc) => {
+            const isValidJumpStart = locationTargets.some((t) => t.index === loc.index);
+            return (
+              <span
+                key={loc.index}
+                title={loc.isComplete
+                  ? `${loc.label} — done`
+                  : `${loc.label} — ${loc.notDoneCount} of ${loc.total} waypoint${loc.total === 1 ? '' : 's'} not yet marked Done`}
+                className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${
+                  loc.isComplete
+                    ? 'bg-green-900/40 border-green-600/60 text-green-300'
+                    : 'bg-slate-800/60 border-slate-600 text-slate-400'
+                } ${isValidJumpStart ? 'ring-2 ring-blue-500' : ''}`}
+              >
+                {loc.isComplete && <CheckCircle2 className="w-3 h-3 shrink-0" />}
+                {loc.label}
+              </span>
+            );
+          })}
+        </div>
+      )}
 
       {/* Previously a failed audio.play() (autoplay blocked, missing file, expired
           link, etc.) failed completely silently — the marker would move with no audio

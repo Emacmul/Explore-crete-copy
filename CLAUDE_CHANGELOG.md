@@ -41,6 +41,41 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-29 (follow-up 90) — the "Locations: 1 2 3" control was genuinely confusing; added a real per-location progress row
+Scope: `src/components/admin/TourSimulator.jsx`.
+
+**Per Enda's report** (with a screenshot): follow-up 86's "Locations: 1 2 3" control
+— three bare digit buttons sitting right next to the word "Locations" — read as if it
+picked WHICH location (the 1st, 2nd, or 3rd in the tour), not how MANY consecutive
+ones to jump across, which is all it ever actually did. Separately: nothing on this
+tab showed which locations were actually done, which still needed checking, or which
+ones "Jump to location…" would even let you pick — the only clue was a single amber
+sentence naming just the FIRST unfinished location.
+
+**Fix, two parts:**
+1. The three digit buttons are now a plain `<select>` with full words on every
+   option ("Jump 1 location" / "Jump 2 in a row" / "Jump 3 in a row") — same
+   `jumpSpan` state as before, only how it's presented changed. A dropdown with
+   spelled-out options can't be misread as a location picker the way three bare
+   numbers could.
+2. New "Progress:" row, always visible whenever the tour has more than one location —
+   every location in trail order as a small pill: green with a check for fully Done,
+   grey outline for still-needs-checking (hover any grey one for exactly how many of
+   its own waypoints aren't marked Done), and a blue ring on whichever ones are
+   actually valid Jump starts for the currently chosen span (reuses `locationTargets`,
+   the exact same list the dropdown itself already offers — never a separate notion
+   of "valid"). A gap in an otherwise-green run visibly loses its ring the moment
+   `jumpSpan` needs more consecutive locations than are actually sitting next to it,
+   so the "must be consecutive" rule from follow-up 86 is now visible, not just
+   enforced. The two old amber hint messages were trimmed to one short line pointing
+   at this row, rather than re-stating detail the row now shows for every location at
+   once.
+
+**Verified:** `npx eslint` — same single pre-existing warning as before, unrelated.
+`rm -rf dist && npx vite build` completes with no errors.
+
+---
+
 ## 2026-08-29 (follow-up 89) — customer-facing label: "Save for Offline" → "Stay Safe Offline"
 Scope: `src/lib/i18n/index.js`. Frontend-only, no backend functions touched.
 
