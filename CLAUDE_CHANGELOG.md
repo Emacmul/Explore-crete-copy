@@ -41,6 +41,89 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-01 (follow-up 96) — Dropped "again" from follow-up 95's wording
+Scope: `src/lib/audioCombiner.js` only (same two messages).
+
+**Per Enda's report:** "Click 'Build & Play' again" reads, to someone hitting this
+message as their FIRST click, like they must have already clicked it once — Anoushka's
+instinctive reaction would be "but I haven't clicked this yet", second-guessing herself
+over nothing. Both messages now just say `Click "Build & Play" to pick up right where it
+left off.` — true and unambiguous whether this is her first click or her fifth.
+
+**Verified:** `npx eslint src/lib/audioCombiner.js` clean. `rm -rf dist && npx vite
+build` — clean production build. Frontend-only.
+
+---
+
+## 2026-09-01 (follow-up 95) — Calmer, more direct wording on follow-up 94's two recoverable audio errors
+Scope: `src/lib/audioCombiner.js` only (same two throws inside `decodeAndBoundSegments`
+that follow-up 94 just touched).
+
+**Per Enda's report:** a narrator hitting this — Anoushka especially — "will panic and
+start clicking stuff", even now that Build & Play genuinely is the fix. Asked for the
+message to plainly direct them to click "Build & Play" to redo and continue.
+
+**What changed:** follow-up 94's missing-url message already named "Build & Play", but
+both it and its sibling (audio that fetched but failed, e.g. a stale/expired link) still
+read like a flat technical failure. Both now open with reassurance before the
+instruction, matching the "nothing has been lost, just try again" tone this same file
+already uses elsewhere for a stuck-playback timeout:
+  - `Segment X's audio didn't generate — nothing has been lost. Click "Build & Play"
+    again to pick up right where it left off.`
+  - `Segment X's audio couldn't be loaded (a connection hiccup) — nothing has been lost.
+    Click "Build & Play" again to pick up right where it left off.`
+Both now say the exact same thing every time — one instruction, no ambiguity about which
+button to hit. Deliberately left the "Preview failed:" wrapper this shows inside alone
+(NarrationTtsEditor.jsx) — that's shared by every other kind of preview error too, not
+just these two recoverable ones, so narrowing it further would need distinguishing this
+error from a genuinely serious one, which wasn't what was asked.
+
+**Verified:** `npx eslint src/lib/audioCombiner.js` clean. `rm -rf dist && npx vite
+build` — clean production build. Frontend-only.
+
+---
+
+## 2026-09-01 (follow-up 94) — Fixed a real dead end: "Segment X has no generated audio yet" had no way back
+Scope: `src/lib/audioCombiner.js` only (`decodeAndBoundSegments`) — shared by both
+`NarrationTtsEditor.jsx` and `WaypointPaceEditor.jsx`, so this one fix covers both.
+
+**Per Enda's report** (screenshot): "Preview failed: Segment 3 has no generated audio yet
+— click 'Parse & Generate' again first", but there was no way to actually do that —
+"There must be a button there to retry if this happens."
+
+**Root cause:** `handleParseAndGenerate`'s generation loop calls Google TTS once per
+segment; if ANY one segment's call fails (a timeout, a transient error — segment 3 here,
+could be any segment), the loop logs it and moves on to the rest rather than stopping —
+so `segments` ends up set with that one segment simply missing from `segmentAudios`.
+That's fine in principle (one bad segment shouldn't kill the whole pass) — but the ONLY
+way back to fix it, "Parse & Generate", only ever exists BEFORE the very first pass (see
+NarrationTtsEditor.jsx's own comment: "only shown before the very first pass") — once
+`segments` exists, it's gone for good. Worse, `reviewPhase` was stuck in 'listen'
+forever, since a Build & Play pass that always fails on this one segment can never
+finish and unlock 'edit' (where the real "Save & Listen Again" re-parse control lives).
+A genuine dead end, exactly as Enda described — not a connection problem.
+
+**What changed:** `decodeAndBoundSegments` already had a self-heal for a DIFFERENT but
+related problem (follow-up 35: a segment's URL going stale/403 between generating and
+fetching it) — `onRegenerateAudio`, which every real caller already passes in, re-
+requests fresh audio for one segment using its own already-parsed text. That self-heal
+only ever fired when a URL EXISTED but the fetch failed — a segment with NO url at all
+skipped straight past it to an immediate, dead-end throw. Folded the missing-url case
+into the exact same self-heal: now it tries `onRegenerateAudio` first regardless of
+whether a URL ever existed, and only throws (with corrected wording — "click Build &
+Play to try generating it again", not the unreachable "Parse & Generate") if that retry
+itself also fails. Result: **Build & Play (or Finalize Narration Audio) IS the retry
+button now** — clicking it again quietly regenerates whichever segment(s) are missing
+audio and carries on, no new UI needed, nothing else about the pass reset or lost.
+
+**Verified:** `npx eslint src/lib/audioCombiner.js` clean. `rm -rf dist && npx vite
+build` — clean production build. Traced all four real call sites
+(`NarrationTtsEditor.jsx` ×2, `WaypointPaceEditor.jsx` ×2) and confirmed every one
+already supplies `onRegenerateAudio`, so the fix engages everywhere this could happen,
+not just in the Narrate & Simulate tab. Frontend-only — no backend function touched.
+
+---
+
 ## 2026-09-01 (follow-up 93) — Shared narration-file depository: no more emailing narrators each waypoint's .odt
 Scope: NEW backend function `base44/functions/manageTourImportFiles/entry.ts`. NEW field
 `import_files` on `base44/entities/Walk.jsonc`. Touches

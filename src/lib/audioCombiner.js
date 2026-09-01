@@ -130,13 +130,38 @@ function findSoundBounds(buffer, thresholdDb = SILENCE_THRESHOLD_DB) {
 // live callers below actually provide it) lets the caller re-request a fresh URL for
 // one segment and gets exactly one retry with it before this gives up for real, so one
 // bad URL doesn't hard-fail an entire pass that would otherwise have worked fine.
+//
+// Per Enda's later report: a segment can also have NO url at all yet — one segment's
+// original generateTts call in handleParseAndGenerate's loop failed (a timeout, a
+// transient error) while every other segment succeeded; the loop logs it and moves on
+// rather than stopping the whole pass, so `segments` ends up set with that one entry
+// simply missing from segmentAudios. That used to throw immediately, telling the
+// narrator to "click Parse & Generate again" — advice that can no longer be followed by
+// this point, since that button only ever exists before the very first pass (see
+// NarrationTtsEditor.jsx) and is long gone once segments exist. Nothing else on the
+// panel could reach a completely fresh Parse & Generate from here either (reviewPhase
+// stays 'listen' forever, since a pass that always fails on this segment can never
+// finish and unlock 'edit'), which was a genuine dead end — Enda's report was "there
+// must be a button there to retry", and there wasn't one reachable. Folding the missing-
+// url case into the SAME self-heal onRegenerateAudio already provides for a stale URL
+// closes that dead end without any new button: Build & Play (or Finalize) IS the retry
+// now, on the very next click, using this segment's own already-parsed text — no data
+// lost, nothing else about the pass reset.
 async function decodeAndBoundSegments(segments, segmentAudioUrls, audioCtx, { onRegenerateAudio } = {}) {
   const decoded = {};
   for (const seg of segments) {
     if (seg.type !== 'text') continue;
     let url = segmentAudioUrls[seg.id];
+    if (!url && onRegenerateAudio) {
+      url = await onRegenerateAudio(seg);
+    }
     if (!url) {
-      throw new Error(`Segment ${seg.id} has no generated audio yet — click "Parse & Generate" again first.`);
+      // Per Enda: a narrator (Anoushka especially) hitting this message shouldn't panic
+      // and start clicking around — same reassuring "nothing has been lost, just try
+      // again" tone this file already uses for a stuck playback timeout, and the SAME
+      // single instruction every time: Build & Play is the one and only retry action,
+      // so it's named plainly rather than left for someone to go hunting for it.
+      throw new Error(`Segment ${seg.id}'s audio didn't generate — nothing has been lost. Click "Build & Play" to pick up right where it left off.`);
     }
     let res = await fetchWithTimeout(url);
     if (!res.ok && onRegenerateAudio) {
@@ -146,7 +171,7 @@ async function decodeAndBoundSegments(segments, segmentAudioUrls, audioCtx, { on
         res = await fetchWithTimeout(url);
       }
     }
-    if (!res.ok) throw new Error(`Could not fetch segment ${seg.id}'s audio (HTTP ${res.status}).`);
+    if (!res.ok) throw new Error(`Segment ${seg.id}'s audio couldn't be loaded (a connection hiccup) — nothing has been lost. Click "Build & Play" to pick up right where it left off.`);
     const arrayBuffer = await res.arrayBuffer();
     decoded[seg.id] = await audioCtx.decodeAudioData(arrayBuffer);
   }
