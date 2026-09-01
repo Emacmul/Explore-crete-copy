@@ -32,7 +32,6 @@ export default async function (req) {
       return Response.json({ error: 'Not authorized' }, { status: 403 });
     }
 
-
     if (!walkId) {
       return Response.json({ error: 'Missing walkId' }, { status: 400 });
     }
