@@ -41,6 +41,43 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-08-29 (follow-up 91) — REVERT of follow-up 87: the Waypoints tab's sequential lock made early-stage tour building unworkable
+Scope: `src/components/admin/DrivingTourWaypointEditor.jsx`.
+
+**Per Enda's report:** while doing the basic first pass on a tour — laying down
+structure, rough text and audio across many waypoints, none of them finished yet, not
+necessarily in order — follow-up 87's sequential lock meant every single waypoint had
+to be marked Done before the next one could even be opened. For this stage of work
+that's not a safeguard, it's a wall: "highly annoying and slows me down completely."
+Per Enda: "What I need is the ability to go from one waypoint to another (and not
+necessarily a sequential one!) without having to lock the last edited one. These
+restrictions need to be removed from the Admin Waypoints tab only."
+
+**What changed:** exact revert of follow-up 87's own diff — the `lockedIndexes`
+computation, the row click-handler's sequential check, its cursor/title, and the grey
+"not reachable yet" lock icon are all gone from this file. Confirmed with `git diff`
+against `origin/main` that this file is now different from it ONLY by an explanatory
+comment recording why — no functional difference from how this tab behaved before
+follow-up 87 at all.
+
+**Deliberately left alone, per Enda's own "Waypoints tab only" scope:**
+- The original, much older "an already-Done row can't be re-opened without unticking
+  it first" protection (`wp.waypoint_done && expanded !== index`) — untouched, still
+  there, never what Enda was describing.
+- `TourSimulator.jsx`'s own `lockedWpIndexes` (the Narrate & Simulate tab's "Jump to
+  location…" dropdown, and which waypoint that tab lets you open) — a different
+  screen, used for final review/playback rather than initial authoring, not
+  mentioned in this report and not touched.
+- Follow-up 84's per-waypoint Done-lock on actual editing controls (Narrate &
+  Simulate tab) — also untouched, also a different tab.
+
+**Verified:** `npx eslint` — same single pre-existing unrelated error (`Textarea`
+imported but unused, present in `origin/main` before any of this session's changes)
+as reported in follow-up 87. `rm -rf dist && npx vite build` completes with no
+errors.
+
+---
+
 ## 2026-08-29 (follow-up 90) — the "Locations: 1 2 3" control was genuinely confusing; added a real per-location progress row
 Scope: `src/components/admin/TourSimulator.jsx`.
 
