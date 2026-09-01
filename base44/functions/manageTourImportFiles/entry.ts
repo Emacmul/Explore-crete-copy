@@ -27,6 +27,7 @@ export default async function (req) {
     const body = await req.json().catch(() => ({}));
     const { action, walkId } = body || {};
 
+
     const actor = await resolveActor(base44, body);
     if (!actor) {
       return Response.json({ error: 'Not authorized' }, { status: 403 });
