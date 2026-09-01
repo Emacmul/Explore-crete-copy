@@ -1399,6 +1399,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                   fixedLanguage={targetLanguage}
                   waypointSegmentId={selectedWp.segment_id}
                   waypointSegmentTitle={selectedWp.segment_title}
+                  currentWalkId={form.id}
                 />
               ))}
             </div>

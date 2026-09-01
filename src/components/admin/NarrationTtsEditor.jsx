@@ -164,7 +164,7 @@ function deriveSubsections(segments, subsectionSizes) {
   return chunkIntoSubsections(segments);
 }
 
-export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, onAudioChange, onAutoSave, fixedLanguage, waypointSegmentId, waypointSegmentTitle, doneLocked = false }) {
+export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, onAudioChange, onAutoSave, fixedLanguage, waypointSegmentId, waypointSegmentTitle, doneLocked = false, currentWalkId }) {
   const { keys: apiKeys } = useNarratorApiKeys();
   const [selectedVoice, setSelectedVoice] = useState('NEUTRAL');
   const [selectedLanguage, setSelectedLanguage] = useState(fixedLanguage || 'English');
@@ -1465,6 +1465,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
         fixedLanguage={fixedLanguage}
         waypointSegmentId={waypointSegmentId}
         waypointSegmentTitle={waypointSegmentTitle}
+        currentWalkId={currentWalkId}
         // Per the follow-up 23 audit's fourth review pass: this panel's own
         // Import/Translate & Load controls used to be completely ungated by
         // anything happening below — a narrator could fire a translation reset

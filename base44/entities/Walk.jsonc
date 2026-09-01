@@ -120,6 +120,32 @@
       "type": "string",
       "description": "Original GPX filename"
     },
+    "import_files": {
+      "type": "array",
+      "description": "Master (non-clone) tour only: the shared narration-source depository. One entry per waypoint's segment_id, auto-populated the moment an admin marks that waypoint Done in the Waypoints tab (the same .odt that used to be emailed to narrators by hand). A narrator's clone reaches these through the manageTourImportFiles backend function's 'get' action, never by reading this field directly.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "segment_id": {
+            "type": "string",
+            "description": "Waypoint segment_id this file belongs to, e.g. BOR1a"
+          },
+          "file_url": {
+            "type": "string",
+            "description": "Public storage URL of the uploaded .odt"
+          },
+          "filename": {
+            "type": "string",
+            "description": "Original filename, shown to the admin/narrator for reference"
+          },
+          "uploaded_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When this file was last uploaded/replaced"
+          }
+        }
+      }
+    },
     "trail_path": {
       "type": "array",
       "description": "Array of coordinates forming the trail",

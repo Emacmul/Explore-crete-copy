@@ -41,6 +41,84 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-01 (follow-up 93) — Shared narration-file depository: no more emailing narrators each waypoint's .odt
+Scope: NEW backend function `base44/functions/manageTourImportFiles/entry.ts`. NEW field
+`import_files` on `base44/entities/Walk.jsonc`. Touches
+`src/components/admin/DrivingTourWaypointEditor.jsx` (auto-uploads + a manual
+add/replace control), `src/components/admin/WalkEditor.jsx` (threads `walkId`/
+`import_files` through), `src/components/admin/TourSimulator.jsx` and
+`src/components/admin/NarrationTtsEditor.jsx` (thread `currentWalkId` through), and
+`src/components/admin/TranslationPanel.jsx` (the actual auto-fetch).
+
+⚠️ BACKEND FUNCTION CHANGE — new function `manageTourImportFiles`. Needs the usual manual
+redeploy step (blank line → redeploy → remove blank line → redeploy) in the Base44
+editor before it works. No new secrets needed — this one only talks to Explore Crete's
+own Walk entity and its own existing file storage, exactly like `uploadNarrationAudio`
+already does.
+
+**Per Enda's report:** once a master tour is ready to clone, the admin still had to
+personally email every narrator each waypoint's master .odt — "12 or 13 emails
+manually" per tour — and narrators had to save those locally and import each one by
+hand, with real risk of someone working from a stale copy. Wanted: a shared depository
+the admin stores files in, that a narrator's clone links to and downloads from
+automatically, using the waypoint list the clone already has.
+
+**What changed:**
+- The Waypoints tab already auto-exports a waypoint's finished script as a .odt the
+  moment it's marked Done (follow-up 72) — `buildNarrationExportFilename`/
+  `downloadScriptAsOdt`. This now ALSO pushes that exact same file straight into a new
+  shared depository, with zero extra admin action: `uploadToImportDepository` builds the
+  same .odt Blob (`buildScriptOdtBlob`, already existed), uploads it through
+  `manageTourImportFiles`'s `upload` action, which stores it via the same
+  `base44.asServiceRole.integrations.Core.UploadFile` call every other file upload in
+  this app uses, and upserts `{segment_id, file_url, filename, uploaded_at}` into the
+  MASTER tour's new `import_files` array (keyed by the waypoint's own `segment_id`, e.g.
+  "BOR1a" — same code already embedded in the exported filename). Best-effort and
+  silent on success (it rides along on an action the admin is already taking); a genuine
+  failure shows a toast but never blocks Mark Waypoint as Done itself, and the local
+  .odt download still happens exactly as before either way.
+- Also added a small manual "Add"/"Replace" control + status line (in the shared
+  depository / not yet) right above Mark Waypoint as Done, for the one real gap
+  auto-upload can't cover on its own: waypoints already marked Done from BEFORE this
+  feature existed, or a manual correction without re-triggering the whole Done flow.
+- `TranslationPanel.jsx` (the narrator's "Translate Script" box, shared by both the
+  Waypoints tab and Narrate & Simulate — see follow-up 92's own note on this) now
+  auto-checks the depository the moment it mounts for a waypoint (via
+  `manageTourImportFiles`'s `get` action, keyed off the CURRENT walk's own id — the
+  function itself resolves `clone_of` server-side to find the right master, so a
+  narrator never needs to know or send a master id). If found, it fetches the file
+  (plain `fetch()` against Base44's public storage URL, same as any audio URL already
+  is), runs it through the EXACT SAME `extractTextFromFile` + `stripWaypointLabelLine`
+  pipeline a manual Import File pick already used, and pre-fills the preview box —
+  labelled "(shared depository)" so it's clear where it came from. Only pre-fills the
+  STAGING preview, never the real `narration_script` — Translate & Load is still a
+  deliberate, separate click, so this never silently overwrites anything. A manual
+  Import File pick always wins over a slower depository fetch arriving after it
+  (`manualImportRef`), and any failure here is silent — the manual button remains a
+  complete fallback, exactly as it always worked.
+- `manageTourImportFiles`'s `get` action works for an admin editing a master directly
+  too (reads the master's own `import_files`), not just narrator clones — a harmless
+  bonus, not separately wired into any admin UI this round.
+
+**Verified:** `npx eslint` on every touched/new frontend file — zero new errors or
+warnings; the handful reported (`DrivingTourWaypointEditor.jsx`'s pre-existing unused
+`Textarea` import, `WalkEditor.jsx`'s 4 pre-existing unused imports, `TourSimulator.jsx`'s
+pre-existing "unused eslint-disable directive") all confirmed unchanged against
+`origin/main`'s own copies via `git stash`. `rm -rf dist && npx vite build` — clean
+production build. Backend function follows the same shape as
+`manageApiKeys`/`uploadNarrationAudio` (`resolveActor`, `asServiceRole`, the same
+`UploadFile` call) — no Deno runtime available in this sandbox to execute it directly.
+
+**Deliberately left alone:** no bulk/manual multi-file uploader — auto-upload-on-Done
+already covers the normal workflow end to end, so a separate bulk tool would just be
+redundant complexity for the same result. No delete action on a depository entry
+(re-uploading/replacing already covers correcting a mistake). Scoped to driving tours
+only for now (that's the only tour type with a dedicated Waypoints admin editor today);
+the backend/entity side is generic per-`segment_id`, so another tour type's editor could
+hook into it later with no backend changes at all.
+
+---
+
 ## 2026-09-01 (follow-up 92) — Pronunciation Dictionary pop-up, linking Explore Crete's script editor to LinguaGloss
 Scope: NEW backend function `base44/functions/pronunciationDictionary/entry.ts`. NEW
 `src/components/admin/PronunciationDictionaryDialog.jsx`. Touches
@@ -53,13 +131,20 @@ neither of those two files needed touching.
 
 ⚠️ BACKEND FUNCTION CHANGE — new function `pronunciationDictionary`. Needs the usual manual
 redeploy step (blank line → redeploy → remove blank line → redeploy) in the Base44 editor
-before it works. It also needs two SECRETS added on Explore Crete's own Base44 app first
-(Settings → environment variables, same place any other server-side secret lives — never
-committed to the repo):
+before it works. It also needs two SECRETS added on Explore Crete's own Base44 app first —
+NOT "Settings → environment variables" (that doesn't exist in Base44's actual UI, an
+earlier version of this entry got that wrong). The real path, confirmed against Base44's
+own docs: open Explore Crete's app in the Base44 editor → **Dashboard → Secrets → Add
+Secret**. Add both:
   `LINGUAGLOSS_APP_ID`  = LinguaGloss's Base44 app id
-  `LINGUAGLOSS_API_KEY` = an API key generated from LinguaGloss's own Settings/API page
+  `LINGUAGLOSS_API_KEY` = an API key generated from LinguaGloss's own Dashboard → Secrets
+                          (or wherever LinguaGloss itself issues one)
 Without both secrets set, the function returns a clear "not connected yet" error instead
-of failing silently.
+of failing silently. The function reads them via `secrets.get()` (Base44's current
+documented way to read a Dashboard → Secrets value) with a `Deno.env.get()` fallback —
+the same read method every other secret in this app already relies on (WC_SITE_URL,
+CREEM_WEBHOOK_SECRET) — so it works whichever mechanism this app's Base44 runtime
+actually uses.
 
 **Per Enda's report:** the pronunciation dictionary that steers PCV audio now works for
 every language, but only if a word is spelled EXACTLY the same in both the dictionary

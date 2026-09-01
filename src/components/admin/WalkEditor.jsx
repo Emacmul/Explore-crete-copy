@@ -1606,6 +1606,9 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 userRole={userRole}
                 focusWaypointIndex={focusWaypointIndex}
                 targetLanguage={form.target_language || ''}
+                walkId={form.id}
+                importFiles={form.import_files || []}
+                onImportFilesChange={files => set('import_files', files)}
               />
             ) : (
               <WaypointEditor

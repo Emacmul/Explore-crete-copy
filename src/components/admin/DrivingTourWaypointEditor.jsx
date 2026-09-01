@@ -18,7 +18,9 @@ import AudioTriggerFields from './AudioTriggerFields';
 import NarrationTtsEditor from './NarrationTtsEditor';
 import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
-import { downloadScriptAsOdt } from '@/lib/odtExporter';
+import { downloadScriptAsOdt, buildScriptOdtBlob } from '@/lib/odtExporter';
+import { blobToBase64 } from '@/lib/audioCombiner';
+import { toast } from '@/components/ui/use-toast';
 
 // Per Enda: once he marks a waypoint's narration text/breaks as finished, its script
 // should auto-export as a .odt file — this becomes the master file he hands to
@@ -47,6 +49,45 @@ function buildNarrationExportFilename(wp, segGroup, index) {
     .filter(Boolean)
     .map(sanitizeFilenamePart);
   return `${parts.join(' - ')}.odt`;
+}
+
+// Per Enda: sending narrators their master .odt files was 12-13 manual emails per tour,
+// with real risk of someone working from a stale local copy. This pushes the SAME .odt
+// this component already auto-exports on "Mark Waypoint as Done" (see the Button below)
+// into the shared depository too — a narrator's clone then pulls it automatically (see
+// TranslationPanel.jsx's depository fetch) with no manual file-hunting on either side.
+// Deliberately best-effort and silent on success: it rides along on an action the admin
+// is already taking, so it should never make that action feel slower or riskier. Only a
+// genuine failure surfaces (a toast, not a blocking error) — Mark Waypoint as Done itself
+// must never be held up or rolled back by this.
+// Returns the saved { segment_id, file_url, filename, uploaded_at } entry on success, or
+// null (after showing a toast) on failure — the caller merges it into its own local
+// `importFiles` copy so the "already in the depository" status updates immediately,
+// without waiting for a full tour reload.
+async function uploadToImportDepository(walkId, segmentId, script, filename) {
+  if (!walkId || !segmentId || !script || !script.trim()) return null;
+  try {
+    const blob = buildScriptOdtBlob(script);
+    const fileBase64 = await blobToBase64(blob);
+    const res = await base44.functions.invoke('manageTourImportFiles', {
+      action: 'upload',
+      walkId,
+      segment_id: segmentId,
+      fileBase64,
+      filename,
+      mimeType: 'application/vnd.oasis.opendocument.text',
+      ...getNarratorAuthPayload(),
+    });
+    if (res?.data?.error) throw new Error(res.data.error);
+    return res.data.file;
+  } catch (err) {
+    toast({
+      variant: 'destructive',
+      title: 'Could not add to the shared depository',
+      description: `${segmentId}'s file downloaded to your computer as usual, but narrators won't see it automatically yet — ${err?.message || 'please try again from this waypoint.'}`,
+    });
+    return null;
+  }
 }
 
 const ROLES = [
@@ -170,7 +211,7 @@ const routeWaypoints = async (points) => {
   return res.data.trail;
 };
 
-export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCode, tourCategory, onSave, saving, onAutoSave, userRole = 'admin', focusWaypointIndex, onTrailPathChange, defaultDrivingSpeedKmh, targetLanguage }) {
+export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCode, tourCategory, onSave, saving, onAutoSave, userRole = 'admin', focusWaypointIndex, onTrailPathChange, defaultDrivingSpeedKmh, targetLanguage, walkId, importFiles = [], onImportFilesChange }) {
   const isNarrator = userRole === 'narrator';
   // WBT is always fixed at 3.5 km/h. DDV falls back to the Admin-set default
   // driving speed from the Details tab (form.default_driving_speed_kmh) until a
@@ -381,6 +422,33 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
   };
 
   const [uploadingImageIndex, setUploadingImageIndex] = useState(null);
+
+  // Per Enda: waypoints marked Done BEFORE the shared depository existed (see
+  // uploadToImportDepository above) never got auto-uploaded — this lets an admin push
+  // one into the depository manually too, without having to unlock-and-relock the whole
+  // waypoint just to re-trigger Mark Waypoint as Done. Tracks which segment_id (if any)
+  // is uploading right now, so only that one waypoint's button shows a spinner.
+  const [uploadingDepositoryFor, setUploadingDepositoryFor] = useState(null);
+
+  // Merges one saved depository entry into the local `importFiles` copy (via the parent's
+  // onImportFilesChange, same pass-through shape as onChange/onTrailPathChange above) so
+  // the "already in the depository" status updates the instant an upload succeeds,
+  // without waiting for a full tour reload from the server.
+  const mergeImportFileEntry = (entry) => {
+    if (!entry || !onImportFilesChange) return;
+    onImportFilesChange([...(importFiles || []).filter((f) => f.segment_id !== entry.segment_id), entry]);
+  };
+
+  const handleManualDepositoryUpload = async (wp, segGroup, index) => {
+    if (!wp.segment_id || !walkId || !(wp.narration_script || '').trim()) return;
+    setUploadingDepositoryFor(wp.segment_id);
+    const entry = await uploadToImportDepository(walkId, wp.segment_id, wp.narration_script, buildNarrationExportFilename(wp, segGroup, index));
+    if (entry) {
+      mergeImportFileEntry(entry);
+      toast({ title: 'Added to the shared depository', description: `Narrators cloning this tour will now auto-download ${wp.segment_id}'s script.` });
+    }
+    setUploadingDepositoryFor(null);
+  };
 
   const handleImageUpload = async (file, index) => {
     setUploadingImageIndex(index);
@@ -1037,6 +1105,28 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                       </>
                     )}
 
+                    {!isNarrator && wp.segment_id && (wp.narration_script || '').trim() && (
+                      <div className="pt-2 border-t border-slate-600 flex items-center justify-between gap-2 text-xs">
+                        {importFiles.some((f) => f.segment_id === wp.segment_id) ? (
+                          <span className="flex items-center gap-1.5 text-emerald-400">
+                            <FileCheck className="w-3.5 h-3.5" /> In the shared depository — narrators auto-download this on clone.
+                          </span>
+                        ) : (
+                          <span className="text-slate-500">Not yet in the shared depository.</span>
+                        )}
+                        <Button
+                          type="button" size="sm" variant="outline"
+                          onClick={() => handleManualDepositoryUpload(wp, segGroup, index)}
+                          disabled={!walkId || uploadingDepositoryFor === wp.segment_id}
+                          title={!walkId ? 'Save this tour first' : 'Push the current script into the shared depository, replacing any earlier file for this waypoint'}
+                          className="bg-blue-700/30 hover:bg-blue-700/50 border-blue-600/50 text-slate-200 gap-1.5 shrink-0"
+                        >
+                          {uploadingDepositoryFor === wp.segment_id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                          {importFiles.some((f) => f.segment_id === wp.segment_id) ? 'Replace' : 'Add'}
+                        </Button>
+                      </div>
+                    )}
+
                     <div className="pt-2 border-t border-slate-600">
                       <Button
                         onClick={() => {
@@ -1057,7 +1147,20 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                           // yet, so marking a GPS-only waypoint (no narration) done
                           // never downloads an empty file.
                           if (!isNarrator && (wp.narration_script || '').trim()) {
-                            downloadScriptAsOdt(wp.narration_script, buildNarrationExportFilename(wp, segGroup, index));
+                            const exportFilename = buildNarrationExportFilename(wp, segGroup, index);
+                            downloadScriptAsOdt(wp.narration_script, exportFilename);
+                            // Per Enda: the same file, pushed straight into the shared
+                            // depository so narrators auto-download it on their clone
+                            // instead of being emailed it — see uploadToImportDepository
+                            // above. Only fires when this waypoint actually has a real
+                            // segment_id (every waypoint should by the time it's done,
+                            // via the auto-fill effect above) and a real saved walkId —
+                            // skipped quietly otherwise, same as a brand-new unsaved tour
+                            // already skips other walkId-dependent actions.
+                            if (wp.segment_id && walkId) {
+                              uploadToImportDepository(walkId, wp.segment_id, wp.narration_script, exportFilename)
+                                .then((entry) => mergeImportFileEntry(entry));
+                            }
                           }
                           setExpanded(null);
                         }}

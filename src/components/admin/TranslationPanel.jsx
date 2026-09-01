@@ -87,10 +87,13 @@ function stripWaypointLabelLine(text, segmentId, segmentTitle) {
   return lines.join('\n');
 }
 
-export default function TranslationPanel({ onTranslated, fixedLanguage, disabled = false, waypointSegmentId, waypointSegmentTitle }) {
+export default function TranslationPanel({ onTranslated, fixedLanguage, disabled = false, waypointSegmentId, waypointSegmentTitle, currentWalkId }) {
   const { keys: apiKeys } = useNarratorApiKeys();
   const [importedText, setImportedText] = useState('');
   const [fileName, setFileName] = useState('');
+  const [depositoryFileName, setDepositoryFileName] = useState(''); // set only when the CURRENT importedText came from the shared depository, not a manual pick
+  const [checkingDepository, setCheckingDepository] = useState(false);
+  const manualImportRef = useRef(false);
   const [targetLanguage, setTargetLanguage] = useState(fixedLanguage || 'English');
 
   // Per Enda: the language for a translation clone is fixed the moment it's cloned —
@@ -108,7 +111,9 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
   const handleImport = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    manualImportRef.current = true; // a real manual pick always wins — see the depository effect below
     setError('');
+    setDepositoryFileName('');
     setImporting(true);
     try {
       const text = await extractTextFromFile(file);
@@ -128,6 +133,57 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
     setImporting(false);
     e.target.value = '';
   };
+
+  // Per Enda: instead of an admin emailing every narrator each waypoint's master .odt
+  // (12-13 emails per tour, and real risk of a narrator working from a stale local
+  // copy), this waypoint's file — if the admin has one uploaded to the shared depository
+  // for its segment_id — is fetched and pre-filled here automatically, the moment this
+  // panel appears, with zero clicking. Reuses the EXACT SAME extraction/label-stripping
+  // pipeline as a manual Import File pick (only the source of the raw bytes differs), so
+  // everything downstream (Translate & Load, the preview box) behaves identically either
+  // way.
+  //
+  // Runs once per waypoint, not on every keystroke: this component is remounted fresh
+  // per waypoint (NarrationTtsEditor's own instance is `key={selectedWpIndex}` in
+  // TourSimulator.jsx), so effect deps of just [currentWalkId, waypointSegmentId] are
+  // enough — importedText/fileName are guaranteed empty the one time this fires. Never
+  // overwrites a file the narrator already picked by hand in the meantime
+  // (manualImportRef) — the depository is a convenience, never something that fights the
+  // narrator for control of this box. Silent on "nothing there" or on any failure — the
+  // manual Import File button always still works as a complete fallback.
+  useEffect(() => {
+    if (!currentWalkId || !waypointSegmentId) return;
+    let cancelled = false;
+    (async () => {
+      setCheckingDepository(true);
+      try {
+        const res = await base44.functions.invoke('manageTourImportFiles', {
+          action: 'get',
+          walkId: currentWalkId,
+          segment_id: waypointSegmentId,
+          ...getNarratorAuthPayload(),
+        });
+        const file = res?.data?.file;
+        if (!cancelled && !manualImportRef.current && file?.file_url) {
+          const fileRes = await fetch(file.file_url);
+          if (!fileRes.ok) throw new Error('download failed');
+          const blob = await fileRes.blob();
+          const niceName = file.filename || `${waypointSegmentId}.odt`;
+          const nativeFile = new File([blob], niceName, { type: blob.type || 'application/vnd.oasis.opendocument.text' });
+          const text = await extractTextFromFile(nativeFile);
+          if (!cancelled && !manualImportRef.current && text && text.trim()) {
+            setImportedText(stripWaypointLabelLine(text, waypointSegmentId, waypointSegmentTitle));
+            setFileName(niceName);
+            setDepositoryFileName(niceName);
+          }
+        }
+      } catch {
+        // Background convenience check — never surfaced as an error, see comment above.
+      }
+      if (!cancelled) setCheckingDepository(false);
+    })();
+    return () => { cancelled = true; };
+  }, [currentWalkId, waypointSegmentId]);
 
   // The imported file is always the English master script (see this app's workflow —
   // narrators always start from an English original). If the chosen target language is
@@ -191,11 +247,18 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
           {importing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
           {importing ? 'Reading…' : fileName ? 'Change File' : 'Import File'}
         </Button>
-        {fileName && (
-          <span className="text-xs text-slate-400 flex items-center gap-1 max-w-[180px] truncate">
+        {fileName ? (
+          <span className="text-xs text-slate-400 flex items-center gap-1 max-w-[220px] truncate">
             <FileText className="w-3 h-3 shrink-0" /> {fileName}
+            {depositoryFileName === fileName && (
+              <span className="text-emerald-400/80 shrink-0">(shared depository)</span>
+            )}
           </span>
-        )}
+        ) : checkingDepository ? (
+          <span className="text-xs text-slate-500 flex items-center gap-1">
+            <Loader2 className="w-3 h-3 animate-spin" /> Checking the shared depository…
+          </span>
+        ) : null}
       </div>
 
       {importedText && (
