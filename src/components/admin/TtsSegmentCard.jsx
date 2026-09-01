@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
-import { Play, Clock, Type, Loader2, Volume2, Pencil, X, Check, MapPin, Trash2 } from 'lucide-react';
+import { Play, Clock, Type, Loader2, Volume2, Pencil, X, Check, MapPin, Trash2, BookOpen } from 'lucide-react';
+import PronunciationDictionaryDialog from './PronunciationDictionaryDialog';
 
 // Per Anoushka, a narrator (relayed by Enda — see CLAUDE_CHANGELOG.md for the full
 // request): the whole point of a narration line is that it's language for the EAR, not
@@ -74,8 +75,39 @@ export default function TtsSegmentCard({
   // is local to this one card, not shared state, so confirming one pause's removal can
   // never be accidentally triggered by clicking a DIFFERENT card's trash icon first.
   const [confirmingRemove, setConfirmingRemove] = useState(false);
+
+  // Per Enda: LinguaGloss (his separate pronunciation-dictionary app for PCV audio) can now
+  // handle every language, but only if the tour script uses the EXACT same spelling —
+  // original language, e.g. Greek in Greek script — as the dictionary. The Dictionary
+  // button opens a pop-up to check/fix that, right on this line, without breaking a
+  // narrator's editing flow any more than the pencil ("fix just this line") already does.
+  // Always clickable (checking a word is harmless even when this line's own editor isn't
+  // open) — but Insert (splicing the dictionary's exact spelling into THIS line) is only
+  // offered while this line's quick-editor is already open, i.e. already unlocked the
+  // normal way; see insertAtCursor below.
+  const [dictOpen, setDictOpen] = useState(false);
+  const editTextareaRef = useRef(null);
+
+  const insertAtCursor = (word) => {
+    const el = editTextareaRef.current;
+    if (!el) {
+      onEditChange((editValue ? editValue.replace(/\s+$/, '') + ' ' : '') + word);
+      return;
+    }
+    const start = el.selectionStart ?? editValue.length;
+    const end = el.selectionEnd ?? editValue.length;
+    const next = editValue.slice(0, start) + word + editValue.slice(end);
+    onEditChange(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + word.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
   if (segment.type === 'text') {
     return (
+      <>
       <div className={`bg-slate-800 rounded-lg border p-3 transition-colors ${
         isPlaying ? 'border-purple-500 bg-purple-900/20' : isEditing ? 'border-blue-600/50' : 'border-slate-600'
       }`}>
@@ -106,6 +138,14 @@ export default function TtsSegmentCard({
             ) : (
               <Play className="w-4 h-4 text-slate-400" />
             )}
+          </button>
+          <button
+            type="button"
+            onClick={() => setDictOpen(true)}
+            title="Check the pronunciation dictionary"
+            className="shrink-0 w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-700 text-slate-400 transition-colors"
+          >
+            <BookOpen className="w-4 h-4" />
           </button>
           {onToggleEdit && (
             <button
@@ -149,6 +189,7 @@ export default function TtsSegmentCard({
         {isEditing && (
           <div className="mt-3 pt-3 border-t border-slate-700 space-y-2">
             <Textarea
+              ref={editTextareaRef}
               value={editValue}
               onChange={(e) => onEditChange(e.target.value)}
               rows={3}
@@ -177,6 +218,12 @@ export default function TtsSegmentCard({
           </div>
         )}
       </div>
+      <PronunciationDictionaryDialog
+        open={dictOpen}
+        onClose={() => setDictOpen(false)}
+        onInsert={isEditing ? insertAtCursor : undefined}
+      />
+      </>
     );
   }
 

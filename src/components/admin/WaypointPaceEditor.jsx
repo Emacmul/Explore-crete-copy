@@ -2,12 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Slider } from '@/components/ui/slider';
-import { Loader2, Play, Save, AlertTriangle, Clock, Trash2, X, Check } from 'lucide-react';
+import { Loader2, Play, Save, AlertTriangle, Clock, Trash2, X, Check, BookOpen } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { getNarratorAuthPayload, useNarratorApiKeys } from '@/lib/useNarratorApiKeys';
 import { parseScript, rebuildScript } from '@/lib/ttsParser';
 import { combineSegmentsToWav, blobToBase64 } from '@/lib/audioCombiner';
 import { getFnErrorMessage, withTimeout } from '@/lib/utils';
+import PronunciationDictionaryDialog from './PronunciationDictionaryDialog';
 
 // Kept as its own small copy rather than importing NarrationTtsEditor's own
 // LANG_TO_CODE (not exported, and this component is deliberately self-contained —
@@ -145,6 +146,35 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
   // currently showing its "Remove this pause?" confirmation, so a stray click can
   // never delete one by accident — only one segment's confirm is ever open at a time.
   const [confirmRemoveId, setConfirmRemoveId] = useState(null);
+
+  // Per Enda: the same LinguaGloss pronunciation-dictionary pop-up as TtsSegmentCard.jsx
+  // (see that file's own comment), offered here too since this screen has its own,
+  // separate set of text boxes — one at a time (dictOpenForId holds whichever segment's
+  // Dictionary button was clicked; only that segment's Insert applies), same as
+  // confirmRemoveId above only ever tracking one open confirm. Every text box here is
+  // always directly editable (no separate "open this line's editor" step the way
+  // TtsSegmentCard has), so Insert is offered whenever the box itself isn't disabled.
+  const [dictOpenForId, setDictOpenForId] = useState(null);
+  const textareaRefs = useRef({});
+  const insertAtCursor = (segmentId, word) => {
+    const el = textareaRefs.current[segmentId];
+    const seg = segments?.find((s) => s.id === segmentId);
+    const current = seg?.content || '';
+    if (!el) {
+      handleTextChange(segmentId, (current ? current.replace(/\s+$/, '') + ' ' : '') + word);
+      return;
+    }
+    const start = el.selectionStart ?? current.length;
+    const end = el.selectionEnd ?? current.length;
+    const next = current.slice(0, start) + word + current.slice(end);
+    handleTextChange(segmentId, next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + word.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
   const lastPreviewUrlRef = useRef(null);
   // Guards the generation pass below to actually running at most once per mount, now
   // that the effect can no longer rely on `[]` deps alone to mean "exactly once" — it
@@ -492,10 +522,21 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
           {segments.map((seg) => (
             seg.type === 'text' ? (
               <div key={seg.id} className="space-y-1">
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setDictOpenForId(seg.id)}
+                    title="Check the pronunciation dictionary"
+                    className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-200 transition-colors"
+                  >
+                    <BookOpen className="w-3 h-3" /> Dictionary
+                  </button>
+                </div>
                 {/* Per Anoushka/Enda (follow-up 77): editable, not just displayed —
                     same pastel yellow as every other editable script box in this app,
                     so it's never ambiguous this one can be typed into. */}
                 <Textarea
+                  ref={(el) => { textareaRefs.current[seg.id] = el; }}
                   value={seg.content}
                   onChange={(e) => handleTextChange(seg.id, e.target.value)}
                   disabled={loading || saving || testing || doneLocked}
@@ -505,6 +546,11 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
                 {!segmentAudios[seg.id] && !loading && (
                   <p className="text-xs text-amber-400/80 italic">Edited — audio will regenerate the next time you Test or Save.</p>
                 )}
+                <PronunciationDictionaryDialog
+                  open={dictOpenForId === seg.id}
+                  onClose={() => setDictOpenForId(null)}
+                  onInsert={(loading || saving || testing || doneLocked) ? undefined : (word) => insertAtCursor(seg.id, word)}
+                />
               </div>
             ) : (
               <div key={seg.id} className="bg-slate-800 rounded-lg border border-slate-600 p-2.5">

@@ -41,6 +41,85 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-01 (follow-up 92) — Pronunciation Dictionary pop-up, linking Explore Crete's script editor to LinguaGloss
+Scope: NEW backend function `base44/functions/pronunciationDictionary/entry.ts`. NEW
+`src/components/admin/PronunciationDictionaryDialog.jsx`. Touches
+`src/components/admin/TtsSegmentCard.jsx` (adds the Dictionary button to every text-line
+card) and `src/components/admin/WaypointPaceEditor.jsx` (adds the same to its own,
+separate pace-testing text boxes). `DrivingTourWaypointEditor.jsx` (Waypoints tab) and
+`TourSimulator.jsx` (Narrate & Simulate tab) both already render `NarrationTtsEditor` →
+`TtsSegmentCard`, so this appears in both admin tabs Enda asked for from this one change —
+neither of those two files needed touching.
+
+⚠️ BACKEND FUNCTION CHANGE — new function `pronunciationDictionary`. Needs the usual manual
+redeploy step (blank line → redeploy → remove blank line → redeploy) in the Base44 editor
+before it works. It also needs two SECRETS added on Explore Crete's own Base44 app first
+(Settings → environment variables, same place any other server-side secret lives — never
+committed to the repo):
+  `LINGUAGLOSS_APP_ID`  = LinguaGloss's Base44 app id
+  `LINGUAGLOSS_API_KEY` = an API key generated from LinguaGloss's own Settings/API page
+Without both secrets set, the function returns a clear "not connected yet" error instead
+of failing silently.
+
+**Per Enda's report:** the pronunciation dictionary that steers PCV audio now works for
+every language, but only if a word is spelled EXACTLY the same in both the dictionary
+(LinguaGloss, Enda's separate Base44 app at linguagloss.magicalcrete.com) and the tour
+script — original language, e.g. Greek names in Greek script. Wanted: a link on every
+subsegment block, in both the Waypoints tab and the Narrate & Simulate tab, opening a
+pop-up of the dictionary so a word can be verified/copied from dictionary → script, or
+added from script → dictionary. Both sides editable. Pop-up needs a vertical scroll bar.
+
+**What changed:**
+- New backend function `pronunciationDictionary` — the only thing that talks to
+  LinguaGloss. Same dual-path auth as every other admin/narrator tool (`resolveActor`):
+  an admin's real session, or a narrator's own email+token. Three actions: `list` (all
+  `PronunciationEntry` rows + the `Language` dropdown list), `create`, `update`. Reads
+  LinguaGloss's own app id/API key from the two secrets above and calls LinguaGloss's
+  Base44 API directly with them — a plain server-side HTTPS request, the same shape as
+  the existing Google TTS call in `generateTts`, so (per Base44's own credits docs) this
+  does not spend Base44 message or integration credits; the only real cost is whatever
+  LinguaGloss itself is hosted under.
+- New `PronunciationDictionaryDialog.jsx` — a self-contained pop-up (fetches its own
+  data, owns its own search/add/edit state) so it can be dropped into any subsegment
+  block without either TtsSegmentCard.jsx or WaypointPaceEditor.jsx needing to know
+  anything about dictionaries. Search box filters the (scrollable) entry list live;
+  each row has Copy (clipboard), Insert (only offered when the caller can currently
+  accept text — see below) and an inline Edit (word / language dropdown / IPA, Save or
+  Cancel — Cancel now correctly dark-styled, not the default white `outline` button).
+  A permanent "Not in the dictionary yet? Add it" form at the bottom creates a brand
+  new entry. The entry list is the one scrolling region (`overflow-y-auto`); the search
+  box and Add form stay fixed in view above/below it.
+- `TtsSegmentCard.jsx`: a new "Dictionary" icon button sits next to Play/Pencil on every
+  text-type line, always clickable (checking pronunciation is harmless even on a locked
+  waypoint). Insert is only offered while that SAME line's own quick-editor (the pencil)
+  is already open — Insert splices the chosen word in at the exact cursor position of
+  that line's edit box, via a ref, then restores focus/cursor right after the inserted
+  text. When the editor isn't open, the pop-up still works fully for verify/copy/add —
+  Copy alone covers that case, no lock is bypassed.
+- `WaypointPaceEditor.jsx`: same Dictionary button above every text segment's own
+  always-editable box (this screen has no separate "open to edit" step, unlike
+  TtsSegmentCard, so Insert is offered whenever that box itself isn't disabled —
+  loading/saving/testing/doneLocked, the exact same condition already gating the box).
+  `dictOpenForId` tracks at most one open pop-up at a time, same pattern as this file's
+  own `confirmRemoveId`.
+- Every UI string and comment says "pronunciation dictionary" / "LinguaGloss" / "PCV
+  audio" — never the specific voice-clone vendor's name, per this file's own standing
+  rule below.
+
+**Verified:** `npx eslint` clean on all four touched/new frontend files (zero errors or
+warnings). `rm -rf dist && npx vite build` — clean production build. Backend function
+follows the exact same shape (`Deno.serve`, `resolveActor`, `Deno.env.get` for secrets)
+as every other function in this app that calls an external API with a stored key —
+manually re-verified against `generateTts/entry.ts` and `manageApiKeys/entry.ts` line by
+line, no Deno runtime available in this sandbox to execute it directly.
+
+**Deliberately left alone:** `DrivingTourWaypointEditor.jsx` and `TourSimulator.jsx` —
+both already render `NarrationTtsEditor`/`TtsSegmentCard`, so the Dictionary button
+appears in both the Waypoints tab and the Narrate & Simulate tab without touching either
+file. No delete action on dictionary entries — Enda only asked for verify/copy/add/edit.
+
+---
+
 ## 2026-08-29 (follow-up 91) — REVERT of follow-up 87: the Waypoints tab's sequential lock made early-stage tour building unworkable
 Scope: `src/components/admin/DrivingTourWaypointEditor.jsx`.
 
