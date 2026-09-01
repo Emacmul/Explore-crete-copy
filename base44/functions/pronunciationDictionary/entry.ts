@@ -24,6 +24,7 @@ function linguaglossClient() {
   return createClient({ appId, headers: { api_key: apiKey } });
 }
 
+
 Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
