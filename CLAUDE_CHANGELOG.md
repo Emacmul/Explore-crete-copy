@@ -41,6 +41,48 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-01 (follow-up 97) — Fixed the Waypoints tab "jumps to a random waypoint" bug after Save Route
+Scope: `src/components/admin/DrivingTourWaypointEditor.jsx` only.
+
+**Per Enda's report:** finish working on a waypoint, click "Save Route" (which
+deliberately leaves it open, unlike "Mark Waypoint as Done" — it only saves, it
+doesn't lock), then click the down-chevron on the very next waypoint. Instead of
+closing the just-saved waypoint and opening the one clicked, the list jumped to some
+other, seemingly random spot 2-3 waypoints further down. "This is not acceptable."
+Two screenshots of the collapsed row list (BOR1d–BOR1g) attached.
+
+**Root cause:** not a wrong-row bug — the row header's own click handler
+(`setExpanded(expanded === index ? null : index)`) always did, and still does, set
+exactly the clicked waypoint's index. The problem was scroll position: a waypoint's
+expanded panel (script, TTS/audio controls, the dictionary popover, the shared
+depository status row from follow-up 93, Mark Waypoint as Done, Save Route) is many
+times taller than one collapsed row. Collapsing the previous waypoint and expanding
+the clicked one happens in the same reflow, so the page can shift up by a large,
+unpredictable amount in that one instant. With nothing to compensate, whatever
+collapsed row ended up under the browser's existing scroll position after that shift
+is what was actually on screen — usually a few rows past the one just clicked — while
+the real newly-opened waypoint had already scrolled off the top. That's exactly what
+read as "jumps to a random spot."
+
+**What changed:** added a `useEffect` that keeps the currently-expanded row in view
+every time `expanded` changes, for any reason — not just the existing deep-link
+("Continue Tour" from the dashboard) case, which already had its own scroll-to-view
+and is untouched. `scrollIntoView({ block: 'nearest' })` on a short delay, so an
+ordinary click only nudges the view if the newly-opened row isn't already
+comfortably visible, rather than recentering the page on every click.
+
+**Verified:** `npx eslint src/components/admin/DrivingTourWaypointEditor.jsx` — the
+one reported error (`'Textarea' is defined but never used`) confirmed pre-existing
+and unrelated (same result on `origin/main`, untouched by this change). `rm -rf dist
+&& npx vite build` — clean production build. Frontend-only, no backend function
+touched.
+
+**Deliberately left alone:** "Save Route" still doesn't collapse/lock the waypoint
+— that's intentional, unchanged behaviour Enda's report confirmed is correct
+("doesn't lock the waypoint" was stated as expected, not the bug).
+
+---
+
 ## 2026-09-01 (follow-up 96) — Dropped "again" from follow-up 95's wording
 Scope: `src/lib/audioCombiner.js` only (same two messages).
 

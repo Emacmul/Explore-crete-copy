@@ -269,6 +269,34 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
     }
   }, [focusWaypointIndex]);
 
+  // Per Enda's follow-up 97 report: clicking a waypoint's down-chevron right after
+  // "Save Route" (which leaves the just-saved waypoint open on purpose — see the
+  // comment on that button below) appeared to open some other, seemingly random
+  // waypoint 2-3 rows further down instead of the one actually clicked. It wasn't
+  // actually opening the wrong row — `setExpanded(expanded === index ? null : index)`
+  // in the row header's own onClick (below) always did, and still does, set exactly
+  // the clicked index. What was wrong was the SCROLL position: a waypoint's expanded
+  // panel (script, TTS/audio controls, the dictionary popover, the depository status
+  // row, Mark Waypoint as Done, Save Route) can be many times taller than one
+  // collapsed row, so the same click that collapses the previous waypoint and expands
+  // the clicked one can shift the whole list up by a large amount in that one reflow.
+  // With no scroll compensation, whatever collapsed row happened to end up under the
+  // browser's existing scroll position after that shift is what was actually visible
+  // — often a few rows past the one just clicked — while the real newly-opened
+  // waypoint had already scrolled off the top. This effect keeps the CURRENTLY open
+  // row in view every time `expanded` changes for any reason (not just the deep-link
+  // case above), so what's on screen always matches what's actually open. `nearest`
+  // (vs. the deep-link effect's `center`) avoids yanking the view somewhere new for
+  // an ordinary click when the row is already visible enough.
+  useEffect(() => {
+    if (expanded == null) return;
+    const timer = setTimeout(() => {
+      const el = document.getElementById(`wp-row-${expanded}`);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [expanded]);
+
   // Auto-fill missing segment_number and segment_id on mount
   useEffect(() => {
     if (!waypoints || waypoints.length === 0) return;
