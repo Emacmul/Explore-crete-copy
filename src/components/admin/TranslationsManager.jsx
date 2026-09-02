@@ -126,6 +126,7 @@ export default function TranslationsManager({ authMode, user }) {
   };
 
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+  const refreshOverrides = async () => { await load(); await reloadTranslations(); };
 
   // Does the actual seed-then-save work for ONE language's missing keys, automatically waiting
   // out and retrying any keys that came back rate-limited rather than reporting a 429 as a
@@ -141,9 +142,25 @@ export default function TranslationsManager({ authMode, user }) {
   // retrying or sleeping inside that single backend call — a multi-minute sleep in a serverless
   // function risks the call itself timing out. Waiting is done HERE instead, round by round,
   // where a long wait is just normal, visible UI state (the banner already tells Enda to keep the
-  // tab open) rather than a request that might get killed mid-sleep. Saves progress after every
-  // round, not just at the end, so a run that's interrupted partway still keeps what it got.
-  const seedMissingForLanguage = async (langCode, targetLanguageName, missingKeys, authPayload, onProgress) => {
+  // tab open) rather than a request that might get killed mid-sleep.
+  //
+  // `onSaved` is called right after every successful save, not just once at the very end — a
+  // 22-language run can take the better part of an hour with all the rate-limit waiting built
+  // in, and a run that only refreshes the screen once, at the very end, LOOKS identical to a run
+  // that saved nothing at all for the entire time it's still going. Enda hit exactly that: 11
+  // languages' worth of visible translation progress, checked mid-run, and every one of them
+  // still showed "nothing saved" — not because the saves were failing, but because the on-screen
+  // overrides hadn't been refreshed from the database since before the run started. Calling
+  // `onSaved` after each round means what's on screen is always caught up with what's actually
+  // in the database, whether the run is one language or twenty-two.
+  //
+  // A save that genuinely fails (as opposed to a translation that gets rate-limited) is a
+  // different kind of problem — it means every string this pass just translated, and every
+  // language after this one, is heading for the exact same wall. Continuing to spend Groq calls
+  // on translations that can never be persisted would just repeat Enda's bad experience with
+  // extra steps, so a real save failure is thrown as a tagged `fatal` error that stops the whole
+  // run (see handleSeedAllMissing's catch below) instead of being logged and quietly continuing.
+  const seedMissingForLanguage = async (langCode, targetLanguageName, missingKeys, authPayload, onProgress, onSaved) => {
     let remaining = missingKeys;
     let totalSaved = 0;
     let totalFailed = 0;
@@ -151,8 +168,8 @@ export default function TranslationsManager({ authMode, user }) {
     const placeholderWarnings = [];
     // Per Enda: this only needs to run once per language, and he'd rather wait it out than pay
     // Groq for a higher rate limit — so this is generous on purpose. Worst case (a full ~200-key
-    // language, only one small chunk getting through before each 429) is roughly 15 rounds *
-    // ~70s ≈ 18 minutes, entirely unattended waiting — not fast, but it only has to happen once.
+    // language, badly depleted budget, ~3min waits each round) is roughly 15 rounds * ~3min ≈
+    // 45 minutes, entirely unattended waiting — not fast, but it only has to happen once.
     const MAX_ROUNDS = 15;
 
     for (let round = 1; round <= MAX_ROUNDS && remaining.length > 0; round++) {
@@ -171,12 +188,25 @@ export default function TranslationsManager({ authMode, user }) {
 
       const produced = data.translations || {};
       if (Object.keys(produced).length > 0) {
-        const saveRes = await base44.functions.invoke('saveTranslationsBulk', {
-          lang: langCode, entries: produced, ...authPayload,
-        });
-        const saveData = saveRes.data || {};
-        if (saveData.error) failureReasons.add(saveData.error);
+        let saveData;
+        try {
+          const saveRes = await base44.functions.invoke('saveTranslationsBulk', {
+            lang: langCode, entries: produced, ...authPayload,
+          });
+          saveData = saveRes.data || {};
+        } catch (invokeErr) {
+          const err = new Error(`Translations are being produced but NOT saved — saveTranslationsBulk failed (${invokeErr?.message || 'unknown error'}). Stopping rather than spending more Groq calls on translations that can't be persisted. Double-check saveTranslationsBulk is actually deployed in Base44 — it's a separate, newer function from seedUiTranslations and needs its own create-then-redeploy pass, not just a refresh.`);
+          err.fatal = true;
+          throw err;
+        }
+        if (saveData.error) {
+          const err = new Error(`Translations are being produced but NOT saved (saveTranslationsBulk says: ${saveData.error}). Stopping rather than spending more Groq calls on translations that can't be persisted. Double-check saveTranslationsBulk is actually deployed in Base44 — it's a separate, newer function from seedUiTranslations and needs its own create-then-redeploy pass, not just a refresh.`);
+          err.fatal = true;
+          throw err;
+        }
+        (saveData.errors || []).forEach(e => failureReasons.add(e.error || String(e)));
         totalSaved += saveData.saved || 0;
+        if ((saveData.saved || 0) > 0) await onSaved?.();
       }
       (data.failure_reasons || []).forEach(r => failureReasons.add(r));
       if (data.placeholder_warning) placeholderWarnings.push(data.placeholder_warning);
@@ -194,7 +224,14 @@ export default function TranslationsManager({ authMode, user }) {
         failureReasons.add(`Still rate-limited on ${rateLimited.length} string(s) after ${MAX_ROUNDS} waits — Groq's per-minute budget for this key is genuinely this tight. Just run Auto-translate again later; it'll pick up only what's still missing.`);
         break;
       }
-      const waitMs = Math.min(Math.max(data.retry_after_ms || 10000, 3000), 70000) + 1000;
+      // Cap raised from 70s to 3 minutes: a live run showed Groq itself reporting
+      // retry_after_ms: 99000 (99s) while every key in the chunk was still rate-limited — the
+      // old 70s ceiling would have clamped that down and had this loop knock again *before*
+      // Groq's own window had actually passed, getting rejected again and making a recoverable
+      // per-minute budget look like a permanent wall. Trust Groq's own number up to 3 minutes;
+      // beyond that something bigger than a per-minute limit is going on and no wait length
+      // coded here would be the right one anyway.
+      const waitMs = Math.min(Math.max(data.retry_after_ms || 10000, 3000), 180000) + 1000;
       onProgress?.(`Rate limit reached — waiting ${Math.ceil(waitMs / 1000)}s before continuing (${rateLimited.length} string${rateLimited.length === 1 ? '' : 's'} left for ${targetLanguageName})…`);
       await sleep(waitMs);
       remaining = rateLimited;
@@ -220,7 +257,7 @@ export default function TranslationsManager({ authMode, user }) {
     setSeedWarning('');
     try {
       const { totalSaved, totalFailed, failureReasons, placeholderWarnings } = await seedMissingForLanguage(
-        activeLang, targetLanguageName, missingKeysForLang, authPayload, setProgressMessage
+        activeLang, targetLanguageName, missingKeysForLang, authPayload, setProgressMessage, refreshOverrides
       );
       toast({
         title: 'Auto-translated',
@@ -228,10 +265,10 @@ export default function TranslationsManager({ authMode, user }) {
       });
       const warnings = [...placeholderWarnings, ...failureReasons];
       if (warnings.length > 0) setSeedWarning(warnings.join(' '));
-      await load();
-      await reloadTranslations();
+      await refreshOverrides();
     } catch (err) {
       toast({ variant: 'destructive', title: 'Auto-translate failed', description: err?.message });
+      await refreshOverrides(); // show whatever DID get saved before the failure, not a stale pre-run view
     } finally {
       setSeeding(false);
       setProgressMessage('');
@@ -268,15 +305,28 @@ export default function TranslationsManager({ authMode, user }) {
         try {
           const { totalSaved, totalFailed: langFailed, failureReasons, placeholderWarnings } = await seedMissingForLanguage(
             l.code, targetLanguageName, missing, authPayload,
-            (msg) => setProgressMessage(`${l.native}: ${msg}`)
+            (msg) => setProgressMessage(`${l.native}: ${msg}`),
+            refreshOverrides
           );
           totalSeeded += totalSaved;
           totalFailed += langFailed;
           failureReasons.forEach(r => warnings.push(`${l.native}: ${r}`));
           placeholderWarnings.forEach(w => warnings.push(`${l.native}: ${w}`));
         } catch (langErr) {
-          // One language failing shouldn't stop the rest — it's simply left missing, and can be
-          // retried later from its own language tab or by running "all languages" again.
+          if (langErr?.fatal) {
+            // Saving itself is broken — every remaining language would hit the exact same wall,
+            // so stop here instead of quietly burning through 20 more Groq passes for nothing
+            // (this is the failure Enda actually hit: 11 languages' worth of visible "progress"
+            // with nothing persisted). Refresh first so whatever DID save before this shows up.
+            await refreshOverrides();
+            totalFailed += missing.length;
+            warnings.push(`${l.native}: ${langErr.message}`);
+            toast({ variant: 'destructive', title: 'Auto-translate stopped', description: langErr.message });
+            break;
+          }
+          // An ordinary per-language hiccup (not a save failure) shouldn't stop the rest — it's
+          // simply left missing, and can be retried later from its own tab or by running "all
+          // languages" again.
           totalFailed += missing.length;
           warnings.push(`${l.native}: auto-translate failed — ${langErr?.message || 'unknown error'}.`);
         }
@@ -291,8 +341,7 @@ export default function TranslationsManager({ authMode, user }) {
         });
       }
       if (warnings.length > 0) setSeedWarning(warnings.join(' '));
-      await load();
-      await reloadTranslations();
+      await refreshOverrides();
     } finally {
       setSeedingAll(false);
       setProgressMessage('');

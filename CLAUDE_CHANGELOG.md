@@ -41,6 +41,44 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-02 (follow-up 104) — Rate-limit wait ceiling raised from 70s to 3 minutes
+Scope: `src/components/admin/TranslationsManager.jsx` (`seedMissingForLanguage`). Frontend
+only — no backend redeploy needed.
+
+**Per Enda's report:** after the earlier fixes in follow-up 103, a genuine multi-minute
+Groq rate-limit block occurred — repeated rounds each came back with `translations: {}`
+and every requested key in both `failed_keys` and `rate_limited_keys`, i.e. a total block,
+not a partial one. The Network tab showed a real response with `retry_after_ms: 99000`
+(99 seconds) — longer than this code's own wait ceiling.
+
+**Root cause:** `seedMissingForLanguage`'s per-round wait was clamped with
+`Math.min(..., 70000)` — a hard 70-second ceiling regardless of what Groq's own
+`retry_after_ms` said. When Groq reported 99s (a badly depleted per-minute token budget
+needing more than a minute to refill), the loop was waiting only 70s, retrying too early,
+getting rate-limited again, and repeating — which looks identical from the outside to a
+permanent block even though the underlying budget may have been perfectly recoverable.
+
+**What changed:** raised the clamp ceiling from 70000ms to 180000ms (3 minutes), so the
+loop now actually waits out whatever Groq itself reports, up to 3 minutes, instead of
+guessing short. Updated the `MAX_ROUNDS` comment's worst-case estimate accordingly (~45
+minutes worst case across 15 rounds, up from ~18 minutes) — still one-time, unattended
+waiting, no cost to Enda, no billing tier change.
+
+**Verified:** `npx eslint src/components/admin/TranslationsManager.jsx` clean;
+`rm -rf dist && npx vite build` completes with no errors.
+
+**Not done / worth knowing for next time:**
+- This does not distinguish a per-minute (TPM) budget from a longer-duration (hourly/daily)
+  cap — if Groq's block turns out to be the latter, no wait length coded here will be the
+  right one, and Enda would need to check console.groq.com's own usage/limits page to
+  confirm. Waiting up to 3 minutes will fix the case that's actually a depleted per-minute
+  budget; it won't fix a bigger cap.
+- The give-up message after `MAX_ROUNDS` still doesn't surface Groq's own error text
+  verbatim — worth adding if this happens again and the generic message isn't enough to
+  diagnose from.
+
+---
+
 ## 2026-09-02 (follow-up 103) — Auto-translate pass seeds a UI baseline for languages that never had one
 Scope: `base44/functions/seedUiTranslations/entry.ts` (**new backend function — needs
 the redeploy dance**), `base44/functions/saveTranslationsBulk/entry.ts` (**new backend
@@ -173,6 +211,32 @@ in the same moment. `saveTranslationsBulk`'s write chunk size dropped from 10 co
 writes to 5, with a 300ms pause between chunks — spreads the same total writes over a bit
 more time instead of firing them all in one instant, at no real cost to a seeding pass
 that was never time-critical to begin with.
+
+**Fourth bug — the real cause of "translated 11 languages, saved not one":** Enda ran
+"Auto-translate all languages" and watched it genuinely work its way through 11
+languages (real translation progress, real rate-limit waits) before Russian, the 12th,
+got stuck — and checking any of the 11 "done" languages showed zero saved for every one
+of them. Root cause: `handleSeedAllMissing` only refreshed the on-screen overrides
+(`load()` + `reloadTranslations()`) ONCE, after the *entire* multi-language loop
+finished — and a full run across ~22 languages, each with its own rate-limit waiting
+built in, can easily take the better part of an hour. So for that whole hour, the screen
+kept showing whatever was there before the run started, no matter how many languages had
+actually finished and saved successfully underneath — a run that's still working looks
+pixel-for-pixel identical to a run that saved nothing, right up until it finishes. This
+was very likely a false alarm rather than real data loss (the saves were probably fine),
+but there was no way for Enda to tell the difference from the screen, which is the actual
+bug. Fixed: `seedMissingForLanguage` now takes an `onSaved` callback and calls it right
+after every successful save, not just once at the end — both the single-language and
+all-languages buttons now refresh the visible overrides after every batch, so what's on
+screen is always caught up with the database, even mid-run. Also hardened for the case
+where the on-screen state WOULD have been correct (i.e. saves are genuinely, structurally
+failing — e.g. `saveTranslationsBulk` not actually deployed): a save failure is now a
+distinct, tagged "fatal" condition that stops the whole "all languages" run immediately
+instead of silently moving on to burn Groq calls translating 10 more languages that would
+hit the identical wall, and surfaces a specific message pointing at `saveTranslationsBulk`
+possibly not being deployed (it's a separate, newer function from `seedUiTranslations` and
+needs its own create-then-redeploy pass, easy to miss since only one of the two is needed
+to make the visible translation progress look like it's working).
 
 **Deliberately left alone:** the live customer-facing app's `t()` fallback chain in
 `LanguageContext.jsx` — untouched; seeded strings reach customers exactly the way a
