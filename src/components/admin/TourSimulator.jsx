@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Play, Pause, Square, Gauge, Clock, Volume2, AlertTriangle, CheckCircle2, MapPin, Radio, Flag, ChevronDown, ChevronUp, Save, Loader2, Lock } from 'lucide-react';
-import { calculateBearing, isBearingInRange } from '@/lib/routeExport';
+import { calculateBearing, isBearingInRange, uniqueWaypointSegmentId } from '@/lib/routeExport';
 import TourSimulatorMap from './TourSimulatorMap';
 import WaypointPaceEditor from './WaypointPaceEditor';
 import NarrationTtsEditor from './NarrationTtsEditor';
@@ -1397,7 +1397,16 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                   }}
                   onAutoSave={onAutoSave}
                   fixedLanguage={targetLanguage}
-                  waypointSegmentId={selectedWp.segment_id}
+                  // Per follow-up 100: selectedWp.segment_id alone is the LOCATION-level
+                  // code shared by every waypoint at this stop, not a per-waypoint key —
+                  // using it directly here is exactly what made the shared depository
+                  // hand back the wrong waypoint's file. uniqueWaypointSegmentId (same
+                  // helper DrivingTourWaypointEditor.jsx uses for its own uploads) derives
+                  // the real per-waypoint code — called against form.waypoints (the RAW,
+                  // unfiltered array) and the raw index via toRawIndex, so it lines up with
+                  // what the admin side computed even if a mid-edit blank lat/lng is
+                  // filtering this panel's own `waypoints` differently right now.
+                  waypointSegmentId={uniqueWaypointSegmentId(form.waypoints, toRawIndex(selectedWpIndex))}
                   waypointSegmentTitle={selectedWp.segment_title}
                   currentWalkId={form.id}
                 />

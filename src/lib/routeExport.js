@@ -41,6 +41,48 @@ export function buildSegmentId(tourCode, segmentNumber) {
 }
 
 /**
+ * A waypoint's own `segment_id` (or `segment_number`) is the LOCATION-level code
+ * shared by every waypoint at that stop (e.g. every point along "Location 1" of tour
+ * BOR is segment_id "BOR1") — that's what groups them under one divider in the
+ * Waypoints tab, by design. It is NOT unique per waypoint.
+ *
+ * Per Enda's follow-up 100 report: the shared narration depository
+ * (DrivingTourWaypointEditor.jsx's uploadToImportDepository, TranslationPanel.jsx's
+ * auto-fetch) used to key its uploads on that bare, shared segment_id — so a location
+ * with several waypoints (the normal case) silently collided every one of them onto
+ * the exact same depository slot, with whichever was saved last quietly overwriting
+ * the others. A narrator cloning the tour would then auto-download the LAST admin-
+ * saved waypoint's script for every waypoint at that location, no matter which one
+ * they actually opened — traced from Enda opening BOR1a-PS and getting BOR1g's file,
+ * the last of seven waypoints at "Location 1" he'd saved.
+ *
+ * This derives the actual per-waypoint code (e.g. "BOR1a", "BOR1g") by combining that
+ * shared location code with the waypoint's own position within the group — assuming,
+ * same as the Waypoints tab's own divider/isNewLocation logic already does, that
+ * waypoints sharing one location sit in one contiguous run in array order (true for
+ * any tour laid out as an actual drivable route). Used as the ONE depository key from
+ * now on, everywhere a waypoint needs one — DrivingTourWaypointEditor.jsx (upload,
+ * status check) and TourSimulator.jsx (TranslationPanel's auto-fetch) both call this
+ * SAME function rather than each computing their own letter, so the two can never
+ * quietly drift apart again the way the bare-segment_id version did.
+ */
+export function uniqueWaypointSegmentId(waypoints, index) {
+  const wp = waypoints?.[index];
+  if (!wp) return '';
+  const groupKey = wp.segment_id || wp.segment_number;
+  if (!groupKey) return '';
+  let startIndex = index;
+  for (let i = index - 1; i >= 0; i--) {
+    const key = waypoints[i].segment_id || waypoints[i].segment_number;
+    if (key !== groupKey) break;
+    startIndex = i;
+  }
+  const pos = index - startIndex;
+  const letter = pos < 26 ? String.fromCharCode(97 + pos) : `-${pos + 1}`;
+  return `${groupKey}${letter}`;
+}
+
+/**
  * Calculate the great-circle bearing (in degrees) from point 1 to point 2.
  * 0° = North, 90° = East, 180° = South, 270° = West.
  *

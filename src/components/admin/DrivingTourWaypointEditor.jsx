@@ -11,7 +11,7 @@ import {
   ImagePlus, X, Lock, CheckCircle2,
 } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { getRoleColour, getRoleLabel, buildSegmentId } from '@/lib/routeExport';
+import { getRoleColour, getRoleLabel, buildSegmentId, uniqueWaypointSegmentId } from '@/lib/routeExport';
 import { compressImage, MAX_WAYPOINT_IMAGES, getWaypointImages } from '@/lib/waypointImages';
 import { base44 } from '@/api/base44Client';
 import AudioTriggerFields from './AudioTriggerFields';
@@ -469,11 +469,15 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
 
   const handleManualDepositoryUpload = async (wp, segGroup, index) => {
     if (!wp.segment_id || !walkId || !(wp.narration_script || '').trim()) return;
-    setUploadingDepositoryFor(wp.segment_id);
-    const entry = await uploadToImportDepository(walkId, wp.segment_id, wp.narration_script, buildNarrationExportFilename(wp, segGroup, index));
+    // Per follow-up 100: the actual depository key has to be THIS waypoint's own
+    // per-location letter appended to its (shared, location-level) segment_id — see
+    // the long comment on uniqueWaypointSegmentId in routeExport.js.
+    const uniqueSegId = uniqueWaypointSegmentId(waypoints, index);
+    setUploadingDepositoryFor(uniqueSegId);
+    const entry = await uploadToImportDepository(walkId, uniqueSegId, wp.narration_script, buildNarrationExportFilename(wp, segGroup, index));
     if (entry) {
       mergeImportFileEntry(entry);
-      toast({ title: 'Added to the shared depository', description: `Narrators cloning this tour will now auto-download ${wp.segment_id}'s script.` });
+      toast({ title: 'Added to the shared depository', description: `Narrators cloning this tour will now auto-download ${uniqueSegId}'s script.` });
     }
     setUploadingDepositoryFor(null);
   };
@@ -794,6 +798,23 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
              // location's code, so the list doesn't look like one continuous
              // run of waypoints.
              const isNewLocation = segGroup && index === segGroup.startIndex && index > 0;
+             // Per Enda's follow-up 100 report: wp.segment_id is the LOCATION-level
+             // code shared by EVERY waypoint at that location (e.g. every point along
+             // "Location 1" of tour BOR is segment_id "BOR1") — that's exactly what
+             // groups them under one divider above, by design. buildNarrationExportFilename
+             // already combined it with this row's own letter-within-the-group
+             // (letterForIndexInGroup) to build a per-waypoint FILENAME like "BOR1a - …
+             // .odt" — but the shared depository (follow-up 93) was keying its uploads
+             // on bare wp.segment_id alone, so EVERY waypoint at one location silently
+             // uploaded to the exact same depository slot, and whichever was saved last
+             // won, overwriting the others with no warning. This is the actual
+             // per-waypoint key everything depository-related below now uses instead —
+             // matching the filename's own prefix exactly, so the two can never diverge.
+             // Computed by the ONE shared helper (routeExport.js) that TourSimulator.jsx
+             // also calls for the exact same waypoint, rather than each recomputing its
+             // own letter — that duplication is exactly how the original bug could have
+             // silently drifted apart even after a partial fix.
+             const uniqueSegId = uniqueWaypointSegmentId(waypoints, index);
              return (
               <React.Fragment key={index}>
               {isNewLocation && (
@@ -950,7 +971,7 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                           }}
                           onAutoSave={onAutoSave}
                           fixedLanguage={targetLanguage}
-                          waypointSegmentId={wp.segment_id}
+                          waypointSegmentId={uniqueSegId}
                           waypointSegmentTitle={wp.segment_title}
                         />
 
@@ -1078,7 +1099,7 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                           }}
                           onAutoSave={onAutoSave}
                           fixedLanguage={targetLanguage}
-                          waypointSegmentId={wp.segment_id}
+                          waypointSegmentId={uniqueSegId}
                           waypointSegmentTitle={wp.segment_title}
                         />
 
@@ -1135,7 +1156,7 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
 
                     {!isNarrator && wp.segment_id && (wp.narration_script || '').trim() && (
                       <div className="pt-2 border-t border-slate-600 flex items-center justify-between gap-2 text-xs">
-                        {importFiles.some((f) => f.segment_id === wp.segment_id) ? (
+                        {importFiles.some((f) => f.segment_id === uniqueSegId) ? (
                           <span className="flex items-center gap-1.5 text-emerald-400">
                             <FileCheck className="w-3.5 h-3.5" /> In the shared depository — narrators auto-download this on clone.
                           </span>
@@ -1145,12 +1166,12 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                         <Button
                           type="button" size="sm" variant="outline"
                           onClick={() => handleManualDepositoryUpload(wp, segGroup, index)}
-                          disabled={!walkId || uploadingDepositoryFor === wp.segment_id}
+                          disabled={!walkId || uploadingDepositoryFor === uniqueSegId}
                           title={!walkId ? 'Save this tour first' : 'Push the current script into the shared depository, replacing any earlier file for this waypoint'}
                           className="bg-blue-700/30 hover:bg-blue-700/50 border-blue-600/50 text-slate-200 gap-1.5 shrink-0"
                         >
-                          {uploadingDepositoryFor === wp.segment_id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-                          {importFiles.some((f) => f.segment_id === wp.segment_id) ? 'Replace' : 'Add'}
+                          {uploadingDepositoryFor === uniqueSegId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                          {importFiles.some((f) => f.segment_id === uniqueSegId) ? 'Replace' : 'Add'}
                         </Button>
                       </div>
                     )}
@@ -1186,7 +1207,7 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                             // skipped quietly otherwise, same as a brand-new unsaved tour
                             // already skips other walkId-dependent actions.
                             if (wp.segment_id && walkId) {
-                              uploadToImportDepository(walkId, wp.segment_id, wp.narration_script, exportFilename)
+                              uploadToImportDepository(walkId, uniqueSegId, wp.narration_script, exportFilename)
                                 .then((entry) => mergeImportFileEntry(entry));
                             }
                           }

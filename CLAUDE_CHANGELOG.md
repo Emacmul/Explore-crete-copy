@@ -41,6 +41,59 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-02 (follow-up 100) — Fixed the shared depository handing narrators the WRONG waypoint's file
+Scope: `src/lib/routeExport.js` (new shared helper), `src/components/admin/DrivingTourWaypointEditor.jsx`,
+`src/components/admin/TourSimulator.jsx`. Frontend only.
+
+**Per Enda's report:** logged in as a narrator, cloned Battle of the Rivers to English
+(no translation needed) to test the flow himself. Opened the very first waypoint,
+BOR1a-PS — the clone auto-imported a depository file as expected, but the WRONG one:
+BOR1g's script (the LAST of the seven waypoints at that location), not BOR1a-PS's own.
+
+**Root cause:** `wp.segment_id` is the LOCATION-level code shared by every waypoint at
+one stop — e.g. every one of BOR1a-PS, BOR1b, …, BOR1g is segment_id `"BOR1"` — that's
+by design, it's exactly what groups them under one amber divider in the Waypoints tab.
+`buildNarrationExportFilename` already knew this and combined it with a computed
+per-waypoint letter (`letterForIndexInGroup`) to build a readable FILENAME like
+`"BOR1a - Primary-Start - ....odt"` — but the shared depository (follow-up 93) was
+keying its uploads on the bare `wp.segment_id` alone, not that filename's own prefix.
+So every waypoint at one location silently uploaded to the exact same depository slot;
+whichever was saved last (BOR1g, here) simply overwrote the rest with no warning, in
+both directions — the admin's own "In the shared depository" status check and the
+narrator's auto-fetch were both reading/writing that same single collapsed key.
+
+**What changed:** added `uniqueWaypointSegmentId(waypoints, index)` to
+`routeExport.js` — derives the real per-waypoint code (`"BOR1a"`, `"BOR1g"`, …) by
+combining the shared location code with the waypoint's position within its group,
+matching what the filename's own prefix already showed. This is now the ONE function
+both sides call for a depository key, rather than each computing (or, before this fix,
+not computing) its own letter — `DrivingTourWaypointEditor.jsx` uses it for the
+auto-upload on Mark Waypoint as Done, the manual Add/Replace button, and the "already
+in the shared depository" status line; `TourSimulator.jsx` uses it (against
+`form.waypoints`, the raw unfiltered array, and `toRawIndex`, so it lines up with the
+admin side even if this panel's own waypoint list is momentarily filtered by a
+mid-edit blank lat/lng) for what `TranslationPanel.jsx`'s depository auto-fetch asks
+for. Also fixed the same bare-`wp.segment_id` prop on both `NarrationTtsEditor` call
+sites inside `DrivingTourWaypointEditor.jsx` itself (unreachable by narrators today,
+but wrong regardless, and this is what `stripWaypointLabelLine` compares against too).
+
+**Enda needs to re-add affected waypoints to the depository once redeployed:** this
+fixes the key going forward, but it can't recover data that was already collapsed —
+any location with more than one waypoint (the normal case) currently has AT MOST one
+correct depository entry, under the old bare key, which no waypoint's new correct key
+will match anymore. After this frontend update is live, re-click "Add"/"Replace" (or
+just re-tick/untick-and-redo Mark Waypoint as Done) for each waypoint at a
+multi-waypoint location to repopulate the depository correctly under its own key.
+Single-waypoint locations were never affected (nothing to collide with).
+
+**Verified:** `npx eslint` on all three touched files — clean (the one reported issue,
+`DrivingTourWaypointEditor.jsx`'s pre-existing unused `Textarea` import, confirmed
+unrelated against `origin/main`). `rm -rf dist && npx vite build` — clean production
+build. Frontend-only, no backend function touched, no redeploy dance needed — a hard
+refresh + republish is enough.
+
+---
+
 ## 2026-09-02 (follow-up 99) — Translation now explicitly preserves inline foreign-script pronunciation-dictionary words
 Scope: `base44/functions/translateScript/entry.ts` (**backend function change —
 needs the usual blank-line redeploy dance**), `src/components/admin/TranslationPanel.jsx`.
