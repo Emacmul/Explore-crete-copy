@@ -33,7 +33,6 @@ export default async function (req) {
       return Response.json({ error: 'Not authorized' }, { status: 401 });
     }
 
-
     // WP user id from the token payload (same decode wpLogin uses client-side) — safe to
     // read now that isTokenGenuine has confirmed WordPress itself issued this exact token.
     let wpId = null;
