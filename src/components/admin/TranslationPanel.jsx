@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { LANGUAGES } from '@/lib/languages';
 import { base44 } from '@/api/base44Client';
-import { Upload, Loader2, Languages, FileText, ArrowRight, AlertTriangle } from 'lucide-react';
+import { Upload, Loader2, Languages, FileText, ArrowRight, AlertTriangle, RefreshCw } from 'lucide-react';
 import { extractTextFromFile } from '@/lib/fileTextExtractor';
 import { useNarratorApiKeys } from '@/lib/useNarratorApiKeys';
 import { getFnErrorMessage } from '@/lib/utils';
@@ -120,6 +120,7 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
     manualImportRef.current = true; // a real manual pick always wins — see the depository effect below
     setError('');
     setPreservationWarning('');
+    setCheckDepositoryError('');
     setDepositoryFileName('');
     setImporting(true);
     try {
@@ -150,6 +151,40 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
   // everything downstream (Translate & Load, the preview box) behaves identically either
   // way.
   //
+  // Pulled out into its own function (follow-up 101) so the SAME depository lookup can
+  // be triggered two ways: silently by the effect below the moment this panel mounts,
+  // and explicitly by the "Check Depository" button further down. `shouldApply` is
+  // checked right before each state-changing step so the automatic path can still bail
+  // out cleanly if the narrator has, in the meantime, either picked a local file by hand
+  // (manualImportRef) or moved off this waypoint (cancelled) — the manual button passes
+  // no such guard, since a deliberate click is always allowed to load whatever it finds.
+  // Throws on a genuine failure (network, bad file) — the automatic caller swallows that
+  // silently (a background convenience check has no one watching for it), the manual
+  // caller surfaces it, since a narrator who clicked something on purpose needs to know
+  // whether it actually worked.
+  const fetchDepositoryFile = async (shouldApply = () => true) => {
+    if (!currentWalkId || !waypointSegmentId) return false;
+    const res = await base44.functions.invoke('manageTourImportFiles', {
+      action: 'get',
+      walkId: currentWalkId,
+      segment_id: waypointSegmentId,
+      ...getNarratorAuthPayload(),
+    });
+    const file = res?.data?.file;
+    if (!file?.file_url || !shouldApply()) return false;
+    const fileRes = await fetch(file.file_url);
+    if (!fileRes.ok) throw new Error('The depository file could not be downloaded.');
+    const blob = await fileRes.blob();
+    const niceName = file.filename || `${waypointSegmentId}.odt`;
+    const nativeFile = new File([blob], niceName, { type: blob.type || 'application/vnd.oasis.opendocument.text' });
+    const text = await extractTextFromFile(nativeFile);
+    if (!text || !text.trim() || !shouldApply()) return false;
+    setImportedText(stripWaypointLabelLine(text, waypointSegmentId, waypointSegmentTitle));
+    setFileName(niceName);
+    setDepositoryFileName(niceName);
+    return true;
+  };
+
   // Runs once per waypoint, not on every keystroke: this component is remounted fresh
   // per waypoint (NarrationTtsEditor's own instance is `key={selectedWpIndex}` in
   // TourSimulator.jsx), so effect deps of just [currentWalkId, waypointSegmentId] are
@@ -157,40 +192,43 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
   // overwrites a file the narrator already picked by hand in the meantime
   // (manualImportRef) — the depository is a convenience, never something that fights the
   // narrator for control of this box. Silent on "nothing there" or on any failure — the
-  // manual Import File button always still works as a complete fallback.
+  // manual "Check Depository" button (below) is the real backstop for either of those now.
   useEffect(() => {
     if (!currentWalkId || !waypointSegmentId) return;
     let cancelled = false;
-    (async () => {
-      setCheckingDepository(true);
-      try {
-        const res = await base44.functions.invoke('manageTourImportFiles', {
-          action: 'get',
-          walkId: currentWalkId,
-          segment_id: waypointSegmentId,
-          ...getNarratorAuthPayload(),
-        });
-        const file = res?.data?.file;
-        if (!cancelled && !manualImportRef.current && file?.file_url) {
-          const fileRes = await fetch(file.file_url);
-          if (!fileRes.ok) throw new Error('download failed');
-          const blob = await fileRes.blob();
-          const niceName = file.filename || `${waypointSegmentId}.odt`;
-          const nativeFile = new File([blob], niceName, { type: blob.type || 'application/vnd.oasis.opendocument.text' });
-          const text = await extractTextFromFile(nativeFile);
-          if (!cancelled && !manualImportRef.current && text && text.trim()) {
-            setImportedText(stripWaypointLabelLine(text, waypointSegmentId, waypointSegmentTitle));
-            setFileName(niceName);
-            setDepositoryFileName(niceName);
-          }
-        }
-      } catch {
-        // Background convenience check — never surfaced as an error, see comment above.
-      }
-      if (!cancelled) setCheckingDepository(false);
-    })();
+    setCheckingDepository(true);
+    fetchDepositoryFile(() => !cancelled && !manualImportRef.current)
+      .catch(() => { /* background convenience check — never surfaced, see comment above */ })
+      .finally(() => { if (!cancelled) setCheckingDepository(false); });
     return () => { cancelled = true; };
   }, [currentWalkId, waypointSegmentId]);
+
+  // Per Enda's follow-up 101 report: with the depository key fix (follow-up 100) now
+  // asking for the CORRECT per-waypoint key, a waypoint whose admin hasn't re-added it
+  // to the depository under that new key yet (see that entry's migration note) finds
+  // nothing — silently, since the automatic check above is deliberately quiet. Before
+  // this button, the ONLY other option on this panel was "Import File", which just
+  // browses the narrator's OWN computer — no help at all if the whole point is that the
+  // file lives in the depository, not on their machine. This gives a real, visible way
+  // to retry the SAME depository lookup on demand, with an actual answer either way,
+  // instead of a narrator being stuck wondering whether anything is ever going to show
+  // up.
+  const [checkDepositoryError, setCheckDepositoryError] = useState('');
+  const handleCheckDepository = async () => {
+    setCheckDepositoryError('');
+    setCheckingDepository(true);
+    try {
+      const found = await fetchDepositoryFile();
+      if (!found) {
+        setCheckDepositoryError(currentWalkId && waypointSegmentId
+          ? 'Nothing in the shared depository for this waypoint yet — ask an admin to add it, or use Import File.'
+          : 'This waypoint isn\'t saved yet, so there\'s nothing to check.');
+      }
+    } catch (err) {
+      setCheckDepositoryError(err?.message || 'Could not reach the shared depository — please try again.');
+    }
+    setCheckingDepository(false);
+  };
 
   // The imported file is always the English master script (see this app's workflow —
   // narrators always start from an English original). If the chosen target language is
@@ -209,6 +247,7 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
     if (isNoOpTranslation) {
       setError('');
       setPreservationWarning('');
+      setCheckDepositoryError('');
       onTranslated(importedText);
       return;
     }
@@ -218,6 +257,7 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
     }
     setError('');
     setPreservationWarning('');
+    setCheckDepositoryError('');
     setTranslating(true);
     try {
       const response = await base44.functions.invoke('translateScript', {
@@ -259,6 +299,16 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
           {importing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
           {importing ? 'Reading…' : fileName ? 'Change File' : 'Import File'}
         </Button>
+        <Button
+          type="button" size="sm" variant="outline"
+          onClick={handleCheckDepository}
+          disabled={translating || importing || checkingDepository || disabled}
+          title="Manually re-check the shared depository for this waypoint's file"
+          className="bg-blue-700/30 hover:bg-blue-700/50 border-blue-600/50 text-slate-200 gap-1.5"
+        >
+          {checkingDepository ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+          Check Depository
+        </Button>
         {fileName ? (
           <span className="text-xs text-slate-400 flex items-center gap-1 max-w-[220px] truncate">
             <FileText className="w-3 h-3 shrink-0" /> {fileName}
@@ -272,6 +322,12 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
           </span>
         ) : null}
       </div>
+
+      {checkDepositoryError && (
+        <div className="text-amber-300 text-xs bg-amber-900/20 border border-amber-700/50 rounded-md px-2.5 py-1.5">
+          {checkDepositoryError}
+        </div>
+      )}
 
       {importedText && (
         <div className="bg-slate-900/50 rounded-md border border-slate-700 p-2 max-h-40 overflow-y-auto">

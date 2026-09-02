@@ -41,6 +41,50 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-02 (follow-up 101) — Added a manual "Check Depository" retry; explains the "no file at all now" report
+Scope: `src/components/admin/TranslationPanel.jsx` only. Frontend only.
+
+**Per Enda's report, after redeploying follow-up 100:** cloning the tour now imports
+NO file at all from the depository (not even a wrong one), and "Import File" doesn't
+point at the depository either, so it's "basically useless as a backup".
+
+**Not a new bug — the expected, flagged consequence of follow-up 100's fix, landing
+without the one manual step that entry called out:** before follow-up 100, every
+waypoint at a location (BOR1a-PS through BOR1g) shared one collapsed depository key
+("BOR1"), so a query for any of them matched whatever was last saved there. Follow-up
+100 fixed the KEY (now "BOR1a", "BOR1g", etc. — genuinely per-waypoint) but couldn't
+retroactively fix the DATA: the depository still only holds entries under the old,
+collapsed keys, and "BOR1a" doesn't match a stored "BOR1" any more than it matches
+"BOR1g" — so every waypoint at a multi-waypoint location now correctly finds nothing,
+until an admin re-adds it under its new correct key. That migration step was already
+written up at the end of follow-up 100's entry — this is a reminder plus the concrete
+fix for the second half of the report.
+
+**What Enda needs to do:** as admin, open each waypoint in a multi-waypoint location
+(anywhere with more than one point, e.g. all of BOR1a-BOR1g) in the Waypoints tab —
+it'll say "Not yet in the shared depository" now, even for ones added before — and
+click "Add" once to push it back in under its correct key. Single-waypoint locations
+were never affected.
+
+**What actually changed in this follow-up — the fair second half of the report:**
+"Import File" was never meant to reach the depository (it's always been a plain local
+file browser), but there genuinely was no OTHER way to retry the depository check from
+this panel — it only ever ran once, silently, on mount, with no visible outcome either
+way. Added a "Check Depository" button next to Import File that re-runs the exact same
+lookup on demand, and — unlike the silent automatic check — actually says what
+happened: loads the file and tags it `(shared depository)` exactly like the automatic
+path does, or shows "Nothing in the shared depository for this waypoint yet — ask an
+admin to add it, or use Import File." Refactored the automatic effect and this new
+button onto one shared `fetchDepositoryFile` function so they can never drift apart,
+preserving the original guard against a background fetch clobbering a narrator's own
+manual pick (the button, being a deliberate click, isn't subject to that guard).
+
+**Verified:** `npx eslint src/components/admin/TranslationPanel.jsx` clean. `rm -rf
+dist && npx vite build` — clean production build. Frontend-only, no backend function
+touched, no redeploy dance needed.
+
+---
+
 ## 2026-09-02 (follow-up 100) — Fixed the shared depository handing narrators the WRONG waypoint's file
 Scope: `src/lib/routeExport.js` (new shared helper), `src/components/admin/DrivingTourWaypointEditor.jsx`,
 `src/components/admin/TourSimulator.jsx`. Frontend only.
