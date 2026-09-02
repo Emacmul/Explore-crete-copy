@@ -54,7 +54,6 @@ export default async function(req) {
       }, { status: 403 });
     }
 
-
     const matches = await base44.asServiceRole.entities.AppUser.filter({ email });
     const record = matches[0] || null;
 
