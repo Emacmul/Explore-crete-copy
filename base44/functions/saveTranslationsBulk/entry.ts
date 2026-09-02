@@ -34,7 +34,6 @@ export default async function(req) {
       return Response.json({ error: 'lang and a non-empty entries object are required' }, { status: 400 });
     }
 
-
     // --- authorize (identical to saveTranslation) ---
     let authorizedEmail = null;
     try {
