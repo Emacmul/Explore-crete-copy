@@ -24,7 +24,6 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 // isn't time-critical.
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-
 export default async function(req) {
   try {
     const base44 = createClientFromRequest(req);
