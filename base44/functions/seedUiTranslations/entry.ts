@@ -1,6 +1,7 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 import { resolveActor } from '../../shared/backendActor.ts';
 import { callGroqWithKeyRotation } from '../../shared/groqKeyRotation.ts';
+import { translateWithGoogle } from '../../shared/googleTranslate.ts';
 
 // Seeds a machine-translation BASELINE for UI strings in a language that doesn't have one
 // hand-written in src/lib/i18n/index.js yet — see TranslationsManager.jsx's "Auto-translate
@@ -182,7 +183,7 @@ Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
     const body = await req.json();
-    const { entries, target_language, apiKey, apiKey2 } = body;
+    const { entries, target_language, apiKey, apiKey2, googleApiKey, target_lang_code } = body;
 
     // Admin, or narrator via email+narrToken — same gate as translateScript, for the same
     // reason: without it this triggers a Groq call (billed to the caller's own key, but
@@ -242,13 +243,49 @@ Deno.serve(async (req) => {
       }
     }
 
-    if (Object.keys(translated).length === 0 && rateLimitedKeys.length === 0) {
+    // Per Enda: "use the Groq key whenever possible, but if that jams, switch to the Google
+    // key" — Google Cloud Translation as a LAST-tier fallback, only for whatever Groq
+    // genuinely could not translate above (using every configured Groq key, not just the
+    // first). Deliberately not a parallel/first option: keeps Google's paid, per-character
+    // usage limited to the rare case where Groq is actually exhausted, not everyday traffic.
+    // `entries[k] !== undefined` filters to keys still genuinely missing a translation —
+    // this also naturally covers a chunk that never got attempted at all because an EARLIER
+    // chunk already tripped the rate-limit break above, not just the specific chunk that
+    // was rate-limited, so nothing from this call is left behind unnecessarily.
+    const stillMissingKeys = keys.filter(k => translated[k] === undefined);
+    let googleTranslatedCount = 0;
+    if (stillMissingKeys.length > 0 && googleApiKey && googleApiKey.trim() && target_lang_code) {
+      const texts = stillMissingKeys.map(k => entries[k]);
+      const googleResult = await translateWithGoogle(texts, target_lang_code, googleApiKey, 'text');
+      if (googleResult.ok && googleResult.translations) {
+        stillMissingKeys.forEach((k, i) => {
+          const v = googleResult.translations![i];
+          if (typeof v === 'string' && v.trim()) {
+            translated[k] = v.trim();
+            googleTranslatedCount++;
+            const missing = findUnpreservedPlaceholders(entries[k], v);
+            if (missing.length > 0) unpreservedWarnings.push(`${k} (${missing.join(', ')}, via Google fallback)`);
+          }
+        });
+      } else if (googleResult.error) {
+        failureReasons.add(`Google fallback: ${googleResult.error}`);
+      }
+    }
+
+    // Recompute what's STILL missing after the Google attempt (if any was made) — only
+    // genuinely unresolved keys get reported back as failed/rate-limited from here on, so
+    // TranslationsManager.jsx's retry/wait loop (or a manual fill-in) never sees a key that
+    // Google already rescued.
+    const finalMissing = keys.filter(k => translated[k] === undefined);
+    const finalRateLimited = rateLimitedKeys.filter(k => finalMissing.includes(k));
+
+    if (Object.keys(translated).length === 0 && finalRateLimited.length === 0) {
       return Response.json({ error: `No translations were returned — try again, or fill these in by hand. Last error: ${[...failureReasons][0] || 'unknown'}` }, { status: 500 });
     }
 
     return Response.json({
       translations: translated,
-      failed_keys: failedKeys,
+      failed_keys: finalMissing,
       // Keys that specifically hit the account's per-minute rate limit, plus how long Groq says
       // to wait — TranslationsManager.jsx uses this to automatically wait and retry just these
       // keys, rather than reporting a rate limit as a plain, permanent-looking failure.
@@ -257,10 +294,13 @@ Deno.serve(async (req) => {
       // key has been tried and every one came back rate-limited (it returns early on any
       // success or non-rate-limit error) — so this is a reliable, direct answer to "did it
       // actually try my second key?", not a guess.
-      ...(rateLimitedKeys.length > 0 ? { rate_limited_keys: rateLimitedKeys, retry_after_ms: retryAfterMs ?? 15000, keys_tried: apiKeys.length } : {}),
+      ...(finalRateLimited.length > 0 ? { rate_limited_keys: finalRateLimited, retry_after_ms: retryAfterMs ?? 15000, keys_tried: apiKeys.length } : {}),
       // A handful of DISTINCT non-rate-limit error messages (not one per failed key — that
       // could be dozens of copies of the same cause) so a real failure is diagnosable.
       ...(failureReasons.size > 0 ? { failure_reasons: [...failureReasons].slice(0, 5) } : {}),
+      // How many of the translations above came from the Google fallback rather than Groq —
+      // purely informational (TranslationsManager.jsx can mention it), never changes behavior.
+      ...(googleTranslatedCount > 0 ? { google_translated_count: googleTranslatedCount } : {}),
       // Best-effort check only, never fails the pass over it — same reasoning as
       // translateScript's own preservation_warning: the translation is very likely still
       // fine, this only flags keys worth a manual glance before relying on the placeholder.

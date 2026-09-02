@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { LANGUAGES } from '@/lib/languages';
+import { LANGUAGE_CODE_BY_NAME, getGoogleTranslateCode } from '@/lib/i18n';
 import { base44 } from '@/api/base44Client';
 import { Upload, Loader2, Languages, FileText, ArrowRight, AlertTriangle, RefreshCw } from 'lucide-react';
 import { extractTextFromFile } from '@/lib/fileTextExtractor';
@@ -112,6 +113,10 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
   // those doesn't survive translation intact, so a narrator can fix the spelling before
   // relying on it, rather than never knowing anything went wrong.
   const [preservationWarning, setPreservationWarning] = useState('');
+  // Per Enda: "use the Groq key whenever possible, but if that jams, switch to the Google
+  // key" — set only when THIS translation actually came from the Google fallback (Groq's
+  // key(s) were rate-limited), purely informational, never blocks anything.
+  const [translatedViaFallback, setTranslatedViaFallback] = useState(false);
   const fileInputRef = useRef(null);
 
   const handleImport = async (e) => {
@@ -257,6 +262,7 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
     }
     setError('');
     setPreservationWarning('');
+    setTranslatedViaFallback(false);
     setCheckDepositoryError('');
     setTranslating(true);
     try {
@@ -265,12 +271,22 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
         target_language: targetLanguage,
         apiKey: apiKeys.groq_api_key,
         apiKey2: apiKeys.groq_api_key_2,
+        // Last-resort fallback per Enda: try Groq (both keys) first, and only when THAT
+        // jams does translateScript reach for this — see groqKeyRotation.ts /
+        // googleTranslate.ts. Reuses the same Google key already saved for Text-to-Speech;
+        // omitted entirely if that key isn't set, in which case behavior is unchanged from
+        // before this fallback existed.
+        googleApiKey: apiKeys.google_tts_api_key || undefined,
+        target_lang_code: getGoogleTranslateCode(LANGUAGE_CODE_BY_NAME[targetLanguage] || ''),
         ...getNarratorAuthPayload(),
       });
       if (response.data?.translated_text) {
         onTranslated(response.data.translated_text);
         if (response.data?.preservation_warning) {
           setPreservationWarning(response.data.preservation_warning);
+        }
+        if (response.data?.translated_via === 'google') {
+          setTranslatedViaFallback(true);
         }
       } else {
         setError('Translation returned no text.');
@@ -390,6 +406,12 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
         <div className="flex items-start gap-1.5 text-amber-300 text-xs bg-amber-900/20 border border-amber-700/50 rounded-md px-2.5 py-1.5">
           <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
           <span>{preservationWarning}</span>
+        </div>
+      )}
+
+      {translatedViaFallback && (
+        <div className="text-slate-400 text-xs bg-slate-900/50 border border-slate-700 rounded-md px-2.5 py-1.5">
+          Translated via Google (your Groq key{apiKeys.groq_api_key_2 ? 's were' : ' was'} rate-limited).
         </div>
       )}
     </div>

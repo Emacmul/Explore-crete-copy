@@ -1,6 +1,7 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.38';
 import { resolveActor } from '../../shared/backendActor.ts';
 import { callGroqWithKeyRotation } from '../../shared/groqKeyRotation.ts';
+import { translateWithGoogle } from '../../shared/googleTranslate.ts';
 
 // Per Enda: some words/names in the English source script are deliberately written in
 // their OWN original script (Greek, Cyrillic, Arabic) rather than English, specifically
@@ -35,7 +36,7 @@ Deno.serve(async (req) => {
     const base44 = createClientFromRequest(req);
 
     const body = await req.json();
-    const { text, target_language, apiKey, apiKey2 } = body;
+    const { text, target_language, apiKey, apiKey2, googleApiKey, target_lang_code } = body;
 
     // Admin, or narrator via email+narrToken — without this, this function was reachable
     // by anyone at all, with no restriction on who could trigger a Groq call.
@@ -103,11 +104,38 @@ ${text}`;
       max_tokens: 4000,
     });
 
-    if (!result.ok) {
-      // A rate limit that survived every configured key (just the one key, if no backup is
-      // set) gets a message that actually says how long Groq wants — this panel has no
-      // automatic wait/retry loop like the UI-translations one does, so a narrator reading
-      // this needs a real number to decide whether to wait or come back later.
+    let finalText: string;
+    let usedGoogleFallback = false;
+
+    if (result.ok) {
+      const translatedText = result.data?.choices?.[0]?.message?.content;
+      if (!translatedText) {
+        return Response.json({ error: 'No translation returned' }, { status: 500 });
+      }
+      finalText = translatedText.trim();
+    } else if (result.rateLimited && googleApiKey && googleApiKey.trim() && target_lang_code) {
+      // Per Enda: "use the Groq key whenever possible, but if that jams, switch to the
+      // Google key" — reached only after every configured Groq key came back rate-limited
+      // (see groqKeyRotation.ts). format='html' tells Google to treat <break> tags as
+      // markup and leave them untouched, translating only the surrounding text — the same
+      // protection the Groq prompt's rule 1 asks for, just enforced structurally instead of
+      // by instruction. Foreign-script name preservation (rule 2) has no equivalent
+      // structural guarantee here, so the same best-effort check below still applies.
+      const googleResult = await translateWithGoogle([text], target_lang_code, googleApiKey, 'html');
+      if (!googleResult.ok || !googleResult.translations?.[0]) {
+        const groqWaitHint = result.retryAfterMs
+          ? ` Groq says to wait about ${Math.ceil(result.retryAfterMs / 1000)}s before trying again${apiKeys.length > 1 ? ' (both configured keys are currently rate-limited)' : ''}.`
+          : '';
+        return Response.json({
+          error: `Groq is rate-limited,${groqWaitHint} and the Google fallback also failed: ${googleResult.error || 'unknown error'}.`,
+        }, { status: 500 });
+      }
+      finalText = googleResult.translations[0].trim();
+      usedGoogleFallback = true;
+    } else {
+      // A rate limit with no Google fallback configured, or a real (non-rate-limit) Groq
+      // error — a different key/provider wouldn't fix the latter, so this is reported
+      // directly, same as before this fallback existed.
       const waitHint = result.rateLimited && result.retryAfterMs
         ? ` Groq says to wait about ${Math.ceil(result.retryAfterMs / 1000)}s before trying again${apiKeys.length > 1 ? ' — both configured keys are currently rate-limited.' : '.'}`
         : '';
@@ -115,14 +143,6 @@ ${text}`;
         error: (result.error || `Groq API returned ${result.status}`) + waitHint,
       }, { status: 500 });
     }
-
-    const translatedText = result.data?.choices?.[0]?.message?.content;
-
-    if (!translatedText) {
-      return Response.json({ error: 'No translation returned' }, { status: 500 });
-    }
-
-    const finalText = translatedText.trim();
 
     // Best-effort check only (see findUnpreservedForeignWords above for what it can and
     // can't catch) — never fails the translation over it, since the translation itself
@@ -132,6 +152,8 @@ ${text}`;
 
     return Response.json({
       translated_text: finalText,
+      // Purely informational — TranslationPanel.jsx can mention it, never changes behavior.
+      ...(usedGoogleFallback ? { translated_via: 'google' } : {}),
       ...(unpreserved.length > 0 ? {
         preservation_warning: `Double-check the spelling of ${unpreserved.map((w) => `"${w}"`).join(', ')} in the translated text below — it should appear exactly as written in the original script, but couldn't be confirmed automatically. This matters for the pronunciation dictionary to work.`,
       } : {}),

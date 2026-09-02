@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Loader2, Save, RotateCcw, Languages, Wand2, AlertTriangle } from 'lucide-react';
 import { toast } from '@/components/ui/use-toast';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
-import { translations, UI_LANGUAGES, LANGUAGE_NAME_BY_CODE } from '@/lib/i18n';
+import { translations, UI_LANGUAGES, LANGUAGE_NAME_BY_CODE, getGoogleTranslateCode } from '@/lib/i18n';
 import { useNarratorApiKeys } from '@/lib/useNarratorApiKeys';
 
 // Back-office editor for UI string overrides. Shows the English source for reference and
@@ -185,6 +185,7 @@ export default function TranslationsManager({ authMode, user }) {
     let remaining = missingKeys;
     let totalSaved = 0;
     let totalFailed = 0;
+    let totalGoogleFallback = 0;
     const failureReasons = new Set();
     const placeholderWarnings = [];
     // Per Enda: this only needs to run once per language, and he'd rather wait it out than pay
@@ -198,7 +199,15 @@ export default function TranslationsManager({ authMode, user }) {
       for (const k of remaining) entries[k] = translations.en[k];
 
       const res = await invokeWithTimeout('seedUiTranslations', {
-        entries, target_language: targetLanguageName, apiKey: apiKeys.groq_api_key, apiKey2: apiKeys.groq_api_key_2, ...authPayload,
+        entries, target_language: targetLanguageName, apiKey: apiKeys.groq_api_key, apiKey2: apiKeys.groq_api_key_2,
+        // Last-resort fallback per Enda: try Groq (both keys) first, and only when THAT
+        // jams does seedUiTranslations reach for this — see groqKeyRotation.ts /
+        // googleTranslate.ts. Reuses the same Google key already saved for Text-to-Speech;
+        // omitted entirely (both fields simply undefined) if that key isn't set, in which
+        // case behavior is unchanged from before this fallback existed.
+        googleApiKey: apiKeys.google_tts_api_key || undefined,
+        target_lang_code: getGoogleTranslateCode(langCode),
+        ...authPayload,
       }, 90000, 'Translating');
       const data = res.data || {};
       if (data.error && !data.translations) {
@@ -206,6 +215,7 @@ export default function TranslationsManager({ authMode, user }) {
         totalFailed += remaining.length;
         break;
       }
+      totalGoogleFallback += data.google_translated_count || 0;
 
       const produced = data.translations || {};
       if (Object.keys(produced).length > 0) {
@@ -274,7 +284,7 @@ export default function TranslationsManager({ authMode, user }) {
       remaining = rateLimited;
     }
 
-    return { totalSaved, totalFailed, failureReasons: [...failureReasons], placeholderWarnings };
+    return { totalSaved, totalFailed, totalGoogleFallback, failureReasons: [...failureReasons], placeholderWarnings };
   };
 
   // Auto-translate every key currently falling back to raw English for activeLang, and save
@@ -293,12 +303,12 @@ export default function TranslationsManager({ authMode, user }) {
     setSeeding(true);
     setSeedWarning('');
     try {
-      const { totalSaved, totalFailed, failureReasons, placeholderWarnings } = await seedMissingForLanguage(
+      const { totalSaved, totalFailed, totalGoogleFallback, failureReasons, placeholderWarnings } = await seedMissingForLanguage(
         activeLang, targetLanguageName, missingKeysForLang, authPayload, setProgressMessage, refreshOverrides
       );
       toast({
         title: 'Auto-translated',
-        description: `Seeded ${totalSaved} of ${missingKeysForLang.length} missing strings for ${targetLanguageName}.${totalFailed ? ` ${totalFailed} couldn't be translated — fill those in by hand.` : ''}`,
+        description: `Seeded ${totalSaved} of ${missingKeysForLang.length} missing strings for ${targetLanguageName}.${totalGoogleFallback ? ` (${totalGoogleFallback} via Google fallback, Groq was rate-limited.)` : ''}${totalFailed ? ` ${totalFailed} couldn't be translated — fill those in by hand.` : ''}`,
       });
       const warnings = [...placeholderWarnings, ...failureReasons];
       if (warnings.length > 0) setSeedWarning(warnings.join(' '));
@@ -329,6 +339,7 @@ export default function TranslationsManager({ authMode, user }) {
     setSeedWarning('');
     let totalSeeded = 0;
     let totalFailed = 0;
+    let totalGoogleFallbackAll = 0;
     let languagesTouched = 0;
     const warnings = [];
     try {
@@ -340,13 +351,14 @@ export default function TranslationsManager({ authMode, user }) {
         setProgressMessage(`Translating ${l.native} — ${missing.length} string${missing.length === 1 ? '' : 's'} (language ${languagesTouched} of ${targets.length})…`);
 
         try {
-          const { totalSaved, totalFailed: langFailed, failureReasons, placeholderWarnings } = await seedMissingForLanguage(
+          const { totalSaved, totalFailed: langFailed, totalGoogleFallback, failureReasons, placeholderWarnings } = await seedMissingForLanguage(
             l.code, targetLanguageName, missing, authPayload,
             (msg) => setProgressMessage(`${l.native}: ${msg}`),
             refreshOverrides
           );
           totalSeeded += totalSaved;
           totalFailed += langFailed;
+          totalGoogleFallbackAll += totalGoogleFallback;
           failureReasons.forEach(r => warnings.push(`${l.native}: ${r}`));
           placeholderWarnings.forEach(w => warnings.push(`${l.native}: ${w}`));
         } catch (langErr) {
@@ -374,7 +386,7 @@ export default function TranslationsManager({ authMode, user }) {
       } else {
         toast({
           title: 'Auto-translate all done',
-          description: `Seeded ${totalSeeded} string${totalSeeded === 1 ? '' : 's'} across ${languagesTouched} language${languagesTouched === 1 ? '' : 's'}.${totalFailed ? ` ${totalFailed} couldn't be translated.` : ''}`,
+          description: `Seeded ${totalSeeded} string${totalSeeded === 1 ? '' : 's'} across ${languagesTouched} language${languagesTouched === 1 ? '' : 's'}.${totalGoogleFallbackAll ? ` (${totalGoogleFallbackAll} via Google fallback, Groq was rate-limited.)` : ''}${totalFailed ? ` ${totalFailed} couldn't be translated.` : ''}`,
         });
       }
       if (warnings.length > 0) setSeedWarning(warnings.join(' '));

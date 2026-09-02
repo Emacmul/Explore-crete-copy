@@ -41,6 +41,84 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-02 (follow-up 109) — Google Translate as a last-resort fallback when Groq is fully rate-limited
+Scope: **NEW shared backend file** `base44/shared/googleTranslate.ts`;
+`base44/functions/seedUiTranslations/entry.ts` (**needs the redeploy dance**);
+`base44/functions/translateScript/entry.ts` (**needs the redeploy dance**);
+`src/lib/i18n/index.js`, `src/components/admin/TranslationsManager.jsx`,
+`src/components/admin/TranslationPanel.jsx` (all frontend-only — no new API key/UI needed,
+this reuses the Google key already saved for Text-to-Speech).
+
+**Per Enda's own idea:** after confirming (follow-up 108) that BOTH configured Groq keys
+were genuinely rate-limited together, Enda asked for a further fallback: "whenever possible
+use the Groq key, but if that jams, then switch to the google key" — his existing Google
+API key is also enabled for Cloud Translation, and he explicitly wants Groq to stay
+PRIMARY, with Google only used to "reduce the risk of un-announced bank robbery" (Google
+Cloud Translation is a paid API past its free 500,000 characters/month — kept as a last
+resort specifically to minimize exposure to that).
+
+**What changed:**
+- New shared helper `translateWithGoogle(texts, targetLangCode, apiKey, format)`
+  (`googleTranslate.ts`): plain Google Cloud Translation v2 REST call, batched at 100
+  strings per request (Google's own per-request limit). `format: 'html'` tells Google to
+  treat markup-like tags (e.g. narration's `<break time="1s"/>`) as protected and leave them
+  untouched, translating only the surrounding text — used for narration scripts;
+  `format: 'text'` (no such tags to protect) is used for UI strings.
+- `seedUiTranslations`: after the existing Groq attempt (now via BOTH configured keys, see
+  follow-up 107) leaves anything still untranslated, tries Google on exactly those
+  leftover keys, in one call, before falling back to the existing rate-limit/wait reporting.
+  Also fixed a small pre-existing gap while touching this code: a chunk that never got
+  attempted at all (because an EARLIER chunk already tripped the rate-limit break) is now
+  correctly included in what's offered to the Google fallback, not silently dropped for the
+  rest of that run.
+- `translateScript`: same idea for a single narration script — only reached when
+  `callGroqWithKeyRotation` reports every configured Groq key rate-limited.
+- Both report back how much was translated via the fallback
+  (`google_translated_count` / `translated_via: 'google'`) — purely informational, surfaced
+  in `TranslationsManager.jsx`'s toast ("...(N via Google fallback, Groq was
+  rate-limited.)") and `TranslationPanel.jsx`'s new neutral note under the Translate
+  button, so it's never a silent switch.
+- `src/lib/i18n/index.js` gains `LANGUAGE_CODE_BY_NAME` (reverse of the existing
+  `LANGUAGE_NAME_BY_CODE` — `LANGUAGES` and `UI_LANGUAGES` cover the exact same 23
+  languages) and `getGoogleTranslateCode(uiCode)`, which passes this app's own UI codes
+  through unchanged EXCEPT Serbo-Croatian ("sh"), which Google has no combined code for —
+  mapped to "sr" (Serbian) as the nearest single equivalent, for the Google fallback path
+  only; Groq (primary) still gets the plain instruction "translate into Serbo-Croatian" and
+  needs no such substitution.
+- Deliberately reuses the EXISTING `google_tts_api_key` (see `useNarratorApiKeys.js`) rather
+  than adding a new key field — Enda confirmed the same Google API key already works for
+  Cloud Translation once that API is enabled on the same Google Cloud project (a couple of
+  console clicks, no new credential). If that key isn't set, both features behave exactly
+  as before this fallback existed (no Google attempt, same as today).
+
+**Why last-resort, not parallel/first:** explicitly per Enda's own framing — Groq is free
+and should be used whenever it can be; Google Cloud Translation bills per character past
+500,000/month free, so it's only reached after Groq has genuinely been tried and exhausted
+(both keys, not just one), keeping real-money exposure to the rare case, not everyday use.
+
+**Verified:** `npx eslint` clean on every changed frontend file; `npx esbuild ...
+--platform=neutral --target=es2022` succeeds on every changed/new backend file (no Deno
+runtime available in this sandbox); `rm -rf dist && npx vite build` completes with no
+errors.
+
+**Not done / worth knowing for next time:**
+- Not tested live against Google's real API — no way to do that in this sandbox. First real
+  test is Enda enabling Cloud Translation on his Google Cloud project (see the earlier
+  conversation for the two console steps) and running Auto-translate again while Groq is
+  still rate-limited.
+- Serbo-Croatian → "sr" is a deliberate, documented judgment call for the fallback path
+  only (Google has no "sh"), not a verified fact from Google's own docs — worth a real
+  test if that specific language ever needs the fallback.
+- `format: 'html'` protecting `<break>` tags relies on Google's standard "treat markup as
+  non-translatable, translate only text nodes" behavior — solid, well-established behavior
+  for real HTML, not yet confirmed against this app's specific non-standard tag in a real
+  call.
+- No spending cap or budget alert wired into the app itself — Enda's own Google Cloud
+  billing settings (budget alerts, if he sets any) are the only guardrail beyond keeping
+  this a last-resort path; the app has no way to hard-stop Google usage from its own side.
+
+---
+
 ## 2026-09-02 (follow-up 108) — Progress line now confirms whether the second Groq key was actually tried
 Scope: `base44/functions/seedUiTranslations/entry.ts` (**needs the redeploy dance**),
 `src/components/admin/TranslationsManager.jsx` (frontend only).

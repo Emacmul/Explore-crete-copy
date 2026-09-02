@@ -60,6 +60,25 @@ export const LANGUAGE_NAME_BY_CODE = {
   sl: 'Slovenian',
 };
 
+// The reverse of LANGUAGE_NAME_BY_CODE — a full language NAME (e.g. "Dutch", as used by
+// LANGUAGES in lib/languages.js and passed to translateScript) back to its UI code (e.g.
+// "nl"). LANGUAGES and UI_LANGUAGES cover exactly the same 23 languages, so one lookup
+// serves both.
+export const LANGUAGE_CODE_BY_NAME = Object.fromEntries(
+  Object.entries(LANGUAGE_NAME_BY_CODE).map(([code, name]) => [name, code])
+);
+
+// Google Cloud Translation's language codes match this app's own UI codes almost exactly
+// (both are ordinary ISO 639-1) — EXCEPT Serbo-Croatian: Google has no combined "sh" code,
+// only separate "sr" (Serbian) and "hr" (Croatian). "sr" is used as the nearest single
+// equivalent for the Google fallback path only (see groqKeyRotation.ts /
+// googleTranslate.ts) — Groq, used as the primary translator, understands "Serbo-Croatian"
+// as a plain instruction and needs no such substitution.
+const GOOGLE_TRANSLATE_CODE_OVERRIDES = { sh: 'sr' };
+export function getGoogleTranslateCode(uiLangCode) {
+  return GOOGLE_TRANSLATE_CODE_OVERRIDES[uiLangCode] || uiLangCode;
+}
+
 // A walk's narration language. Original tours have no target_language and are English;
 // translation clones carry target_language set by the narrator workflow.
 export function getTourLanguage(walk) {
