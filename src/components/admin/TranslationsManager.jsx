@@ -149,7 +149,11 @@ export default function TranslationsManager({ authMode, user }) {
     let totalFailed = 0;
     const failureReasons = new Set();
     const placeholderWarnings = [];
-    const MAX_ROUNDS = 6;
+    // Per Enda: this only needs to run once per language, and he'd rather wait it out than pay
+    // Groq for a higher rate limit — so this is generous on purpose. Worst case (a full ~200-key
+    // language, only one small chunk getting through before each 429) is roughly 15 rounds *
+    // ~70s ≈ 18 minutes, entirely unattended waiting — not fast, but it only has to happen once.
+    const MAX_ROUNDS = 15;
 
     for (let round = 1; round <= MAX_ROUNDS && remaining.length > 0; round++) {
       const entries = {};
@@ -187,7 +191,7 @@ export default function TranslationsManager({ authMode, user }) {
       }
       if (round === MAX_ROUNDS) {
         totalFailed += rateLimited.length;
-        failureReasons.add(`Still rate-limited on ${rateLimited.length} string(s) after ${MAX_ROUNDS} attempts — Groq's per-minute budget for this key is tight; try again in a few minutes, or see console.groq.com/settings/billing to raise it.`);
+        failureReasons.add(`Still rate-limited on ${rateLimited.length} string(s) after ${MAX_ROUNDS} waits — Groq's per-minute budget for this key is genuinely this tight. Just run Auto-translate again later; it'll pick up only what's still missing.`);
         break;
       }
       const waitMs = Math.min(Math.max(data.retry_after_ms || 10000, 3000), 70000) + 1000;

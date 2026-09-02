@@ -149,9 +149,15 @@ TPM budget before hitting a 429 in the first place). Both the per-language and
 "all languages" buttons now show a live "Rate limit reached — waiting Xs…" status
 instead of the raw multi-paragraph Groq error dump Enda saw; a real, non-rate-limit
 failure is still surfaced as a short explicit reason via `failure_reasons`, and only
-after 6 rounds of genuinely still being rate-limited does it give up on those specific
-keys and say so plainly (with a pointer to Groq's own billing page for anyone who wants
-faster runs).
+after enough rounds of genuinely still being rate-limited does it give up on those
+specific keys and say so plainly, suggesting a later re-run rather than paying for more
+throughput. Per Enda ("I'm not going to pay Groq or anybody else if the problem can be
+solved with a bit of patience... it only needs to be done once per language"): raised the
+retry ceiling from 6 rounds to 15 (worst case, only one small chunk getting through per
+429, that's roughly 15 * ~70s ≈ 18 unattended minutes for a full ~200-key language — slow,
+but automatic and one-time) and dropped the earlier "or see console.groq.com/settings/
+billing" suggestion, which ran against what he'd just said. The give-up message now just
+says to run Auto-translate again later — it only retries whatever's still missing.
 
 **Deliberately left alone:** the live customer-facing app's `t()` fallback chain in
 `LanguageContext.jsx` — untouched; seeded strings reach customers exactly the way a
