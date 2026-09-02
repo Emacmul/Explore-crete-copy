@@ -41,6 +41,30 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-02 (follow-up 111) — uploadNarrationAudio now validates the file instead of trusting it
+Scope: `base44/functions/uploadNarrationAudio/entry.ts` (**needs the redeploy dance**).
+
+**Per Enda's report:** from the audit's "worth a look" section — this endpoint accepted
+any file type/size from an already-authorized narrator/admin with no checks at all. Not a
+stranger-facing risk, but Enda asked for it fixed: "we don't want fumbles to happen."
+
+**What changed:** every real caller (see `audioCombiner.js`) always builds a plain WAV
+file and always sends `mimeType: 'audio/wav'` — so that's now enforced instead of just
+assumed:
+- Rejects anything other than `audio/wav`.
+- Rejects anything over 50MB (generous for a single waypoint's narration clip — nowhere
+  near what a real one is, but a real ceiling against an accidental huge or wrong file).
+- Checks the file's own first bytes are a genuine WAV header ("RIFF"/"WAVE"), not just
+  trusting the caller's mimeType label — catches a mislabeled or corrupt upload too.
+- The uploaded filename is now always generated server-side rather than taken from the
+  caller — nothing legitimate needs to control it, so nothing is trusted about it either.
+
+**Verified:** `npx esbuild --platform=neutral --target=es2022` clean (syntax only — no
+Deno runtime in this sandbox). Not tested live yet — worth one real "Save & Finish"
+narration upload after redeploying, to confirm a normal save still goes through cleanly.
+
+---
+
 ## 2026-09-02 (follow-up 110) — Fixed the 3 security/practical issues from the full audit
 Scope: **NEW shared backend file** `base44/shared/passwordHash.ts`;
 `base44/functions/narrLogin/entry.ts` (**needs the redeploy dance**);
