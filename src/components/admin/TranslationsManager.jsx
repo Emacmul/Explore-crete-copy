@@ -128,6 +128,27 @@ export default function TranslationsManager({ authMode, user }) {
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
   const refreshOverrides = async () => { await load(); await reloadTranslations(); };
 
+  // Enda saw a real Auto-translate run freeze on "waiting 181s…" for 7+ minutes with no error
+  // and no change — the backend call had genuinely stopped responding (a stalled connection,
+  // not a slow one), and nothing was watching for that: `base44.functions.invoke(...)` has no
+  // built-in timeout, so a call that never resolves just leaves the UI stuck on stale text
+  // forever. This races any invoke against a plain timer so a stalled call fails loudly and
+  // clearly (visible as a toast, or as an ordinary per-language hiccup in "all languages" mode)
+  // instead of hanging indefinitely. A normal round — even a rate-limited one — returns in a
+  // few seconds; Base44 itself caps a backend function at 3 minutes of execution, so anything
+  // still unresolved well past that is stuck, not just slow.
+  const invokeWithTimeout = (fnName, payload, timeoutMs, label) => {
+    let timeoutId;
+    const timeout = new Promise((_, reject) => {
+      timeoutId = setTimeout(
+        () => reject(new Error(`${label} took longer than ${Math.round(timeoutMs / 1000)}s with no response from the server — the connection likely stalled. Try Auto-translate again in a moment.`)),
+        timeoutMs
+      );
+    });
+    return Promise.race([base44.functions.invoke(fnName, payload), timeout])
+      .finally(() => clearTimeout(timeoutId));
+  };
+
   // Does the actual seed-then-save work for ONE language's missing keys, automatically waiting
   // out and retrying any keys that came back rate-limited rather than reporting a 429 as a
   // plain, permanent-looking failure.
@@ -176,9 +197,9 @@ export default function TranslationsManager({ authMode, user }) {
       const entries = {};
       for (const k of remaining) entries[k] = translations.en[k];
 
-      const res = await base44.functions.invoke('seedUiTranslations', {
+      const res = await invokeWithTimeout('seedUiTranslations', {
         entries, target_language: targetLanguageName, apiKey: apiKeys.groq_api_key, ...authPayload,
-      });
+      }, 90000, 'Translating');
       const data = res.data || {};
       if (data.error && !data.translations) {
         failureReasons.add(data.error);
@@ -190,9 +211,9 @@ export default function TranslationsManager({ authMode, user }) {
       if (Object.keys(produced).length > 0) {
         let saveData;
         try {
-          const saveRes = await base44.functions.invoke('saveTranslationsBulk', {
+          const saveRes = await invokeWithTimeout('saveTranslationsBulk', {
             lang: langCode, entries: produced, ...authPayload,
-          });
+          }, 45000, 'Saving');
           saveData = saveRes.data || {};
         } catch (invokeErr) {
           const err = new Error(`Translations are being produced but NOT saved — saveTranslationsBulk failed (${invokeErr?.message || 'unknown error'}). Stopping rather than spending more Groq calls on translations that can't be persisted. Double-check saveTranslationsBulk is actually deployed in Base44 — it's a separate, newer function from seedUiTranslations and needs its own create-then-redeploy pass, not just a refresh.`);
@@ -231,8 +252,18 @@ export default function TranslationsManager({ authMode, user }) {
       // per-minute budget look like a permanent wall. Trust Groq's own number up to 3 minutes;
       // beyond that something bigger than a per-minute limit is going on and no wait length
       // coded here would be the right one anyway.
-      const waitMs = Math.min(Math.max(data.retry_after_ms || 10000, 3000), 180000) + 1000;
-      onProgress?.(`Rate limit reached — waiting ${Math.ceil(waitMs / 1000)}s before continuing (${rateLimited.length} string${rateLimited.length === 1 ? '' : 's'} left for ${targetLanguageName})…`);
+      const rawRetryMs = data.retry_after_ms || 0;
+      const waitMs = Math.min(Math.max(rawRetryMs || 10000, 3000), 180000) + 1000;
+      const rawRetryS = Math.ceil(rawRetryMs / 1000);
+      const waitS = Math.ceil(waitMs / 1000);
+      // When Groq's own number exceeds the 3-minute cap, say so explicitly (both live, in the
+      // progress line, and afterwards, in the warning banner — the progress line disappears the
+      // moment the run ends, so this is the only place a clamped figure survives to be read back
+      // and reported). Without this, "waiting 181s" reads as an ordinary wait when it may
+      // actually mean Groq asked for much longer than that.
+      const clamped = rawRetryMs > 180000;
+      onProgress?.(`Rate limit reached — waiting ${waitS}s before continuing${clamped ? ` (Groq actually asked for ${rawRetryS}s — capped at 3 min)` : ''} (${rateLimited.length} string${rateLimited.length === 1 ? '' : 's'} left for ${targetLanguageName})…`);
+      if (clamped) failureReasons.add(`Groq asked for a ${rawRetryS}s wait on one round (longer than the 3-minute cap) — worth noting if this keeps happening.`);
       await sleep(waitMs);
       remaining = rateLimited;
     }

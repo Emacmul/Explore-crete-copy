@@ -41,6 +41,92 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-02 (follow-up 106) — Stalled backend calls now time out instead of freezing the UI forever
+Scope: `src/components/admin/TranslationsManager.jsx` (`seedMissingForLanguage`). Frontend
+only — no backend redeploy needed.
+
+**Per Enda's report:** a French auto-translate run made real progress (199 → 153 missing,
+actual translations visible), then showed "waiting 181s before continuing…" and never
+changed again — confirmed stuck (not just slow) after 7+ minutes with the missing count
+still frozen at 153.
+
+**Root cause:** `base44.functions.invoke(...)` has no built-in timeout. Every call to
+`seedUiTranslations` and `saveTranslationsBulk` in the auto-translate loop was a bare
+`await` with nothing watching for a connection that stalls instead of erroring — if the
+underlying request just never resolves (dropped connection, hung server-side call), the
+`await` sits forever, `progressMessage` never updates because no new round ever starts or
+fails, and the screen is left showing stale "waiting 181s" text indefinitely with no error,
+no toast, nothing to act on.
+
+**What changed:** added `invokeWithTimeout(fnName, payload, timeoutMs, label)`, which races
+the real invoke call against a plain timer and throws a clear, specific error
+("...took longer than 90s with no response from the server — the connection likely
+stalled. Try Auto-translate again in a moment.") if the timer wins. Applied to both calls:
+90s for `seedUiTranslations` (a normal round, even a rate-limited one, returns in seconds;
+Base44 itself caps a backend function at 3 minutes of execution, so 90s of total silence
+from the client's side is already generous), 45s for `saveTranslationsBulk` (a small,
+paced, chunked write — should never legitimately take that long). A `seedUiTranslations`
+timeout surfaces as an ordinary per-language hiccup (not fatal — doesn't stop an
+"all languages" run); a `saveTranslationsBulk` timeout is treated the same as any other
+save failure, i.e. fatal, since it means the same "translating things that can't be saved"
+problem as a real save error.
+
+**Verified:** `npx eslint src/components/admin/TranslationsManager.jsx` clean;
+`rm -rf dist && npx vite build` completes with no errors.
+
+**Not done / worth knowing for next time:**
+- This doesn't fix WHY a connection stalls in the first place (still unclear — could be a
+  Base44-side hiccup unrelated to Groq's rate limit, since normal rate-limited responses
+  come back fine and fast). It just makes sure a stall is visible and recoverable instead of
+  an indefinite freeze.
+- `Promise.race` doesn't actually cancel the underlying `invoke()` call (the SDK's `invoke`
+  doesn't accept an `AbortSignal`) — a timed-out request may still complete server-side in
+  the background after the UI moves on. Harmless here (worst case a translation gets saved
+  a little after the UI gave up on it and Enda retries), just worth knowing if it ever
+  matters elsewhere.
+
+---
+
+## 2026-09-02 (follow-up 105) — Progress line and warning banner now show Groq's real (uncapped) wait time
+Scope: `src/components/admin/TranslationsManager.jsx` (`seedMissingForLanguage`). Frontend
+only — no backend redeploy needed.
+
+**Per Enda's report:** after follow-up 104 (70s → 3min cap), a fresh auto-translate run on
+French (153 missing strings) showed "waiting 181s before continuing…" — waited it out,
+clicked Auto-translate again, and got "waiting 181s" again, back to back, zero progress
+either time.
+
+**Why this matters:** 181s is exactly what the code's 180000ms cap produces
+(180000 + 1000 buffer, rounded up). Seeing that exact figure twice in a row is a sign the
+UI was showing the CAP, not Groq's real number — meaning Groq's actual requested wait was
+≥180s both times, and the previous version of this code had no way to show that; it just
+silently clamped it down to "181s" either way, so a 99s ask and a 900s ask would have
+looked identical on screen. Two full 3-minute-or-longer waits back to back with zero
+translated keys either time is a meaningfully different (and worse) signal than a single
+99s ask recovering — it points more toward a longer-duration limit than an ordinary
+per-minute budget, but there was no way to tell for certain without seeing the real number.
+
+**What changed:** the progress line now says explicitly when the display is capped, e.g.
+"waiting 181s before continuing (Groq actually asked for 240s — capped at 3 min) (153
+strings left for French)…". When a round is capped, that fact is also added to
+`failureReasons` so it survives into the warning banner after the run ends (the live
+progress line disappears the moment `seedMissingForLanguage` returns, in the `finally`
+block that clears `progressMessage` — the banner is the only place a viewer can read this
+back afterwards). No change to the wait logic itself, only to what's visible.
+
+**Verified:** `npx eslint src/components/admin/TranslationsManager.jsx` clean;
+`rm -rf dist && npx vite build` completes with no errors.
+
+**Not done / worth knowing for next time:**
+- Still doesn't distinguish a per-minute limit from a longer one on its own — it just stops
+  hiding the number needed to tell them apart. Next real run's actual reported figure (is
+  it, say, 190s, or is it 900s+?) is the evidence to look at.
+- Groq's console (console.groq.com) showed Enda no usage/metrics at all on his account, so
+  that avenue is a dead end for corroborating this from Groq's side — this UI change is the
+  practical substitute.
+
+---
+
 ## 2026-09-02 (follow-up 104) — Rate-limit wait ceiling raised from 70s to 3 minutes
 Scope: `src/components/admin/TranslationsManager.jsx` (`seedMissingForLanguage`). Frontend
 only — no backend redeploy needed.
