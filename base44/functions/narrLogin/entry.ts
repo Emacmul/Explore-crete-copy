@@ -23,7 +23,6 @@ Deno.serve(async (req) => {
       return Response.json({ ok: false, error: 'Email and password are required' }, { status: 400 });
     }
 
-
     const normalizedEmail = String(email).trim().toLowerCase();
 
     const matches = await base44.asServiceRole.entities.AppUser.filter({ email: normalizedEmail });
