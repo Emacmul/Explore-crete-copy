@@ -264,6 +264,7 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
         text: importedText,
         target_language: targetLanguage,
         apiKey: apiKeys.groq_api_key,
+        apiKey2: apiKeys.groq_api_key_2,
         ...getNarratorAuthPayload(),
       });
       if (response.data?.translated_text) {

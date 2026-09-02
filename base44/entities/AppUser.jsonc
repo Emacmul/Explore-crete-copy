@@ -57,6 +57,10 @@
       "type": "string",
       "description": "This admin/narrator's own Groq API key, used for the script translation feature."
     },
+    "groq_api_key_2": {
+      "type": "string",
+      "description": "Optional backup Groq API key from a SEPARATE Groq account — Groq's rate limits are per-account, so this gives a second, independent budget to fall back on automatically when the primary key hits a rate limit. Never required; blank means no backup is set."
+    },
     "narr_session_expires_at": {
       "type": "string",
       "format": "date-time",

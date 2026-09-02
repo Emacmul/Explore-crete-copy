@@ -198,7 +198,7 @@ export default function TranslationsManager({ authMode, user }) {
       for (const k of remaining) entries[k] = translations.en[k];
 
       const res = await invokeWithTimeout('seedUiTranslations', {
-        entries, target_language: targetLanguageName, apiKey: apiKeys.groq_api_key, ...authPayload,
+        entries, target_language: targetLanguageName, apiKey: apiKeys.groq_api_key, apiKey2: apiKeys.groq_api_key_2, ...authPayload,
       }, 90000, 'Translating');
       const data = res.data || {};
       if (data.error && !data.translations) {

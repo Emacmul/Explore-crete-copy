@@ -21,7 +21,7 @@ function getNarratorToken() {
 }
 
 export function useNarratorApiKeys() {
-  const [keys, setKeys] = useState({ google_tts_api_key: '', groq_api_key: '' });
+  const [keys, setKeys] = useState({ google_tts_api_key: '', groq_api_key: '', groq_api_key_2: '' });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   // True only in the instant right after a GET has actually confirmed what's on the
@@ -53,6 +53,8 @@ export function useNarratorApiKeys() {
       setKeys({
         google_tts_api_key: res?.data?.google_tts_api_key || '',
         groq_api_key: res?.data?.groq_api_key || '',
+        // Optional backup Groq key from a separate account — see groqKeyRotation.ts.
+        groq_api_key_2: res?.data?.groq_api_key_2 || '',
       });
       setDiag(res?.data?._diag || null);
       setLoadedOk(true);

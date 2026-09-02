@@ -13,7 +13,7 @@ export default async function(req) {
   try {
     const base44 = createClientFromRequest(req);
     const body = await req.json().catch(() => ({}));
-    const { action, token, google_tts_api_key, groq_api_key } = body || {};
+    const { action, token, google_tts_api_key, groq_api_key, groq_api_key_2 } = body || {};
 
     if (action !== 'get' && action !== 'save') {
       return Response.json({ error: 'action must be "get" or "save"' }, { status: 400 });
@@ -61,6 +61,9 @@ export default async function(req) {
       return Response.json({
         google_tts_api_key: record?.google_tts_api_key || '',
         groq_api_key: record?.groq_api_key || '',
+        // Optional backup Groq key from a SEPARATE Groq account — see
+        // base44/shared/groqKeyRotation.ts. Never required; blank means "no backup set".
+        groq_api_key_2: record?.groq_api_key_2 || '',
         _diag: {
           identifiedVia,
           resolvedEmail: email,
@@ -74,6 +77,7 @@ export default async function(req) {
     const updates = {};
     if (google_tts_api_key !== undefined) updates.google_tts_api_key = google_tts_api_key;
     if (groq_api_key !== undefined) updates.groq_api_key = groq_api_key;
+    if (groq_api_key_2 !== undefined) updates.groq_api_key_2 = groq_api_key_2;
 
     if (record) {
       await base44.asServiceRole.entities.AppUser.update(record.id, updates);

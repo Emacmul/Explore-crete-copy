@@ -1,5 +1,6 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 import { resolveActor } from '../../shared/backendActor.ts';
+import { callGroqWithKeyRotation } from '../../shared/groqKeyRotation.ts';
 
 // Seeds a machine-translation BASELINE for UI strings in a language that doesn't have one
 // hand-written in src/lib/i18n/index.js yet — see TranslationsManager.jsx's "Auto-translate
@@ -94,47 +95,29 @@ type GroqResult =
   | { ok: true; parsed: Record<string, unknown> }
   | { ok: false; error: string; rateLimited: boolean; retryAfterMs?: number };
 
-function parseRetryAfterMs(headerValue: string | null, message: string): number | undefined {
-  if (headerValue) {
-    const secs = parseFloat(headerValue);
-    if (!Number.isNaN(secs)) return Math.ceil(secs * 1000);
-  }
-  const m = message.match(/try again in ([0-9.]+)s/i);
-  if (m) return Math.ceil(parseFloat(m[1]) * 1000);
-  return undefined;
-}
-
-async function callGroq(sourceObj: Record<string, string>, target_language: string, apiKey: string): Promise<GroqResult> {
-  const groqResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'openai/gpt-oss-120b',
-      messages: [
-        {
-          role: 'system',
-          content: 'You are a professional UI/software localization translator. You always return strict JSON with exactly the same keys you were given, and you always leave {placeholder} tokens completely untouched — they are filled in with real data by the app, not translated.',
-        },
-        { role: 'user', content: buildPrompt(sourceObj, target_language) },
-      ],
-      temperature: 0.3,
-      response_format: { type: 'json_object' },
-      max_tokens: MAX_TOKENS_PER_CALL,
-    }),
+// apiKeys: the caller's own Groq key, plus an optional second key from a separate Groq
+// account (see groqKeyRotation.ts) — a rate limit on the first is tried against the second
+// immediately, no wait, before this whole call is reported back as rate-limited.
+async function callGroq(sourceObj: Record<string, string>, target_language: string, apiKeys: string[]): Promise<GroqResult> {
+  const result = await callGroqWithKeyRotation(apiKeys, {
+    model: 'openai/gpt-oss-120b',
+    messages: [
+      {
+        role: 'system',
+        content: 'You are a professional UI/software localization translator. You always return strict JSON with exactly the same keys you were given, and you always leave {placeholder} tokens completely untouched — they are filled in with real data by the app, not translated.',
+      },
+      { role: 'user', content: buildPrompt(sourceObj, target_language) },
+    ],
+    temperature: 0.3,
+    response_format: { type: 'json_object' },
+    max_tokens: MAX_TOKENS_PER_CALL,
   });
 
-  if (!groqResponse.ok) {
-    const errData = await groqResponse.json().catch(() => ({}));
-    const message = errData.error?.message || `Groq API returned ${groqResponse.status}`;
-    const rateLimited = groqResponse.status === 429 || /rate.?limit/i.test(message);
-    return { ok: false, error: message, rateLimited, retryAfterMs: parseRetryAfterMs(groqResponse.headers.get('retry-after'), message) };
+  if (!result.ok) {
+    return { ok: false, error: result.error || 'Groq call failed', rateLimited: !!result.rateLimited, retryAfterMs: result.retryAfterMs };
   }
 
-  const groqData = await groqResponse.json();
-  const raw = groqData.choices?.[0]?.message?.content;
+  const raw = result.data?.choices?.[0]?.message?.content;
   try {
     const parsed = raw ? JSON.parse(raw) : null;
     if (!parsed || typeof parsed !== 'object') return { ok: false, error: 'Model did not return a valid JSON object.', rateLimited: false };
@@ -155,11 +138,11 @@ interface ChunkOutcome {
 // comment above for why splitting or sleeping through a 429 in here is the wrong move). Any
 // OTHER failure (oversized/malformed response) still splits the chunk in half and retries each
 // half in turn — never in parallel — down to single keys if it has to.
-async function translateChunk(chunkKeys: string[], entries: Record<string, string>, target_language: string, apiKey: string): Promise<ChunkOutcome> {
+async function translateChunk(chunkKeys: string[], entries: Record<string, string>, target_language: string, apiKeys: string[]): Promise<ChunkOutcome> {
   const sourceObj: Record<string, string> = {};
   for (const k of chunkKeys) sourceObj[k] = entries[k];
 
-  const result = await callGroq(sourceObj, target_language, apiKey);
+  const result = await callGroq(sourceObj, target_language, apiKeys);
 
   if (result.ok) {
     const translated: Record<string, string> = {};
@@ -181,8 +164,8 @@ async function translateChunk(chunkKeys: string[], entries: Record<string, strin
 
   if (chunkKeys.length > 1) {
     const mid = Math.ceil(chunkKeys.length / 2);
-    const first = await translateChunk(chunkKeys.slice(0, mid), entries, target_language, apiKey);
-    const second = await translateChunk(chunkKeys.slice(mid), entries, target_language, apiKey);
+    const first = await translateChunk(chunkKeys.slice(0, mid), entries, target_language, apiKeys);
+    const second = await translateChunk(chunkKeys.slice(mid), entries, target_language, apiKeys);
     const retryAfterMs = first.retryAfterMs ?? second.retryAfterMs;
     return {
       translated: { ...first.translated, ...second.translated },
@@ -199,7 +182,7 @@ Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
     const body = await req.json();
-    const { entries, target_language, apiKey } = body;
+    const { entries, target_language, apiKey, apiKey2 } = body;
 
     // Admin, or narrator via email+narrToken — same gate as translateScript, for the same
     // reason: without it this triggers a Groq call (billed to the caller's own key, but
@@ -218,6 +201,10 @@ Deno.serve(async (req) => {
     if (!apiKey || !apiKey.trim()) {
       return Response.json({ error: 'No Groq API key found for your account. Add your own key under "API Keys" in the Admin Panel header.' }, { status: 400 });
     }
+    // apiKey2 is an optional second key from a SEPARATE Groq account — see
+    // groqKeyRotation.ts. When set, a rate limit on the primary key is tried against this
+    // one immediately (no wait) before the whole call is reported back as rate-limited.
+    const apiKeys = [apiKey, apiKey2].map(k => (k || '').trim()).filter(Boolean);
 
     const keys = Object.keys(entries);
     const chunks = buildChunks(keys, entries);
@@ -231,7 +218,7 @@ Deno.serve(async (req) => {
     // Sequential on purpose — running chunks concurrently would only burn through the same
     // shared per-minute token budget faster and cause MORE 429s, not fewer.
     for (const chunkKeys of chunks) {
-      const outcome = await translateChunk(chunkKeys, entries, target_language, apiKey);
+      const outcome = await translateChunk(chunkKeys, entries, target_language, apiKeys);
       for (const [k, v] of Object.entries(outcome.translated)) {
         translated[k] = v;
         const missing = findUnpreservedPlaceholders(entries[k], v);

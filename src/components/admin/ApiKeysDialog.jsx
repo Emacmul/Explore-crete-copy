@@ -16,8 +16,10 @@ export default function ApiKeysDialog({ open, onOpenChange, required = false, on
   const { keys, loading, error: loadError, loadedOk, saveKeys, reload } = useNarratorApiKeys();
   const [googleKey, setGoogleKey] = useState('');
   const [groqKey, setGroqKey] = useState('');
+  const [groqKey2, setGroqKey2] = useState('');
   const [showGoogle, setShowGoogle] = useState(false);
   const [showGroq, setShowGroq] = useState(false);
+  const [showGroq2, setShowGroq2] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
@@ -34,15 +36,16 @@ export default function ApiKeysDialog({ open, onOpenChange, required = false, on
     if (!loading) {
       setGoogleKey(keys.google_tts_api_key || '');
       setGroqKey(keys.groq_api_key || '');
+      setGroqKey2(keys.groq_api_key_2 || '');
     }
-  }, [loading, keys.google_tts_api_key, keys.groq_api_key]);
+  }, [loading, keys.google_tts_api_key, keys.groq_api_key, keys.groq_api_key_2]);
 
   const handleSave = async () => {
     setError('');
     setSaved(false);
     setSaving(true);
     try {
-      await saveKeys({ google_tts_api_key: googleKey.trim(), groq_api_key: groqKey.trim() });
+      await saveKeys({ google_tts_api_key: googleKey.trim(), groq_api_key: groqKey.trim(), groq_api_key_2: groqKey2.trim() });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
       onSaved?.();
@@ -129,6 +132,31 @@ export default function ApiKeysDialog({ open, onOpenChange, required = false, on
                   </Button>
                 </div>
                 {loadedOk && !keys.groq_api_key && <p className="text-xs text-slate-500 mt-1">No key saved yet.</p>}
+              </div>
+
+              <div>
+                <Label className="text-slate-300 text-sm mb-1.5 block">
+                  Groq API Key 2 <span className="text-slate-500 font-normal">(optional — backup account)</span>
+                </Label>
+                <div className="flex gap-2">
+                  <Input
+                    type={showGroq2 ? 'text' : 'password'}
+                    value={groqKey2}
+                    onChange={e => setGroqKey2(e.target.value)}
+                    placeholder="Paste a second Groq key from a separate account"
+                    className="bg-slate-700 border-slate-500 text-white font-mono text-sm"
+                    autoComplete="off"
+                    disabled={!loadedOk}
+                  />
+                  <Button type="button" variant="outline" size="icon" className="border-slate-500 shrink-0" onClick={() => setShowGroq2(s => !s)}>
+                    {showGroq2 ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </Button>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  Groq's rate limits are per-account — a key from a second, separate Groq
+                  account is automatically tried whenever the first one is rate-limited.
+                  Entirely optional.
+                </p>
               </div>
 
               {error && (

@@ -41,6 +41,69 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-02 (follow-up 107) — Optional second Groq key auto-hops when the first is rate-limited
+Scope: **NEW shared backend file** `base44/shared/groqKeyRotation.ts`;
+`base44/functions/seedUiTranslations/entry.ts` (**needs the redeploy dance**);
+`base44/functions/translateScript/entry.ts` (**needs the redeploy dance**);
+`base44/functions/manageApiKeys/entry.ts` (**needs the redeploy dance**);
+`base44/entities/AppUser.jsonc` (**new entity field — check this is applied in Base44,
+same as any schema change, not just a function redeploy**); `src/lib/useNarratorApiKeys.js`,
+`src/components/admin/ApiKeysDialog.jsx`, `src/components/admin/TranslationsManager.jsx`,
+`src/components/admin/TranslationPanel.jsx` (all frontend-only).
+
+**Per Enda's own idea:** after hitting a genuine, sustained Groq rate limit (see follow-ups
+104-106) that turned out to be much bigger than a per-minute budget (a 1262-second/~21-
+minute wait reported by Groq itself), Enda asked whether the app could use a second Groq
+account's key as a fallback, "hopping" to it automatically when the first runs out —
+since Groq's limits are per-account, a second free account is a genuinely separate budget,
+at no cost.
+
+**What changed:**
+- New shared helper `callGroqWithKeyRotation(apiKeys, requestBody)` (`groqKeyRotation.ts`):
+  tries each configured key in order against Groq; on an actual rate limit (429, or a
+  message containing "rate limit") it moves to the next key immediately, no wait, since a
+  different account's budget doesn't need time to "refill" — it's already separate. A
+  non-rate-limit error (bad request, invalid key) still returns immediately without trying
+  further keys, since another key wouldn't fix a real error and silently masking one would
+  hide a genuine mistake. If every configured key comes back rate-limited, reports the
+  SHORTEST wait seen across them (whichever key clears first is enough to resume).
+- `seedUiTranslations` and `translateScript` both now accept an optional `apiKey2` body
+  param alongside the existing required `apiKey`, and both route their Groq calls through
+  the new shared helper instead of a raw `fetch`.
+- `manageApiKeys` reads/writes a new `groq_api_key_2` field on `AppUser`, alongside the
+  existing `groq_api_key` — same get/save shape, same per-caller (admin or narrator)
+  storage, entirely optional (blank = no backup configured).
+- `ApiKeysDialog.jsx` ("API Keys" in the Admin Panel header) gets a new, clearly-optional
+  "Groq API Key 2 (backup account)" field, with a one-line explanation of what it does.
+  Never part of the "required" gate — only the original Google TTS + Groq keys are
+  mandatory to continue.
+- `TranslationsManager.jsx` and `TranslationPanel.jsx` both now pass `apiKey2` through to
+  their respective backend calls whenever it's set.
+
+**Why the shared helper (new file), not inlined twice:** both `seedUiTranslations` and
+`translateScript` need the exact same "try key, hop to the next on rate limit, keep the
+shortest wait if all are exhausted" logic — duplicating it would mean the next bug fix (or
+next follow-up like this one) has to happen twice and risks drifting out of sync.
+
+**Verified:** `npx eslint` clean on every changed frontend file;
+`npx esbuild ... --platform=neutral --target=es2022` (no Deno runtime available in this
+sandbox) succeeds on every changed/new backend file; `rm -rf dist && npx vite build`
+completes with no errors.
+
+**Not done / worth knowing for next time:**
+- Not tested live against Groq — no way to do that in this sandbox. First real test is
+  Enda setting up a genuinely separate Groq account (different email), pasting its key into
+  the new "Groq API Key 2" field, and running Auto-translate again while the first key is
+  still rate-limited.
+- Only supports exactly two keys (primary + one backup), not an arbitrary list — matches
+  what was actually asked for; extending to more would mean a small UI/schema change if
+  ever needed.
+- `groq_api_key_2` is a new entity field on `AppUser` — this needs to actually exist in
+  Base44's schema for `manageApiKeys` to read/write it successfully, same as any other
+  entity change; check this went through, not just the function redeploys.
+
+---
+
 ## 2026-09-02 (follow-up 106) — Stalled backend calls now time out instead of freezing the UI forever
 Scope: `src/components/admin/TranslationsManager.jsx` (`seedMissingForLanguage`). Frontend
 only — no backend redeploy needed.
