@@ -52,6 +52,57 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-02 (follow-up 114) — Placeholder warning was stale, not live; Google outage message was still cryptic
+Scope: `src/lib/utils.js` (one more recognized pattern in `humanizeFnError`);
+`src/components/admin/TranslationsManager.jsx`. Frontend-only — no redeploy needed.
+
+**Per Enda's report:** two things, back to back. First, a warning about a
+"{placeholder}" token sat on the Portuguese tab even though the status line right above
+it said every string already had a baseline — "more cryptic scare mongering?" Then, mid
+Auto-translate on Italian, the same banner showed "Google fallback: The service is
+currently unavailable" and Enda asked plainly: "Google service not available???"
+
+**Issue 1 — the placeholder warning was a leftover snapshot, not a live check.** It only
+ever got set right after an Auto-translate run finished, and only got cleared by
+switching language tabs or starting a new run — so if that run happened while already
+sitting on a tab (e.g. "Auto-translate all languages" run from the Portuguese tab), the
+warning just sat there afterward with nothing to actually clear it, even once that
+language was completely done. It looked like a live problem when it was really old news.
+Per Enda's own diagnosis ("I think it has to do with the fact that the language had
+already been translated") — exactly right.
+
+Fixed by replacing it with a live check: `placeholderIssues` (a `useMemo` in
+`TranslationsManager.jsx`) now re-reads the CURRENTLY SAVED text for every key, every
+render, and only ever lists something that's actually still true right now. It clears
+itself the moment it's fixed — by a rerun, or by anyone just hand-editing the box — and
+it also catches a hand-typed correction that accidentally dropped a `{placeholder}`,
+which the old run-only check never could. Given its own separate, calm panel (same
+blue-grey tone as the ordinary status boxes, not the amber "something's wrong" one),
+explains in plain words what a placeholder even is, and shows the actual English text
+next to each flagged key instead of a bare key name — plus a small badge directly on the
+affected row, right where it'd get fixed. The real failure banner (`seedWarning`) now
+only ever holds genuine failures, never this.
+
+**Issue 2 — "The service is currently unavailable" is Google's own wording**, returned
+as-is when their Translate API has a brief hiccup — not a problem with Enda's key,
+billing, or setup, but reads exactly like one out of context. `humanizeFnError` (from
+follow-up 113) now recognizes this specific Google message and rewrites it: says plainly
+it's Google's own brief outage, not your account; usually clears in a few minutes; try
+again shortly; and if it keeps recurring, worth checking the Cloud Translation API is
+still enabled on that project. This is the same central helper `TranslationPanel.jsx`
+already uses, so Narrate & Simulate gets the clearer wording too, automatically.
+
+**Also while in here:** every remaining raw `data.failure_reasons` / `saveData.errors` /
+caught-error message in `TranslationsManager.jsx` now goes through `humanizeFnError` /
+`getFnErrorMessage` too, closing a few more spots that were still showing a raw backend
+string unchanged.
+
+**Verified:** `npx eslint` clean; `npx vite build` completes with no errors. Not tested
+against a real live Google outage or a real placeholder-drift case — worth watching next
+time either comes up, to confirm the new panel/message actually appear as intended.
+
+---
+
 ## 2026-09-02 (follow-up 113) — No more cryptic "Rate limit exceeded" — clear messages, auto-retry
 Scope: `src/lib/utils.js` (`getFnErrorMessage` rewritten, `humanizeFnError` +
 `isRecognizedFnErrorMessage` added — used automatically by every file that already

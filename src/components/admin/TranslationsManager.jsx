@@ -65,6 +65,30 @@ export default function TranslationsManager({ authMode, user }) {
   );
   const englishSource = (key) => translations.en[key] ?? '';
 
+  // Live check, not a leftover note from whenever Auto-translate last ran: a
+  // "{placeholder}" is a bit like {label} or {total} that the app swaps for a real word
+  // or number when it runs — a translation needs to keep that exact bit untouched. Per
+  // Enda's report (2026-09-02): a warning about this used to only show right after an
+  // Auto-translate run, and stuck around even once every string for that language was
+  // already done — confusing, since it looked like a live problem when it was really
+  // just a note from an earlier run. This instead re-checks the CURRENTLY SAVED text for
+  // every key, every time — so it only ever shows something that's actually still true
+  // right now, and clears itself the moment it's fixed (by anyone, hand-edit or rerun).
+  const PLACEHOLDER_RE = /\{[a-zA-Z0-9_]+\}/g;
+  const placeholderIssues = useMemo(() => {
+    if (activeLang === 'en') return [];
+    const issues = [];
+    for (const key of Object.keys(translations.en)) {
+      const english = translations.en[key] || '';
+      const tokens = [...new Set(english.match(PLACEHOLDER_RE) || [])];
+      if (tokens.length === 0) continue;
+      const current = currentValue(activeLang, key);
+      const missing = tokens.filter((t) => !current.includes(t));
+      if (missing.length > 0) issues.push({ key, english, current, missing });
+    }
+    return issues;
+  }, [activeLang, overrides]);
+
   const draftValue = (lang, key) => {
     if (drafts[lang] && drafts[lang][key] !== undefined) return drafts[lang][key];
     return currentValue(lang, key);
@@ -188,7 +212,6 @@ export default function TranslationsManager({ authMode, user }) {
     let totalFailed = 0;
     let totalGoogleFallback = 0;
     const failureReasons = new Set();
-    const placeholderWarnings = [];
     // Per Enda: this only needs to run once per language, and he'd rather wait it out than pay
     // Groq for a higher rate limit — so this is generous on purpose. Worst case (a full ~200-key
     // language, badly depleted budget, ~3min waits each round) is roughly 15 rounds * ~3min ≈
@@ -264,12 +287,18 @@ export default function TranslationsManager({ authMode, user }) {
           err.fatal = true;
           throw err;
         }
-        (saveData.errors || []).forEach(e => failureReasons.add(e.error || String(e)));
+        (saveData.errors || []).forEach(e => failureReasons.add(humanizeFnError(e.error || String(e))));
         totalSaved += saveData.saved || 0;
         if ((saveData.saved || 0) > 0) await onSaved?.();
       }
-      (data.failure_reasons || []).forEach(r => failureReasons.add(r));
-      if (data.placeholder_warning) placeholderWarnings.push(data.placeholder_warning);
+      (data.failure_reasons || []).forEach(r => failureReasons.add(humanizeFnError(r)));
+      // Note on data.placeholder_warning: deliberately NOT surfaced here anymore. It used
+      // to get shown as a persistent warning right after this run — but per Enda's report,
+      // that stuck around even once the language was fully done, looking like a live
+      // problem when it was really just a note from whenever this last ran. The
+      // placeholderIssues check (above, in the component body) covers the same ground
+      // properly: it re-checks the CURRENTLY saved text every time, for every key, so it
+      // only ever shows something that's actually still true right now.
 
       const rateLimited = data.rate_limited_keys || [];
       const otherFailedCount = (data.failed_keys?.length || 0) - rateLimited.length;
@@ -313,7 +342,7 @@ export default function TranslationsManager({ authMode, user }) {
       remaining = rateLimited;
     }
 
-    return { totalSaved, totalFailed, totalGoogleFallback, failureReasons: [...failureReasons], placeholderWarnings };
+    return { totalSaved, totalFailed, totalGoogleFallback, failureReasons: [...failureReasons] };
   };
 
   // Auto-translate every key currently falling back to raw English for activeLang, and save
@@ -332,15 +361,14 @@ export default function TranslationsManager({ authMode, user }) {
     setSeeding(true);
     setSeedWarning('');
     try {
-      const { totalSaved, totalFailed, totalGoogleFallback, failureReasons, placeholderWarnings } = await seedMissingForLanguage(
+      const { totalSaved, totalFailed, totalGoogleFallback, failureReasons } = await seedMissingForLanguage(
         activeLang, targetLanguageName, missingKeysForLang, authPayload, setProgressMessage, refreshOverrides
       );
       toast({
         title: 'Auto-translated',
         description: `Seeded ${totalSaved} of ${missingKeysForLang.length} missing strings for ${targetLanguageName}.${totalGoogleFallback ? ` (${totalGoogleFallback} via Google fallback, Groq was rate-limited.)` : ''}${totalFailed ? ` ${totalFailed} couldn't be translated — fill those in by hand.` : ''}`,
       });
-      const warnings = [...placeholderWarnings, ...failureReasons];
-      if (warnings.length > 0) setSeedWarning(warnings.join(' '));
+      if (failureReasons.length > 0) setSeedWarning(failureReasons.join(' '));
       await refreshOverrides();
     } catch (err) {
       toast({ variant: 'destructive', title: 'Auto-translate failed', description: getFnErrorMessage(err) });
@@ -380,7 +408,7 @@ export default function TranslationsManager({ authMode, user }) {
         setProgressMessage(`Translating ${l.native} — ${missing.length} string${missing.length === 1 ? '' : 's'} (language ${languagesTouched} of ${targets.length})…`);
 
         try {
-          const { totalSaved, totalFailed: langFailed, totalGoogleFallback, failureReasons, placeholderWarnings } = await seedMissingForLanguage(
+          const { totalSaved, totalFailed: langFailed, totalGoogleFallback, failureReasons } = await seedMissingForLanguage(
             l.code, targetLanguageName, missing, authPayload,
             (msg) => setProgressMessage(`${l.native}: ${msg}`),
             refreshOverrides
@@ -389,8 +417,8 @@ export default function TranslationsManager({ authMode, user }) {
           totalFailed += langFailed;
           totalGoogleFallbackAll += totalGoogleFallback;
           failureReasons.forEach(r => warnings.push(`${l.native}: ${r}`));
-          placeholderWarnings.forEach(w => warnings.push(`${l.native}: ${w}`));
         } catch (langErr) {
+          const humanized = getFnErrorMessage(langErr);
           if (langErr?.fatal) {
             // Saving itself is broken — every remaining language would hit the exact same wall,
             // so stop here instead of quietly burning through 20 more Groq passes for nothing
@@ -398,15 +426,15 @@ export default function TranslationsManager({ authMode, user }) {
             // with nothing persisted). Refresh first so whatever DID save before this shows up.
             await refreshOverrides();
             totalFailed += missing.length;
-            warnings.push(`${l.native}: ${langErr.message}`);
-            toast({ variant: 'destructive', title: 'Auto-translate stopped', description: langErr.message });
+            warnings.push(`${l.native}: ${humanized}`);
+            toast({ variant: 'destructive', title: 'Auto-translate stopped', description: humanized });
             break;
           }
           // An ordinary per-language hiccup (not a save failure) shouldn't stop the rest — it's
           // simply left missing, and can be retried later from its own tab or by running "all
           // languages" again.
           totalFailed += missing.length;
-          warnings.push(`${l.native}: auto-translate failed — ${langErr?.message || 'unknown error'}.`);
+          warnings.push(`${l.native}: auto-translate failed — ${humanized}`);
         }
       }
 
@@ -481,10 +509,30 @@ export default function TranslationsManager({ authMode, user }) {
         </div>
       )}
 
+      {/* Calmer, separate from seedWarning above on purpose: nothing failed here, and
+          nothing needs redoing — this is a live, always-current "worth a glance" note,
+          not an alarm. It's the SAME blue-grey tone as the ordinary status boxes above,
+          not the amber/red used for a real problem. */}
+      {placeholderIssues.length > 0 && (
+        <div className="bg-slate-800/60 border border-slate-700 rounded-xl px-4 py-3 text-xs text-slate-300 space-y-2">
+          <p>
+            {placeholderIssues.length} string{placeholderIssues.length === 1 ? '' : 's'} in {LANGUAGE_NAME_BY_CODE[activeLang] || activeLang} {placeholderIssues.length === 1 ? 'is' : 'are'} missing a "placeholder" — a bit like <code className="text-slate-200 bg-slate-900/60 px-1 rounded">{'{label}'}</code> that the app fills in with a real word or number when it runs. Nothing is broken and nothing needs redoing — just open the string below, and put the missing bit back in wherever it reads naturally.
+          </p>
+          <ul className="space-y-1">
+            {placeholderIssues.map(({ key, english, missing }) => (
+              <li key={key}>
+                <span className="font-mono text-slate-500">{key}</span> is missing <span className="text-amber-300">{missing.join(', ')}</span> — EN: “{english}”
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="space-y-2">
         {keys.map(key => {
           const dirty = isDirty(activeLang, key);
           const ov = hasOverride(activeLang, key);
+          const placeholderIssue = placeholderIssues.find(i => i.key === key);
           return (
             <div key={key} className="bg-slate-800 border border-slate-700 rounded-xl p-3">
               <div className="flex items-center gap-2 mb-2">
@@ -492,6 +540,11 @@ export default function TranslationsManager({ authMode, user }) {
                 {ov && <Badge className="text-[10px] bg-purple-900 text-purple-300 border-purple-700">edited</Badge>}
                 {dirty && <Badge className="text-[10px] bg-amber-900 text-amber-300 border-amber-700">unsaved</Badge>}
                 {isMissing(activeLang, key) && <Badge className="text-[10px] bg-slate-700 text-slate-400 border-slate-600">English fallback</Badge>}
+                {placeholderIssue && (
+                  <Badge className="text-[10px] bg-slate-700 text-slate-300 border-slate-600" title={`Missing ${placeholderIssue.missing.join(', ')} — see the note above the list.`}>
+                    missing {placeholderIssue.missing.join(', ')}
+                  </Badge>
+                )}
               </div>
               <p className="text-xs text-slate-500 mb-1.5">EN: {englishSource(key)}</p>
               <div className="flex items-start gap-2">

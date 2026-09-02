@@ -61,6 +61,14 @@ export function humanizeFnError(raw) {
   if (/^not authorized$/i.test(msg)) {
     return 'Your Narr Studio login session has expired or wasn\'t recognized. Log out and back in, then try again.';
   }
+  // Google's OWN wording when ITS translation service has a brief hiccup — this is not
+  // about your key, billing, or setup, but on its own ("The service is currently
+  // unavailable") it reads exactly like something's wrong with your account. Rewritten
+  // before the general "mentions Google, so it's already clear" passthrough below,
+  // which would otherwise let this raw, alarming-sounding line straight through.
+  if (/service is currently unavailable/i.test(msg)) {
+    return 'Google\'s translation service had a brief hiccup on their end just now — not a problem with your key, billing, or setup. It usually clears within a few minutes; try again shortly. If it keeps happening, worth double-checking the Cloud Translation API is still enabled on that Google Cloud project.';
+  }
   if (isRecognizedFnErrorMessage(msg)) return msg;
   // Most often this is Base44's own server briefly limiting how many actions can happen
   // per minute (not Groq, not Google — every real message from either of those already
