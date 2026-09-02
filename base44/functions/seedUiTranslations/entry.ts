@@ -77,7 +77,6 @@ function buildChunks(keys: string[], entries: Record<string, string>): string[][
   return chunks;
 }
 
-
 function buildPrompt(sourceObj: Record<string, string>, target_language: string): string {
   return `Translate the string VALUES in this JSON object from English into ${target_language}. Keep the JSON keys exactly as given, unchanged.
 
