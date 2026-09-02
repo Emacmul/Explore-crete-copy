@@ -30,7 +30,6 @@ function findUnpreservedPlaceholders(original: string, translated: string): stri
   return missing;
 }
 
-
 // First real run of this (Enda, seeding Dutch): a 95-key pass chunked at a flat 40 keys/call
 // came back "seeded 15 of 95" — both 40-key chunks failed outright, only the trailing 15-key
 // chunk went through. That's not random flakiness, it's the exact failure mode translateScript's
