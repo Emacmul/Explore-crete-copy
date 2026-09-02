@@ -41,6 +41,92 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-02 (follow-up 99) — Translation now explicitly preserves inline foreign-script pronunciation-dictionary words
+Scope: `base44/functions/translateScript/entry.ts` (**backend function change —
+needs the usual blank-line redeploy dance**), `src/components/admin/TranslationPanel.jsx`.
+
+**Per Enda's report:** a narrator's source script can contain individual words/names
+already written in their own original script — Greek, Cyrillic, Turkish, Italian,
+Arabic — specifically so the pronunciation dictionary can catch them (see follow-ups
+92/98). When Groq translates the surrounding English into the narrator's language,
+those words must survive completely untouched — no translation, no transliteration —
+or the exact-spelling match the dictionary depends on breaks silently.
+
+**What changed:**
+- The Groq prompt (both the system message and the numbered rules) now explicitly
+  calls this out as its own rule, alongside the existing `<break>`-tag rule: copy any
+  inline Greek/Cyrillic/Turkish/Italian/Arabic word through completely unchanged, same
+  script and spelling, in place — even when the target language happens to use that
+  same script.
+- Added a mechanical, best-effort safety net on top of the prompt (an LLM instruction
+  alone is not a guarantee): `findUnpreservedForeignWords` pulls every run of Greek,
+  Cyrillic, or Arabic characters out of the ORIGINAL text and confirms each one still
+  appears verbatim in the translated result. If any don't, the response carries a
+  `preservation_warning` naming the specific word(s) — the translation still succeeds
+  and loads normally, this is a flag to double-check, not a block. Turkish and Italian
+  names use ordinary Latin letters, so there's no script-based way to mechanically
+  verify those the same way — the prompt instruction is their only defence, same as
+  any other wording choice the model makes.
+- `TranslationPanel.jsx`'s `handleTranslate` now reads `preservation_warning` off the
+  response and shows it in a new amber warning box (distinct from the existing red
+  error box) right under Translate & Load, cleared on a fresh import or a new
+  translate attempt.
+
+**Verified:** `npx eslint src/components/admin/TranslationPanel.jsx` clean.
+`base44/functions/translateScript/entry.ts` has no Deno runtime available to test
+directly in this sandbox, so parsed with `npx esbuild` (a real TS/JS parser, not a
+hand-rolled brace check) — clean, no syntax errors. `rm -rf dist && npx vite build` —
+clean production build.
+
+**Backend function touched — `translateScript` needs the redeploy dance** (blank
+line → redeploy → remove blank line → redeploy) before this takes effect; no new
+secrets required, it only reuses the existing Groq key flow.
+
+---
+
+## 2026-09-02 (follow-up 98) — Verified narrators already get the same pronunciation dictionary access as admins (no code change)
+Scope: none — verification only, across `PronunciationDictionaryDialog.jsx`,
+`TtsSegmentCard.jsx`, `WaypointPaceEditor.jsx`, `NarrationTtsEditor.jsx`,
+`TourSimulator.jsx`, `WalkEditor.jsx`, and `pronunciationDictionary/entry.ts`.
+
+**Per Enda's report:** Anoushka often finds a Greek name Enda forgot to also write in
+Greek script for the pronunciation dictionary to catch — right now she has to message
+him, and he's not always able to unlock/fix/redeploy quickly. Asked for narrators to
+get the same pronunciation dictionary access admins have, so a narrator can fix this
+herself the moment she spots it.
+
+**Finding:** this was already true as of follow-up 92, by design, not by accident —
+traced the whole path and confirmed no role check blocks a narrator anywhere in it:
+- `pronunciationDictionary/entry.ts`'s `resolveActor(base44, body)` already grants
+  `{kind:'admin'}` OR `{kind:'narrator', email}` equally for every action (list,
+  create, update) — its own comment says so explicitly: "Anyone already allowed to
+  touch a tour's narration... is allowed to read and write this dictionary."
+  LinguaGloss itself is reached through ONE fixed service-level API key
+  (LINGUAGLOSS_API_KEY, a secret on this app) regardless of who's calling — there's no
+  separate narrator-vs-admin credential to LinguaGloss at all.
+- `PronunciationDictionaryDialog.jsx` sends `...getNarratorAuthPayload()` on every
+  single call (list/create/update) unconditionally — no `isNarrator` branch anywhere
+  in the file.
+- Its two mount points, `TtsSegmentCard.jsx` and `WaypointPaceEditor.jsx`, render the
+  Dictionary button with no role gating either.
+- Those two components are exactly what a narrator's own "Narration & Simulate" tab
+  shows (`TourSimulator.jsx`, via `NarrationTtsEditor`/`WaypointPaceEditor`) — traced
+  `WalkEditor.jsx`'s tab list (narrators never get the Waypoints tab at all, but DO
+  get "Narration & Simulate" for a driving audio tour) and `TourSimulator.jsx`'s own
+  render of both editors: identical for `isNarrator` true or false, the only
+  `isNarrator` differences nearby being the unrelated "only an Admin can unlock a Done
+  waypoint" rule.
+
+**What this means for Enda:** nothing to redeploy differently for narrators — the
+one real prerequisite is that `pronunciationDictionary` itself has to be live (the
+usual one-time blank-line redeploy dance, plus the two LinguaGloss secrets added in
+Dashboard → Secrets) for it to work for ANYONE, admin or narrator alike. Once that's
+done, Anoushka opens a waypoint's script in Narration & Simulate exactly as she
+already does, clicks the same Dictionary button an admin would, and can add/fix the
+Greek spelling herself — no message to Enda needed.
+
+---
+
 ## 2026-09-01 (follow-up 97) — Fixed the Waypoints tab "jumps to a random waypoint" bug after Save Route
 Scope: `src/components/admin/DrivingTourWaypointEditor.jsx` only.
 

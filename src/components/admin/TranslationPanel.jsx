@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { LANGUAGES } from '@/lib/languages';
 import { base44 } from '@/api/base44Client';
-import { Upload, Loader2, Languages, FileText, ArrowRight } from 'lucide-react';
+import { Upload, Loader2, Languages, FileText, ArrowRight, AlertTriangle } from 'lucide-react';
 import { extractTextFromFile } from '@/lib/fileTextExtractor';
 import { useNarratorApiKeys } from '@/lib/useNarratorApiKeys';
 import { getFnErrorMessage } from '@/lib/utils';
@@ -106,6 +106,12 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
   const [translating, setTranslating] = useState(false);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState('');
+  // Per Enda: some names in the source script are deliberately left in their own
+  // original script (Greek, Cyrillic, Arabic) for the pronunciation dictionary to catch
+  // — translateScript's own backend check (see its entry.ts) flags it here if one of
+  // those doesn't survive translation intact, so a narrator can fix the spelling before
+  // relying on it, rather than never knowing anything went wrong.
+  const [preservationWarning, setPreservationWarning] = useState('');
   const fileInputRef = useRef(null);
 
   const handleImport = async (e) => {
@@ -113,6 +119,7 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
     if (!file) return;
     manualImportRef.current = true; // a real manual pick always wins — see the depository effect below
     setError('');
+    setPreservationWarning('');
     setDepositoryFileName('');
     setImporting(true);
     try {
@@ -201,6 +208,7 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
     }
     if (isNoOpTranslation) {
       setError('');
+      setPreservationWarning('');
       onTranslated(importedText);
       return;
     }
@@ -209,6 +217,7 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
       return;
     }
     setError('');
+    setPreservationWarning('');
     setTranslating(true);
     try {
       const response = await base44.functions.invoke('translateScript', {
@@ -219,6 +228,9 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
       });
       if (response.data?.translated_text) {
         onTranslated(response.data.translated_text);
+        if (response.data?.preservation_warning) {
+          setPreservationWarning(response.data.preservation_warning);
+        }
       } else {
         setError('Translation returned no text.');
       }
@@ -314,6 +326,13 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
       {error && (
         <div className="text-red-400 text-xs bg-red-900/30 border border-red-700/50 rounded-md px-2.5 py-1.5">
           {error}
+        </div>
+      )}
+
+      {preservationWarning && (
+        <div className="flex items-start gap-1.5 text-amber-300 text-xs bg-amber-900/20 border border-amber-700/50 rounded-md px-2.5 py-1.5">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+          <span>{preservationWarning}</span>
         </div>
       )}
     </div>

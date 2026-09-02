@@ -1,6 +1,34 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.38';
 import { resolveActor } from '../../shared/backendActor.ts';
 
+// Per Enda: some words/names in the English source script are deliberately written in
+// their OWN original script (Greek, Cyrillic, Arabic) rather than English, specifically
+// so the pronunciation dictionary (see pronunciationDictionary/entry.ts) can recognise
+// them later — that only works if the exact spelling survives translation untouched.
+// The prompt below tells the model this explicitly, but an LLM instruction is not a
+// guarantee, and a silently "translated" or transliterated name would quietly break
+// pronunciation for that word with no visible sign anything went wrong. This is a cheap,
+// mechanical double-check on top of the prompt: pull out every run of Greek, Cyrillic, or
+// Arabic letters from the ORIGINAL text, and after translation confirm each one still
+// appears verbatim somewhere in the result. Turkish and Italian names use ordinary Latin
+// letters, so there's no equivalent script-based way to detect those mechanically — the
+// prompt instruction is the only defence for them, same as it always was for every other
+// wording choice the model makes.
+const GREEK_RANGE = '\\u0370-\\u03FF\\u1F00-\\u1FFF';
+const CYRILLIC_RANGE = '\\u0400-\\u04FF';
+const ARABIC_RANGE = '\\u0600-\\u06FF';
+const FOREIGN_SCRIPT_WORD_RE = new RegExp(`[${GREEK_RANGE}${CYRILLIC_RANGE}${ARABIC_RANGE}]{2,}`, 'gu');
+
+function findUnpreservedForeignWords(original: string, translated: string): string[] {
+  const originalWords = new Set(original.match(FOREIGN_SCRIPT_WORD_RE) || []);
+  if (originalWords.size === 0) return [];
+  const missing: string[] = [];
+  for (const word of originalWords) {
+    if (!translated.includes(word)) missing.push(word);
+  }
+  return missing;
+}
+
 Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
@@ -32,10 +60,11 @@ Deno.serve(async (req) => {
 
 CRITICAL RULES:
 1. Preserve ALL <break> tags EXACTLY as they are — same tag, same duration. Do not modify, move, translate, or remove them.
-2. Only translate the spoken narration text between the break tags.
-3. Keep the translation natural and conversational, suitable for spoken audio narration.
-4. If the script starts with a title line, translate the title too.
-5. Return ONLY the translated text with break tags preserved. No explanations, no markdown, no commentary — just the translated script.
+2. The script may contain a handful of individual words or names written in a script OTHER than English — Greek letters, Cyrillic, Turkish, Italian, or Arabic — sitting inline among the otherwise-English sentence, for example a place or person's name. These are deliberately written in their original language and script so a pronunciation dictionary can recognise them later; that only works if the EXACT original spelling survives. Copy every one of these words through completely unchanged — same characters, same script, same spelling, in the same place in the sentence. NEVER translate them, NEVER transliterate them into ${target_language}'s script or into English, and NEVER replace them with a translated or "corrected" version, even where you recognise what the word means or the target language could plausibly use its own name for it. This rule applies even when ${target_language} itself uses that same script — still copy the word exactly as given rather than retyping it.
+3. Only translate the spoken narration text around those preserved words and between the break tags.
+4. Keep the translation natural and conversational, suitable for spoken audio narration.
+5. If the script starts with a title line, translate the title too (still preserving any inline foreign-script words per rule 2).
+6. Return ONLY the translated text with break tags and any preserved foreign-script words intact. No explanations, no markdown, no commentary — just the translated script.
 
 Script:
 ${text}`;
@@ -57,7 +86,7 @@ ${text}`;
         messages: [
           {
             role: 'system',
-            content: 'You are a professional translator for audio narration scripts. You always preserve SSML <break> tags exactly as written.',
+            content: 'You are a professional translator for audio narration scripts. You always preserve SSML <break> tags exactly as written, and you always leave any inline word or name already written in a non-English script (Greek, Cyrillic, Turkish, Italian, Arabic) completely untouched, in its original script and spelling, rather than translating or transliterating it — those words drive a pronunciation dictionary that only matches an exact original spelling.',
           },
           { role: 'user', content: prompt },
         ],
@@ -90,7 +119,20 @@ ${text}`;
       return Response.json({ error: 'No translation returned' }, { status: 500 });
     }
 
-    return Response.json({ translated_text: translatedText.trim() });
+    const finalText = translatedText.trim();
+
+    // Best-effort check only (see findUnpreservedForeignWords above for what it can and
+    // can't catch) — never fails the translation over it, since the translation itself
+    // is very likely still fine and usable; this only flags that ONE named word may need
+    // a manual look before it's relied on for pronunciation.
+    const unpreserved = findUnpreservedForeignWords(text, finalText);
+
+    return Response.json({
+      translated_text: finalText,
+      ...(unpreserved.length > 0 ? {
+        preservation_warning: `Double-check the spelling of ${unpreserved.map((w) => `"${w}"`).join(', ')} in the translated text below — it should appear exactly as written in the original script, but couldn't be confirmed automatically. This matters for the pronunciation dictionary to work.`,
+      } : {}),
+    });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
   }
