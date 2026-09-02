@@ -52,6 +52,48 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-02 (follow-up 113) — No more cryptic "Rate limit exceeded" — clear messages, auto-retry
+Scope: `src/lib/utils.js` (`getFnErrorMessage` rewritten, `humanizeFnError` +
+`isRecognizedFnErrorMessage` added — used automatically by every file that already
+imports `getFnErrorMessage`: `TranslationPanel.jsx`, `WaypointPaceEditor.jsx`,
+`NarrationTtsEditor.jsx`, `PronunciationDictionaryDialog.jsx`); `TranslationsManager.jsx`.
+Frontend-only — no redeploy needed.
+
+**Per Enda's report:** a narrator's Auto-translate run stopped after 115 strings with a
+bare "Rate limit exceeded" banner — no wait time, no explanation. Enda: "make it clear
+what, who and why, and what to do... if this hits Anoushka or Barbara, it's panic
+stations."
+
+**What it actually was:** traced it — that exact message appears nowhere in this app's
+own code, and every real Groq/Google rate-limit message this app writes already includes
+a wait time and names which service. That bare shape is what Base44's OWN server sends
+when it briefly limits how many actions can happen per minute (shared across the whole
+app) — it was blocking the request before the translation code even ran, so none of this
+app's own messaging ever got a chance to kick in.
+
+**What changed:**
+- `getFnErrorMessage` (the shared helper 4 other files already use to show backend
+  errors) now runs every message through `humanizeFnError`: a message this app already
+  wrote clearly (mentions Groq, Google, a known cause) is shown unchanged; "Not
+  authorized" gets rewritten to name the likely real cause (an expired Narr Studio
+  login) and what to do; anything else — like the bare message above — gets reworded
+  into a calm, plain explanation of what's likely going on and what to do next, with the
+  original technical text kept in parentheses for anyone who needs it. Every screen that
+  already used `getFnErrorMessage` gets this for free.
+- `TranslationsManager.jsx`'s Auto-translate now recognizes this same "unexplained,
+  not-one-of-ours" error shape and quietly waits 20s and retries (up to 5 times) instead
+  of stopping — the same way it already does for a genuine Groq rate limit. Most of the
+  time this means the narrator never sees any message at all; it just briefly pauses and
+  carries on. Also wrapped the translate call itself in a try/catch (it wasn't before,
+  unlike the save call next to it) so a dropped connection gets the same clear treatment
+  instead of an unhandled error.
+
+**Verified:** `npx eslint` clean; `npx vite build` completes with no errors. Not tested
+against a real live rate-limit — worth watching the next time Auto-translate runs a large
+batch, to confirm the quiet retry is actually being hit and not just the fallback wording.
+
+---
+
 ## 2026-09-02 (follow-up 112) — Removed the (unused) GPX download button entirely
 Scope: DELETED `src/components/offline/DownloadWalkButton.jsx`.
 

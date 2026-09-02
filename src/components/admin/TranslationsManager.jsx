@@ -8,6 +8,7 @@ import { toast } from '@/components/ui/use-toast';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { translations, UI_LANGUAGES, LANGUAGE_NAME_BY_CODE, getGoogleTranslateCode } from '@/lib/i18n';
 import { useNarratorApiKeys } from '@/lib/useNarratorApiKeys';
+import { humanizeFnError, isRecognizedFnErrorMessage, getFnErrorMessage } from '@/lib/utils';
 
 // Back-office editor for UI string overrides. Shows the English source for reference and
 // the current value (override if one exists, otherwise the AI baseline) in an editable
@@ -97,10 +98,10 @@ export default function TranslationsManager({ authMode, user }) {
         await load();
         await reloadTranslations();
       } else {
-        toast({ variant: 'destructive', title: 'Save failed', description: data.error || 'Unknown error.' });
+        toast({ variant: 'destructive', title: 'Save failed', description: humanizeFnError(data.error) });
       }
     } catch (err) {
-      toast({ variant: 'destructive', title: 'Save failed', description: err?.message });
+      toast({ variant: 'destructive', title: 'Save failed', description: getFnErrorMessage(err) });
     } finally {
       setSavingKey(null);
     }
@@ -116,10 +117,10 @@ export default function TranslationsManager({ authMode, user }) {
         await load();
         await reloadTranslations();
       } else {
-        toast({ variant: 'destructive', title: 'Revert failed', description: data.error || 'Unknown error.' });
+        toast({ variant: 'destructive', title: 'Revert failed', description: humanizeFnError(data.error) });
       }
     } catch (err) {
-      toast({ variant: 'destructive', title: 'Revert failed', description: err?.message });
+      toast({ variant: 'destructive', title: 'Revert failed', description: getFnErrorMessage(err) });
     } finally {
       setSavingKey(null);
     }
@@ -193,25 +194,53 @@ export default function TranslationsManager({ authMode, user }) {
     // language, badly depleted budget, ~3min waits each round) is roughly 15 rounds * ~3min ≈
     // 45 minutes, entirely unattended waiting — not fast, but it only has to happen once.
     const MAX_ROUNDS = 15;
+    // Separate, tighter budget for the case below: an error that ISN'T a real Groq/Google
+    // rate limit and isn't one of this app's own known messages either — almost always
+    // Base44's own server briefly limiting how many actions can happen per minute (see
+    // humanizeFnError in utils.js). Worth a few short retries since it clears on its own
+    // fast, but capped low so a genuinely new, different problem still surfaces quickly
+    // rather than silently retrying for the full ~45-minute MAX_ROUNDS budget.
+    const MAX_UNKNOWN_ERROR_RETRIES = 5;
+    const UNKNOWN_ERROR_WAIT_MS = 20000;
+    let unknownErrorRetries = 0;
 
     for (let round = 1; round <= MAX_ROUNDS && remaining.length > 0; round++) {
       const entries = {};
       for (const k of remaining) entries[k] = translations.en[k];
 
-      const res = await invokeWithTimeout('seedUiTranslations', {
-        entries, target_language: targetLanguageName, apiKey: apiKeys.groq_api_key, apiKey2: apiKeys.groq_api_key_2,
-        // Last-resort fallback per Enda: try Groq (both keys) first, and only when THAT
-        // jams does seedUiTranslations reach for this — see groqKeyRotation.ts /
-        // googleTranslate.ts. Reuses the same Google key already saved for Text-to-Speech;
-        // omitted entirely (both fields simply undefined) if that key isn't set, in which
-        // case behavior is unchanged from before this fallback existed.
-        googleApiKey: apiKeys.google_tts_api_key || undefined,
-        target_lang_code: getGoogleTranslateCode(langCode),
-        ...authPayload,
-      }, 90000, 'Translating');
+      let res;
+      try {
+        res = await invokeWithTimeout('seedUiTranslations', {
+          entries, target_language: targetLanguageName, apiKey: apiKeys.groq_api_key, apiKey2: apiKeys.groq_api_key_2,
+          // Last-resort fallback per Enda: try Groq (both keys) first, and only when THAT
+          // jams does seedUiTranslations reach for this — see groqKeyRotation.ts /
+          // googleTranslate.ts. Reuses the same Google key already saved for Text-to-Speech;
+          // omitted entirely (both fields simply undefined) if that key isn't set, in which
+          // case behavior is unchanged from before this fallback existed.
+          googleApiKey: apiKeys.google_tts_api_key || undefined,
+          target_lang_code: getGoogleTranslateCode(langCode),
+          ...authPayload,
+        }, 90000, 'Translating');
+      } catch (invokeErr) {
+        failureReasons.add(getFnErrorMessage(invokeErr, 'Could not reach the server to translate.'));
+        totalFailed += remaining.length;
+        break;
+      }
       const data = res.data || {};
       if (data.error && !data.translations) {
-        failureReasons.add(data.error);
+        // Not one of this app's own known error messages (see isRecognizedFnErrorMessage) —
+        // almost certainly Base44's own request-rate limit, not a real failure. Per Enda:
+        // a bare, unexplained error here previously looked alarming ("Rate limit exceeded",
+        // no context) — wait it out and quietly retry the same batch instead, exactly like a
+        // genuine Groq rate limit, rather than stopping and showing something cryptic.
+        if (!isRecognizedFnErrorMessage(data.error) && unknownErrorRetries < MAX_UNKNOWN_ERROR_RETRIES) {
+          unknownErrorRetries++;
+          onProgress?.(`Briefly paused (looks like the app's own server, not Groq or Google) — waiting ${Math.round(UNKNOWN_ERROR_WAIT_MS / 1000)}s before continuing (${remaining.length} string${remaining.length === 1 ? '' : 's'} left for ${targetLanguageName})…`);
+          await sleep(UNKNOWN_ERROR_WAIT_MS);
+          round--; // this attempt didn't count against the real rate-limit wait budget
+          continue;
+        }
+        failureReasons.add(humanizeFnError(data.error));
         totalFailed += remaining.length;
         break;
       }
@@ -314,7 +343,7 @@ export default function TranslationsManager({ authMode, user }) {
       if (warnings.length > 0) setSeedWarning(warnings.join(' '));
       await refreshOverrides();
     } catch (err) {
-      toast({ variant: 'destructive', title: 'Auto-translate failed', description: err?.message });
+      toast({ variant: 'destructive', title: 'Auto-translate failed', description: getFnErrorMessage(err) });
       await refreshOverrides(); // show whatever DID get saved before the failure, not a stale pre-run view
     } finally {
       setSeeding(false);
