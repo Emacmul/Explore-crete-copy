@@ -12,6 +12,7 @@ export default async function (req) {
     const base44 = createClientFromRequest(req);
     if (!(await isAppAdmin(base44))) {
       return Response.json({ error: 'Admin only' }, { status: 403 });
+ 
     }
     const body = await req.json().catch(() => ({}));
     const { id, updates } = body;
