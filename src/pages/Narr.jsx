@@ -12,10 +12,23 @@ import BackendShell from '@/components/admin/BackendShell';
 const SESSION_KEY = 'narr_session';
 
 /**
- * Narr Studio entry. A Narr first signs into the front end with their WordPress
- * password (so we know whose Narr password to check), then opens this page via
- * the "Narr" button and enters the separate backend password an admin set for
- * them. On success the shared BackendShell renders in narrator mode.
+ * Narrator Studio entry. A narrator first signs into the front end with their
+ * WordPress password (so we know whose Narrator password to check), then opens
+ * this page via the "Narrator" button and enters the separate backend password
+ * an admin set for them. On success the shared BackendShell renders in narrator
+ * mode.
+ *
+ * Per Enda's follow-up 102 report: "Narr" (the shorthand this whole feature was
+ * originally named after) is a real, ordinary German word meaning "fool" —
+ * genuinely offensive to see attached to your own job title if you're a German-
+ * speaking narrator. Every user-visible "Narr" was renamed to "Narrator" across
+ * the app (this page, BackendShell's header/role tag, the Home page's nav
+ * button, Manage Users' role badge and "set passwords" label). The internal
+ * route/page name (`Narr`, in `createPageUrl('Narr')` and App.jsx's page
+ * registration) and the backend function name (`narrLogin`) were deliberately
+ * left alone — neither is ever shown to a user, and renaming either would be a
+ * much bigger, riskier change (route registration, saved links) for zero visible
+ * benefit.
  */
 export default function Narr() {
   const { user } = useAuth();
@@ -41,7 +54,7 @@ export default function Narr() {
 
   const handleLogin = async () => {
     setError('');
-    if (!password) { setError('Enter your Narr password.'); return; }
+    if (!password) { setError('Enter your Narrator password.'); return; }
     setBusy(true);
     try {
       const res = await base44.functions.invoke('narrLogin', { email: user.email, password });
@@ -74,12 +87,12 @@ export default function Narr() {
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-lg bg-purple-500"><Mic className="w-5 h-5 text-white" /></div>
           <div>
-            <h1 className="font-bold text-white">Narr Studio</h1>
+            <h1 className="font-bold text-white">Narrator Studio</h1>
             <p className="text-xs text-slate-400">{user.email}</p>
           </div>
         </div>
         <div>
-          <Label className="text-slate-300 mb-1.5 block">Narr password</Label>
+          <Label className="text-slate-300 mb-1.5 block">Narrator password</Label>
           <div className="relative">
             <Input
               type={showPassword ? 'text' : 'password'}
@@ -87,7 +100,7 @@ export default function Narr() {
               onChange={e => setPassword(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleLogin()}
               className="bg-slate-700 border-slate-600 text-white pr-10"
-              placeholder="Enter your Narr password"
+              placeholder="Enter your Narrator password"
               autoFocus
             />
             <button

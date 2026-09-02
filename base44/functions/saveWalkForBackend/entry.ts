@@ -34,7 +34,7 @@ function mergeNarratorWaypoints(existingWaypoints: any[], incomingWaypoints: any
   const existing = existingWaypoints || [];
   if (!Array.isArray(incomingWaypoints)) return existing;
   if (incomingWaypoints.length !== existing.length) {
-    throw new Error('Waypoints cannot be added, removed, or reordered from Narr Studio.');
+    throw new Error('Waypoints cannot be added, removed, or reordered from Narrator Studio.');
   }
   return existing.map((wp: any, i: number) => {
     const incoming = incomingWaypoints[i] || {};

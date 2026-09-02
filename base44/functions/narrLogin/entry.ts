@@ -35,7 +35,7 @@ Deno.serve(async (req) => {
     // get the narrator workflow but without the narrator-only limits (see Narr.jsx +
     // BackendShell `unrestricted`). Their existing backend password is reused.
     if (match.role !== 'narrator' && match.role !== 'admin') {
-      return Response.json({ ok: false, error: 'This account is not a Narr.' });
+      return Response.json({ ok: false, error: 'This account is not a Narrator.' });
     }
     if (!match.password || String(match.password) !== String(password)) {
       return Response.json({ ok: false, error: 'Wrong password.' });

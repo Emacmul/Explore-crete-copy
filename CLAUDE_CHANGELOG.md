@@ -41,6 +41,55 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-02 (follow-up 102) — Renamed every user-visible "Narr"/"Narr Studio" to "Narrator"/"Narrator Studio"
+Scope: `src/pages/Narr.jsx`, `src/components/admin/BackendShell.jsx`,
+`src/components/admin/AdminStartScreen.jsx`, `src/components/admin/UsersManager.jsx`,
+`src/lib/i18n/index.js` (en/nl/cs), `base44/functions/narrLogin/entry.ts` (**backend
+function change — needs the redeploy dance**), `base44/functions/saveWalkForBackend/entry.ts`
+(**backend function change — needs the redeploy dance**).
+
+**Per Enda's report:** "Narr" — the shorthand this whole feature was built around — is
+a real, ordinary German word meaning "fool", genuinely offensive attached to a German-
+speaking narrator's own job title. Asked for "Narr Studio" changed to "Narrator
+Studio" everywhere it appears. Follow-up question: just the heading, or every
+standalone "Narr" the UI shows — Enda chose everywhere.
+
+**Every user-visible instance renamed:**
+- Login screen heading ("Narr Studio" → "Narrator Studio"), password field label,
+  placeholder, and validation error (`Narr.jsx`).
+- Dashboard header heading and the "· Narr ·" role tag next to the user's name
+  (`BackendShell.jsx`), plus the "pushed back" toast wording.
+- Home page's nav button label ("Narr" → "Narrator", via the `home.narr` i18n key —
+  all three locale blocks that exist today: en, nl, cs).
+- Manage Users: the role badge on each user row, the role dropdown's "Narr (translate
+  clones)" option, the page's own description line, the "promote a user" confirmation
+  toast, and the Admin start screen's "Promote / set Narr passwords" shortcut label.
+- Two backend-surfaced error strings a narrator could actually see: `narrLogin`'s "This
+  account is not a Narr." and `saveWalkForBackend`'s "Waypoints cannot be added,
+  removed, or reordered from Narr Studio."
+
+**Deliberately left alone:** the internal route/page name (`Narr`, i.e.
+`createPageUrl('Narr')`, the `/Narr` route in App.jsx, and the `Narr.jsx`/`Narr()`
+component itself) and the backend function name `narrLogin` — neither is ever shown to
+a user (the address bar shows the tour's own domain + `/Narr`, not a rendered label),
+and renaming either is a materially bigger, riskier change (route registration, any
+saved/bookmarked links) for zero visible benefit. Code comments referencing "Narr
+Studio"/"the Narr hat" internally were also left as-is — pure internal documentation,
+never rendered.
+
+**Verified:** `npx eslint` on every touched frontend file — clean (the handful of
+reported issues in `AdminStartScreen.jsx`, `UsersManager.jsx`, `Home.jsx`, and
+`BackendShell.jsx` all confirmed pre-existing and unrelated against `origin/main`).
+Both touched backend `.ts` files parsed clean with `npx esbuild` (no Deno runtime
+available in this sandbox). `rm -rf dist && npx vite build` — clean production build.
+
+**Two backend functions touched — `narrLogin` and `saveWalkForBackend` both need the
+redeploy dance** (blank line → redeploy → remove blank line → redeploy) before their
+two error messages actually change; everything else here is frontend-only and just
+needs the usual hard refresh + republish.
+
+---
+
 ## 2026-09-02 (follow-up 101) — Added a manual "Check Depository" retry; explains the "no file at all now" report
 Scope: `src/components/admin/TranslationPanel.jsx` only. Frontend only.
 

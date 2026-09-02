@@ -388,7 +388,7 @@ export default function AdminStartScreen({
           </Button>
           <Button variant="outline" onClick={onManageUsers} className="bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 gap-2 h-auto py-3 justify-start">
             <Users className="w-5 h-5 text-purple-400 shrink-0" />
-            <div className="text-left min-w-0 whitespace-normal"><p className="font-medium">Manage Users</p><p className="text-xs text-slate-400">Promote / set Narr passwords</p></div>
+            <div className="text-left min-w-0 whitespace-normal"><p className="font-medium">Manage Users</p><p className="text-xs text-slate-400">Promote / set Narrator passwords</p></div>
           </Button>
           <Button variant="outline" onClick={onManageDisputes} className="bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 gap-2 h-auto py-3 justify-start">
             <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />

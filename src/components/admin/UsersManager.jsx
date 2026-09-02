@@ -16,7 +16,7 @@ import GiftWalkDialog from '@/components/admin/GiftWalkDialog';
 
 function roleBadge(role) {
   if (role === 'admin') return <Badge className="text-xs text-amber-300 border-amber-700 bg-amber-900/30">admin</Badge>;
-  if (role === 'narrator') return <Badge className="text-xs text-purple-300 border-purple-700 bg-purple-900/30">Narr</Badge>;
+  if (role === 'narrator') return <Badge className="text-xs text-purple-300 border-purple-700 bg-purple-900/30">Narrator</Badge>;
   return <Badge className="text-xs text-slate-400 border-slate-600 bg-slate-800">user</Badge>;
 }
 
@@ -57,7 +57,7 @@ function EditAppUserDialog({ appUser, onClose }) {
       }
 
       qc.invalidateQueries({ queryKey: ['appUsers-all'] });
-      toast({ title: 'User updated', description: `${appUser.email} is now ${role === 'user' ? 'a regular user' : role === 'narrator' ? 'a Narr' : 'an admin'}.` });
+      toast({ title: 'User updated', description: `${appUser.email} is now ${role === 'user' ? 'a regular user' : role === 'narrator' ? 'a Narrator' : 'an admin'}.` });
       onClose();
     } catch (err) {
       toast({ variant: 'destructive', title: 'Update failed', description: err?.message });
@@ -80,7 +80,7 @@ function EditAppUserDialog({ appUser, onClose }) {
               <SelectTrigger className="bg-slate-700 border-slate-600 text-white"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="user">user (front end only)</SelectItem>
-                <SelectItem value="narrator">Narr (translate clones)</SelectItem>
+                <SelectItem value="narrator">Narrator (translate clones)</SelectItem>
                 <SelectItem value="admin">Admin (full backend)</SelectItem>
               </SelectContent>
             </Select>
@@ -142,7 +142,7 @@ export default function UsersManager() {
     <div className="space-y-6">
       <div>
         <h2 className="text-xl font-bold text-white">Users Database</h2>
-        <p className="text-slate-400 text-sm">Promote a user to Narr or Admin, and set a Narr's backend password here — it's separate from their WordPress front-end password.</p>
+        <p className="text-slate-400 text-sm">Promote a user to Narrator or Admin, and set a Narrator's backend password here — it's separate from their WordPress front-end password.</p>
       </div>
 
       <div className="relative">

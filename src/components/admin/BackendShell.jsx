@@ -294,7 +294,7 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
   const handlePushBackClone = async (walkId, reason) => {
     await callWalkFn('saveWalkForBackend', { id: walkId, patch: { approved: false, finished: false, pushback_reason: reason } });
     setWalks((prev) => prev.map(w => w.id === walkId ? { ...w, approved: false, finished: false, pushback_reason: reason } : w));
-    toast({ title: 'Sent back for correction', description: 'The narrator will see this the next time they open the Narr Studio.' });
+    toast({ title: 'Sent back for correction', description: 'The narrator will see this the next time they open Narrator Studio.' });
   };
 
   // Marks (or unmarks) a master tour as ready for narrators to clone — deliberately
@@ -404,8 +404,8 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
               {isAdmin ? <ShieldCheck className="w-5 h-5 text-white" /> : <Mic className="w-5 h-5 text-white" />}
             </div>
             <div>
-              <h1 className="font-bold text-white">{isAdmin ? 'Admin Panel' : 'Narr Studio'}</h1>
-              <p className="text-xs text-slate-400">{user?.full_name || user?.email} · {isAdmin ? 'admin' : 'Narr'}{unrestricted ? ' · Admin access' : ''}</p>
+              <h1 className="font-bold text-white">{isAdmin ? 'Admin Panel' : 'Narrator Studio'}</h1>
+              <p className="text-xs text-slate-400">{user?.full_name || user?.email} · {isAdmin ? 'admin' : 'Narrator'}{unrestricted ? ' · Admin access' : ''}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
