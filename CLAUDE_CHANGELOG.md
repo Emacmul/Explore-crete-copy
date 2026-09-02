@@ -41,6 +41,81 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-02 (follow-up 103) — Auto-translate pass seeds a UI baseline for languages that never had one
+Scope: `base44/functions/seedUiTranslations/entry.ts` (**new backend function — needs
+the redeploy dance**), `base44/functions/saveTranslationsBulk/entry.ts` (**new backend
+function — needs the redeploy dance**), `src/components/admin/TranslationsManager.jsx`.
+
+**Per Enda's report:** he explained "Correct UI translations" is meant for narrators to
+fix unnatural machine translations, then asked directly why the original translations
+don't exist in all the languages. Investigation found only English, Dutch, and Czech
+ever got a hand-written baseline in `src/lib/i18n/index.js` — the other 20 languages in
+the UI language dropdown (and even nl/cs, for a batch of newer keys added after those
+blocks were last touched) silently fall back to raw English everywhere, including in
+this exact editor. So a narrator "correcting" one of those languages was really typing
+a first translation of the whole UI from scratch, not fixing a rough draft. Enda asked
+for a real machine-translation seeding pass, in the same spirit as `translateScript`'s
+existing narration-script translator, so narrators land on something to correct.
+
+**What changed:**
+- New backend function `seedUiTranslations`: takes a batch of English UI strings and a
+  target language, translates them via the same Groq model `translateScript` uses (each
+  caller's own saved Groq key, same admin/narrator auth via `resolveActor`), chunked at
+  40 keys per call to stay inside Groq's per-request token budget. Preserves `{n}` /
+  `{label}`-style placeholder tokens exactly (the app substitutes these with real data
+  at render time) and flags — without failing the pass — any key where a placeholder
+  couldn't be confirmed to have survived, mirroring how `translateScript` already flags
+  unpreserved Greek/Cyrillic/Arabic pronunciation words.
+- New backend function `saveTranslationsBulk`: upserts many `Translation` override
+  records for one language in a single call (same auth, same entity writes as the
+  existing single-key `saveTranslation`) — needed because a seeding pass can produce
+  100+ translated strings at once, and saving those one at a time would mean 100+
+  separate round trips for one button click.
+- `TranslationsManager.jsx` ("Correct UI translations" / "UI Translations" editor, same
+  component for admin and narrator): added a banner above the key list, per active
+  language, showing how many strings currently have no baseline or correction (falling
+  back to raw English) and an "Auto-translate N missing" button. Clicking it sends only
+  those missing keys' English text to `seedUiTranslations`, then bulk-saves the results
+  as ordinary overrides via `saveTranslationsBulk` — indistinguishable afterward from a
+  narrator's own manual correction, refreshes the list, and reloads live translations.
+  Requires the caller's own Groq key (same "API Keys" panel used elsewhere) — a clear
+  error if it isn't set. Never touches a key that already has a hand-written baseline or
+  a saved override, so it can't clobber an existing real translation or someone's own
+  correction. Each row in the list also now shows an "English fallback" badge when it's
+  currently showing raw English with nothing seeded or corrected yet, so it's visible at
+  a glance which strings still need attention without opening every one.
+- Per Enda's follow-up push-back: gating seeding on a human opening each of 23 language
+  tabs and pressing a button per tab is a self-fulfilling non-action — a language nobody
+  thinks to check never gets backfilled, and "nobody's looked at it" describes most of
+  these 20 languages today. Added a second, top-level "Auto-translate all languages"
+  button above the language picker that loops through every language with missing
+  strings in one action (skipping any language that's already fully covered), running
+  the same seed-then-bulk-save pass per language and reporting a running "Translating
+  <language> — N strings (language X of Y)…" status line while it works. Still entirely
+  on-demand — nothing runs on its own without a person pressing this — it just covers
+  every language in one press instead of 22 separate ones. One language's Groq call
+  failing (rate limit, transient error) doesn't stop the rest; it's simply left missing
+  and can be retried later, either from its own tab or by running "all languages" again.
+
+**Deliberately left alone:** the live customer-facing app's `t()` fallback chain in
+`LanguageContext.jsx` — untouched; seeded strings reach customers exactly the way a
+narrator's hand correction always has, as a `Translation` override the same `t()` chain
+already picks up first. Nothing runs automatically — seeding only happens when someone
+opens a language in this editor and presses the button, so no Groq calls or writes
+happen unprompted for languages nobody has looked at yet.
+
+**Verified:** `npx eslint src/components/admin/TranslationsManager.jsx` — clean. Both
+new backend `.ts` files parsed clean with `npx esbuild ... --platform=neutral` (no Deno
+runtime available in this sandbox). `rm -rf dist && npx vite build` — clean production
+build.
+
+**Two new backend functions — `seedUiTranslations` and `saveTranslationsBulk` both need
+the redeploy dance** (blank line → redeploy → remove blank line → redeploy) before the
+"Auto-translate" button will work at all; `TranslationsManager.jsx` is frontend-only and
+just needs the usual hard refresh + republish.
+
+---
+
 ## 2026-09-02 (follow-up 102) — Renamed every user-visible "Narr"/"Narr Studio" to "Narrator"/"Narrator Studio"
 Scope: `src/pages/Narr.jsx`, `src/components/admin/BackendShell.jsx`,
 `src/components/admin/AdminStartScreen.jsx`, `src/components/admin/UsersManager.jsx`,
