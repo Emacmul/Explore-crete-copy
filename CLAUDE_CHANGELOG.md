@@ -52,6 +52,50 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-02 (follow-up 115) — Real bug: Google was translating the word INSIDE {placeholders} too
+Scope: `base44/functions/seedUiTranslations/entry.ts` (**needs the redeploy dance**);
+`src/components/admin/TranslationsManager.jsx` (frontend-only).
+
+**Per Enda's report:** after follow-up 114's live placeholder check started showing 3
+genuinely-still-broken Portuguese strings, Enda opened one (`list.all`) and found the box
+already had SOMETHING bracketed in it — "Todos {rótulo}" — and asked "can it get any more
+cryptic????", rightly confused why the app said {label} was "missing" when there was
+plainly a `{...}` sitting right there.
+
+**What was actually happening:** the Google Translate fallback (used when Groq is
+rate-limited — see follow-up 109) had no protection at all for `{placeholder}` tokens,
+unlike the Groq path (which is explicitly prompted not to touch them) and unlike the
+narration-script Google fallback (which protects `<break>` tags via format='html'). Left
+alone, Google translated the WORD inside the braces too: English "{label}" → Portuguese
+"{rótulo}" — literally translating "label" into Portuguese and re-wrapping it. It looks
+exactly like a placeholder at a glance, but it isn't the one the app's own code is
+actually looking for, so the real substitution would silently never happen for a customer
+— they'd see the literal text "Todos {rótulo}" on screen instead of "Todos Recomendado"
+(or whatever the real filter name is).
+
+**Root-cause fix (`seedUiTranslations`):** before sending any text to Google for
+translation, every `{token}` in it is now swapped for a short, plain marker Google has no
+linguistic reason to translate (e.g. `xxplaceholder0xx`), then swapped back for the real
+token afterward — so Google never actually sees "label" to mistranslate in the first
+place. This only affects the Google fallback path; the existing after-the-fact check
+(`findUnpreservedPlaceholders`) stays in place as a safety net regardless.
+
+**Frontend — clearer guidance for the 3 strings already saved before this fix:** the code
+fix doesn't retroactively repair already-saved content, so `TranslationsManager.jsx`'s
+live placeholder check (from follow-up 114) now also detects this exact shape — a
+bracketed bit in the current text that ISN'T the real token — and says precisely what to
+swap it for (e.g. "change {rótulo} to {label} — keep the curly brackets, just swap what's
+inside") instead of just "missing {label}", which reads as if nothing were there at all
+when something plainly was.
+
+**Verified:** `npx esbuild --platform=neutral --target=es2022` clean on the changed `.ts`
+file; `npx eslint` clean; `npx vite build` completes with no errors. Not tested against a
+real live Google translation — worth running Auto-translate on a language that needs the
+Google fallback (both Groq keys rate-limited) and checking a `{placeholder}` string comes
+back with the token genuinely intact this time, not just re-labeled.
+
+---
+
 ## 2026-09-02 (follow-up 114) — Placeholder warning was stale, not live; Google outage message was still cryptic
 Scope: `src/lib/utils.js` (one more recognized pattern in `humanizeFnError`);
 `src/components/admin/TranslationsManager.jsx`. Frontend-only — no redeploy needed.

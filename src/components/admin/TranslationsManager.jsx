@@ -84,7 +84,18 @@ export default function TranslationsManager({ authMode, user }) {
       if (tokens.length === 0) continue;
       const current = currentValue(activeLang, key);
       const missing = tokens.filter((t) => !current.includes(t));
-      if (missing.length > 0) issues.push({ key, english, current, missing });
+      if (missing.length === 0) continue;
+      // A real case Enda hit (2026-09-02): the box can already show something in curly
+      // brackets — just the WRONG one, because the translator translated the word inside
+      // the braces too (English "{label}" came back as Portuguese "{rótulo}"). Reporting
+      // that as "missing {label}" alone was genuinely misleading — there's plainly a
+      // bracketed bit sitting right there. Flag any bracket-shaped bit in the current text
+      // that isn't one of the real tokens, so the note can say exactly what to swap it
+      // for, not just what's supposedly absent. (Backend fix, same date: the Google
+      // fallback now protects these tokens so this shouldn't happen on any NEW
+      // translation — this only still matters for content already saved before that fix.)
+      const wrongTokens = [...new Set(current.match(PLACEHOLDER_RE) || [])].filter((t) => !tokens.includes(t));
+      issues.push({ key, english, current, missing, wrongTokens });
     }
     return issues;
   }, [activeLang, overrides]);
@@ -518,10 +529,18 @@ export default function TranslationsManager({ authMode, user }) {
           <p>
             {placeholderIssues.length} string{placeholderIssues.length === 1 ? '' : 's'} in {LANGUAGE_NAME_BY_CODE[activeLang] || activeLang} {placeholderIssues.length === 1 ? 'is' : 'are'} missing a "placeholder" — a bit like <code className="text-slate-200 bg-slate-900/60 px-1 rounded">{'{label}'}</code> that the app fills in with a real word or number when it runs. Nothing is broken and nothing needs redoing — just open the string below, and put the missing bit back in wherever it reads naturally.
           </p>
-          <ul className="space-y-1">
-            {placeholderIssues.map(({ key, english, missing }) => (
+          <ul className="space-y-1.5">
+            {placeholderIssues.map(({ key, english, missing, wrongTokens }) => (
               <li key={key}>
-                <span className="font-mono text-slate-500">{key}</span> is missing <span className="text-amber-300">{missing.join(', ')}</span> — EN: “{english}”
+                <span className="font-mono text-slate-500">{key}</span> — EN: “{english}”
+                <br />
+                {wrongTokens.length > 0
+                  // The concrete, real-world case: there's already a bracketed bit in the
+                  // box, but the translator translated the word inside it too. Say exactly
+                  // what to change, not just what's "missing" — that alone reads as if
+                  // nothing's there at all when something plainly is.
+                  ? <>the translator translated the word inside the brackets too — change <span className="text-amber-300">{wrongTokens.join(', ')}</span> to <span className="text-emerald-300">{missing.join(', ')}</span> (keep the curly brackets, just swap what's inside).</>
+                  : <>missing <span className="text-amber-300">{missing.join(', ')}</span> — add it back in wherever it reads naturally.</>}
               </li>
             ))}
           </ul>
@@ -541,8 +560,10 @@ export default function TranslationsManager({ authMode, user }) {
                 {dirty && <Badge className="text-[10px] bg-amber-900 text-amber-300 border-amber-700">unsaved</Badge>}
                 {isMissing(activeLang, key) && <Badge className="text-[10px] bg-slate-700 text-slate-400 border-slate-600">English fallback</Badge>}
                 {placeholderIssue && (
-                  <Badge className="text-[10px] bg-slate-700 text-slate-300 border-slate-600" title={`Missing ${placeholderIssue.missing.join(', ')} — see the note above the list.`}>
-                    missing {placeholderIssue.missing.join(', ')}
+                  <Badge className="text-[10px] bg-slate-700 text-slate-300 border-slate-600" title="See the note above the list for exactly what to change.">
+                    {placeholderIssue.wrongTokens.length > 0
+                      ? `swap ${placeholderIssue.wrongTokens.join(', ')} → ${placeholderIssue.missing.join(', ')}`
+                      : `missing ${placeholderIssue.missing.join(', ')}`}
                   </Badge>
                 )}
               </div>

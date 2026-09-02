@@ -32,6 +32,36 @@ function findUnpreservedPlaceholders(original: string, translated: string): stri
   return missing;
 }
 
+// REAL BUG found live (2026-09-02, via Enda): the Groq prompt explicitly instructs the
+// model to leave {placeholder} tokens untouched (see buildPrompt's rule 2 below), but the
+// Google fallback path had NO equivalent protection — Google Cloud Translation's
+// format='text' mode has no concept of "don't translate this bit", so it happily
+// translates whatever's INSIDE the braces too. A real example: "All {label}" came back
+// from Google as "Todos {rótulo}" — the word "label" itself got translated to Portuguese
+// and re-wrapped in braces, which LOOKS like a valid placeholder at a glance but isn't the
+// one the app's code is actually looking for, so the real substitution silently never
+// happens for real customers. findUnpreservedPlaceholders (above) could only ever detect
+// this after the fact; this protects against it happening at all, the same way format='html'
+// already protects a real HTML tag for narration scripts.
+//
+// How: swap each {token} for a short, plain marker Google has no linguistic reason to
+// translate before sending the text, then swap the ORIGINAL token back in afterward — so
+// Google never actually sees the placeholder's real name to mistranslate in the first
+// place. findUnpreservedPlaceholders still runs afterward too, as a safety net in case a
+// marker ever comes back altered anyway.
+function protectPlaceholders(text: string): { protectedText: string; restore: (s: string) => string } {
+  const tokens = [...new Set(text.match(PLACEHOLDER_RE) || [])];
+  if (tokens.length === 0) return { protectedText: text, restore: (s: string) => s };
+  let protectedText = text;
+  const markers = tokens.map((token, i) => {
+    const marker = `xxplaceholder${i}xx`;
+    protectedText = protectedText.split(token).join(marker);
+    return { marker, token };
+  });
+  const restore = (s: string) => markers.reduce((acc, { marker, token }) => acc.split(marker).join(token), s);
+  return { protectedText, restore };
+}
+
 // Two real runs against Enda's own Groq key exposed two DIFFERENT problems here, not one:
 //
 // Run 1 (95 Dutch keys, flat 40-key chunks): came back "seeded 15 of 95" with no reason given.
@@ -255,13 +285,19 @@ Deno.serve(async (req) => {
     const stillMissingKeys = keys.filter(k => translated[k] === undefined);
     let googleTranslatedCount = 0;
     if (stillMissingKeys.length > 0 && googleApiKey && googleApiKey.trim() && target_lang_code) {
-      const texts = stillMissingKeys.map(k => entries[k]);
+      // protectPlaceholders swaps out each {token} for a plain marker before this ever
+      // reaches Google, and swaps the real token back in afterward — see that function's
+      // own comment for the real bug (Google translating the WORD inside the braces too,
+      // e.g. {label} → {rótulo}) this closes.
+      const protections = stillMissingKeys.map(k => protectPlaceholders(entries[k]));
+      const texts = protections.map(p => p.protectedText);
       const googleResult = await translateWithGoogle(texts, target_lang_code, googleApiKey, 'text');
       if (googleResult.ok && googleResult.translations) {
         stillMissingKeys.forEach((k, i) => {
-          const v = googleResult.translations![i];
-          if (typeof v === 'string' && v.trim()) {
-            translated[k] = v.trim();
+          const raw = googleResult.translations![i];
+          if (typeof raw === 'string' && raw.trim()) {
+            const v = protections[i].restore(raw.trim());
+            translated[k] = v;
             googleTranslatedCount++;
             const missing = findUnpreservedPlaceholders(entries[k], v);
             if (missing.length > 0) unpreservedWarnings.push(`${k} (${missing.join(', ')}, via Google fallback)`);
