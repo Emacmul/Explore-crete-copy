@@ -252,7 +252,12 @@ Deno.serve(async (req) => {
       // Keys that specifically hit the account's per-minute rate limit, plus how long Groq says
       // to wait — TranslationsManager.jsx uses this to automatically wait and retry just these
       // keys, rather than reporting a rate limit as a plain, permanent-looking failure.
-      ...(rateLimitedKeys.length > 0 ? { rate_limited_keys: rateLimitedKeys, retry_after_ms: retryAfterMs ?? 15000 } : {}),
+      // `keys_tried` tells the caller how many Groq API keys were actually attempted before
+      // giving up: callGroqWithKeyRotation only reports a rate limit AFTER every configured
+      // key has been tried and every one came back rate-limited (it returns early on any
+      // success or non-rate-limit error) — so this is a reliable, direct answer to "did it
+      // actually try my second key?", not a guess.
+      ...(rateLimitedKeys.length > 0 ? { rate_limited_keys: rateLimitedKeys, retry_after_ms: retryAfterMs ?? 15000, keys_tried: apiKeys.length } : {}),
       // A handful of DISTINCT non-rate-limit error messages (not one per failed key — that
       // could be dozens of copies of the same cause) so a real failure is diagnosable.
       ...(failureReasons.size > 0 ? { failure_reasons: [...failureReasons].slice(0, 5) } : {}),

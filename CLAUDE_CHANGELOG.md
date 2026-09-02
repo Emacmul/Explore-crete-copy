@@ -41,6 +41,42 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-02 (follow-up 108) — Progress line now confirms whether the second Groq key was actually tried
+Scope: `base44/functions/seedUiTranslations/entry.ts` (**needs the redeploy dance**),
+`src/components/admin/TranslationsManager.jsx` (frontend only).
+
+**Per Enda's report:** right after setting up a second Groq key (follow-up 107), a French
+auto-translate round showed "waiting 181s… Groq actually asked for 944s" with real progress
+elsewhere in the same run (138 → 123 missing) — but no way to tell from the screen whether
+the second key had actually been tried and also came back rate-limited, or whether only the
+first key was ever attempted.
+
+**What changed:** `seedUiTranslations` now returns `keys_tried` alongside a rate-limited
+result — the count of Groq API keys that were actually attempted. This is a direct fact,
+not a guess: `callGroqWithKeyRotation` (follow-up 107) only ever reports a rate limit AFTER
+trying every configured key and getting rate-limited on every one of them — it returns
+early the moment any key succeeds or hits a real (non-rate-limit) error. So `keys_tried: 2`
+on a rate-limited response is proof both keys were tried this round, not an assumption.
+`TranslationsManager.jsx`'s progress line and warning banner now say so explicitly, e.g.
+"...— both of your 2 Groq keys are currently rate-limited".
+
+**Why this matters going forward:** if a genuinely fresh, unused second Groq account gets
+rate-limited within minutes of its very first use, that's a meaningfully different signal
+than "this account's quota is depleted from today's testing" — it would point toward a
+limit that isn't purely per-account (e.g. Groq throttling by the calling server's IP
+address, which would be shared across both keys since both are called from the same Base44
+backend). Worth watching for once real key-2 usage data comes in.
+
+**Verified:** `npx eslint src/components/admin/TranslationsManager.jsx` clean;
+`npx esbuild base44/functions/seedUiTranslations/entry.ts ...` succeeds;
+`rm -rf dist && npx vite build` completes with no errors.
+
+**Not done / worth knowing for next time:** `translateScript`'s own rate-limit error
+message already said "both configured keys are currently rate-limited" when relevant
+(follow-up 107) — no change needed there, only `seedUiTranslations` was missing this.
+
+---
+
 ## 2026-09-02 (follow-up 107) — Optional second Groq key auto-hops when the first is rate-limited
 Scope: **NEW shared backend file** `base44/shared/groqKeyRotation.ts`;
 `base44/functions/seedUiTranslations/entry.ts` (**needs the redeploy dance**);

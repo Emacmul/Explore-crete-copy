@@ -262,8 +262,14 @@ export default function TranslationsManager({ authMode, user }) {
       // and reported). Without this, "waiting 181s" reads as an ordinary wait when it may
       // actually mean Groq asked for much longer than that.
       const clamped = rawRetryMs > 180000;
-      onProgress?.(`Rate limit reached — waiting ${waitS}s before continuing${clamped ? ` (Groq actually asked for ${rawRetryS}s — capped at 3 min)` : ''} (${rateLimited.length} string${rateLimited.length === 1 ? '' : 's'} left for ${targetLanguageName})…`);
-      if (clamped) failureReasons.add(`Groq asked for a ${rawRetryS}s wait on one round (longer than the 3-minute cap) — worth noting if this keeps happening.`);
+      // keys_tried confirms whether a configured second key actually got a shot: the backend
+      // only ever reports a rate limit AFTER every configured key has been tried and every one
+      // came back rate-limited — so "keys_tried: 2" here is proof both were attempted this
+      // round, not a guess (see groqKeyRotation.ts / seedUiTranslations comments for why).
+      const keysTried = data.keys_tried || 1;
+      const keysNote = keysTried > 1 ? ` — both of your ${keysTried} Groq keys are currently rate-limited` : '';
+      onProgress?.(`Rate limit reached — waiting ${waitS}s before continuing${clamped ? ` (Groq actually asked for ${rawRetryS}s — capped at 3 min)` : ''}${keysNote} (${rateLimited.length} string${rateLimited.length === 1 ? '' : 's'} left for ${targetLanguageName})…`);
+      if (clamped) failureReasons.add(`Groq asked for a ${rawRetryS}s wait on one round${keysNote} (longer than the 3-minute cap) — worth noting if this keeps happening.`);
       await sleep(waitMs);
       remaining = rateLimited;
     }
