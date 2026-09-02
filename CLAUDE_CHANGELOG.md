@@ -38,6 +38,46 @@ Pulled: 2026-08-03
   and comments — never "ElevenLabs" or any other specific vendor. Enda may
   switch labs; PCV describes what the audio is, not who made it, so it
   never needs revisiting if that happens.
+- STANDING RULE — no GPX export, ever, and no customer-uploaded walks: a
+  customer must NEVER be able to download a walk's raw GPX (trail route)
+  file — that would let them export the tour to another platform. This
+  app used to allow it; it deliberately does not anymore, in this current
+  build. Customers CAN download a walk's audio and other content for
+  offline use — this rule is specifically about the raw GPX file. For the
+  same reason, customers must never be able to upload their own
+  walk/route data into the app either. If a feature (existing or
+  proposed) would let a customer get a walk's GPX file out of the app, or
+  bring their own route data in, it's out — flag it to Enda rather than
+  building or leaving it in place.
+
+---
+
+## 2026-09-02 (follow-up 112) — Removed the (unused) GPX download button entirely
+Scope: DELETED `src/components/offline/DownloadWalkButton.jsx`.
+
+**Why:** Enda ran Base44's own scanner on the app, which flagged `CreateFileSignedUrl`
+being called directly from the browser in this file as a risk, and Base44's own AI fixed
+it by moving the call into a new backend function, `getGpxDownloadUrl`, directly on the
+live app (outside our usual zip/GitHub sync). While checking whether that fix needed
+mirroring here, Enda clarified the actual, stronger policy: customers must NEVER be able
+to download a walk's raw GPX file at all — full stop, not just "safely." It used to be
+allowed; the current build deliberately removed it, specifically so tours can't be
+exported to another platform. See the new STANDING RULE above.
+
+**What changed:** this button was already unused (no other file imported it — confirmed
+by search), so nothing else in the app changes. Deleted outright rather than "fixed",
+since the feature itself isn't wanted, not just its implementation.
+
+**Still needs Enda's attention (I can't reach it from here):** the live Base44 app now has
+a working `getGpxDownloadUrl` backend function from Base44's own AI fix, which CAN sign a
+GPX download link even though nothing in the app calls it anymore. Recommend deleting
+that function directly in the Base44 dashboard so the capability doesn't exist at all, not
+just "currently unused."
+
+**Delivery note:** this is a deletion — pasting the new `src` folder over the old one via
+Windows' replace prompt will NOT remove a file that's simply missing from the new copy.
+Enda needs to manually delete
+`src/components/offline/DownloadWalkButton.jsx` first, before pasting in the rest.
 
 ---
 
