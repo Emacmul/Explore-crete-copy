@@ -65,7 +65,6 @@ function mergeNarratorSegmentScripts(existingScripts: any[], incomingScripts: an
     const key = incoming.segment_number ?? incoming.segment_id;
     const current: any = byKey.get(key) || {};
 
-
     const merged: any = {
       segment_number: incoming.segment_number ?? current.segment_number,
       segment_id: incoming.segment_id ?? current.segment_id,
