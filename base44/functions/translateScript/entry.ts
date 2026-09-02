@@ -31,6 +31,7 @@ function findUnpreservedForeignWords(original: string, translated: string): stri
   return missing;
 }
 
+
 Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
