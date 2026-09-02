@@ -30,7 +30,7 @@ export default function TranslationsManager({ authMode, user }) {
   const [seeding, setSeeding] = useState(false);
   const [seedWarning, setSeedWarning] = useState('');
   const [seedingAll, setSeedingAll] = useState(false);
-  const [seedAllProgress, setSeedAllProgress] = useState('');
+  const [progressMessage, setProgressMessage] = useState('');
 
   const isNarr = authMode === 'narr';
   const { keys: apiKeys } = useNarratorApiKeys();
@@ -125,6 +125,80 @@ export default function TranslationsManager({ authMode, user }) {
     }
   };
 
+  const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+  // Does the actual seed-then-save work for ONE language's missing keys, automatically waiting
+  // out and retrying any keys that came back rate-limited rather than reporting a 429 as a
+  // plain, permanent-looking failure.
+  //
+  // Enda's first real run (95 Dutch keys) came back "seeded 15 of 95" with no reason given, and
+  // a second run (65 keys, after the chunking bug above was fixed) revealed the real, separate
+  // cause: this Groq account's rate limit for the model used here is a flat 8000 tokens PER
+  // MINUTE, and a small run of calls in a row exhausts that budget in one or two requests — every
+  // later one gets rejected within the same minute purely because the budget hasn't refilled yet,
+  // not because anything is actually wrong. seedUiTranslations now reports exactly which keys hit
+  // that wall (`rate_limited_keys`) and how long Groq says to wait (`retry_after_ms`) instead of
+  // retrying or sleeping inside that single backend call — a multi-minute sleep in a serverless
+  // function risks the call itself timing out. Waiting is done HERE instead, round by round,
+  // where a long wait is just normal, visible UI state (the banner already tells Enda to keep the
+  // tab open) rather than a request that might get killed mid-sleep. Saves progress after every
+  // round, not just at the end, so a run that's interrupted partway still keeps what it got.
+  const seedMissingForLanguage = async (langCode, targetLanguageName, missingKeys, authPayload, onProgress) => {
+    let remaining = missingKeys;
+    let totalSaved = 0;
+    let totalFailed = 0;
+    const failureReasons = new Set();
+    const placeholderWarnings = [];
+    const MAX_ROUNDS = 6;
+
+    for (let round = 1; round <= MAX_ROUNDS && remaining.length > 0; round++) {
+      const entries = {};
+      for (const k of remaining) entries[k] = translations.en[k];
+
+      const res = await base44.functions.invoke('seedUiTranslations', {
+        entries, target_language: targetLanguageName, apiKey: apiKeys.groq_api_key, ...authPayload,
+      });
+      const data = res.data || {};
+      if (data.error && !data.translations) {
+        failureReasons.add(data.error);
+        totalFailed += remaining.length;
+        break;
+      }
+
+      const produced = data.translations || {};
+      if (Object.keys(produced).length > 0) {
+        const saveRes = await base44.functions.invoke('saveTranslationsBulk', {
+          lang: langCode, entries: produced, ...authPayload,
+        });
+        const saveData = saveRes.data || {};
+        if (saveData.error) failureReasons.add(saveData.error);
+        totalSaved += saveData.saved || 0;
+      }
+      (data.failure_reasons || []).forEach(r => failureReasons.add(r));
+      if (data.placeholder_warning) placeholderWarnings.push(data.placeholder_warning);
+
+      const rateLimited = data.rate_limited_keys || [];
+      const otherFailedCount = (data.failed_keys?.length || 0) - rateLimited.length;
+      if (otherFailedCount > 0) totalFailed += otherFailedCount;
+
+      if (rateLimited.length === 0) {
+        remaining = [];
+        break;
+      }
+      if (round === MAX_ROUNDS) {
+        totalFailed += rateLimited.length;
+        failureReasons.add(`Still rate-limited on ${rateLimited.length} string(s) after ${MAX_ROUNDS} attempts — Groq's per-minute budget for this key is tight; try again in a few minutes, or see console.groq.com/settings/billing to raise it.`);
+        break;
+      }
+      const waitMs = Math.min(Math.max(data.retry_after_ms || 10000, 3000), 70000) + 1000;
+      onProgress?.(`Rate limit reached — waiting ${Math.ceil(waitMs / 1000)}s before continuing (${rateLimited.length} string${rateLimited.length === 1 ? '' : 's'} left for ${targetLanguageName})…`);
+      await sleep(waitMs);
+      remaining = rateLimited;
+    }
+
+    return { totalSaved, totalFailed, failureReasons: [...failureReasons], placeholderWarnings };
+  };
+
   // Auto-translate every key currently falling back to raw English for activeLang, and save
   // the results as ordinary overrides — the same seeding pass Enda asked for, so a narrator
   // opening a language with no baseline lands on a machine-translated draft to correct rather
@@ -137,46 +211,26 @@ export default function TranslationsManager({ authMode, user }) {
       return;
     }
     const targetLanguageName = LANGUAGE_NAME_BY_CODE[activeLang] || activeLang;
+    const authPayload = { email: isNarr ? user?.email : undefined, narrToken: isNarr ? user?.token : undefined };
     setSeeding(true);
     setSeedWarning('');
     try {
-      const entries = {};
-      for (const k of missingKeysForLang) entries[k] = translations.en[k];
-
-      const authPayload = { email: isNarr ? user?.email : undefined, narrToken: isNarr ? user?.token : undefined };
-
-      const res = await base44.functions.invoke('seedUiTranslations', {
-        entries, target_language: targetLanguageName, apiKey: apiKeys.groq_api_key, ...authPayload,
-      });
-      const data = res.data || {};
-      if (data.error) throw new Error(data.error);
-      const produced = data.translations || {};
-      if (Object.keys(produced).length === 0) throw new Error('No translations were returned.');
-
-      const saveRes = await base44.functions.invoke('saveTranslationsBulk', {
-        lang: activeLang, entries: produced, ...authPayload,
-      });
-      const saveData = saveRes.data || {};
-      if (saveData.error) throw new Error(saveData.error);
-
-      const failedCount = (data.failed_keys?.length || 0) + (saveData.errors?.length || 0);
+      const { totalSaved, totalFailed, failureReasons, placeholderWarnings } = await seedMissingForLanguage(
+        activeLang, targetLanguageName, missingKeysForLang, authPayload, setProgressMessage
+      );
       toast({
         title: 'Auto-translated',
-        description: `Seeded ${saveData.saved || 0} of ${missingKeysForLang.length} missing strings for ${targetLanguageName}.${failedCount ? ` ${failedCount} couldn't be translated — fill those in by hand.` : ''}`,
+        description: `Seeded ${totalSaved} of ${missingKeysForLang.length} missing strings for ${targetLanguageName}.${totalFailed ? ` ${totalFailed} couldn't be translated — fill those in by hand.` : ''}`,
       });
-      // failure_reasons carries the actual Groq/parse error(s), not just a bare count — surface
-      // it so a repeat failure is diagnosable instead of another silent "N couldn't be translated".
-      if (data.failure_reasons?.length > 0) {
-        setSeedWarning(`${targetLanguageName}: ${data.failure_reasons.join(' / ')}`);
-      } else if (data.placeholder_warning) {
-        setSeedWarning(data.placeholder_warning);
-      }
+      const warnings = [...placeholderWarnings, ...failureReasons];
+      if (warnings.length > 0) setSeedWarning(warnings.join(' '));
       await load();
       await reloadTranslations();
     } catch (err) {
       toast({ variant: 'destructive', title: 'Auto-translate failed', description: err?.message });
     } finally {
       setSeeding(false);
+      setProgressMessage('');
     }
   };
 
@@ -204,33 +258,21 @@ export default function TranslationsManager({ authMode, user }) {
         const missing = Object.keys(translations.en).filter(k => isMissing(l.code, k));
         if (missing.length === 0) continue;
         languagesTouched++;
-        setSeedAllProgress(`Translating ${l.native} — ${missing.length} string${missing.length === 1 ? '' : 's'} (language ${languagesTouched} of ${targets.length})…`);
-
-        const entries = {};
-        for (const k of missing) entries[k] = translations.en[k];
+        const targetLanguageName = LANGUAGE_NAME_BY_CODE[l.code] || l.name;
+        setProgressMessage(`Translating ${l.native} — ${missing.length} string${missing.length === 1 ? '' : 's'} (language ${languagesTouched} of ${targets.length})…`);
 
         try {
-          const res = await base44.functions.invoke('seedUiTranslations', {
-            entries, target_language: LANGUAGE_NAME_BY_CODE[l.code] || l.name, apiKey: apiKeys.groq_api_key, ...authPayload,
-          });
-          const data = res.data || {};
-          if (data.error) throw new Error(data.error);
-          const produced = data.translations || {};
-          if (Object.keys(produced).length === 0) throw new Error('No translations returned.');
-
-          const saveRes = await base44.functions.invoke('saveTranslationsBulk', {
-            lang: l.code, entries: produced, ...authPayload,
-          });
-          const saveData = saveRes.data || {};
-          if (saveData.error) throw new Error(saveData.error);
-
-          totalSeeded += saveData.saved || 0;
-          totalFailed += (data.failed_keys?.length || 0) + (saveData.errors?.length || 0);
-          if (data.failure_reasons?.length > 0) warnings.push(`${l.native}: ${data.failure_reasons.join(' / ')}`);
-          if (data.placeholder_warning) warnings.push(`${l.native}: ${data.placeholder_warning}`);
+          const { totalSaved, totalFailed: langFailed, failureReasons, placeholderWarnings } = await seedMissingForLanguage(
+            l.code, targetLanguageName, missing, authPayload,
+            (msg) => setProgressMessage(`${l.native}: ${msg}`)
+          );
+          totalSeeded += totalSaved;
+          totalFailed += langFailed;
+          failureReasons.forEach(r => warnings.push(`${l.native}: ${r}`));
+          placeholderWarnings.forEach(w => warnings.push(`${l.native}: ${w}`));
         } catch (langErr) {
-          // One language failing (rate limit, transient Groq error) shouldn't stop the rest —
-          // it's simply left missing, and can be retried later from its own language tab.
+          // One language failing shouldn't stop the rest — it's simply left missing, and can be
+          // retried later from its own language tab or by running "all languages" again.
           totalFailed += missing.length;
           warnings.push(`${l.native}: auto-translate failed — ${langErr?.message || 'unknown error'}.`);
         }
@@ -249,7 +291,7 @@ export default function TranslationsManager({ authMode, user }) {
       await reloadTranslations();
     } finally {
       setSeedingAll(false);
-      setSeedAllProgress('');
+      setProgressMessage('');
     }
   };
 
@@ -267,7 +309,7 @@ export default function TranslationsManager({ authMode, user }) {
       <div className="flex items-center justify-between gap-3 bg-slate-800/60 border border-slate-700 rounded-xl px-4 py-3">
         <div>
           <p className="text-sm text-slate-300">Backfill every language at once, rather than opening each tab in turn — this can take several minutes for 20+ languages; keep this tab open while it runs.</p>
-          {seedingAll && seedAllProgress && <p className="text-xs text-slate-500 mt-1">{seedAllProgress}</p>}
+          {seedingAll && progressMessage && <p className="text-xs text-slate-500 mt-1">{progressMessage}</p>}
         </div>
         <Button size="sm" onClick={handleSeedAllMissing} disabled={seeding || seedingAll} className="bg-blue-700/30 hover:bg-blue-700/50 border border-blue-600/50 text-white gap-2 shrink-0">
           {seedingAll ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
@@ -286,11 +328,14 @@ export default function TranslationsManager({ authMode, user }) {
 
       {activeLang !== 'en' && (
         <div className="flex items-center justify-between gap-3 bg-slate-800/60 border border-slate-700 rounded-xl px-4 py-3">
-          <p className="text-sm text-slate-300">
-            {missingKeysForLang.length > 0
-              ? `${missingKeysForLang.length} string${missingKeysForLang.length === 1 ? '' : 's'} in ${LANGUAGE_NAME_BY_CODE[activeLang] || activeLang} ${missingKeysForLang.length === 1 ? 'has' : 'have'} no baseline or correction yet — showing raw English below until seeded.`
-              : `Every string has a baseline or correction for ${LANGUAGE_NAME_BY_CODE[activeLang] || activeLang}.`}
-          </p>
+          <div>
+            <p className="text-sm text-slate-300">
+              {missingKeysForLang.length > 0
+                ? `${missingKeysForLang.length} string${missingKeysForLang.length === 1 ? '' : 's'} in ${LANGUAGE_NAME_BY_CODE[activeLang] || activeLang} ${missingKeysForLang.length === 1 ? 'has' : 'have'} no baseline or correction yet — showing raw English below until seeded.`
+                : `Every string has a baseline or correction for ${LANGUAGE_NAME_BY_CODE[activeLang] || activeLang}.`}
+            </p>
+            {seeding && progressMessage && <p className="text-xs text-slate-500 mt-1">{progressMessage}</p>}
+          </div>
           {missingKeysForLang.length > 0 && (
             <Button size="sm" onClick={handleSeedMissing} disabled={seeding || seedingAll} className="bg-blue-700/30 hover:bg-blue-700/50 border border-blue-600/50 text-white gap-2 shrink-0">
               {seeding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}

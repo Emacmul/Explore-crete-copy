@@ -121,6 +121,38 @@ The actual Groq/parse error is also now kept and returned (`failure_reasons`, su
 in `TranslationsManager.jsx`'s warning banner) instead of collapsing every failure into
 a bare count with no way to tell a size problem from a bad key from an expired API key.
 
+**Second bug, same day, found because the fix above finally showed the real error:**
+with the oversized-chunk problem fixed, a follow-up 65-key Dutch run still came back
+partial — but now with the actual Groq message visible, and it was a completely
+different, genuine constraint: this Groq account's rate limit for `openai/gpt-oss-120b`
+is a flat 8000 tokens PER MINUTE, and Groq reserves a request's full `max_tokens`
+against that budget the instant it's sent. A couple of our (now much smaller) chunks in
+a row was enough to exhaust the whole per-minute budget, so every later chunk got
+rejected within the same minute purely because the budget hadn't refilled — not a bug in
+the request, just Groq's own throttle. Splitting a rate-limited chunk further (the fix
+above) would have made this WORSE, not better — more requests, each still reserving
+close to the same `max_tokens`, drains the shared budget faster. Enda asked, reasonably,
+whether clicking "auto-translate" again would just repeat the same wall of raw Groq rate-
+limit text. Fixed properly rather than telling him to keep retrying by hand:
+`seedUiTranslations` no longer retries or sleeps through a 429 itself (a multi-minute
+sleep inside a single backend call risks that call timing out) — it now reports back
+exactly which keys hit the limit and how long Groq says to wait (`rate_limited_keys`,
+`retry_after_ms`), and stops calling Groq further once the first 429 in a request
+confirms the budget is exhausted (every later chunk would hit the identical wall).
+`TranslationsManager.jsx` now owns the actual waiting: `seedMissingForLanguage` calls
+`seedUiTranslations`, and if any keys come back rate-limited, waits out Groq's own
+suggested delay (with a small buffer, capped at 70s) and automatically retries just
+those keys — up to 6 rounds — saving progress after every round rather than only at the
+end, so a run that's interrupted partway keeps what it already got. `max_tokens` per
+call also dropped from 4000 to 2500 (smaller reservation = more calls fit in the 8000
+TPM budget before hitting a 429 in the first place). Both the per-language and
+"all languages" buttons now show a live "Rate limit reached — waiting Xs…" status
+instead of the raw multi-paragraph Groq error dump Enda saw; a real, non-rate-limit
+failure is still surfaced as a short explicit reason via `failure_reasons`, and only
+after 6 rounds of genuinely still being rate-limited does it give up on those specific
+keys and say so plainly (with a pointer to Groq's own billing page for anyone who wants
+faster runs).
+
 **Deliberately left alone:** the live customer-facing app's `t()` fallback chain in
 `LanguageContext.jsx` — untouched; seeded strings reach customers exactly the way a
 narrator's hand correction always has, as a `Translation` override the same `t()` chain

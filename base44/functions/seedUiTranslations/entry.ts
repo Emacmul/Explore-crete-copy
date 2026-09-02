@@ -30,25 +30,33 @@ function findUnpreservedPlaceholders(original: string, translated: string): stri
   return missing;
 }
 
-// First real run of this (Enda, seeding Dutch): a 95-key pass chunked at a flat 40 keys/call
-// came back "seeded 15 of 95" — both 40-key chunks failed outright, only the trailing 15-key
-// chunk went through. That's not random flakiness, it's the exact failure mode translateScript's
-// own max_tokens comment already documents for this Groq account: the FULL max_tokens figure is
-// reserved against the per-minute token budget the instant a request is sent, before a single
-// prompt token is even counted, so a chunk whose prompt is big enough (a batch of 40 keys can
-// easily include several paragraph-length strings — about.paragraph1-3, detail.defaultSafetyNotes,
-// contact.intro, etc.) tips the combined reservation over the ceiling and Groq rejects the whole
-// request. A flat key-count chunk size can't see that coming — a chunk of 40 short button labels
-// is trivial, a chunk of 40 that happens to catch three long paragraphs is not. So chunking here
-// caps on BOTH key count and total source character count, and any chunk that still fails is
-// retried after being split in half (sequentially, never in parallel — splitting into concurrent
-// calls would only make the per-minute budget problem worse) down to single keys if it has to,
-// so one oversized batch degrades to "slower" rather than "silently drops 40 keys with no
-// explanation." The real Groq error message is now kept and surfaced too, instead of collapsing
-// every failure into a bare count — see failed_keys/failure_reasons below.
+// Two real runs against Enda's own Groq key exposed two DIFFERENT problems here, not one:
+//
+// Run 1 (95 Dutch keys, flat 40-key chunks): came back "seeded 15 of 95" with no reason given.
+// Chunking purely by key count let a 40-key batch catch several paragraph-length strings
+// together (about.paragraph1-3, detail.defaultSafetyNotes, contact.intro, etc.), which can
+// make a single request's prompt+max_tokens reservation big enough for Groq to reject outright.
+// Fixed by capping chunks on BOTH key count and total source character count (MAX_CHUNK_KEYS/
+// MAX_CHUNK_CHARS below), and by splitting a chunk in half and retrying if it fails for a
+// reason OTHER than rate limiting — see splitAndRetry below.
+//
+// Run 2 (65 Dutch keys, with the above fix already in place): the surfaced error revealed the
+// REAL, separate constraint — this Groq account's rate limit for openai/gpt-oss-120b is a flat
+// 8000 tokens PER MINUTE, and Groq reserves a request's full max_tokens against that budget the
+// instant it's sent. A handful of our small chunks in a row (each reserving ~4000+ tokens) burns
+// through the entire per-minute budget in one or two calls, so every following chunk gets a 429
+// almost immediately — not because anything is wrong with the request, purely because the
+// account hasn't had a minute to "refill" yet. Splitting a rate-limited chunk into smaller ones
+// would make this WORSE (more requests, each still reserving close to the same max_tokens, drains
+// the budget even faster) — the only correct response to a 429 is to wait. Groq's own error tells
+// us exactly how long ("Please try again in 6.465s"), so a 429 is now reported back to the
+// frontend as `rate_limited_keys` + `retry_after_ms` instead of being retried (or slept through)
+// in here — a long in-function sleep risks this call itself timing out, and TranslationsManager.jsx
+// already tells Enda to keep the tab open, so pacing repeated attempts from there — where a many-
+// minute wait is just normal UI state, not a request that might get killed mid-sleep — is safer.
 const MAX_CHUNK_KEYS = 15;
-const MAX_CHUNK_CHARS = 1800; // total source characters per chunk — see comment above
-const MAX_TOKENS_PER_CALL = 4000; // same figure translateScript uses, same reasoning: leaves headroom under a conservative ~8000 TPM ceiling once the (now much smaller) prompt is added on top
+const MAX_CHUNK_CHARS = 1800; // total source characters per chunk
+const MAX_TOKENS_PER_CALL = 2500; // lower reservation per call = more calls fit in the account's 8000 TPM budget before a 429
 
 function buildChunks(keys: string[], entries: Record<string, string>): string[][] {
   const chunks: string[][] = [];
@@ -82,7 +90,21 @@ JSON:
 ${JSON.stringify(sourceObj)}`;
 }
 
-async function callGroq(sourceObj: Record<string, string>, target_language: string, apiKey: string): Promise<{ ok: true; parsed: Record<string, unknown> } | { ok: false; error: string }> {
+type GroqResult =
+  | { ok: true; parsed: Record<string, unknown> }
+  | { ok: false; error: string; rateLimited: boolean; retryAfterMs?: number };
+
+function parseRetryAfterMs(headerValue: string | null, message: string): number | undefined {
+  if (headerValue) {
+    const secs = parseFloat(headerValue);
+    if (!Number.isNaN(secs)) return Math.ceil(secs * 1000);
+  }
+  const m = message.match(/try again in ([0-9.]+)s/i);
+  if (m) return Math.ceil(parseFloat(m[1]) * 1000);
+  return undefined;
+}
+
+async function callGroq(sourceObj: Record<string, string>, target_language: string, apiKey: string): Promise<GroqResult> {
   const groqResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -106,30 +128,34 @@ async function callGroq(sourceObj: Record<string, string>, target_language: stri
 
   if (!groqResponse.ok) {
     const errData = await groqResponse.json().catch(() => ({}));
-    return { ok: false, error: errData.error?.message || `Groq API returned ${groqResponse.status}` };
+    const message = errData.error?.message || `Groq API returned ${groqResponse.status}`;
+    const rateLimited = groqResponse.status === 429 || /rate.?limit/i.test(message);
+    return { ok: false, error: message, rateLimited, retryAfterMs: parseRetryAfterMs(groqResponse.headers.get('retry-after'), message) };
   }
 
   const groqData = await groqResponse.json();
   const raw = groqData.choices?.[0]?.message?.content;
   try {
     const parsed = raw ? JSON.parse(raw) : null;
-    if (!parsed || typeof parsed !== 'object') return { ok: false, error: 'Model did not return a valid JSON object.' };
+    if (!parsed || typeof parsed !== 'object') return { ok: false, error: 'Model did not return a valid JSON object.', rateLimited: false };
     return { ok: true, parsed };
   } catch {
-    return { ok: false, error: 'Model response was not valid JSON (likely cut off mid-response).' };
+    return { ok: false, error: 'Model response was not valid JSON (likely cut off mid-response).', rateLimited: false };
   }
 }
 
-// Translates one chunk of keys; on failure, splits it in half and retries each half in turn
-// (never in parallel) until it either succeeds or is down to a single key it still can't
-// translate — see the big comment above for why a size-related failure needs this rather than
-// a flat retry of the same oversized request.
-async function translateChunk(
-  chunkKeys: string[],
-  entries: Record<string, string>,
-  target_language: string,
-  apiKey: string
-): Promise<{ translated: Record<string, string>; failed: { key: string; error: string }[] }> {
+interface ChunkOutcome {
+  translated: Record<string, string>;
+  failed: { key: string; error: string }[];
+  rateLimitedKeys: string[];
+  retryAfterMs?: number;
+}
+
+// Translates one chunk of keys. A rate-limited chunk is reported back as-is (see the big
+// comment above for why splitting or sleeping through a 429 in here is the wrong move). Any
+// OTHER failure (oversized/malformed response) still splits the chunk in half and retries each
+// half in turn — never in parallel — down to single keys if it has to.
+async function translateChunk(chunkKeys: string[], entries: Record<string, string>, target_language: string, apiKey: string): Promise<ChunkOutcome> {
   const sourceObj: Record<string, string> = {};
   for (const k of chunkKeys) sourceObj[k] = entries[k];
 
@@ -146,20 +172,27 @@ async function translateChunk(
         failed.push({ key: k, error: 'Key missing from model response' });
       }
     }
-    return { translated, failed };
+    return { translated, failed, rateLimitedKeys: [] };
+  }
+
+  if (result.rateLimited) {
+    return { translated: {}, failed: [], rateLimitedKeys: chunkKeys, retryAfterMs: result.retryAfterMs };
   }
 
   if (chunkKeys.length > 1) {
     const mid = Math.ceil(chunkKeys.length / 2);
     const first = await translateChunk(chunkKeys.slice(0, mid), entries, target_language, apiKey);
     const second = await translateChunk(chunkKeys.slice(mid), entries, target_language, apiKey);
+    const retryAfterMs = first.retryAfterMs ?? second.retryAfterMs;
     return {
       translated: { ...first.translated, ...second.translated },
       failed: [...first.failed, ...second.failed],
+      rateLimitedKeys: [...first.rateLimitedKeys, ...second.rateLimitedKeys],
+      ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
     };
   }
 
-  return { translated: {}, failed: chunkKeys.map(k => ({ key: k, error: result.error })) };
+  return { translated: {}, failed: chunkKeys.map(k => ({ key: k, error: result.error })), rateLimitedKeys: [] };
 }
 
 Deno.serve(async (req) => {
@@ -190,32 +223,51 @@ Deno.serve(async (req) => {
     const chunks = buildChunks(keys, entries);
     const translated: Record<string, string> = {};
     const failedKeys: string[] = [];
+    const rateLimitedKeys: string[] = [];
+    let retryAfterMs: number | undefined;
     const failureReasons = new Set<string>();
     const unpreservedWarnings: string[] = [];
 
+    // Sequential on purpose — running chunks concurrently would only burn through the same
+    // shared per-minute token budget faster and cause MORE 429s, not fewer.
     for (const chunkKeys of chunks) {
-      const { translated: chunkTranslated, failed } = await translateChunk(chunkKeys, entries, target_language, apiKey);
-      for (const [k, v] of Object.entries(chunkTranslated)) {
+      const outcome = await translateChunk(chunkKeys, entries, target_language, apiKey);
+      for (const [k, v] of Object.entries(outcome.translated)) {
         translated[k] = v;
         const missing = findUnpreservedPlaceholders(entries[k], v);
         if (missing.length > 0) unpreservedWarnings.push(`${k} (${missing.join(', ')})`);
       }
-      for (const f of failed) {
+      for (const f of outcome.failed) {
         failedKeys.push(f.key);
         failureReasons.add(f.error);
       }
+      if (outcome.rateLimitedKeys.length > 0) {
+        rateLimitedKeys.push(...outcome.rateLimitedKeys);
+        failedKeys.push(...outcome.rateLimitedKeys);
+        if (outcome.retryAfterMs !== undefined) {
+          retryAfterMs = retryAfterMs === undefined ? outcome.retryAfterMs : Math.max(retryAfterMs, outcome.retryAfterMs);
+        }
+        // Once one chunk in this call is rate-limited, every later chunk will hit the exact
+        // same wall (the budget doesn't recover mid-call) — stop here instead of burning
+        // through the rest of the chunks on guaranteed 429s. The caller gets back whatever
+        // translated so far, plus which keys still need a retry once the window resets.
+        break;
+      }
     }
 
-    if (Object.keys(translated).length === 0) {
+    if (Object.keys(translated).length === 0 && rateLimitedKeys.length === 0) {
       return Response.json({ error: `No translations were returned — try again, or fill these in by hand. Last error: ${[...failureReasons][0] || 'unknown'}` }, { status: 500 });
     }
 
     return Response.json({
       translations: translated,
       failed_keys: failedKeys,
-      // A handful of DISTINCT error messages (not one per failed key — that could be dozens
-      // of copies of the same underlying cause) so a failure is diagnosable instead of just
-      // a bare count with no way to tell a size problem from a bad key from an expired key.
+      // Keys that specifically hit the account's per-minute rate limit, plus how long Groq says
+      // to wait — TranslationsManager.jsx uses this to automatically wait and retry just these
+      // keys, rather than reporting a rate limit as a plain, permanent-looking failure.
+      ...(rateLimitedKeys.length > 0 ? { rate_limited_keys: rateLimitedKeys, retry_after_ms: retryAfterMs ?? 15000 } : {}),
+      // A handful of DISTINCT non-rate-limit error messages (not one per failed key — that
+      // could be dozens of copies of the same cause) so a real failure is diagnosable.
       ...(failureReasons.size > 0 ? { failure_reasons: [...failureReasons].slice(0, 5) } : {}),
       // Best-effort check only, never fails the pass over it — same reasoning as
       // translateScript's own preservation_warning: the translation is very likely still
