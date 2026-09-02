@@ -11,6 +11,19 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 //
 // Auth mirrors saveTranslation exactly (admin via Base44 session, or narrator via
 // email+narrToken/narrPassword) since this is the same write, just batched.
+//
+// Chunk size/pacing (per Enda, thinking ahead to several narrators auto-translating at
+// once): Base44's own published limits are per-app, not per-narrator-clone — narrators
+// share one app and one database here, they don't each get an isolated backend. Those
+// limits (documented as roughly 140 creates/min, 100 updates/min, shared app-wide) are
+// generous for normal narrator activity, but a burst tool like this — which used to fire
+// 10 writes at once — is exactly the kind of spike that could stack up if two or three
+// narrators happened to run "Auto-translate" in the same moment. Smaller chunks with a
+// short pause between them spread the same total writes out over a bit more time instead
+// of firing them all in one instant, at basically no cost to a seeding pass that already
+// isn't time-critical.
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 export default async function(req) {
   try {
     const base44 = createClientFromRequest(req);
@@ -57,10 +70,11 @@ export default async function(req) {
 
     let saved = 0;
     const errors: { key: string; error: string }[] = [];
-    // Chunked concurrency rather than one giant Promise.all — writing dozens of records to
-    // the same entity at once is more likely to trip a rate limit than a few at a time, and
-    // one failed write shouldn't take the rest of the batch down with it.
-    const CHUNK = 10;
+    // Chunked AND paced — writing dozens of records all at once is more likely to trip
+    // Base44's own app-wide write limits (shared across every narrator, not per-clone —
+    // see the comment above) than a few at a time with a short gap between batches, and
+    // one failed write shouldn't take the rest of the batch down with it either way.
+    const CHUNK = 5;
     for (let i = 0; i < keys.length; i += CHUNK) {
       const chunk = keys.slice(i, i + CHUNK);
       const results = await Promise.allSettled(chunk.map(async (key) => {
@@ -80,6 +94,7 @@ export default async function(req) {
           errors.push({ key: chunk[j], error: String(reason?.message || reason) });
         }
       }
+      if (i + CHUNK < keys.length) await sleep(300);
     }
 
     return Response.json({ ok: true, saved, total: keys.length, errors });

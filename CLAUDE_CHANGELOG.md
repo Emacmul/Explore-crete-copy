@@ -159,6 +159,21 @@ but automatic and one-time) and dropped the earlier "or see console.groq.com/set
 billing" suggestion, which ran against what he'd just said. The give-up message now just
 says to run Auto-translate again later — it only retries whatever's still missing.
 
+**Third, precautionary change, prompted by a Base44-support exchange about scaling to 12+
+concurrent narrators:** Base44's support answer claimed each narrator's cloned tour is a
+separate app with its own backend and database, which isn't how this codebase actually
+works — cloning a tour here just creates another row in the one shared Walk table, in the
+one shared database, and every narrator's saves go through the same shared backend
+functions everyone else uses (Enda has been asked to get that corrected/confirmed with
+Base44 directly). Under the correct premise, Base44's own published per-app write limits
+(roughly 140 creates/min, 100 updates/min, shared across the whole app, not per narrator)
+are comfortably clear of normal narrator activity, but a burst tool that fires many writes
+at once is exactly the kind of spike that could stack up if two or three narrators ran it
+in the same moment. `saveTranslationsBulk`'s write chunk size dropped from 10 concurrent
+writes to 5, with a 300ms pause between chunks — spreads the same total writes over a bit
+more time instead of firing them all in one instant, at no real cost to a seeding pass
+that was never time-critical to begin with.
+
 **Deliberately left alone:** the live customer-facing app's `t()` fallback chain in
 `LanguageContext.jsx` — untouched; seeded strings reach customers exactly the way a
 narrator's hand correction always has, as a `Translation` override the same `t()` chain
