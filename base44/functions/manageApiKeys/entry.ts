@@ -47,7 +47,6 @@ export default async function(req) {
       }
     }
 
-
     if (!email) {
       return Response.json({ error: 'Not authorized' }, { status: 403 });
     }
