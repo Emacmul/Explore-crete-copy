@@ -1,5 +1,5 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
-import { verifyEmailFromToken } from '../../shared/wpToken.ts';
+import { resolveActor } from '../../shared/backendActor.ts';
 
 // Replaces browser-only localStorage for the Google TTS / Groq API keys with real,
 // permanent, server-side storage tied to whoever is actually calling — an admin's real
@@ -9,49 +9,46 @@ import { verifyEmailFromToken } from '../../shared/wpToken.ts';
 //
 // Every action here only ever touches the CALLER's own AppUser record — an admin gets
 // and saves their own keys, a narrator gets and saves their own, never anyone else's.
+//
+// FIXED (2026-09-02 audit): this used to identify a narrator by treating their Narr
+// Studio session token (a random ID narrLogin.ts makes up itself) as if it were a
+// WordPress-issued login token, and asking WordPress to validate it. WordPress has
+// never seen that token, so it rejected it every single time, and every real narrator
+// got "Not authorized" on both get and save. This was the actual, now-confirmed root
+// cause behind the repeated "No Google TTS API key found" reports (see
+// CLAUDE_CHANGELOG.md, follow-up 61). Now uses the same resolveActor (email+narrToken
+// checked against AppUser.narr_session_token) every other narrator-facing function in
+// this app already relies on.
 export default async function(req) {
   try {
     const base44 = createClientFromRequest(req);
     const body = await req.json().catch(() => ({}));
-    const { action, token, google_tts_api_key, groq_api_key, groq_api_key_2 } = body || {};
+    const { action, google_tts_api_key, groq_api_key, groq_api_key_2 } = body || {};
 
     if (action !== 'get' && action !== 'save') {
       return Response.json({ error: 'action must be "get" or "save"' }, { status: 400 });
     }
 
-    // Identify the caller — admin via a real Base44 session, narrator via the same
-    // email+token pattern used everywhere else in this app.
-    //
-    // TEMPORARY DIAGNOSTIC (see CLAUDE_CHANGELOG.md, follow-up 61): Enda has reported
-    // three times that this GET action comes back with a blank google_tts_api_key even
-    // though a real key is saved — and has confirmed there is only ONE AppUser record
-    // under his email (admin role), which rules out the leading theory (a duplicate
-    // account record). Every other angle traced through this file, useNarratorApiKeys.js,
-    // the SDK's own request code, and the auth chain checks out in isolation, which means
-    // the next real step is catching the ACTUAL failing request in the act rather than
-    // theorizing further. `identifiedVia`/`matchCount` below are read-only, additive,
-    // and change NOTHING about who gets access to what — save is untouched — they just
-    // surface, in the one place this already fails, exactly how the caller was identified
-    // and what was found, so the next time "No Google TTS API key found" appears it comes
-    // with hard evidence instead of another guess. Safe to remove once the real cause is
-    // confirmed and fixed.
     let email = null;
-    let identifiedVia = 'none';
-    let authMeError = null;
     try {
       const me = await base44.auth.me();
-      if (me && me.email) { email = me.email.toLowerCase(); identifiedVia = 'admin-session'; }
-    } catch (e) { authMeError = e?.message || String(e); /* no Base44 session — try the narrator token path below */ }
+      if (me?.email) email = me.email.toLowerCase();
+    } catch { /* no Base44 session — try the narrator/admin-via-Narr path below */ }
 
     if (!email) {
-      email = await verifyEmailFromToken(token, Deno.env.get('WC_SITE_URL'));
-      if (email) identifiedVia = 'narrator-token';
+      const actor = await resolveActor(base44, body);
+      if (actor?.kind === 'narrator') {
+        email = actor.email;
+      } else if (actor?.kind === 'admin' && body?.email) {
+        // An admin wearing the Narr hat has no Base44 session; resolveActor already
+        // confirmed body.narrToken matches this exact admin-role AppUser row, so
+        // body.email is trustworthy here — it's the same row that was just verified.
+        email = String(body.email).trim().toLowerCase();
+      }
     }
+
     if (!email) {
-      return Response.json({
-        error: 'Not authorized',
-        _diag: { identifiedVia: 'none', tokenPresent: !!token, authMeError },
-      }, { status: 403 });
+      return Response.json({ error: 'Not authorized' }, { status: 403 });
     }
 
     const matches = await base44.asServiceRole.entities.AppUser.filter({ email });
@@ -64,12 +61,6 @@ export default async function(req) {
         // Optional backup Groq key from a SEPARATE Groq account — see
         // base44/shared/groqKeyRotation.ts. Never required; blank means "no backup set".
         groq_api_key_2: record?.groq_api_key_2 || '',
-        _diag: {
-          identifiedVia,
-          resolvedEmail: email,
-          matchCount: Array.isArray(matches) ? matches.length : -1,
-          recordId: record?.id || null,
-        },
       });
     }
 

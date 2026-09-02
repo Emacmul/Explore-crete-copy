@@ -41,6 +41,105 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-02 (follow-up 110) — Fixed the 3 security/practical issues from the full audit
+Scope: **NEW shared backend file** `base44/shared/passwordHash.ts`;
+`base44/functions/narrLogin/entry.ts` (**needs the redeploy dance**);
+`base44/functions/saveAppUserAdmin/entry.ts` (**needs the redeploy dance**);
+`base44/functions/saveTranslation/entry.ts` (**needs the redeploy dance**);
+`base44/functions/saveTranslationsBulk/entry.ts` (**needs the redeploy dance**);
+`base44/functions/ensureAppUserOnboarding/entry.ts` (**needs the redeploy dance**);
+`base44/functions/manageApiKeys/entry.ts` (**needs the redeploy dance**);
+`base44/entities/AppUser.jsonc` (new fields, no redeploy needed — entity schema);
+`src/lib/useNarratorApiKeys.js`, `src/components/admin/WaypointPaceEditor.jsx`
+(frontend-only).
+
+**Per Enda's report:** after the 2026-09-02 audit (see `SECURITY_AUDIT_2026-09-02.md`,
+delivered separately), Enda approved all three confirmed findings for a fix, "to the
+highest feasible standard without creating major headaches for bona fide users."
+
+**1. `narrLogin` — brute-force protection + password hashing.**
+- Added `login_failed_attempts` / `login_locked_until` to `AppUser.jsonc`. 5 wrong
+  passwords in a row now locks that account for 15 minutes — same pattern (limit,
+  duration) already used for device-login codes elsewhere in this app
+  (`shared/deviceAuth.ts`), just applied to this login too, which never had it.
+- Collapsed the three different error messages ("No account found" / "This account is
+  not a Narrator" / "Wrong password") into one generic "Invalid email or password." —
+  previously an attacker could learn which email addresses even have backend accounts,
+  and which of those are narrator/admin, before guessing a single password.
+- New shared helper `passwordHash.ts`: passwords are now hashed with PBKDF2 (100,000
+  iterations, per-password random salt, native Web Crypto — no new dependency). A
+  password stored before this change (plain text) still logs in correctly once, and is
+  transparently rehashed into the new format at that moment — no one needs their
+  password reset, no visible change for the person logging in. `saveAppUserAdmin` now
+  hashes any password an admin sets going forward, and clears a lockout as a side
+  effect (doubles as the recovery path for a locked-out account). `saveTranslation` and
+  `saveTranslationsBulk` also had a `narrPassword` fallback comparing straight against
+  `AppUser.password` — updated to use the same hash-aware check, since it would
+  otherwise have silently broken the moment a password got hashed.
+- Also fixed, in the same file: the wrong-password comparison used to be a plain `===`
+  (flagged as low-priority in the audit) — `passwordHash.ts`'s `verifyPassword` now
+  compares in constant time.
+- Known, accepted trade-off: the lockout is per-account, keyed only by email — anyone
+  who knows a narrator's email can trigger a 15-minute lockout on that account without
+  needing anything else. This is the same trade-off the existing device-login lockout
+  makes; given this is a small, known set of narrator/admin accounts rather than a
+  public signup flow, stopping password-guessing outright was judged worth that
+  nuisance risk. Worth knowing about, not silently swept under the rug.
+
+**2. `ensureAppUserOnboarding` — closed the email-fallback hijack.**
+- The existing-row lookup by client-supplied email now prefers the email carried
+  *inside* the WordPress token's own payload (safe to read only because
+  `isTokenGenuine` already confirmed WordPress itself issued that exact token) — so it
+  can only ever find/link the caller's OWN row, never an arbitrary one they typed in.
+- If this WordPress JWT Auth plugin's payload doesn't happen to carry an email (kept as
+  a fallback rather than assumed), the old client-supplied-email lookup still runs, but
+  now only ever matches a plain `'user'`-role row — never a narrator or admin row. That
+  keeps ordinary legacy customer accounts (the common case) linking exactly as before,
+  while permanently closing off the actual exploit (probing or relinking a narrator or
+  admin account), even in that fallback case.
+- New-row creation now also prefers the token's verified email over the client-supplied
+  one, falling back to it only when the token payload carried none.
+
+**3. `manageApiKeys` — now actually works for real narrators.**
+- Root cause (confirmed by the audit): this function checked a narrator's Narr Studio
+  session token as if it were a WordPress login token, which it never was — WordPress
+  rejected it every time, so every real narrator got "Not authorized" on both `get` and
+  `save`. This is now confirmed to be the actual cause behind the repeated "No Google
+  TTS API key found" reports (follow-up 61).
+- Switched to `resolveActor` — the same email+narrToken check (verified against
+  `AppUser.narr_session_token`) every other narrator-facing function in this app already
+  uses. `useNarratorApiKeys.js` now sends `getNarratorAuthPayload()` (already used by
+  every sibling hook/tool) instead of the old mismatched token.
+- Removed the now-resolved TEMPORARY DIAGNOSTIC (`_diag`) plumbing from
+  `manageApiKeys`, `useNarratorApiKeys.js`, and the matching temporary diagnostic text
+  in `WaypointPaceEditor.jsx` — it did its job (pointed straight at the real cause above)
+  and its own comment said it was safe to remove once that was confirmed and fixed.
+
+**Verified:** `npx eslint` clean on every changed JS/JSX file; `npx esbuild
+--platform=neutral --target=es2022` clean on every changed/new `.ts` file (no Deno
+runtime available in this sandbox, so this only confirms syntax, not live behavior);
+`npx vite build` completes with no errors.
+
+**Deliberately left alone (per the audit's own "worth a look, not urgent" / "cleanup, not
+risk" sections):** `syncLibrary`'s unpublished-tour filtering, `fetchElevations`'
+looser-than-`routeWaypoints` session check, `uploadNarrationAudio`'s lack of file-type/size
+validation, `manageApiKeys`'s admin-path accepting any logged-in Base44 session rather than
+specifically an admin one, the built-in `User` entity's absent RLS, the remaining
+non-constant-time comparisons elsewhere (device code, payment webhook), and
+`getEmailFromToken`'s continued existence as an unverified decoder (still has no unsafe
+call site anywhere in the codebase). None of these were part of what Enda approved this
+round.
+
+**Not tested live** — same caveat as every other backend change this session: confirmed to
+build and type-check cleanly, but needs a real check in the Base44 app once redeployed.
+Worth specifically testing: a real narrator login (should still work, and should silently
+upgrade that account's password to the hashed format on that first login); 5 deliberately
+wrong passwords in a row (should lock for 15 minutes, then work again after); a narrator
+opening "API Keys" in the header and successfully loading/saving their own Groq/Google
+keys (this is the one that was fully broken before today).
+
+---
+
 ## 2026-09-02 (follow-up 109) — Google Translate as a last-resort fallback when Groq is fully rate-limited
 Scope: **NEW shared backend file** `base44/shared/googleTranslate.ts`;
 `base44/functions/seedUiTranslations/entry.ts` (**needs the redeploy dance**);

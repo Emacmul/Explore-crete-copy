@@ -43,7 +43,17 @@
     },
     "password": {
       "type": "string",
-      "description": "Backend password — required for Narrator and Admin roles."
+      "description": "Backend password — required for Narrator and Admin roles. Stored hashed (pbkdf2$...) since 2026-09; a password saved before then transparently upgrades to a hash the next time its owner logs in successfully."
+    },
+    "login_failed_attempts": {
+      "type": "number",
+      "default": 0,
+      "description": "Consecutive wrong-password attempts at narrLogin since the last success. Reset to 0 on a successful login."
+    },
+    "login_locked_until": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When narrLogin last locked this account after too many wrong attempts, it stays locked until this time. Cleared by a successful login or by an admin setting a new password."
     },
     "narr_session_token": {
       "type": "string",

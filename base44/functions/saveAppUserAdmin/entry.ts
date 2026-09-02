@@ -1,5 +1,6 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 import { isAppAdmin } from '../../shared/appUserAuth.ts';
+import { hashPassword } from '../../shared/passwordHash.ts';
 
 // Updates a single AppUser row (role / password / date of birth / gender /
 // newsletter opt-in) — gated on app-admin and run with the service role so the
@@ -22,6 +23,14 @@ export default async function (req) {
     const allowed = {};
     for (const k of ['role', 'password', 'date_of_birth', 'gender', 'newsletter_opted_in']) {
       if (k in updates) allowed[k] = updates[k];
+    }
+    // Never write a new password in plain text — hash it here, the same as narrLogin
+    // does when upgrading an old plain-text row. An admin setting a password also
+    // clears any lockout, so it doubles as the recovery path for a locked-out account.
+    if (allowed.password) {
+      allowed.password = await hashPassword(String(allowed.password));
+      allowed.login_failed_attempts = 0;
+      allowed.login_locked_until = null;
     }
     const updated = await base44.asServiceRole.entities.AppUser.update(String(id), allowed);
     return Response.json({ ok: true, user: updated });

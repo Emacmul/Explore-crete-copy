@@ -123,7 +123,7 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
   // was checking `apiKeys.google_tts_api_key` without ever checking `loadedOk` first,
   // so a genuinely FAILED fetch looked byte-for-byte identical to "no key exists" —
   // actively misleading when a real key IS saved and the check itself just failed.
-  const { keys: apiKeys, loading: keysLoading, loadedOk: keysLoadedOk, error: keysError, reload: reloadKeys, diag: keysDiag } = useNarratorApiKeys();
+  const { keys: apiKeys, loading: keysLoading, loadedOk: keysLoadedOk, error: keysError, reload: reloadKeys } = useNarratorApiKeys();
   const [segments, setSegments] = useState(null);
   const [segmentAudios, setSegmentAudios] = useState({});
   const [loading, setLoading] = useState(false);
@@ -200,25 +200,11 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
     if (parsed.length === 0) return;
     if (!keysLoadedOk) {
       setKeyCheckFailed(true);
-      // Same temporary diagnostic as the empty-key branch below — see that comment.
-      const d = keysDiag;
-      const diagText = d ? ` [diag: token present ${!!d.tokenPresent}, auth.me() error: ${d.authMeError || 'none'}]` : '';
-      setError(`Could not check your saved API key (${keysError || 'unknown error'}) — this is NOT the same as having no key saved, the check itself just failed. Try again below.${diagText}`);
+      setError(`Could not check your saved API key (${keysError || 'unknown error'}) — this is NOT the same as having no key saved, the check itself just failed. Try again below.`);
       return;
     }
     if (!apiKeys.google_tts_api_key) {
-      // TEMPORARY DIAGNOSTIC (see CLAUDE_CHANGELOG.md, follow-up 61): this exact message
-      // has been reported three times despite a real, working key being saved, and the
-      // leading theory (a duplicate account record) has been checked and ruled out. The
-      // bracketed part is the server's own account of how it identified this request and
-      // what it found for that identity — needed as hard evidence to actually catch this,
-      // not guess again. Please copy the FULL message (including the bracketed part) back
-      // exactly as shown next time this appears.
-      const d = keysDiag;
-      const diagText = d
-        ? ` [diag: identified via ${d.identifiedVia || 'unknown'}, as ${d.resolvedEmail || 'unknown'}, ${d.matchCount ?? '?'} account record(s) found${d.recordId ? `, record ${d.recordId}` : ', no record'}]`
-        : ' [diag: unavailable — the server response did not include it, which is itself worth reporting]';
-      setError(`No Google TTS API key found for your account yet. Add your own key via "API Keys" in the header.${diagText}`);
+      setError('No Google TTS API key found for your account yet. Add your own key via "API Keys" in the header.');
       return;
     }
     setLoading(true);
@@ -251,7 +237,7 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
       }
     })();
     return () => { cancelled = true; };
-  }, [keysLoading, keysLoadedOk, keysError, keysDiag, apiKeys.google_tts_api_key, script, fixedLanguage]);
+  }, [keysLoading, keysLoadedOk, keysError, apiKeys.google_tts_api_key, script, fixedLanguage]);
 
   // Undoes the guard above so the effect runs again — used only for the "the key check
   // itself failed" case (keyCheckFailed), never for "no key saved" (adding a key

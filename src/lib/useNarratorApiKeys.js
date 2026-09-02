@@ -6,19 +6,12 @@ import { base44 } from '@/api/base44Client';
 // that one browser's localStorage, which meant clearing site data (or just opening the
 // app on a different browser or device) silently wiped it with no way to recover it.
 // Works for either caller: an admin identified by their real Base44 session, or a
-// narrator identified the same way every other narrator action in this app is — their
-// own email+token, read directly from the same sessionStorage key Narr.jsx itself uses,
-// so nothing needs threading through as a prop just for this.
-const NARR_SESSION_KEY = 'narr_session';
-
-function getNarratorToken() {
-  try {
-    const sess = JSON.parse(sessionStorage.getItem(NARR_SESSION_KEY) || 'null');
-    return sess?.token || null;
-  } catch {
-    return null;
-  }
-}
+// narrator identified the same way every other narrator action in this app is — via
+// getNarratorAuthPayload() below (email + narrToken, checked server-side against
+// AppUser.narr_session_token by resolveActor). manageApiKeys used to be sent a
+// differently-shaped `token` instead and tried to validate it as a WordPress login
+// token, which it never was — that mismatch meant every real narrator's get/save
+// failed with "Not authorized" (fixed 2026-09-02; see manageApiKeys/entry.ts).
 
 export function useNarratorApiKeys() {
   const [keys, setKeys] = useState({ google_tts_api_key: '', groq_api_key: '', groq_api_key_2: '' });
@@ -32,22 +25,14 @@ export function useNarratorApiKeys() {
   // fully re-established, a network hiccup, etc.) can never result in blank fields
   // silently overwriting a real saved key.
   const [loadedOk, setLoadedOk] = useState(false);
-  // TEMPORARY DIAGNOSTIC (see CLAUDE_CHANGELOG.md, follow-up 61): manageApiKeys now
-  // echoes back, on every 'get', exactly how it identified the caller and what it found
-  // (see that function's own comment for why) — captured here, additively, so any
-  // consumer of this hook can surface it. Not used to decide anything; purely evidence
-  // for the still-open "No Google TTS API key found despite a real key existing" report.
-  const [diag, setDiag] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     setLoadedOk(false);
-    setDiag(null);
     try {
-      const res = await base44.functions.invoke('manageApiKeys', { action: 'get', token: getNarratorToken() });
+      const res = await base44.functions.invoke('manageApiKeys', { action: 'get', ...getNarratorAuthPayload() });
       if (res?.data?.error) {
-        setDiag(res?.data?._diag || null);
         throw new Error(res.data.error);
       }
       setKeys({
@@ -56,7 +41,6 @@ export function useNarratorApiKeys() {
         // Optional backup Groq key from a separate account — see groqKeyRotation.ts.
         groq_api_key_2: res?.data?.groq_api_key_2 || '',
       });
-      setDiag(res?.data?._diag || null);
       setLoadedOk(true);
     } catch (err) {
       setError(err.message || 'Could not load your saved API keys.');
@@ -74,12 +58,12 @@ export function useNarratorApiKeys() {
     if (!loadedOk) {
       throw new Error('Your saved keys haven’t loaded yet — please retry loading before saving, so a real key isn’t overwritten by a blank one.');
     }
-    const res = await base44.functions.invoke('manageApiKeys', { action: 'save', token: getNarratorToken(), ...updates });
+    const res = await base44.functions.invoke('manageApiKeys', { action: 'save', ...getNarratorAuthPayload(), ...updates });
     if (res?.data?.error) throw new Error(res.data.error);
     setKeys((prev) => ({ ...prev, ...updates }));
   }, [loadedOk]);
 
-  return { keys, loading, error, loadedOk, saveKeys, reload: load, diag };
+  return { keys, loading, error, loadedOk, saveKeys, reload: load };
 }
 
 // Small helper reused by every admin/narrator tool that calls a backend function

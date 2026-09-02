@@ -1,4 +1,5 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
+import { verifyPassword } from '../../shared/passwordHash.ts';
 
 // Saves (or reverts) a UI-string override so an admin or narrator can correct an
 // unnatural AI translation. Overrides live in the Translation entity and are merged
@@ -46,7 +47,10 @@ export default async function(req) {
       }
       const tokenValid = narrToken && u.narr_session_token && String(u.narr_session_token) === String(narrToken)
         && u.narr_session_expires_at && new Date(u.narr_session_expires_at).getTime() > Date.now();
-      const passwordValid = narrPassword && u.password && String(u.password) === String(narrPassword);
+      // Passwords are now stored hashed (see passwordHash.ts / narrLogin.ts) — this
+      // still verifies correctly against either a hashed or a not-yet-migrated
+      // plain-text row, same as narrLogin itself.
+      const passwordValid = !tokenValid && narrPassword && u.password && (await verifyPassword(String(narrPassword), String(u.password))).valid;
       if (!tokenValid && !passwordValid) {
         return Response.json({ error: 'Not authorized' }, { status: 403 });
       }

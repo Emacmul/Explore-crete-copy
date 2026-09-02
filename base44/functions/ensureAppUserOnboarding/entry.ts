@@ -1,10 +1,11 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
-import { isTokenGenuine } from '../../shared/wpToken.ts';
+import { isTokenGenuine, getEmailFromToken } from '../../shared/wpToken.ts';
 
 // Customer onboarding — called from Home on login. Identifies the caller by the
-// WordPress user id carried inside their WP JWT (the tMeister token holds
-// data.user.id, NOT the email), finds/creates their AppUser row, and returns
-// ONLY the role so Home can surface the Admin/Narr button for promoted users.
+// WordPress user id AND email carried inside their WP JWT (the tMeister token holds
+// data.user.id and, when present, data.user.email), finds/creates their AppUser row,
+// and returns ONLY the role so Home can surface the Admin/Narr button for promoted
+// users.
 //
 // Real customers log in through WordPress and have no Base44 session, so this
 // runs with the service role (the admin-only RLS on AppUser can't identify
@@ -54,16 +55,36 @@ export default async function (req) {
 
     const svc = createClientFromRequest(req).asServiceRole;
 
-    // Find the caller's row: by WP id (from the now-verified token) first, then by email.
-    // The email fallback only ever runs for a caller who has already proven a genuine
-    // WordPress login, so at worst it links/reads that one real caller's own pre-existing
-    // (pre-user_id-migration) record — it can no longer be reached by an unverified caller
-    // supplying an arbitrary email.
+    // SECURITY (2026-09-02 audit, fixed): the email-fallback lookup below used to trust
+    // whatever `clientEmail` the caller put in the request body outright. Since the only
+    // requirement to reach this far is having SOME genuine WordPress account (not
+    // specifically the one being looked up), anyone could self-register, then submit any
+    // OTHER email address — a narrator's, or Enda's own admin email — and, for any
+    // AppUser row that didn't yet have a user_id linked (true for any account created by
+    // hand through the admin panel), get back that account's role and permanently
+    // relink its user_id to themselves.
+    //
+    // Fix: prefer the email carried INSIDE the token's own payload (verifiedEmail) — safe
+    // to read now that isTokenGenuine has already confirmed WordPress itself issued this
+    // exact token, so it can only ever be the caller's own email. If this WordPress JWT
+    // Auth plugin's payload doesn't happen to carry an email, `clientEmail` is still used
+    // as a fallback, but ONLY to link an ordinary 'user'-role row — never a narrator or
+    // admin row — since an ordinary customer row has no sensitive role or identity worth
+    // protecting the same way, while a narrator/admin row is exactly what the exploit
+    // targeted.
+    const verifiedEmail = getEmailFromToken(token);
+
     const byId = await svc.entities.AppUser.filter({ user_id: String(wpId) });
     let row = Array.isArray(byId) ? byId[0] : null;
-    if (!row && clientEmail) {
-      const byEmail = await svc.entities.AppUser.filter({ email: clientEmail });
+    if (!row && verifiedEmail) {
+      const byEmail = await svc.entities.AppUser.filter({ email: verifiedEmail });
       row = Array.isArray(byEmail) ? byEmail[0] : null;
+    } else if (!row && clientEmail) {
+      const byEmail = await svc.entities.AppUser.filter({ email: clientEmail });
+      const candidate = Array.isArray(byEmail) ? byEmail[0] : null;
+      if (candidate && (!candidate.role || candidate.role === 'user')) {
+        row = candidate;
+      }
     }
 
     if (row) {
@@ -77,8 +98,10 @@ export default async function (req) {
       return Response.json({ role: row.role || 'user' });
     }
 
-    // Brand-new customer — create their row. Email comes from the client (the
-    // wpLogin response), since the token carries only the WP id, not the email.
+    // Brand-new customer — create their row. Prefer the token's own verified email;
+    // clientEmail (from the wpLogin response) is only a fallback for the rare case the
+    // token payload didn't carry one. Either way this only ever creates a row tied to
+    // the CALLER's own now-verified wpId, so there's nothing to hijack here.
     let fn = '';
     let ln = '';
     if (display_name) {
@@ -88,7 +111,7 @@ export default async function (req) {
     }
 
     await svc.entities.AppUser.create({
-      email: clientEmail || '',
+      email: verifiedEmail || clientEmail || '',
       user_id: String(wpId),
       first_name: fn,
       last_name: ln,
