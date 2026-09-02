@@ -16,10 +16,12 @@ export default function DownloadWalkButton({ walk }) {
       let url;
 
       if (walk.gpx_file_uri) {
-        const { signed_url } = await base44.integrations.Core.CreateFileSignedUrl({
-          file_uri: walk.gpx_file_uri,
-        });
-        url = signed_url;
+        // CreateFileSignedUrl is a restricted Core integration — moved behind a narrow
+        // backend function (getGpxDownloadUrl) that signs ONLY this walk's own GPX file,
+        // so the restricted call is never reachable from the browser. See entry.ts.
+        const res = await base44.functions.invoke('getGpxDownloadUrl', { walkId: walk.id });
+        if (!res?.data?.signed_url) return;
+        url = res.data.signed_url;
       } else if (walk.gpx_url) {
         url = walk.gpx_url;
       } else {
