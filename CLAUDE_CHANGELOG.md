@@ -97,6 +97,30 @@ existing narration-script translator, so narrators land on something to correct.
   failing (rate limit, transient error) doesn't stop the rest; it's simply left missing
   and can be retried later, either from its own tab or by running "all languages" again.
 
+**Bug found and fixed the same day, before either button was ever redeployed:** Enda's
+first real run (seeding Dutch, 95 missing strings) came back "seeded 15 of 95 — 80
+couldn't be translated," with no reason given, and he reasonably asked whether clicking
+"auto-translate 80 missing" again would just repeat the same partial failure forever.
+Root cause: `seedUiTranslations` chunked purely by key count (40 keys/call) — a flat
+count can't see that a batch of 40 English UI strings sometimes catches several
+paragraph-length ones together (`about.paragraph1-3`, `detail.defaultSafetyNotes`,
+`contact.intro`, etc.), and Groq reserves a request's full `max_tokens` against its
+per-minute budget the instant the request is sent, before a single prompt token is even
+counted — exactly the failure mode `translateScript`'s own `max_tokens` comment already
+documents for this account. A big-enough chunk's prompt pushed the combined reservation
+over the ceiling and Groq rejected the whole request outright; that's why both 40-key
+chunks failed and only the trailing 15-key chunk went through — not randomness, a
+deterministic size problem that a second click would have hit again with the same math.
+Fixed in `seedUiTranslations`: chunks are now capped at 15 keys AND 1800 total source
+characters (whichever comes first), `max_tokens` per call dropped from 6000 to 4000 —
+the same figure `translateScript` already uses, same reasoning. Any chunk that still
+fails is now retried after being split in half (sequentially, never in parallel — that
+would only make the per-minute budget problem worse) down to single keys if it has to,
+so an oversized batch degrades to "slower" instead of silently dropping every key in it.
+The actual Groq/parse error is also now kept and returned (`failure_reasons`, surfaced
+in `TranslationsManager.jsx`'s warning banner) instead of collapsing every failure into
+a bare count with no way to tell a size problem from a bad key from an expired API key.
+
 **Deliberately left alone:** the live customer-facing app's `t()` fallback chain in
 `LanguageContext.jsx` — untouched; seeded strings reach customers exactly the way a
 narrator's hand correction always has, as a `Translation` override the same `t()` chain

@@ -164,7 +164,13 @@ export default function TranslationsManager({ authMode, user }) {
         title: 'Auto-translated',
         description: `Seeded ${saveData.saved || 0} of ${missingKeysForLang.length} missing strings for ${targetLanguageName}.${failedCount ? ` ${failedCount} couldn't be translated — fill those in by hand.` : ''}`,
       });
-      if (data.placeholder_warning) setSeedWarning(data.placeholder_warning);
+      // failure_reasons carries the actual Groq/parse error(s), not just a bare count — surface
+      // it so a repeat failure is diagnosable instead of another silent "N couldn't be translated".
+      if (data.failure_reasons?.length > 0) {
+        setSeedWarning(`${targetLanguageName}: ${data.failure_reasons.join(' / ')}`);
+      } else if (data.placeholder_warning) {
+        setSeedWarning(data.placeholder_warning);
+      }
       await load();
       await reloadTranslations();
     } catch (err) {
@@ -220,6 +226,7 @@ export default function TranslationsManager({ authMode, user }) {
 
           totalSeeded += saveData.saved || 0;
           totalFailed += (data.failed_keys?.length || 0) + (saveData.errors?.length || 0);
+          if (data.failure_reasons?.length > 0) warnings.push(`${l.native}: ${data.failure_reasons.join(' / ')}`);
           if (data.placeholder_warning) warnings.push(`${l.native}: ${data.placeholder_warning}`);
         } catch (langErr) {
           // One language failing (rate limit, transient Groq error) shouldn't stop the rest —
