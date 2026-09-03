@@ -67,6 +67,25 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-03 (follow-up 123) — narrators can now self-unlock a Done waypoint in their own clones
+Scope: `src/components/admin/TourSimulator.jsx` — frontend only, no redeploy needed.
+
+**Per Enda's report:** testing his own Dutch narrator clone, he found the "Locked — this
+waypoint is marked Done... Unlock to edit" control (Narration & Simulate tab) only actually
+offers the unlock button to Admins — a Narrator sees the same locked banner but no way past
+it, and is told to "ask an Admin." That restriction was deliberate (follow-up 47, admin-only
+authority over Done/locked waypoints) but Enda's real-world testing found it hurts workflow
+specifically on a Narrator's OWN clone — every small revision meaning "go ask Enda" isn't
+workable day to day.
+
+**What changed:** the "Unlock to edit" button (and its explanation text) is no longer
+Admin-only — a Narrator now sees and can use the exact same button an Admin does. This tab
+only ever opens on a clone when isNarrator is true (a Narrator has no route to the actual
+master tour's own editor at all), so this only ever affects a Narrator's own working copy,
+never the shared master — Admin oversight there is untouched.
+
+---
+
 ## 2026-09-03 (follow-up 122) — clearer "undo Admin Completed" button label
 Scope: `src/components/admin/WalkEditor.jsx` — frontend only, no redeploy needed.
 
