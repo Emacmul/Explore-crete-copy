@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo } from 'react';
-import { MapContainer, TileLayer, Polyline, Marker, Circle, Tooltip, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Polyline, Marker, Circle, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { calculateBearing, splitTrailRuns } from '@/lib/routeExport';
@@ -197,26 +197,7 @@ function sliceTrailToRange(trailPath, waypoints, focusRange) {
   return slice.length > 1 ? slice : trailPath;
 }
 
-// Per Enda's report on the BOR2j "outline only" marker confusion: staring at the map
-// itself gave no way to confirm which waypoint a dot actually WAS — every waypoint
-// looks like a plain coloured circle, indistinguishable from its neighbours, so a
-// narrator has to trust that the marker they clicked/dragged is really the one they
-// think it is. labelIndexes (a Set of indexes into the FULL waypoints array, built by
-// TourSimulator.jsx) says which markers should show their own waypoint code (e.g.
-// "BOR2j") right on the dot: the one currently open in the editor, and — once a whole
-// location is fully finished (every one of its waypoints marked Done) — every waypoint
-// belonging to it. This is deliberately admin/narrator-only content (waypoint codes
-// mean nothing to a customer and would just be visual clutter on the real tour) — safe
-// here because TourSimulatorMap only ever renders inside TourSimulator.jsx, which in
-// turn only ever renders inside the Admin/Narr backend (WalkEditor.jsx via
-// DrivingTourWaypointEditor.jsx) — the live customer-facing player
-// (DrivingTourPlayer.jsx) has its own, completely separate rendering and never touches
-// this component or file at all.
-function wpCodeLabel(wp, i) {
-  return wp.name || wp.segment_id || `#${i + 1}`;
-}
-
-export default function TourSimulatorMap({ trailPath, waypoints, triggered, currentPos, currentBearing, isWalkingTour, onWaypointUpdate, breaks, focusBounds, focusRange, dimWaypointIndex, isNarrator, labelIndexes }) {
+export default function TourSimulatorMap({ trailPath, waypoints, triggered, currentPos, currentBearing, isWalkingTour, onWaypointUpdate, breaks, focusBounds, focusRange, dimWaypointIndex, isNarrator }) {
   // Per Enda's report: general script/audio browsing should show only the current
   // location's own waypoints and road, not the whole multi-location tour. `waypoints`
   // itself is deliberately left untouched below (still the full array, so `i` in the
@@ -234,26 +215,7 @@ export default function TourSimulatorMap({ trailPath, waypoints, triggered, curr
       : [35.24, 24.81];
 
   return (
-    <>
-      {/* Scoped down-sizing of Leaflet's own tooltip chrome — its default padding/font
-          is sized for a hover popup with a sentence in it, way too big for a short
-          waypoint code sitting right on a small dot. Global (no CSS-module setup in
-          this project), but harmless: .wp-code-label only ever appears on markers this
-          admin/narrator-only component itself renders. */}
-      <style>{`
-        .wp-code-label.leaflet-tooltip {
-          padding: 1px 4px;
-          font-size: 10px;
-          font-weight: 600;
-          line-height: 1.2;
-          background: rgba(15, 23, 42, 0.85);
-          color: #fff;
-          border: none;
-          box-shadow: none;
-        }
-        .wp-code-label.leaflet-tooltip-top:before { display: none; }
-      `}</style>
-      <MapContainer center={center} zoom={13} className="w-full h-full" style={{ minHeight: '350px' }}>
+    <MapContainer center={center} zoom={13} className="w-full h-full" style={{ minHeight: '350px' }}>
       <TileLayer
         url="https://tile.openstreetmap.de/{z}/{x}/{y}.png"
         attribution='&copy; OpenStreetMap contributors'
@@ -316,12 +278,6 @@ export default function TourSimulatorMap({ trailPath, waypoints, triggered, curr
         // visibly recedes behind BOR1b instead of the two reading as one confusing
         // stacked blob — still on the map, just no longer competing for attention.
         const isOverlapDimmed = dimWaypointIndex != null && i === dimWaypointIndex;
-        // Per Enda's request: a small on-map code label (e.g. "BOR2j") for whichever
-        // waypoint is currently open in the editor, and for every waypoint of a
-        // location once that whole location is fully finished — see labelIndexes'
-        // own comment above wpCodeLabel for the full explanation and why this is safe
-        // to leave admin/narrator-only without an extra gate here.
-        const showLabel = !!labelIndexes?.has?.(i);
 
         const bearingTipPos = destinationPoint(wp.lat, wp.lng, bearingDir, radius);
         const bearingTailPos = destinationPoint(wp.lat, wp.lng, bearingDir + 180, radius);
@@ -329,13 +285,7 @@ export default function TourSimulatorMap({ trailPath, waypoints, triggered, curr
 
         return (
           <React.Fragment key={wp.segment_id || `${wp.lat},${wp.lng},${i}`}>
-            <Marker position={[wp.lat, wp.lng]} icon={wpIcon(colour, emoji, size, isOverlapDimmed ? 0.2 : (isMuted ? 0.55 : 1))}>
-              {showLabel && (
-                <Tooltip permanent direction="top" offset={[0, -(size / 2) - 2]} opacity={1} className="wp-code-label">
-                  {wpCodeLabel(wp, i)}
-                </Tooltip>
-              )}
-            </Marker>
+            <Marker position={[wp.lat, wp.lng]} icon={wpIcon(colour, emoji, size, isOverlapDimmed ? 0.2 : (isMuted ? 0.55 : 1))} />
 
             {/* Pastel red radius circle — scales with zoom (uses metres). Per Enda's
                 follow-up 49 report: shown for every waypoint now, not just ones that
@@ -412,7 +362,6 @@ export default function TourSimulatorMap({ trailPath, waypoints, triggered, curr
       {currentPos && (
         <Marker position={[currentPos.lat, currentPos.lng]} icon={moverIcon(currentBearing || 0, isWalkingTour)} />
       )}
-      </MapContainer>
-    </>
+    </MapContainer>
   );
 }

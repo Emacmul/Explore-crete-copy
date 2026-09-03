@@ -483,27 +483,6 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // tour's first waypoint is always location 1's own Primary-Start.
   const dimWaypointIndex = (waypoints.length > 1 && selectedWpIndex === 1) ? 0 : null;
 
-  // Per Enda's request, after the BOR2j "outline only" marker confusion: a small
-  // on-map label showing each waypoint's own code (e.g. "BOR2j") right on its dot —
-  // so a narrator working on a waypoint can actually confirm which marker is theirs,
-  // and so a finished location's whole set of points stays identifiable afterwards
-  // too. Shown for: whichever waypoint is currently open in the editor
-  // (selectedWpIndex — primary or secondary, no distinction), and, once a location is
-  // FULLY finished (every one of its waypoints has waypoint_done — locationStatus's
-  // own isComplete, the same test the "Jump to location…" list already uses), every
-  // waypoint belonging to it. Admin/narrator-only by construction — see
-  // TourSimulatorMap.jsx's own comment on labelIndexes for why no extra gate is
-  // needed here.
-  const mapLabelIndexes = useMemo(() => {
-    const set = new Set();
-    if (selectedWpIndex != null) set.add(selectedWpIndex);
-    locationStatus.forEach((loc) => {
-      if (!loc.isComplete) return;
-      for (let i = loc.index; i < loc.endIndex; i++) set.add(i);
-    });
-    return set;
-  }, [selectedWpIndex, locationStatus]);
-
   // If the location currently picked in "Jump to location…" drops out of the (now
   // finished-only) list above — e.g. someone unticks a waypoint's done state to go back
   // and fix something, un-finishing that whole location — clear the stale selection
@@ -1236,7 +1215,6 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
             // which of them get drawn, never which array is passed.
             focusRange={!isPlaying && !speedMatchMode ? currentLocationRange : null}
             isNarrator={isNarrator}
-            labelIndexes={mapLabelIndexes}
           />
         </div>
 

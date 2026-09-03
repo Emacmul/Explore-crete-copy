@@ -67,7 +67,31 @@ Pulled: 2026-08-03
 
 ---
 
-## 2026-09-03 (follow-up 120) — on-map waypoint-code labels, Narration & Simulate tab (admin/narrator-only)
+## 2026-09-03 (follow-up 121) — REVERTED follow-up 120: on-map waypoint-code labels broke waypoint selection
+Scope: `src/components/admin/TourSimulatorMap.jsx`, `src/components/admin/TourSimulator.jsx` — frontend only, no redeploy needed.
+
+**Per Enda's report:** straight after syncing follow-up 120, he could no longer select any
+waypoint in the Narration & Simulate tab's "Waypoint Audio & Break Tags" dropdown — as
+either Admin or Narrator. That dropdown has no dependency on the map code at all
+(`onValueChange={(v) => setSelectedWpIndex(Number(v))}`, untouched by follow-up 120), which
+means the most likely explanation is a genuine runtime error thrown while rendering the new
+permanent `<Tooltip>` inside each waypoint `<Marker>` — new, never-used-before pattern in
+this codebase — crashing the whole tab's render tree (dropdown included) rather than just
+the map. Root cause not yet confirmed; reverted immediately rather than guessing at a patch
+on top of something already broken, so Enda isn't stuck waiting.
+
+**What changed:** both files restored to exactly their pre-follow-up-120 state — the
+`Tooltip` import, `wpCodeLabel`, `labelIndexes` prop, the `.wp-code-label` style block, and
+`mapLabelIndexes` in `TourSimulator.jsx` are all gone. Verified with `eslint` and a full
+`vite build` after reverting.
+
+**Still open:** the underlying request (a small on-map label showing each waypoint's own
+code) and the original BOR2j "outline only" marker question are both still outstanding — to
+be re-approached once the actual cause of this crash is understood, not before.
+
+---
+
+## 2026-09-03 (follow-up 120) — REVERTED, see follow-up 121 above — on-map waypoint-code labels, Narration & Simulate tab (admin/narrator-only)
 Scope: `src/components/admin/TourSimulatorMap.jsx`, `src/components/admin/TourSimulator.jsx` — frontend only, no redeploy needed.
 
 **Context:** Enda reported the last waypoint of a newly created location ("BOR2j") rendered
