@@ -67,6 +67,44 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-03 (follow-up 119) — REAL bug, customer-facing: translations were silently dropping past 1000 rows
+Scope: `base44/functions/getTranslationOverrides/entry.ts` — **needs the redeploy dance.**
+
+**Per Enda's report:** Portuguese, Spanish, German, French — all fully translated the day
+before — suddenly showed as 199 untranslated strings again, an hour after this morning's
+Auto-translate runs (Greek, Polish, Romanian, Hungarian, Russian). Czech and Dutch showed
+partial loss (137 missing, 62 still fine). Nothing had been touched or reverted.
+
+**Root cause:** `getTranslationOverrides` — the function BOTH the admin Translations screen
+AND the live customer-facing app itself call to load every saved translation — capped
+itself at 1000 rows, sorted most-recently-updated first. The actual Translation table has
+2,129 rows (confirmed live in Base44's own data browser). Past 1000, older rows just
+silently don't come back in the response — nothing was deleted, but anything past that
+cutoff stopped being visible to EITHER the admin tool or the app that real customers use.
+This morning's 5 newly-translated languages pushed yesterday's 6 finished languages past
+the 1000 mark, and they dropped out of view entirely. Czech/Dutch kept exactly 62 because
+those are the only two languages with SOME translations hardcoded directly in the app
+(from before this override system existed) — those don't depend on the row list at all, so
+they're the only ones unaffected by the cap.
+
+**Important:** this was NOT just an admin-screen display bug. `LanguageContext.jsx` — what
+every real customer's browser calls to load translations — uses this exact same function.
+Any customer using one of the languages that fell past the 1000-row cutoff would have been
+shown raw English (or missing UI strings) instead of their own language, silently, with no
+error anywhere.
+
+**Fix:** raised the cap from 1000 to 20,000 — comfortably past any realistic total (199
+keys × every language this app could ever support, many times over) rather than a number
+tuned to just barely cover today's count, so this can't quietly resurface the next time a
+few more languages get finished.
+
+**Verified:** `npx esbuild --platform=neutral --target=es2022` clean on the changed file.
+Not verified against the live database (no way to from this sandbox) — Enda should confirm
+Portuguese/Spanish/German/French/Czech/Dutch all show fully translated again once this is
+redeployed and the Translations screen is reloaded.
+
+---
+
 ## 2026-09-03 (follow-up 118) — Save button greyed out when there's nothing to save
 Scope: `src/components/admin/TranslationsManager.jsx` (frontend-only, no redeploy needed).
 
