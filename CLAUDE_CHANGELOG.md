@@ -49,6 +49,41 @@ Pulled: 2026-08-03
   proposed) would let a customer get a walk's GPX file out of the app, or
   bring their own route data in, it's out — flag it to Enda rather than
   building or leaving it in place.
+- STANDING RULE — Enda writes master narration for the ear, not the page:
+  when Enda hand-edits a tour's English narration (e.g. Battle of the
+  Rivers / BOR1), he does it in both the live master file and his own
+  "Narrator" test clone of that same tour, kept in step with each other.
+  Deliberate reason, in his words: he wants the master file itself
+  "optimised for the English language ear" — written as something a
+  narrator would actually say out loud, conversational, not literary
+  prose meant for silent reading. Two payoffs: automatic translation
+  into other languages comes out closer to a natural spoken sentence
+  instead of a stiff translated-prose one, and when a real narrator
+  eventually clones the master to start their own language, they're
+  starting from a script that's already easy to read aloud. Not
+  something to build — just context for why a narration-focused test
+  clone of a tour exists alongside its master, and why the master file's
+  writing style may look conversational rather than formal on purpose.
+
+---
+
+## 2026-09-03 (follow-up 118) — Save button greyed out when there's nothing to save
+Scope: `src/components/admin/TranslationsManager.jsx` (frontend-only, no redeploy needed).
+
+**Per Enda's report:** after confirming Auto-translate already saves everything for a
+whole language automatically (no per-box clicking needed for that path), he pointed out
+the Save button on every single string still looked exactly as clickable either way —
+"to click or not to click, that's the question." No visual difference between a box
+that's already saved and one that genuinely needs a click.
+
+**What changed:** the Save button is now greyed out and unclickable whenever the box
+already matches what's actually stored — right after Auto-translate runs, right after a
+manual Save, right after the page loads with nothing touched yet. The moment a narrator
+types anything different from what's saved, it lights back up. This is the exact same
+signal the amber "unsaved" tag already gave; now it's also on the button itself, where
+it's acted on, not just in a tag off to the side.
+
+**Verified:** `npx eslint` clean; `npx vite build` completes with no errors.
 
 ---
 
