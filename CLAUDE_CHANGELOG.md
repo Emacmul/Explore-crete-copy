@@ -67,6 +67,19 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-03 (follow-up 122) — clearer "undo Admin Completed" button label
+Scope: `src/components/admin/WalkEditor.jsx` — frontend only, no redeploy needed.
+
+**Per Enda's report:** when a master tour is marked "Admin Completed," the button to undo
+that (and hide the tour from narrators' clone list again) was labelled "Mark In Edit" —
+Enda didn't recognise that as an undo action and went looking for a separate "edit" tab
+instead. Changed the button's own text to "Undo" (sitting right next to the green "Admin
+Completed" badge it undoes) — the fuller explanation stays in the hover tooltip for anyone
+who wants it. The other direction ("Mark Admin Completed", shown when a tour is still in
+edit) wasn't reported as confusing, so left as-is.
+
+---
+
 ## 2026-09-03 (follow-up 121) — REVERTED follow-up 120: on-map waypoint-code labels broke waypoint selection
 Scope: `src/components/admin/TourSimulatorMap.jsx`, `src/components/admin/TourSimulator.jsx` — frontend only, no redeploy needed.
 

@@ -1080,13 +1080,19 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 disabled={togglingAdminCompleted}
                 className={`h-7 text-xs gap-1.5 ${form.admin_completed ? 'bg-slate-600 hover:bg-slate-500' : 'bg-emerald-600 hover:bg-emerald-700'}`}
                 title={form.admin_completed
-                  ? 'Mark back as still in edit — hides this tour from narrators’ "Clone a tour to translate" list again.'
+                  // Per Enda's report: "Mark In Edit" read as unclear — he went looking
+                  // for a separate "edit" tab instead of realising this button itself
+                  // was the undo action. "Undo" reads clearly right next to the green
+                  // "Admin Completed" badge it sits beside — no separate tab exists;
+                  // this button IS the only way back. Full explanation kept in the
+                  // hover title for anyone who wants it.
+                  ? 'Undo — hides this tour from narrators’ "Clone a tour to translate" list again.'
                   : 'Mark admin completed — makes this tour available for narrators to clone and translate. Does NOT publish it for customer purchase; that’s the separate Publish action.'}
               >
                 {togglingAdminCompleted
                   ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   : <CheckCircle2 className="w-3.5 h-3.5" />}
-                {form.admin_completed ? 'Mark In Edit' : 'Mark Admin Completed'}
+                {form.admin_completed ? 'Undo' : 'Mark Admin Completed'}
               </Button>
             </div>
           )}
