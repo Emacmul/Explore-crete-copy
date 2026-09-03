@@ -65,15 +65,28 @@ export default function TranslationsManager({ authMode, user }) {
   );
   const englishSource = (key) => translations.en[key] ?? '';
 
+  const draftValue = (lang, key) => {
+    if (drafts[lang] && drafts[lang][key] !== undefined) return drafts[lang][key];
+    return currentValue(lang, key);
+  };
+
   // Live check, not a leftover note from whenever Auto-translate last ran: a
   // "{placeholder}" is a bit like {label} or {total} that the app swaps for a real word
   // or number when it runs — a translation needs to keep that exact bit untouched. Per
   // Enda's report (2026-09-02): a warning about this used to only show right after an
   // Auto-translate run, and stuck around even once every string for that language was
   // already done — confusing, since it looked like a live problem when it was really
-  // just a note from an earlier run. This instead re-checks the CURRENTLY SAVED text for
-  // every key, every time — so it only ever shows something that's actually still true
-  // right now, and clears itself the moment it's fixed (by anyone, hand-edit or rerun).
+  // just a note from an earlier run. This instead re-checks the text for every key, every
+  // time — so it only ever shows something that's actually still true right now, and
+  // clears itself the moment it's fixed (by anyone, hand-edit or rerun).
+  //
+  // Checks draftValue (what's actually sitting in the textbox right now), not just the
+  // saved override — Enda hit this exact gap (2026-09-02): he typed/pasted the correct
+  // fix straight into the box, could see it was right there, and the note above still
+  // said "missing {label}" because it was only looking at the last SAVED text, not what
+  // he'd just typed. The "unsaved" amber badge already tells him a save is pending, so
+  // there's no need for this note to also re-report the same not-yet-saved state as if
+  // it were a fresh, still-unfixed problem.
   const PLACEHOLDER_RE = /\{[a-zA-Z0-9_]+\}/g;
   const placeholderIssues = useMemo(() => {
     if (activeLang === 'en') return [];
@@ -82,7 +95,7 @@ export default function TranslationsManager({ authMode, user }) {
       const english = translations.en[key] || '';
       const tokens = [...new Set(english.match(PLACEHOLDER_RE) || [])];
       if (tokens.length === 0) continue;
-      const current = currentValue(activeLang, key);
+      const current = draftValue(activeLang, key);
       const missing = tokens.filter((t) => !current.includes(t));
       if (missing.length === 0) continue;
       // A real case Enda hit (2026-09-02): the box can already show something in curly
@@ -98,17 +111,43 @@ export default function TranslationsManager({ authMode, user }) {
       issues.push({ key, english, current, missing, wrongTokens });
     }
     return issues;
-  }, [activeLang, overrides]);
-
-  const draftValue = (lang, key) => {
-    if (drafts[lang] && drafts[lang][key] !== undefined) return drafts[lang][key];
-    return currentValue(lang, key);
-  };
+  }, [activeLang, overrides, drafts]);
   const setDraft = (lang, key, v) => {
     setDrafts(prev => ({ ...prev, [lang]: { ...(prev[lang] || {}), [key]: v } }));
   };
   const isDirty = (lang, key) => draftValue(lang, key) !== currentValue(lang, key);
   const hasOverride = (lang, key) => !!overrides[lang]?.[key];
+
+  // Realistic example numbers/words for every {placeholder} name actually used anywhere in
+  // this app (checked against every t('key', {...}) call in src/) — kept here just so the
+  // preview below reads as a normal sentence instead of a literal "3" with no context.
+  // Any token name NOT in this list (there shouldn't be any, but just in case a new one gets
+  // added to the app later) is left exactly as typed in the preview, same as a real customer
+  // would see if the app didn't recognize it — nothing hidden or faked either way.
+  const EXAMPLE_PLACEHOLDER_VALUES = {
+    n: '3', total: '12', done: '5', count: '3',
+    label: 'Walks', name: 'Sunset Ridge Trail', walkName: 'Sunset Ridge Trail',
+    page: 'that page', language: 'French',
+  };
+  const PLACEHOLDER_TOKEN_RE = /\{([a-zA-Z0-9_]+)\}/g;
+
+  // Per Enda (2026-09-02): after tonight's back-and-forth over "{n} de {total} {label}"
+  // reading as broken gibberish in the edit box, and having to leave this tool entirely and
+  // go check the live customer app in person to be convinced it turns into a normal
+  // sentence — this shows that same result right here, live, as the box is typed into. Uses
+  // the EXACT SAME fill-in-the-blank logic the real app uses (see t() in
+  // LanguageContext.jsx: swap every {word} for its real value, or leave it untouched if
+  // there's no matching value) — so a wrong or mistranslated bracket (like the {rótulo} bug
+  // from earlier tonight) shows up in this preview exactly as broken as it would for a real
+  // customer, not hidden by a preview that's more forgiving than the real thing.
+  const previewValue = (lang, key) => {
+    const english = translations.en[key] || '';
+    if (!english.match(PLACEHOLDER_TOKEN_RE)) return null; // nothing to fill in for this string
+    const current = draftValue(lang, key);
+    return current.replace(PLACEHOLDER_TOKEN_RE, (whole, token) =>
+      EXAMPLE_PLACEHOLDER_VALUES[token] !== undefined ? EXAMPLE_PLACEHOLDER_VALUES[token] : whole
+    );
+  };
 
   const keys = useMemo(() => {
     const all = Object.keys(translations.en);
@@ -552,6 +591,7 @@ export default function TranslationsManager({ authMode, user }) {
           const dirty = isDirty(activeLang, key);
           const ov = hasOverride(activeLang, key);
           const placeholderIssue = placeholderIssues.find(i => i.key === key);
+          const preview = previewValue(activeLang, key);
           return (
             <div key={key} className="bg-slate-800 border border-slate-700 rounded-xl p-3">
               <div className="flex items-center gap-2 mb-2">
@@ -584,6 +624,11 @@ export default function TranslationsManager({ authMode, user }) {
                   </Button>
                 )}
               </div>
+              {preview !== null && (
+                <p className="text-xs text-slate-500 mt-1.5">
+                  What a customer would actually see: <span className="text-emerald-400">“{preview}”</span>
+                </p>
+              )}
             </div>
           );
         })}

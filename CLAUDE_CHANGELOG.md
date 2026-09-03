@@ -52,6 +52,76 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-02 (follow-up 117) — Live "what a customer actually sees" preview under {placeholder} strings
+Scope: `src/components/admin/TranslationsManager.jsx` (frontend-only, no redeploy needed).
+
+**Per Enda's report:** after a long back-and-forth tonight (follow-ups 114-116) trying to
+convince him that "{n} de {total} {label}" in the edit box turns into an ordinary sentence
+("3 de 12 Walks") for a real customer, his reasonable reaction was that he shouldn't have
+to take that on faith — and had to leave the tool entirely and go check the live customer
+app in person to believe it.
+
+**What changed:** any string with a `{placeholder}` in it now shows a live one-line preview
+right under the edit box — "What a customer would actually see: ..." — filled in with
+realistic example numbers/words (3 of 12, a sample walk name, etc.), updating as you type,
+using the exact same fill-in-the-blank logic the real app uses (`t()` in
+LanguageContext.jsx: swap every `{word}` for its value, or leave it untouched if nothing
+matches). That last part matters: a wrong or mistranslated bracket (like Italian's
+`{totale}`/`{etichetta}` mix-up from follow-up 115, still unfixed in already-saved data)
+shows up in this preview exactly as broken as a real customer would see it — the preview
+doesn't paper over a bad translation, it exposes one immediately, without needing to open
+the live site at all.
+
+Example values are only used for placeholder names actually used somewhere in this app
+(checked against every `t('key', {...})` call in `src/`) — `n`, `total`, `done`, `count`,
+`label`, `name`, `walkName`, `page`, `language`. Any other token name (there shouldn't be
+one, but just in case something new gets added later) is left exactly as typed, same as a
+real customer would see if the app didn't recognize it.
+
+**Verified:** `npx eslint` clean; `npx vite build` completes with no errors. Ran the
+substitution logic standalone against the real strings from tonight's session — confirmed
+"Todos {label}" → "Todos Walks", "{n} de {total} {label}" → "3 de 12 Walks", and the
+still-broken Italian "{n} di {totale} {etichetta}" correctly stays "3 di {totale}
+{etichetta}" (visibly wrong, as it should).
+
+**Not done / worth knowing for next time:** this is a preview only — it doesn't change
+what gets saved, and doesn't replace actually opening the live app for a final check on
+anything that matters. `player.triggersFired` (missing `{done}`) is still open, waiting on
+Enda.
+
+---
+
+## 2026-09-02 (follow-up 116) — Live placeholder check was reading saved text, not what's in the box
+Scope: `src/components/admin/TranslationsManager.jsx` (frontend-only, no redeploy needed).
+
+**Per Enda's report:** right after follow-up 115 told him exactly what to type for
+`list.all`/`list.countOf` ("Todos {label}" / "{n} de {total} {label}"), he pasted that
+exact text into both boxes — visible correctly on screen, marked "edited" — and the note
+above the list still said they were missing `{label}`. His reaction: "It just turns it
+into different cryptic nonsense."
+
+**What was actually happening:** not a repeat of 115's bug — the text he typed was
+correct. The live placeholder check (from follow-up 114) was reading `overrides`, i.e.
+the last text actually SAVED to the database, not `drafts`, i.e. whatever is currently
+sitting in the textbox unsaved. He'd typed the fix but hadn't yet clicked the green
+"Save" button on those two rows, so the check was — correctly, by its old definition —
+still looking at the old, wrong, saved text, while the screen showed the new, right,
+unsaved text. Nothing was broken; the check just wasn't checking what he could see.
+
+**Fix:** the check now reads the same value the textbox shows (saved text, or an unsaved
+edit if there is one) instead of only the saved text. Typing or pasting a fix now clears
+that key's warning immediately, without needing to click Save first — the existing amber
+"unsaved" badge on that row already covers reminding him a save is still pending.
+
+**Verified:** `npx eslint` clean; `npx vite build` completes with no errors.
+
+**Not done / worth knowing for next time:** this only changes when the warning
+disappears, not what triggers it — a genuinely wrong or missing placeholder still gets
+flagged exactly as before, and still needs the row saved afterward for the fix to
+actually stick server-side (the pending "unsaved" badge is the reminder for that part).
+
+---
+
 ## 2026-09-02 (follow-up 115) — Real bug: Google was translating the word INSIDE {placeholders} too
 Scope: `base44/functions/seedUiTranslations/entry.ts` (**needs the redeploy dance**);
 `src/components/admin/TranslationsManager.jsx` (frontend-only).
