@@ -67,6 +67,42 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-03 (follow-up 120) — on-map waypoint-code labels, Narration & Simulate tab (admin/narrator-only)
+Scope: `src/components/admin/TourSimulatorMap.jsx`, `src/components/admin/TourSimulator.jsx` — frontend only, no redeploy needed.
+
+**Context:** Enda reported the last waypoint of a newly created location ("BOR2j") rendered
+as an outline-only marker instead of full colour on the Narration & Simulate map, despite its
+own data (script, Done status) being confirmed correct in the side panel. Code review ruled
+out every styling path that could produce a genuine "outline only" render (no "Done"/locked
+based marker styling exists anywhere; the only dimming logic, `dimWaypointIndex`, is hardcoded
+to index 0 only — BOR1a's own special case — and never applies elsewhere; Enda explicitly
+ruled out coordinate overlap with another waypoint). Root cause not conclusively identified —
+flagged to Enda as still open if it recurs. Enda pivoted from "explain that specific bug" to a
+concrete related request: some visible way to confirm, on the map itself, which waypoint a
+given dot actually is.
+
+**What changed:** every waypoint marker can now show a small text label with its own code
+(e.g. "BOR2j" — the same code already used in the "Waypoint Audio & Break Tags" dropdown:
+`wp.name || wp.segment_id`) directly above the dot. Shown for: whichever waypoint is
+currently open in the editor (primary or secondary, no distinction), and — once a whole
+location is fully finished (every one of its waypoints marked Done) — every waypoint
+belonging to that location. Small by default (10px, dark pill, no pointer arrow); Leaflet
+keeps it at a fixed screen size so it reads clearly once zoomed in, same as any other on-map
+text. `TourSimulator.jsx` computes which waypoint indexes qualify (`mapLabelIndexes`, off the
+existing `selectedWpIndex` and `locationStatus.isComplete` — the same "fully finished" test
+"Jump to location…" already uses) and passes it to `TourSimulatorMap.jsx` as `labelIndexes`, a
+new prop; the map component renders a permanent Leaflet `Tooltip` on any marker whose index is
+in that set.
+
+**Front-end safety:** deliberately no separate `isAdmin`/`isNarrator` gate was added for this,
+because none is needed — `TourSimulatorMap.jsx` only ever renders inside `TourSimulator.jsx`,
+which only ever renders inside the Admin/Narr backend (`WalkEditor.jsx` via
+`DrivingTourWaypointEditor.jsx`). The real, live customer-facing player
+(`src/components/walks/DrivingTourPlayer.jsx`) is a structurally separate component tree and
+never imports this file at all — confirmed by grep before making this change.
+
+---
+
 ## 2026-09-03 (follow-up 119) — REAL bug, customer-facing: translations were silently dropping past 1000 rows
 Scope: `base44/functions/getTranslationOverrides/entry.ts` — **needs the redeploy dance.**
 

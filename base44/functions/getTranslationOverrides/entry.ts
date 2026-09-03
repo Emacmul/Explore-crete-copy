@@ -36,6 +36,6 @@ export default async function(req) {
     const list = await base44.asServiceRole.entities.Translation.list('-updated_date', 20000);
     return Response.json({ translations: list || [] });
   } catch (error) {
-     return Response.json({ error: error.message }, { status: 500 });
+    return Response.json({ error: error.message }, { status: 500 });
   }
 }
