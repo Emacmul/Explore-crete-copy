@@ -124,11 +124,37 @@ function moverIcon(bearing, isWalking) {
   });
 }
 
-function wpIcon(colour, emoji, size, opacity = 1) {
+// Per Enda's follow-up 131 report: with a location sometimes holding 25 waypoints, there
+// was no visual reference on the map for which ones had already been worked on — a way
+// to follow progress at a glance and spot-check that the right dot has the right code.
+// A near-identical request (follow-up 120) was tried once before and reverted the same
+// day — Enda reported it broke waypoint SELECTION entirely, Admin or Narrator, straight
+// after syncing. That attempt added a react-leaflet `<Tooltip>` element as a new child of
+// each waypoint's `<Marker>` — a component type never used anywhere else in this
+// codebase. The dropdown that broke has no code path through the map at all, which
+// points to a genuine exception thrown while rendering that new element, taking down the
+// whole tab's render tree with it (no error boundary sits between the map and the
+// dropdown) — never conclusively root-caused before the revert, since Enda needed it
+// working again immediately.
+//
+// This label is built entirely differently — no new react-leaflet component at all, no
+// second element added to the Marker. It's a second `<div>` baked directly into THIS
+// function's own HTML string, the exact same proven mechanism `wpIcon` already uses for
+// every dot and its emoji, just one more piece of inline HTML. Confirmed against
+// Leaflet's own stylesheet (leaflet/dist/leaflet.css) before writing this: nothing there
+// clips a marker icon's content to its declared iconSize box, so a label positioned
+// above the dot via ordinary absolute positioning renders in full, uncropped, exactly
+// where placed. The dot marker itself has no click handler and isn't draggable (only the
+// separate bearing/radius handle markers are), so unlike the reverted attempt, there is
+// no interactive behaviour on this element at all for a new element to interfere with.
+function wpIcon(colour, emoji, size, opacity = 1, label = null) {
   const half = size / 2;
+  const labelHtml = label
+    ? `<div style="position:absolute;left:50%;bottom:100%;transform:translateX(-50%);margin-bottom:2px;white-space:nowrap;background:rgba(15,23,42,0.88);color:#fff;font-size:10px;font-weight:600;line-height:1;padding:2px 5px;border-radius:4px;pointer-events:none;">${label}</div>`
+    : '';
   return L.divIcon({
     className: '',
-    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${colour};border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;font-size:${Math.round(size * 0.43)}px;opacity:${opacity};">${emoji}</div>`,
+    html: `<div style="position:relative;width:${size}px;height:${size}px;">${labelHtml}<div style="width:${size}px;height:${size}px;border-radius:50%;background:${colour};border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;font-size:${Math.round(size * 0.43)}px;opacity:${opacity};">${emoji}</div></div>`,
     iconSize: [size, size],
     iconAnchor: [half, half],
   });
@@ -278,6 +304,12 @@ export default function TourSimulatorMap({ trailPath, waypoints, triggered, curr
         // visibly recedes behind BOR1b instead of the two reading as one confusing
         // stacked blob — still on the map, just no longer competing for attention.
         const isOverlapDimmed = dimWaypointIndex != null && i === dimWaypointIndex;
+        // Per Enda's follow-up 131 report: a label showing this waypoint's own code
+        // (the same code already shown in the "Waypoint Audio & Break Tags" dropdown)
+        // appears on the map once it's been marked Done — nothing else, so a blank map
+        // still reads as "nothing processed yet" and labels fill in as real progress is
+        // made, not before.
+        const doneLabel = wp.waypoint_done ? (wp.name || wp.segment_id || '') : null;
 
         const bearingTipPos = destinationPoint(wp.lat, wp.lng, bearingDir, radius);
         const bearingTailPos = destinationPoint(wp.lat, wp.lng, bearingDir + 180, radius);
@@ -285,7 +317,7 @@ export default function TourSimulatorMap({ trailPath, waypoints, triggered, curr
 
         return (
           <React.Fragment key={wp.segment_id || `${wp.lat},${wp.lng},${i}`}>
-            <Marker position={[wp.lat, wp.lng]} icon={wpIcon(colour, emoji, size, isOverlapDimmed ? 0.2 : (isMuted ? 0.55 : 1))} />
+            <Marker position={[wp.lat, wp.lng]} icon={wpIcon(colour, emoji, size, isOverlapDimmed ? 0.2 : (isMuted ? 0.55 : 1), doneLabel)} />
 
             {/* Pastel red radius circle — scales with zoom (uses metres). Per Enda's
                 follow-up 49 report: shown for every waypoint now, not just ones that

@@ -67,6 +67,57 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-04 (follow-up 131) — waypoint code labels reappear on the map, once a waypoint is marked Done — rebuilt safely after follow-up 120/121's crash
+Scope: `src/components/admin/TourSimulatorMap.jsx` — frontend only, no redeploy needed.
+
+**Per Enda's report:** a location can hold up to 25 waypoints, and there was no visual
+reference on the map for which ones had already been worked on — no way to follow progress
+at a glance, or spot-check that a given dot really is the waypoint he thinks it is. Wanted:
+once a waypoint is processed, its own code (BOR1a, BOR1b, etc.) appears on the map on top of
+its dot; a visible label means "processed", nothing showing means "not yet".
+
+**This is close to follow-up 120** (2026-09-03), a near-identical request that was reverted
+the same day (follow-up 121) after Enda reported it broke waypoint SELECTION entirely —
+Admin or Narrator — straight after syncing. That attempt added a react-leaflet `<Tooltip>`
+element as a new child of each waypoint's `<Marker>`, a component type never used anywhere
+else in this codebase; the dropdown that broke has no code path through the map at all,
+pointing to a genuine exception thrown while rendering that new element and taking the
+whole tab's render tree down with it (no error boundary sits between the map and the
+dropdown). Never conclusively root-caused before the revert, since Enda needed the tab
+working again immediately — flagged before building anything, and confirmed with him
+directly that he wanted this re-attempted a different way rather than assumed.
+
+**What changed, and why it's structurally different this time:** no new react-leaflet
+component at all — no second element added to the Marker. `wpIcon()` (the same function
+that already builds every waypoint's coloured dot + emoji as one inline HTML string, a
+long-proven pattern in this file) now takes an optional `label` argument and bakes a small
+dark pill of text directly into that same string, positioned above the dot. Checked against
+Leaflet's own stylesheet (`leaflet/dist/leaflet.css`) before writing this: nothing there
+clips a marker icon's content to its declared `iconSize` box, so the label renders in full,
+uncropped, exactly where placed. The dot marker itself has no click handler and isn't
+draggable (only the separate bearing/radius handle markers are — confirmed by reading this
+file's own marker loop), so unlike the reverted attempt, there's no interactive behaviour
+here for a new element to interfere with in the first place.
+
+The label itself: shows `wp.name || wp.segment_id` — the exact same code already shown in
+the "Waypoint Audio & Break Tags" dropdown — only once `wp.waypoint_done` is true (the same
+field "Mark Waypoint as Done" already sets, and `doneLocked` in WaypointPaceEditor.jsx
+already reads). A location fresh out of the box shows no labels at all; each one appears as
+its own waypoint is actually finished, giving a real, live progress trail rather than
+something that only lights up once the whole location is complete.
+
+**Verified:** `npx eslint` on this file is clean. Full `npx vite build` completes with no
+errors. Additionally ran the exact `wpIcon` HTML-building logic standalone in Node (both
+with and without a label) and checked the output is well-formed, balanced HTML before
+trusting it to Leaflet — not just assumed correct from reading the template string.
+
+**Not tested live** — worth Anoushka (or Enda) confirming on a real location with several
+waypoints: mark one Done and watch its own code appear on the map above its dot, and —
+importantly, given the history here — confirm the "Waypoint Audio & Break Tags" dropdown
+still works normally throughout.
+
+---
+
 ## 2026-09-04 (follow-up 130) — Translate button moved next to its own "Tour Title" label
 Scope: `src/components/admin/WalkEditor.jsx` — frontend only, no redeploy needed.
 
