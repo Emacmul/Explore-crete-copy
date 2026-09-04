@@ -67,6 +67,54 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-04 (follow-up 127) — Pronunciation Dictionary (and every other Dialog) could open BEHIND the map, unreachable
+Scope: `src/components/ui/dialog.jsx`, `src/components/ui/alert-dialog.jsx` — shared UI
+primitives used app-wide. Frontend only, no redeploy needed.
+
+**Per Enda's report:** Anoushka, testing on her own machine (Linux Mint/Chrome), clicked the
+Pronunciation Dictionary's book icon on the Narration & Simulate tab. It opened, but behind
+the map and the script panel, stuck in the middle, with no way to bring it to the front.
+
+**Root cause — same bug already found and fixed once before in this codebase, just in a
+different shared component:** see the 2026-08-12 changelog entries above ("the shared
+dropdown component was clipping its own list" / "it was rendering behind the map, not
+actually cut off") — Leaflet (the map library) ships its own z-index values up to roughly
+1000 for its layers and on-screen controls. `select.jsx` (the shared dropdown) was fixed
+back then by raising it to `z-[9999]`, comfortably clear of Leaflet. `dialog.jsx` (the
+shared modal used by PronunciationDictionaryDialog, CloneTourDialog, and others) was NEVER
+given that same fix — it was still sitting at the shadcn default `z-50`, so any time one
+opened while a Leaflet map was also on screen (exactly the Narration & Simulate tab), the
+map's own controls could render on top of it. Not OS/browser-specific — this would reproduce
+for anyone, Enda included, the moment a Dialog opens over the map; Anoushka's machine just
+happened to be where it was actually clicked, on the tab where it's newly relevant (the
+Pronunciation Dictionary book icon this dialog belongs to is used from the Translate Script
+panel, which only appears on the Narration & Simulate tab — see follow-up 123 onward).
+
+**What changed:** both `DialogOverlay` and `DialogContent` in `dialog.jsx` raised from
+`z-50` to `z-[9999]`, matching `select.jsx`'s own fix exactly. Also pre-emptively applied
+the same raise to `alert-dialog.jsx` (the same class of shared full-screen modal, currently
+only used in two admin list screens that never sit over a map today, but no reason to wait
+for a second report of the identical bug there). `sheet.jsx` and `drawer.jsx` are unused
+anywhere in the app (grepped to confirm) — left alone.
+
+**Checked for side effects:** `select.jsx` is already `z-[9999]` and is used INSIDE
+`PronunciationDictionaryDialog` itself (its language picker) — with Dialog now at the same
+9999 tier, its own Select still renders on top of it correctly, the same way `select.jsx`
+already coexists with the app's other two `z-[9999]` full-screen blocking modals
+(`UpdateInProgressModal.jsx`, `SplashScreen.jsx`) today. `DebugConsoleOverlay.jsx` sits
+higher still at `z-[10000]`, deliberately always reachable — untouched.
+
+**Not moveable — by design, not a bug:** a Dialog is meant to be centered and fixed, not
+draggable; nothing changed there. The actual problem was it being stuck BEHIND other
+content, not that it couldn't be dragged around.
+
+**Verified:** `npx vite build` completes with no errors. Not tested live — worth Anoushka
+(or Enda) reopening the Pronunciation Dictionary on Narration & Simulate once deployed to
+confirm it now sits on top of the map, and that its own language dropdown still opens
+correctly on top of the dictionary itself.
+
+---
+
 ## 2026-09-04 (follow-up 126) — the follow-up 125 "Translate" title button was unreachable by narrators; now also lives in Narration & Simulate
 Scope: `src/components/admin/TourSimulator.jsx`, `src/components/admin/WalkEditor.jsx` —
 frontend only, no redeploy needed.
