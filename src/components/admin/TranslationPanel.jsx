@@ -117,6 +117,10 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
   // key" — set only when THIS translation actually came from the Google fallback (Groq's
   // key(s) were rate-limited), purely informational, never blocks anything.
   const [translatedViaFallback, setTranslatedViaFallback] = useState(false);
+  // Per follow-up 124: true only when the backend actually found and swapped in this
+  // tour's own (already-translated) title somewhere inside this waypoint's script — purely
+  // informational, so a narrator can see it happened rather than wondering.
+  const [titleSubstituted, setTitleSubstituted] = useState(false);
   const fileInputRef = useRef(null);
 
   const handleImport = async (e) => {
@@ -263,12 +267,19 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
     setError('');
     setPreservationWarning('');
     setTranslatedViaFallback(false);
+    setTitleSubstituted(false);
     setCheckDepositoryError('');
     setTranslating(true);
     try {
       const response = await base44.functions.invoke('translateScript', {
         text: importedText,
         target_language: targetLanguage,
+        // Per follow-up 124: lets the backend find this waypoint's own tour (and its
+        // master, via clone_of) so it can automatically swap the tour's title in wherever
+        // it's mentioned inside the narration itself — see protectedPhrases.ts and
+        // translateScript/entry.ts. Silently does nothing extra if the Tour Name box hasn't
+        // been translated yet (still just the placeholder), or if this isn't a clone at all.
+        walkId: currentWalkId || undefined,
         apiKey: apiKeys.groq_api_key,
         apiKey2: apiKeys.groq_api_key_2,
         // Last-resort fallback per Enda: try Groq (both keys) first, and only when THAT
@@ -288,6 +299,7 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
         if (response.data?.translated_via === 'google') {
           setTranslatedViaFallback(true);
         }
+        setTitleSubstituted(!!response.data?.title_substituted);
       } else {
         setError('Translation returned no text.');
       }
@@ -412,6 +424,13 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
       {translatedViaFallback && (
         <div className="text-slate-400 text-xs bg-slate-900/50 border border-slate-700 rounded-md px-2.5 py-1.5">
           Translated via Google (your Groq key{apiKeys.groq_api_key_2 ? 's were' : ' was'} rate-limited).
+        </div>
+      )}
+
+      {titleSubstituted && (
+        <div className="text-emerald-400 text-xs bg-slate-900/50 border border-slate-700 rounded-md px-2.5 py-1.5">
+          This tour's own title was found in the script and swapped in using the translated
+          title from the Tour Name box above.
         </div>
       )}
     </div>

@@ -1,12 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { getNarratorAuthPayload } from '@/lib/useNarratorApiKeys';
+import { getNarratorAuthPayload, useNarratorApiKeys } from '@/lib/useNarratorApiKeys';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Save, Loader2, Pencil, Check, X, Upload, FileUp, CheckCircle2, Download, AlertTriangle, FileDown, RefreshCw, Send, EyeOff } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Pencil, Check, X, Upload, FileUp, CheckCircle2, Download, AlertTriangle, FileDown, RefreshCw, Send, EyeOff, Languages } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
+import { LANGUAGE_CODE_BY_NAME, getGoogleTranslateCode } from '@/lib/i18n';
+import { getFnErrorMessage } from '@/lib/utils';
 import FitParser from 'fit-file-parser';
 import WaypointEditor from './WaypointEditor';
 import DrivingTourWaypointEditor from './DrivingTourWaypointEditor';
@@ -80,6 +82,50 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
   }, [dirty]);
+  // Per Enda's follow-up 124 report: a clone's Tour Name box starts out as a placeholder
+  // (the master's English title plus "(<language>)" — see cloneWalkForBackend/entry.ts) and
+  // is meant to be overwritten with the real translated title by hand, same as any other
+  // manual field — but Enda found that left too much room for a narrator to simply forget,
+  // AND (the bigger problem) the master's title also appears INSIDE the narration itself,
+  // more than once, with nothing making sure each mention gets translated consistently. This
+  // button gives a one-click starting point for the title box specifically; once it holds a
+  // real translation (not the placeholder), translateScript automatically finds and swaps in
+  // that same translated title everywhere the English title is mentioned inside a waypoint's
+  // narration — see translateScript/entry.ts and protectedPhrases.ts for that half of it.
+  const { keys: titleTranslateApiKeys } = useNarratorApiKeys();
+  const [translatingTitle, setTranslatingTitle] = useState(false);
+  const [titleTranslateError, setTitleTranslateError] = useState('');
+  const handleTranslateTitle = async () => {
+    if (!form.id || !form.clone_of || !form.target_language) return;
+    setTitleTranslateError('');
+    if (!titleTranslateApiKeys.groq_api_key) {
+      setTitleTranslateError('No Groq API key found for your account yet. Add your own key via "API Keys" in the header.');
+      return;
+    }
+    setTranslatingTitle(true);
+    try {
+      const response = await base44.functions.invoke('translateScript', {
+        titleOnly: true,
+        walkId: form.id,
+        target_language: form.target_language,
+        apiKey: titleTranslateApiKeys.groq_api_key,
+        apiKey2: titleTranslateApiKeys.groq_api_key_2,
+        googleApiKey: titleTranslateApiKeys.google_tts_api_key || undefined,
+        target_lang_code: getGoogleTranslateCode(LANGUAGE_CODE_BY_NAME[form.target_language] || ''),
+        ...getNarratorAuthPayload(),
+      });
+      if (response?.data?.error) throw new Error(response.data.error);
+      if (response?.data?.translated_text) {
+        set('name', response.data.translated_text);
+      } else {
+        setTitleTranslateError('Translation returned no text.');
+      }
+    } catch (err) {
+      setTitleTranslateError(getFnErrorMessage(err, 'Could not translate the title.'));
+    }
+    setTranslatingTitle(false);
+  };
+
   // Per Enda: once a tour has been cloned for translation, opening it should land
   // straight on "Narration & Simulate" — that's the working screen for the whole
   // translation job — rather than anywhere else. Only applies to a driving tour clone;
@@ -1267,15 +1313,32 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
             )}
 
             {/* Tour/Route Name — the translated title itself, so this one stays editable
-                for a narrator too, unlike Code above it. */}
+                for a narrator too, unlike Code above it. A clone gets a one-click
+                "Translate" starting point (follow-up 124) — see handleTranslateTitle above
+                for why this box matters beyond just this field. */}
             <div>
               <Label className="text-slate-300 mb-1.5 block">{isDrivingAudioTour ? "Tour Name *" : "Route Name *"}</Label>
-              <Input
-                value={form.name}
-                onChange={e => set('name', e.target.value)}
-                placeholder={isDrivingAudioTour ? "e.g. Battle of the Rivers" : "e.g. Balos Lagoon Trail"}
-                className={`bg-slate-700 text-white ${!form.name?.trim() ? 'border-amber-500/70 focus-visible:ring-amber-500' : 'border-slate-600'}`}
-              />
+              <div className="flex items-center gap-2">
+                <Input
+                  value={form.name}
+                  onChange={e => set('name', e.target.value)}
+                  placeholder={isDrivingAudioTour ? "e.g. Battle of the Rivers" : "e.g. Balos Lagoon Trail"}
+                  className={`bg-slate-700 text-white flex-1 ${!form.name?.trim() ? 'border-amber-500/70 focus-visible:ring-amber-500' : 'border-slate-600'}`}
+                />
+                {form.clone_of && form.target_language && (
+                  <Button
+                    type="button" size="sm" variant="outline"
+                    onClick={handleTranslateTitle}
+                    disabled={translatingTitle}
+                    title={`Translate the original tour's title into ${form.target_language} and fill this box with it.`}
+                    className="bg-blue-700/30 hover:bg-blue-700/50 border-blue-600/50 text-amber-400 hover:text-amber-300 shrink-0 gap-1.5"
+                  >
+                    {translatingTitle ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Languages className="w-3.5 h-3.5" />}
+                    Translate
+                  </Button>
+                )}
+              </div>
+              {titleTranslateError && <p className="text-xs text-red-400 mt-1.5">{titleTranslateError}</p>}
             </div>
 
             {isDrivingAudioTour && (

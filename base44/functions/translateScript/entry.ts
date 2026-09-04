@@ -2,6 +2,7 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.38';
 import { resolveActor } from '../../shared/backendActor.ts';
 import { callGroqWithKeyRotation } from '../../shared/groqKeyRotation.ts';
 import { translateWithGoogle } from '../../shared/googleTranslate.ts';
+import { protectPhrases, substituteTitleMentions } from '../../shared/protectedPhrases.ts';
 
 // Per Enda: some words/names in the English source script are deliberately written in
 // their OWN original script (Greek, Cyrillic, Arabic) rather than English, specifically
@@ -36,7 +37,7 @@ Deno.serve(async (req) => {
     const base44 = createClientFromRequest(req);
 
     const body = await req.json();
-    const { text, target_language, apiKey, apiKey2, googleApiKey, target_lang_code } = body;
+    const { text, target_language, apiKey, apiKey2, googleApiKey, target_lang_code, walkId, titleOnly } = body;
 
     // Admin, or narrator via email+narrToken — without this, this function was reachable
     // by anyone at all, with no restriction on who could trigger a Groq call.
@@ -45,7 +46,7 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'Not authorized' }, { status: 403 });
     }
 
-    if (!text || !text.trim()) {
+    if (!titleOnly && (!text || !text.trim())) {
       return Response.json({ error: 'Missing text to translate' }, { status: 400 });
     }
     if (!target_language) {
@@ -62,7 +63,77 @@ Deno.serve(async (req) => {
     // immediately, no wait, before the whole translation is reported back as failed.
     const apiKeys = [apiKey, apiKey2].map(k => (k || '').trim()).filter(Boolean);
 
-    const prompt = `Translate the following narration script into ${target_language}.
+    // Per Enda's follow-up 124 report: a tour's title (e.g. "The Battle of the Rivers")
+    // often appears again inside the narration itself, and there was nothing making sure
+    // it actually got translated, or translated the SAME way twice. Fixed with two pieces
+    // that share this one lookup: (a) `titleOnly` mode, used by WalkEditor.jsx's "Translate"
+    // button on the Tour Name box, translates the MASTER tour's title on its own; (b) an
+    // ordinary script translation (titleOnly false) uses the SAME lookup to find this
+    // clone's already-translated title (if the Tour Name box has one yet) and swap it in
+    // wherever the master's English title is mentioned inside the script — see
+    // substituteTitleMentions below. Best-effort only: any failure here (bad/missing
+    // walkId, not actually a clone, etc.) just means neither feature activates for this
+    // call — it never blocks the translation the caller actually asked for, except for
+    // titleOnly mode, which has nothing else to translate if this fails.
+    let cloneWalk: any = null;
+    let masterWalk: any = null;
+    if (walkId) {
+      try {
+        cloneWalk = await base44.asServiceRole.entities.Walk.get(String(walkId));
+        if (cloneWalk?.clone_of) {
+          masterWalk = await base44.asServiceRole.entities.Walk.get(String(cloneWalk.clone_of));
+        }
+      } catch { /* best-effort — see comment above */ }
+    }
+
+    let sourceText: string;
+    if (titleOnly) {
+      const masterTitle = (masterWalk?.name || '').trim();
+      if (!masterTitle) {
+        return Response.json({ error: 'Could not find the original tour to translate its title from — is this actually a clone?' }, { status: 400 });
+      }
+      sourceText = masterTitle;
+    } else {
+      sourceText = text;
+    }
+
+    // See protectedPhrases.ts for the full story — this swaps "Magical Crete" (and any
+    // other listed brand phrase) for a plain marker before either translation engine ever
+    // sees the real text, so it can't be mistranslated, while leaving a standalone "Crete"
+    // completely free to translate normally.
+    const { protectedText: brandProtectedText, restore: restoreBrand } = protectPhrases(sourceText);
+
+    // Only for an ordinary script translation, and only once the clone's own Tour Name box
+    // already holds a REAL translated title — if it still contains the master's English
+    // title anywhere (the untouched placeholder, or a partial edit), there's nothing usable
+    // to substitute yet, so this quietly does nothing until WalkEditor.jsx's "Translate"
+    // button (or a manual edit) has given it a real title to work with.
+    let promptText = brandProtectedText;
+    let restoreTitle = (s: string) => s;
+    let titleSubstituted = false;
+    if (!titleOnly && masterWalk?.name && cloneWalk?.name) {
+      const masterTitle = String(masterWalk.name).trim();
+      const cloneTitle = String(cloneWalk.name).trim();
+      if (masterTitle && cloneTitle && !cloneTitle.includes(masterTitle)) {
+        const sub = substituteTitleMentions(brandProtectedText, masterTitle, cloneTitle);
+        if (sub.protectedText !== brandProtectedText) {
+          promptText = sub.protectedText;
+          restoreTitle = sub.restore;
+          titleSubstituted = true;
+        }
+      }
+    }
+
+    const markersPresent = promptText !== sourceText;
+
+    const prompt = titleOnly
+      ? `Translate this tour title into ${target_language}. It's a short title for an audio tour, not a sentence to translate literally word-for-word — a natural, fitting title in ${target_language} matters more than a mechanical translation.${markersPresent ? ' The text may contain a token like xxbrandphrase0xx — copy it through EXACTLY as written, never translate or explain it.' : ''}
+
+Return ONLY the translated title. No quotes, no explanations, no markdown.
+
+Title:
+${promptText}`
+      : `Translate the following narration script into ${target_language}.
 
 CRITICAL RULES:
 1. Preserve ALL <break> tags EXACTLY as they are — same tag, same duration. Do not modify, move, translate, or remove them.
@@ -70,10 +141,11 @@ CRITICAL RULES:
 3. Only translate the spoken narration text around those preserved words and between the break tags.
 4. Keep the translation natural and conversational, suitable for spoken audio narration.
 5. If the script starts with a title line, translate the title too (still preserving any inline foreign-script words per rule 2).
-6. Return ONLY the translated text with break tags and any preserved foreign-script words intact. No explanations, no markdown, no commentary — just the translated script.
+6. The text may contain tokens that look like xxbrandphrase0xx or xxtitlephrase0xx (a number in place of 0). These are placeholder markers — one for a protected brand phrase, one standing in for a tour title that's already been translated elsewhere. Copy each one through EXACTLY as written, unchanged, with no translation, explanation, or removal. They'll be swapped back for real text afterward.
+7. Return ONLY the translated text with break tags, any preserved foreign-script words, and any marker tokens intact. No explanations, no markdown, no commentary — just the translated script.
 
 Script:
-${text}`;
+${promptText}`;
 
     const result = await callGroqWithKeyRotation(apiKeys, {
       // llama-3.3-70b-versatile was decommissioned by Groq on 2026-08-16 — every call
@@ -86,7 +158,9 @@ ${text}`;
       messages: [
         {
           role: 'system',
-          content: 'You are a professional translator for audio narration scripts. You always preserve SSML <break> tags exactly as written, and you always leave any inline word or name already written in a non-English script (Greek, Cyrillic, Turkish, Italian, Arabic) completely untouched, in its original script and spelling, rather than translating or transliterating it — those words drive a pronunciation dictionary that only matches an exact original spelling.',
+          content: titleOnly
+            ? `You are a professional translator producing short, natural tour titles for an audio tour app. You always return a fitting, idiomatic title in the target language rather than a stiff literal translation${markersPresent ? ', and you always copy any xxbrandphraseNxx marker token through completely unchanged' : ''}.`
+            : 'You are a professional translator for audio narration scripts. You always preserve SSML <break> tags exactly as written, you always leave any inline word or name already written in a non-English script (Greek, Cyrillic, Turkish, Italian, Arabic) completely untouched, in its original script and spelling, rather than translating or transliterating it — those words drive a pronunciation dictionary that only matches an exact original spelling — and you always copy any xxbrandphraseNxx or xxtitlephraseNxx marker token through completely unchanged.',
         },
         { role: 'user', content: prompt },
       ],
@@ -100,8 +174,9 @@ ${text}`;
       // (see MAX_CHARS in NarrationTtsEditor.jsx) — roughly 1,100-1,300 tokens once
       // translated even into a more verbose target language — so 4000 leaves several
       // times that much headroom while comfortably fitting under an 8000 TPM ceiling
-      // alongside the prompt/instruction overhead.
-      max_tokens: 4000,
+      // alongside the prompt/instruction overhead. A title is at most a handful of
+      // words, so 200 is ample and keeps a title request cheap against the same budget.
+      max_tokens: titleOnly ? 200 : 4000,
     });
 
     let finalText: string;
@@ -120,8 +195,9 @@ ${text}`;
       // markup and leave them untouched, translating only the surrounding text — the same
       // protection the Groq prompt's rule 1 asks for, just enforced structurally instead of
       // by instruction. Foreign-script name preservation (rule 2) has no equivalent
-      // structural guarantee here, so the same best-effort check below still applies.
-      const googleResult = await translateWithGoogle([text], target_lang_code, googleApiKey, 'html');
+      // structural guarantee here, so the same best-effort check below still applies. A
+      // title has no <break> tags to worry about, so plain 'text' format is used for it.
+      const googleResult = await translateWithGoogle([promptText], target_lang_code, googleApiKey, titleOnly ? 'text' : 'html');
       if (!googleResult.ok || !googleResult.translations?.[0]) {
         const groqWaitHint = result.retryAfterMs
           ? ` Groq says to wait about ${Math.ceil(result.retryAfterMs / 1000)}s before trying again${apiKeys.length > 1 ? ' (both configured keys are currently rate-limited)' : ''}.`
@@ -144,16 +220,22 @@ ${text}`;
       }, { status: 500 });
     }
 
+    // Swap the real brand phrase(s) and/or the pre-translated title back in now that both
+    // engines are done with the text — see protectedPhrases.ts. Applied to whichever path
+    // actually ran, Groq or Google. Order doesn't matter — the two marker kinds never overlap.
+    finalText = restoreTitle(restoreBrand(finalText));
+
     // Best-effort check only (see findUnpreservedForeignWords above for what it can and
     // can't catch) — never fails the translation over it, since the translation itself
     // is very likely still fine and usable; this only flags that ONE named word may need
     // a manual look before it's relied on for pronunciation.
-    const unpreserved = findUnpreservedForeignWords(text, finalText);
+    const unpreserved = findUnpreservedForeignWords(sourceText, finalText);
 
     return Response.json({
       translated_text: finalText,
       // Purely informational — TranslationPanel.jsx can mention it, never changes behavior.
       ...(usedGoogleFallback ? { translated_via: 'google' } : {}),
+      ...(titleSubstituted ? { title_substituted: true } : {}),
       ...(unpreserved.length > 0 ? {
         preservation_warning: `Double-check the spelling of ${unpreserved.map((w) => `"${w}"`).join(', ')} in the translated text below — it should appear exactly as written in the original script, but couldn't be confirmed automatically. This matters for the pronunciation dictionary to work.`,
       } : {}),

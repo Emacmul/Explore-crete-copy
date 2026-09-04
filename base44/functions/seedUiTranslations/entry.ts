@@ -2,6 +2,7 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 import { resolveActor } from '../../shared/backendActor.ts';
 import { callGroqWithKeyRotation } from '../../shared/groqKeyRotation.ts';
 import { translateWithGoogle } from '../../shared/googleTranslate.ts';
+import { protectPhrases } from '../../shared/protectedPhrases.ts';
 
 // Seeds a machine-translation BASELINE for UI strings in a language that doesn't have one
 // hand-written in src/lib/i18n/index.js yet — see TranslationsManager.jsx's "Auto-translate
@@ -116,7 +117,8 @@ CRITICAL RULES:
 2. Some values contain tokens like {n}, {label}, {total}, {page} — these are placeholders the app substitutes with real data at runtime. Copy every such {token} through EXACTLY as written — same braces, same name inside, same position in the sentence. Never translate, rename, reorder, or drop them.
 3. Preserve any \\n line breaks within a value, in the same positions.
 4. Keep translations natural and concise, suitable for compact UI text (buttons, labels, short messages) — not narration prose.
-5. Return ONLY a single valid JSON object with the same keys and their translated values. No explanations, no markdown, no commentary — just the JSON object.
+5. Some values may contain tokens like xxbrandphrase0xx (a number in place of 0) — placeholder markers standing in for a protected brand phrase. Copy each one through EXACTLY as written, unchanged, with no translation, explanation, or removal.
+6. Return ONLY a single valid JSON object with the same keys and their translated values. No explanations, no markdown, no commentary — just the JSON object.
 
 JSON:
 ${JSON.stringify(sourceObj)}`;
@@ -135,7 +137,7 @@ async function callGroq(sourceObj: Record<string, string>, target_language: stri
     messages: [
       {
         role: 'system',
-        content: 'You are a professional UI/software localization translator. You always return strict JSON with exactly the same keys you were given, and you always leave {placeholder} tokens completely untouched — they are filled in with real data by the app, not translated.',
+        content: 'You are a professional UI/software localization translator. You always return strict JSON with exactly the same keys you were given, you always leave {placeholder} tokens completely untouched — they are filled in with real data by the app, not translated — and you always copy any xxbrandphraseNxx marker token through completely unchanged.',
       },
       { role: 'user', content: buildPrompt(sourceObj, target_language) },
     ],
@@ -170,8 +172,15 @@ interface ChunkOutcome {
 // OTHER failure (oversized/malformed response) still splits the chunk in half and retries each
 // half in turn — never in parallel — down to single keys if it has to.
 async function translateChunk(chunkKeys: string[], entries: Record<string, string>, target_language: string, apiKeys: string[]): Promise<ChunkOutcome> {
+  // See protectedPhrases.ts — each value goes to Groq with "Magical Crete" (etc.) already
+  // swapped for a marker, and comes back with the real phrase restored, per key.
   const sourceObj: Record<string, string> = {};
-  for (const k of chunkKeys) sourceObj[k] = entries[k];
+  const restores: Record<string, (s: string) => string> = {};
+  for (const k of chunkKeys) {
+    const { protectedText, restore } = protectPhrases(entries[k]);
+    sourceObj[k] = protectedText;
+    restores[k] = restore;
+  }
 
   const result = await callGroq(sourceObj, target_language, apiKeys);
 
@@ -181,7 +190,7 @@ async function translateChunk(chunkKeys: string[], entries: Record<string, strin
     for (const k of chunkKeys) {
       const value = result.parsed[k];
       if (typeof value === 'string' && value.trim()) {
-        translated[k] = value.trim();
+        translated[k] = restores[k](value.trim());
       } else {
         failed.push({ key: k, error: 'Key missing from model response' });
       }
@@ -288,8 +297,17 @@ Deno.serve(async (req) => {
       // protectPlaceholders swaps out each {token} for a plain marker before this ever
       // reaches Google, and swaps the real token back in afterward — see that function's
       // own comment for the real bug (Google translating the WORD inside the braces too,
-      // e.g. {label} → {rótulo}) this closes.
-      const protections = stillMissingKeys.map(k => protectPlaceholders(entries[k]));
+      // e.g. {label} → {rótulo}) this closes. protectPhrases (protectedPhrases.ts) does the
+      // same for brand phrases like "Magical Crete" — chained together here so a value can
+      // carry both a placeholder and a brand phrase at once and have each restored correctly.
+      const protections = stillMissingKeys.map(k => {
+        const phraseProt = protectPhrases(entries[k]);
+        const placeholderProt = protectPlaceholders(phraseProt.protectedText);
+        return {
+          protectedText: placeholderProt.protectedText,
+          restore: (s: string) => phraseProt.restore(placeholderProt.restore(s)),
+        };
+      });
       const texts = protections.map(p => p.protectedText);
       const googleResult = await translateWithGoogle(texts, target_lang_code, googleApiKey, 'text');
       if (googleResult.ok && googleResult.translations) {

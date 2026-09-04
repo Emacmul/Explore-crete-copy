@@ -67,6 +67,110 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-04 (follow-up 124) — real "Magical Crete" brand-phrase protection for translation (new, replaces a non-working pronunciation-dictionary workaround)
+Scope: new `base44/shared/protectedPhrases.ts`; edits to
+`base44/functions/translateScript/entry.ts` and
+`base44/functions/seedUiTranslations/entry.ts` — **both are backend functions and need
+Enda's manual redeploy step, for both functions.**
+
+**Per Enda's report:** he'd added "Magical" and "Crete" as two separate entries in the
+Pronunciation Dictionary, believing that protected the brand name "Magical Crete" from
+translation — but it also meant a standalone "Crete" (the island) never translated either,
+which broke normal narration.
+
+**Investigated first, before any fix:** read every translation-related file in the
+codebase (`translateScript/entry.ts`, `seedUiTranslations/entry.ts`,
+`pronunciationDictionary/entry.ts`, `PronunciationDictionaryDialog.jsx`,
+`TranslationPanel.jsx`) end to end. Confirmed the Pronunciation Dictionary is a completely
+separate system — it only guides PCV audio pronunciation (via LinguaGloss/IPA) and is never
+read by either translation function. There was, in fact, no protected-phrase mechanism
+anywhere in the app at all. So "Magical" and "Crete" being in that dictionary had zero
+effect on translation either way — the real, previously-unprotected risk was that "Magical
+Crete" itself had no guarantee of staying intact either.
+
+**What changed:** new shared helper `protectPhrases()` swaps the exact phrase "Magical
+Crete" (case-sensitive, whole-phrase-only) for a plain marker before the text ever reaches
+Groq or Google, then swaps the real phrase back in afterward — modelled on the existing
+`{placeholder}` protection in `seedUiTranslations`, but applied to the Groq path too (not
+just Google), since a brand name is too high-stakes to leave to an LLM instruction alone.
+Wired into both narration-script translation (`translateScript`) and UI-string translation
+(`seedUiTranslations`, e.g. the "About" page text). A standalone "Crete" is never touched by
+this and keeps translating normally. More brand phrases can be added later by extending the
+`PROTECTED_PHRASES` array in `protectedPhrases.ts`.
+
+**Verified:** ran the actual `protectPhrases` logic against sample text in Node — confirmed
+"Magical Crete" round-trips byte-for-byte through a simulated translation pass while a
+separate standalone "Crete" in the same text is left free to change. `npx eslint` doesn't
+cover Deno backend files (expected — no config targets `base44/functions`), so this was
+verified by direct logic testing and careful reading instead.
+
+**Follow-up:** Enda then clarified he meant the tour's title appearing INSIDE the
+narration text itself (not the Tour Name box) — see follow-up 125 below for that.
+
+---
+
+## 2026-09-04 (follow-up 125) — tour titles mentioned inside narration now auto-translate consistently, + a "Translate" button for the Tour Name box
+Scope: `base44/shared/protectedPhrases.ts` (new `substituteTitleMentions`), edit to
+`base44/functions/translateScript/entry.ts` — **backend function, needs Enda's manual
+redeploy step.** Frontend: `src/components/admin/WalkEditor.jsx`,
+`src/components/admin/TranslationPanel.jsx` — no redeploy needed for these two.
+
+**Per Enda's report:** a tour's own title (e.g. "The Battle of the Rivers") is mentioned
+more than once inside the narration itself, and was being left in English rather than
+translated — risking a narrator not noticing and leaving it un-translated. He also confirmed
+the "Translate" button idea for the Tour Name box (offered in the previous reply) was wanted.
+
+**Why this is a DIFFERENT problem from follow-up 124, not the same fix again:** "Magical
+Crete" needed PROTECTING from translation. A tour title needed the opposite — the AI's own
+judgement was leaving a capitalised, title-shaped phrase like "The Battle of the Rivers"
+untranslated on its own initiative (the same instinct that was leaving bare "Crete" alone
+before follow-up 124), and even when it did translate it, nothing guaranteed the same
+wording twice across different waypoints.
+
+**What changed:**
+- New `substituteTitleMentions()` in `protectedPhrases.ts`: given a script, the master
+  tour's English title, and this clone's own already-translated title, swaps every mention
+  of the English title for a marker before translation, then swaps in the ALREADY-DECIDED
+  translated title afterward (not the English original) — guarantees the title reads
+  identically everywhere it's mentioned, and guarantees it's translated at all, rather than
+  leaving either outcome up to the model.
+- `translateScript/entry.ts` now accepts an optional `walkId`. When present, it looks up
+  that clone's Walk record and (via `clone_of`) the master's, and — only once the clone's
+  own Tour Name box holds a REAL translated title, not the untouched
+  `"<English title> (<language>)"` placeholder — applies the substitution above
+  automatically to every waypoint script translated from then on.
+- `translateScript/entry.ts` also gained a `titleOnly` mode: given just a `walkId` (no
+  script text), it looks up the master's title and translates that alone — this is what
+  the new "Translate" button uses.
+- `WalkEditor.jsx`: a "Translate" button now sits next to the Tour Name field on any clone,
+  calling `titleOnly` mode and filling the box with the result.
+- `TranslationPanel.jsx`: now sends `walkId` with every script translation so the
+  substitution above can activate, and shows a small note when it actually fired.
+
+**The dependency this creates, worth knowing:** in-narration title substitution only
+activates AFTER the Tour Name box holds a real translation — so the recommended order for a
+narrator is: click "Translate" on the Tour Name box first (or type a translation by hand),
+THEN translate the waypoint scripts. Translating scripts before the title box is filled in
+just means the AI's own (previously unreliable) judgement handles the title for now, same
+as before this follow-up.
+
+**Verified:** ran the actual `protectPhrases` + `substituteTitleMentions` logic together
+against a sample script in Node (brand phrase AND tour title both present, mentioned twice)
+— confirmed both round-trip correctly through a simulated translation pass: "Magical Crete"
+comes back unchanged, "The Battle of the Rivers" comes back as the pre-decided Dutch title,
+identically both times it's mentioned. Also verified the placeholder-detection guard
+(`cloneTitle.includes(masterTitle)`) correctly skips substitution while the Tour Name box
+still holds the untouched placeholder. `npx eslint` on the two edited frontend files shows
+only pre-existing, unrelated warnings (unused imports/vars already present before this
+change — confirmed against the earlier changelog entry that first flagged them). Full
+`npx vite build` completes with no errors.
+
+**Not tested live** — same caveat as always for anything touching the actual translation
+pipeline: worth a real end-to-end check once deployed (clone a tour, translate the title,
+then translate a waypoint script that mentions that title, and confirm it reads correctly).
+
+---
+
 ## 2026-09-03 (follow-up 123) — narrators can now self-unlock a Done waypoint in their own clones
 Scope: `src/components/admin/TourSimulator.jsx` — frontend only, no redeploy needed.
 
