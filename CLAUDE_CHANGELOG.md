@@ -67,6 +67,36 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-04 (follow-up 130) — Translate button moved next to its own "Tour Title" label
+Scope: `src/components/admin/WalkEditor.jsx` — frontend only, no redeploy needed.
+
+**Per Enda's report** (screenshot of the Narration & Simulate tab's title row): "the
+'translate button is so far removed from what it's supposed to do, it's almost impossible
+to see it." In the row `[icon] Tour Title: [——— input ———] [Translate]`, the wide Input sat
+between the label and the button, so the button read as unconnected to the label and field
+it belongs to.
+
+**What changed:** reordered the same row to `[icon] Tour Title: [Translate] [——— input ———]`
+— the button now sits directly beside its own label, before the field it fills in, per
+Enda's own instruction. Same component, same state, same handler (`tourTitleEditor` in
+WalkEditor.jsx, rendered inside TourSimulator.jsx's Narration & Simulate tab per follow-up
+126) — only the order of the three pieces in the row changed.
+
+Checked the OTHER place this same Translate button appears — the General tab's Tour Name
+field (admin-only, not what Enda's screenshot was showing) — but left it as is: there the
+label sits on its own line ABOVE the input+button row, not beside it in the same row, so the
+button already sits immediately next to the field it fills in with no such gap.
+
+**Verified:** `npx eslint` on this file shows only the same pre-existing, unrelated issues
+already flagged in earlier entries (unused `Download`/`validateDrivingTour`/`generateGpx`/
+`generateKml` imports, unused `fileInputRef`) — nothing new from this change. Full
+`npx vite build` completes with no errors.
+
+**Not tested live** — worth a quick look on a real clone's Narration & Simulate tab to
+confirm "Translate" now reads as clearly belonging to the Tour Title box.
+
+---
+
 ## 2026-09-04 (follow-up 129) — WaypointPaceEditor now auto-saves; no more "Save changes" button
 Scope: `src/components/admin/WaypointPaceEditor.jsx` — frontend only, no redeploy needed.
 

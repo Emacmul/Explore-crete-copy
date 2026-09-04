@@ -139,12 +139,11 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
     <div className="flex items-center gap-2 bg-slate-800/60 border border-amber-600/30 rounded-lg px-3 py-2">
       <Languages className="w-4 h-4 text-amber-400 shrink-0" />
       <span className="text-xs text-slate-400 shrink-0">Tour Title:</span>
-      <Input
-        value={form.name}
-        onChange={e => set('name', e.target.value)}
-        placeholder="Translated tour title"
-        className="bg-slate-700 border-slate-600 text-white h-8 text-sm flex-1"
-      />
+      {/* Per Enda's report: with the Input sitting between the label and this button
+          (the original layout, Translate all the way at the far right), the button
+          read as disconnected from what it does — "almost impossible to see" as
+          belonging to the title box next to it. Moved so it sits directly beside its
+          own label, before the field it fills in, per his own instruction. */}
       {form.target_language && (
         <Button
           type="button" size="sm" variant="outline"
@@ -157,6 +156,12 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
           Translate
         </Button>
       )}
+      <Input
+        value={form.name}
+        onChange={e => set('name', e.target.value)}
+        placeholder="Translated tour title"
+        className="bg-slate-700 border-slate-600 text-white h-8 text-sm flex-1"
+      />
       {titleTranslateError && <span className="text-xs text-red-400 shrink-0">{titleTranslateError}</span>}
     </div>
   );
