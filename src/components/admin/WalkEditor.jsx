@@ -126,6 +126,41 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
     setTranslatingTitle(false);
   };
 
+  // Per Enda's follow-up 126 report: he tested this on his own Dutch clone and couldn't
+  // find the "Translate" button at all — it turned out to be sitting in the General tab's
+  // Tour Name field, and General is hidden from narrators entirely (see the `tabs` array
+  // below, follow-up 46). Narration & Simulate is the only screen a narrator (or an admin
+  // testing as one) ever actually opens on a clone, so this same title box + button is
+  // built ONCE here and handed down to TourSimulator as `titleEditor` to render inside
+  // that tab too — same state, same handler, just reachable from where it's actually
+  // needed. Only built for a clone (nothing to translate on a master); undefined otherwise,
+  // which TourSimulator's `{titleEditor}` simply renders as nothing.
+  const tourTitleEditor = form.clone_of && (
+    <div className="flex items-center gap-2 bg-slate-800/60 border border-amber-600/30 rounded-lg px-3 py-2">
+      <Languages className="w-4 h-4 text-amber-400 shrink-0" />
+      <span className="text-xs text-slate-400 shrink-0">Tour Title:</span>
+      <Input
+        value={form.name}
+        onChange={e => set('name', e.target.value)}
+        placeholder="Translated tour title"
+        className="bg-slate-700 border-slate-600 text-white h-8 text-sm flex-1"
+      />
+      {form.target_language && (
+        <Button
+          type="button" size="sm" variant="outline"
+          onClick={handleTranslateTitle}
+          disabled={translatingTitle}
+          title={`Translate the original tour's title into ${form.target_language} and fill this box with it.`}
+          className="bg-blue-700/30 hover:bg-blue-700/50 border-blue-600/50 text-amber-400 hover:text-amber-300 shrink-0 gap-1.5 h-8"
+        >
+          {translatingTitle ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Languages className="w-3.5 h-3.5" />}
+          Translate
+        </Button>
+      )}
+      {titleTranslateError && <span className="text-xs text-red-400 shrink-0">{titleTranslateError}</span>}
+    </div>
+  );
+
   // Per Enda: once a tour has been cloned for translation, opening it should land
   // straight on "Narration & Simulate" — that's the working screen for the whole
   // translation job — rather than anywhere else. Only applies to a driving tour clone;
@@ -1765,7 +1800,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
             }));
             editVersionRef.current += 1;
             setDirty(true);
-          }} targetLanguage={form.target_language || ''} onSave={triggerSave} saving={saving} onAutoSave={requestAutoSave} isNarrator={isNarrator} />
+          }} targetLanguage={form.target_language || ''} onSave={triggerSave} saving={saving} onAutoSave={requestAutoSave} isNarrator={isNarrator} titleEditor={tourTitleEditor} />
         )}
       </div>
     </div>

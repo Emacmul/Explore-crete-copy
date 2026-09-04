@@ -62,7 +62,7 @@ function fmtTime(ms) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
-export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, onSave, saving, onAutoSave, isNarrator }) {
+export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, onSave, saving, onAutoSave, isNarrator, titleEditor }) {
   const trailPath = form.trail_path || [];
   // Filtering out waypoints with no usable lat/lng means every index used inside this
   // component (selectedWpIndex, the map's per-marker index, jumpToWaypoint's
@@ -1133,6 +1133,17 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
           </span>
         )}
       </div>
+
+      {/* Per Enda's follow-up 126 report: he built a Dutch test clone and had no way to
+          translate its title at all — the "Translate" button (follow-up 125) sits in the
+          General tab's Tour Name field, but General is admin-only (see the `tabs` array in
+          WalkEditor.jsx, follow-up 46) — a narrator, or an admin testing as one, never
+          reaches it. This tab (Narration & Simulate) is the ONLY screen a narrator ever
+          actually opens on their own clone, so that's where this needs to live too.
+          WalkEditor.jsx builds this whole block (it already owns the translate handler and
+          the `form.name` state) and just hands it down ready-made — renders nothing when
+          this isn't a clone (titleEditor is only ever passed for one). */}
+      {titleEditor}
 
       {/* Per Enda's report: nothing on this tab actually showed which locations were
           finished, which still needed checking, or which of them "Jump to location…"

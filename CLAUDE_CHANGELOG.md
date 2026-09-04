@@ -67,6 +67,42 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-04 (follow-up 126) — the follow-up 125 "Translate" title button was unreachable by narrators; now also lives in Narration & Simulate
+Scope: `src/components/admin/TourSimulator.jsx`, `src/components/admin/WalkEditor.jsx` —
+frontend only, no redeploy needed.
+
+**Per Enda's report:** built a Dutch test clone (TESTRT) and couldn't find any way to
+translate its title.
+
+**Root cause:** follow-up 125's "Translate" button was built into the Tour Name field on
+the General tab — but General is hidden from narrators entirely (follow-up 46: "General,
+Route Path (GPS), and Waypoints are admin tools — a narrator must never be able to reach any
+of them"). Narration & Simulate is the ONLY tab a narrator (or an admin testing as one) ever
+actually opens on a clone, so the button was built in a place its intended users can never
+reach — this was already true of the plain Tour Name box before follow-up 125 too (an old
+in-code comment claimed it "stays editable for a narrator too", but that was never actually
+reachable given the tab it lives on).
+
+**What changed:** the exact same title box + "Translate" button now also renders inside the
+Narration & Simulate tab, right below the toolbar (Start/Reset/speed/Save Route), above the
+per-location Progress row. `WalkEditor.jsx` builds it once (it already owns the state and
+`handleTranslateTitle`) and hands it to `TourSimulator` as a new `titleEditor` prop, so
+there's exactly one implementation, not two to keep in sync. Only appears for a clone
+(`form.clone_of`); renders nothing on a master tour or in the scoped "Test Location in
+Simulator" dialog (a different component, `DrivingTourWaypointEditor`, that's admin-only
+regardless). The General tab's own copy is left in place too, for an Admin who's already
+there.
+
+**Verified:** `npx eslint` on both edited files shows only the same pre-existing, unrelated
+warnings already flagged in follow-up 124/125's entries. Full `npx vite build` completes
+with no errors.
+
+**Not tested live** — worth Enda confirming the button now actually shows up on his TESTRT
+Dutch clone's Narration & Simulate tab, and that clicking it still fills the Tour Name field
+correctly.
+
+---
+
 ## 2026-09-04 (follow-up 124) — real "Magical Crete" brand-phrase protection for translation (new, replaces a non-working pronunciation-dictionary workaround)
 Scope: new `base44/shared/protectedPhrases.ts`; edits to
 `base44/functions/translateScript/entry.ts` and
