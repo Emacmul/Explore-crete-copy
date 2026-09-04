@@ -67,6 +67,136 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-04 (follow-up 129) — WaypointPaceEditor now auto-saves; no more "Save changes" button
+Scope: `src/components/admin/WaypointPaceEditor.jsx` — frontend only, no redeploy needed.
+
+**Per Enda's report** (a direct follow-up to his own follow-up 128 verification question,
+about whether unsaved edits survive a "Back 1 Waypoint" jump): "What I really want is any
+changes made to be saved automatically. They are not made for fun, they are necessary, and I
+don't like making people click buttons when that can be avoided." A bigger ask than the
+"warn before discarding" fix I'd offered — this removes the manual save step entirely rather
+than just warning about it.
+
+**What changed:** pause-duration edits, text edits, and pause removals in this panel now
+save themselves, without a button click:
+- A pause-duration nudge (Enda's own correction: this slider is never actually dragged —
+  "too sensitive" — it's adjusted with the keyboard's left/right arrow keys, 0.1s per
+  press) saves about 1.4 seconds after the arrow-key presses stop (debounced, restarted
+  on every press). Checked directly in Radix's own Slider source rather than assumed:
+  EVERY arrow-key press fires its "commit" event, not just a drag's final release — a
+  keyboard step is its own complete interaction to Radix, unlike a mouse drag, which
+  only commits once on release. Saving immediately on that commit event (this entry's
+  first draft did exactly that, before Enda's correction) would have tried to save
+  after every single 0.1s nudge — and since a save briefly disables the slider while it
+  runs, that would have locked the control mid-adjustment. Debounced instead, same as a
+  text edit, so a run of presses coalesces into one save once they stop.
+- A text edit saves 1.4 seconds after typing pauses (debounced, restarted on every
+  keystroke) — long enough that ordinary typing doesn't fire a save after every word.
+  Both this and the pause-duration nudge above share the same debounce timer, since
+  either one ends up saving the same combined file regardless of which kind of edit it
+  was.
+- Removing a pause (already behind its own two-step "Remove this pause?" confirm) saves
+  immediately — it's already a deliberate, one-off action, nothing to debounce.
+
+Trigger-radius edits were already live/auto-applied before this (map-drag → `onWaypointUpdate`
+→ live in the simulator immediately) and needed no change — this was specifically about the
+three edit types that used to sit behind the old manual button.
+
+The old "Save changes" button is gone, replaced by a small status line next to "Test this
+subsegment": "Unsaved changes — saving automatically…" while waiting on the debounce/slider
+release, "Saving…" while the real upload is in flight, "All changes saved" once it lands, or
+"Not saved — see error above" with a "Retry now" link if it fails (e.g. a dropped connection)
+— it does NOT silently retry on its own on a failure, only on the next real edit or a manual
+Retry click, so a failure is never invisible.
+
+**How overlapping saves are handled:** reuses the same in-flight/pending-flag pattern
+WalkEditor.jsx's own `triggerSave` already uses for Save Route — if an edit arrives while a
+save is already running (e.g. the debounce timer fires again just as an earlier save is
+mid-upload), it doesn't start a second, overlapping upload; it flags the running one to loop
+once more on completion and pick up whatever is newest, so a fast edit can never be the one
+silently left unsaved. The save pipeline itself reads from a ref (`segmentsRef`, kept in sync
+at every point `segments` is set, explicitly, not via a `useEffect`) rather than the
+`segments` React state variable directly — needed because saves are triggered from outside
+the normal render flow (a debounce timer callback, an unmount cleanup), where reading state
+directly can hand back a stale, pre-edit snapshot from whenever that closure was created.
+
+**Switching waypoints mid-edit:** this panel fully remounts on every waypoint change
+(`key={selectedWpIndex}` in TourSimulator.jsx, unchanged) — including via the follow-up 128
+"Back 1 Waypoint" button. If a text edit is still sitting in its 1.4s debounce window at that
+moment, a new unmount-flush effect sends it immediately rather than letting it evaporate with
+the rest of the component's state — closing the exact gap flagged when Enda asked his
+follow-up 128 verification question.
+
+**Investigated before building:** confirmed (by reading WalkEditor.jsx's own
+`triggerSave`/`queuedSaveRef` logic) that `onAutoSave` — passed down through TourSimulator.jsx
+into this panel unchanged — was already safe to call frequently and repeatedly before this
+change, so no extra protection was needed at that layer; all the new
+overlap/staleness-handling above is scoped to this panel's own save pipeline.
+
+**Verified:** `npx eslint` on this file is clean (0 problems — the file's previously-unused
+`dirty` state, made redundant by the new status line, was removed rather than left as dead
+code). Full `npx vite build` completes with no errors. Re-checked `TourSimulator.jsx`'s own
+`<WaypointPaceEditor>` usage to confirm the prop names/shapes this relies on
+(`onSave`, `onAutoSave`, `doneLocked`, the `key={selectedWpIndex}` remount) are all unchanged.
+Also ran a standalone simulation of the debounce/in-flight-save control flow (rapid repeated
+"edits" 20ms apart, and an edit arriving while a save is already running) to confirm: a burst
+of quick nudges collapses into exactly one save carrying the latest value, and an edit that
+arrives mid-save is never dropped — the running save loops once more and picks it up.
+
+**Not tested live** — worth Anoushka (or Enda) confirming on a real waypoint: nudge a pause
+duration with the arrow keys a few times and stop, edit a line of text and wait a moment
+without touching anything else, and remove a pause — in each case watch the new status line
+go from "Unsaved changes…" to "Saving…" to "All changes saved" on its own, with no button
+click, and confirm the slider doesn't lock up between individual arrow-key presses. Also
+worth confirming that making a quick edit and immediately clicking "Back 1 Waypoint" (or
+switching waypoints in the dropdown) doesn't lose that edit.
+
+---
+
+## 2026-09-04 (follow-up 128) — "Back 1 Waypoint" button, for re-testing a late leg without replaying a whole location from its own start
+Scope: `src/components/admin/TourSimulator.jsx` — frontend only, no redeploy needed.
+
+**Per Enda's report** (from watching Anoushka work): once pace-testing a location (via
+"Jump to location…"), correcting a late leg's speech/pause timing against the driving speed
+— e.g. BOR1d→BOR1e — meant hearing it over and over to get right. The only rewind available
+was Reset, which always lands back at the location's own Primary-Start (BOR1a-PS) — so
+checking one late leg meant sitting through every earlier one first, every single time.
+
+**Investigated before building anything:** read `jumpToWaypoint`/`resetToWaypoint` (the
+simulator's general reposition-anywhere machinery), `jumpToLocation` ("Jump to location…",
+whole-location jumps only, via the `locationTargets` dropdown — genuinely no per-waypoint
+granularity), and `WaypointPaceEditor.jsx`'s "Test this subsegment" (an isolated, single-leg,
+freshly in-browser-rendered preview — useful for previewing an unsaved wording/pause edit
+before saving, but not a "keep listening onward from here" control, and not the REAL saved
+audio). Confirmed there was genuinely no button anywhere that repositions continuous
+playback to an arbitrary earlier waypoint within the currently open location — only
+whole-location jumps and single-leg isolated previews existed.
+
+**What changed:** a new "Back 1 Waypoint" button, next to Reset, shown only while
+pace-testing a location (`speedMatchMode` — the exact workflow this was reported from).
+Steps back exactly one waypoint from whichever one is currently selected in the panel
+(`selectedWpIndex` — the same waypoint "Test this subsegment" already anchors on) and
+resumes REAL continuous playback from there — the waypoint's actual saved audio and trigger
+radius, same as "Jump to location…" already does, just starting one waypoint later instead
+of at the location's own start. Reuses `jumpToWaypoint` completely as-is — a secondary
+waypoint like BOR1d isn't itself a Primary-Start, so its own boundary calculation already
+falls back to "the next Primary-Start after this point", which correctly stops at THIS
+location's own end regardless, no new boundary logic needed. Disabled (with an explanatory
+title) once already at the location's own start — nothing earlier to step back to within it;
+stepping into a DIFFERENT location isn't "one step back", "Jump to location…" is the
+control for that.
+
+**Verified:** `npx eslint` shows only the same single pre-existing, unrelated warning
+already flagged in earlier entries for this file. Full `npx vite build` completes with no
+errors.
+
+**Not tested live** — worth Anoushka (or Enda) confirming on a real location: jump to a
+location, open a later waypoint like BOR1d in the dropdown, click "Back 1 Waypoint", and
+confirm playback resumes from the previous waypoint with real audio and correct trigger
+timing, repeatable as many times as needed.
+
+---
+
 ## 2026-09-04 (follow-up 127) — Pronunciation Dictionary (and every other Dialog) could open BEHIND the map, unreachable
 Scope: `src/components/ui/dialog.jsx`, `src/components/ui/alert-dialog.jsx` — shared UI
 primitives used app-wide. Frontend only, no redeploy needed.

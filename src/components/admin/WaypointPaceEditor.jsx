@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Slider } from '@/components/ui/slider';
-import { Loader2, Play, Save, AlertTriangle, Clock, Trash2, X, Check, BookOpen } from 'lucide-react';
+import { Loader2, Play, AlertTriangle, Clock, Trash2, X, Check, BookOpen } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { getNarratorAuthPayload, useNarratorApiKeys } from '@/lib/useNarratorApiKeys';
 import { parseScript, rebuildScript } from '@/lib/ttsParser';
@@ -21,6 +21,13 @@ const LANG_TO_CODE = {
 };
 
 const TTS_CALL_TIMEOUT_MS = 30000;
+// How long an edit waits, with no further edits, before it auto-saves (follow-up 129) —
+// covers both a text edit (waits out a run of typing) and a pause-duration nudge (waits
+// out a run of arrow-key presses — see handleDurationCommit's own comment for why a
+// single key press can't just save immediately). Long enough that neither fires a save
+// after every keystroke, short enough that a pause to think doesn't feel like changes
+// are being left unsaved.
+const AUTOSAVE_DEBOUNCE_MS = 1400;
 // Voice is fixed rather than offered as a picker — per Enda, this screen is scoped to
 // wording and pause timing (see the file comment below), nothing about voice/language.
 // Nothing about a waypoint's originally-chosen voice/gender is persisted anywhere once
@@ -61,7 +68,7 @@ const VOICE = 'NEUTRAL';
  * Editing a segment's text immediately clears ITS OWN cached audio (handleTextChange
  * below) — that cached clip was generated for whatever the wording used to be, and
  * combining it against the new text on screen would produce a real mismatch between
- * what's heard and what's written, completely silently. handleTest/handleSave both
+ * what's heard and what's written, completely silently. handleTest/runAutoSave both
  * run through ensureFreshSegmentAudio first, which regenerates real TTS audio for
  * every text segment missing from segmentAudios (precisely the ones just edited, and
  * only those) before ever combining anything, so a stale clip can never be used by
@@ -85,18 +92,27 @@ const VOICE = 'NEUTRAL';
  * plays it through the Simulator's own proven drive/geofence engine via
  * jumpToWaypoint's audioOverrideUrl, scoped to just this waypoint's own leg. Nothing is
  * saved by testing — repeatable as many times as it takes, including after editing
- * text. "Save changes" renders the same combined file again, uploads it for real
- * (uploadNarrationAudio — the exact same call finalizeAndSave uses), and only THEN
- * calls onSave with the real, uploaded URL plus the updated script text (so the new
- * wording and pause durations are both reflected in narration_script, not just the
- * audio) — followed immediately by onAutoSave(), so this is a real save, not something
- * sitting only in memory until Save Route happens to be clicked separately.
+ * text.
+ *
+ * Saving itself is automatic (follow-up 129, per Enda: "any changes made to be saved
+ * automatically... I don't like making people click buttons when that can be
+ * avoided."). A pause slider saves as soon as it's released; a text edit saves a
+ * moment after typing pauses; removing a pause saves immediately. All three run the
+ * same pipeline the old manual "Save changes" button used to run — render the combined
+ * file again, upload it for real (uploadNarrationAudio — the exact same call
+ * finalizeAndSave uses), then call onSave with the real, uploaded URL plus the updated
+ * script text (so the new wording and pause durations are both reflected in
+ * narration_script, not just the audio) — followed immediately by onAutoSave(), so this
+ * is a real save, not something sitting only in memory until Save Route happens to be
+ * clicked separately. See runAutoSave below for how overlapping edits are handled
+ * without ever dropping one.
  *
  * doneLocked (per Enda's report): true whenever this waypoint is marked Done — the
  * same wp.waypoint_done the Waypoints tab already locks on. Before this, nothing here
  * checked it at all, so a "finished" waypoint's wording, pause timing, and audio could
  * still be silently rewritten from this screen with no unlock step. Disables every
- * mutating control below (text/pause edits, Save) the same way TourSimulator.jsx
+ * mutating control below (text/pause edits, and auto-save itself — see runAutoSave's
+ * own doneLocked check) the same way TourSimulator.jsx
  * (this component's only caller) already disables the Waypoints tab's own fields —
  * the actual unlock action (persisted untick of waypoint_done) lives up there, shared
  * with NarrationTtsEditor, since both editors sit under the same waypoint picker.
@@ -135,7 +151,6 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
   // (retryable via reloadKeys, wired to a visible Retry button below) rather than by
   // adding a key that may already be there.
   const [keyCheckFailed, setKeyCheckFailed] = useState(false);
-  const [dirty, setDirty] = useState(false);
   // Per Anoushka/Enda: removing a pause entirely used to mean leaving this screen,
   // going back to the Waypoints tab, scrolling to the big combined script box there,
   // and deleting the <break> tag by hand — slow, easy to delete the WRONG one once
@@ -146,6 +161,40 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
   // currently showing its "Remove this pause?" confirmation, so a stray click can
   // never delete one by accident — only one segment's confirm is ever open at a time.
   const [confirmRemoveId, setConfirmRemoveId] = useState(null);
+
+  // Per Enda (follow-up 129): "any changes made to be saved automatically... I don't
+  // like making people click buttons when that can be avoided." Replaces the old
+  // manual "Save changes" button with a small status readout instead:
+  //   'idle'    — nothing edited yet this visit to this waypoint.
+  //   'pending' — an edit just happened; a save is scheduled (debounced for text, or
+  //               waiting for the pause slider to be released) but hasn't started yet.
+  //   'saving'  — the real save pipeline (regen audio / combine / upload) is running.
+  //   'saved'   — the last save attempt finished with no error.
+  //   'error'   — the last save attempt failed; the error banner above says why.
+  const [autoSaveStatus, setAutoSaveStatus] = useState('idle');
+
+  // segmentsRef/segmentAudiosRef mirror the segments/segmentAudios state above, kept in
+  // sync EXPLICITLY at every point those are set (not via a separate useEffect) —
+  // runAutoSave below is often called from outside the normal render flow (a debounce
+  // timer, the unmount-flush effect, a slider's onValueCommit firing right after its
+  // own onValueChange), so it reads these refs rather than the segments/segmentAudios
+  // React state variables, which would otherwise hand it a stale, pre-edit snapshot
+  // from whenever that particular closure happened to be created.
+  const segmentsRef = useRef(null);
+  const segmentAudiosRef = useRef({});
+
+  // Same in-flight/pending pair WalkEditor.jsx's own triggerSave already uses for its
+  // Save Route button: if an edit arrives while a save is already running, it doesn't
+  // start a second, overlapping save — it flags that the just-started save is already
+  // out of date, so THAT run loops once more on completion and picks up whatever is
+  // newest, rather than the later edit being silently dropped.
+  const autoSaveInFlightRef = useRef(false);
+  const autoSavePendingRef = useRef(false);
+  const autoSaveTimerRef = useRef(null);
+  // Always holds the latest runAutoSave closure (defined further down, re-assigned every
+  // render) — see the unmount-flush effect near it for why a ref is used here rather
+  // than calling runAutoSave directly from that effect's cleanup.
+  const runAutoSaveRef = useRef(() => {});
 
   // Per Enda: the same LinguaGloss pronunciation-dictionary pop-up as TtsSegmentCard.jsx
   // (see that file's own comment), offered here too since this screen has its own,
@@ -231,6 +280,8 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
         }
       }
       if (!cancelled) {
+        segmentsRef.current = parsed;
+        segmentAudiosRef.current = audios;
         setSegments(parsed);
         setSegmentAudios(audios);
         setLoading(false);
@@ -259,9 +310,18 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
     if (lastPreviewUrlRef.current) URL.revokeObjectURL(lastPreviewUrlRef.current);
   }, []);
 
+  // onValueChange fires on every pause-slider movement (in practice, per Enda, an
+  // arrow-key nudge — see handleDurationCommit's own comment below for why dragging
+  // isn't the real workflow here) — this only updates local state for live visual
+  // feedback as the number moves. The actual auto-save is scheduled separately by
+  // handleDurationCommit (onValueCommit) below runAutoSave — see that comment for why
+  // it's debounced rather than saved immediately.
   const handleDurationChange = (segmentId, newDuration) => {
-    setSegments((prev) => prev ? prev.map((seg) => (seg.id === segmentId ? { ...seg, duration: newDuration } : seg)) : prev);
-    setDirty(true);
+    if (!segments) return;
+    const next = segments.map((seg) => (seg.id === segmentId ? { ...seg, duration: newDuration } : seg));
+    segmentsRef.current = next;
+    setSegments(next);
+    setAutoSaveStatus('pending');
   };
 
   // Per Anoushka/Enda (follow-up 77) — see the file header comment above. Updates
@@ -273,14 +333,20 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
   // Test/Save — the next time either button runs, so this never needs to trigger a
   // TTS call itself, on every keystroke, here.
   const handleTextChange = (segmentId, newContent) => {
-    setSegments((prev) => prev ? prev.map((seg) => (seg.id === segmentId ? { ...seg, content: newContent } : seg)) : prev);
-    setDirty(true);
-    setSegmentAudios((prev) => {
-      if (!(segmentId in prev)) return prev;
-      const next = { ...prev };
-      delete next[segmentId];
-      return next;
-    });
+    if (!segments) return;
+    const nextSegments = segments.map((seg) => (seg.id === segmentId ? { ...seg, content: newContent } : seg));
+    segmentsRef.current = nextSegments;
+    setSegments(nextSegments);
+    setAutoSaveStatus('pending');
+    if (segmentId in segmentAudios) {
+      const nextAudios = { ...segmentAudios };
+      delete nextAudios[segmentId];
+      segmentAudiosRef.current = nextAudios;
+      setSegmentAudios(nextAudios);
+    }
+    // Follow-up 129: auto-save this edit a moment after typing pauses — see
+    // scheduleAutoSave (below runAutoSave) for the debounce itself.
+    scheduleAutoSave();
   };
 
   // Per Anoushka/Enda — see confirmRemoveId above. Deletes the pause segment entirely
@@ -288,15 +354,22 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
   // real, audible micro-pause). Only ever called after the two-step confirm below has
   // actually resolved to "yes".
   const handleRemoveSegment = (segmentId) => {
-    setSegments((prev) => prev ? prev.filter((seg) => seg.id !== segmentId) : prev);
-    setSegmentAudios((prev) => {
-      if (!(segmentId in prev)) return prev;
-      const next = { ...prev };
-      delete next[segmentId];
-      return next;
-    });
-    setDirty(true);
+    if (!segments) return;
+    const nextSegments = segments.filter((seg) => seg.id !== segmentId);
+    segmentsRef.current = nextSegments;
+    setSegments(nextSegments);
+    if (segmentId in segmentAudios) {
+      const nextAudios = { ...segmentAudios };
+      delete nextAudios[segmentId];
+      segmentAudiosRef.current = nextAudios;
+      setSegmentAudios(nextAudios);
+    }
     setConfirmRemoveId(null);
+    setAutoSaveStatus('pending');
+    // Follow-up 129: a removal is already a deliberate, discrete action (behind its own
+    // two-step confirm above) — no need to debounce it the way a run of keystrokes is;
+    // save it right away.
+    runAutoSaveRef.current();
   };
 
   // Per Enda's follow-up 35 report (same reasoning as NarrationTtsEditor's own
@@ -351,8 +424,8 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
   // be saved empty") — this screen has no equivalent of that file's larger script box
   // to delete a line through, so an emptied-out line here has no way to become a real,
   // intentional removal; it can only ever be a stray edit. Shared by handleTest and
-  // handleSave so testing catches this exactly as early as saving does, rather than
-  // building a preview around a blank line only for Save to refuse it later.
+  // runAutoSave so testing catches this exactly as early as saving does, rather than
+  // building a preview around a blank line only for the auto-save to refuse it later.
   const findEmptyTextSegment = (segs) => segs.find((seg) => seg.type === 'text' && !seg.content.trim());
 
   // Matches ANY <break .../> tag regardless of attribute form — the same broad check
@@ -412,7 +485,10 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
       setError("A line can't be left empty — type something back in, or undo the edit, or type a <break time=\"0.1s\"/> tag (and nothing else) into it to turn it into a pause instead.");
       return;
     }
-    if (changed) setSegments(normalized);
+    if (changed) {
+      segmentsRef.current = normalized;
+      setSegments(normalized);
+    }
     setTesting(true);
     setError('');
     try {
@@ -428,54 +504,142 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
     setTesting(false);
   };
 
-  const handleSave = async () => {
-    if (!segments || saving || testing || doneLocked) return;
-    const { segments: normalized, blockedError, changed } = collapseBreakTagOnlySegments(segments);
-    if (blockedError) {
-      setError(blockedError);
+  // Follow-up 129 — the actual save pipeline. Same steps the old manual "Save changes"
+  // button used to run (see this file's header comment above); it just no longer needs
+  // a click to start. Safe to call from more than one place in quick succession — a
+  // slider release, the text debounce timer, a pause removal, the unmount-flush effect
+  // — because of the in-flight/pending refs above: a call that arrives while one is
+  // already running doesn't start a second, overlapping upload, it just makes the
+  // running one loop once more afterwards so the latest edit is never the one left
+  // unsaved.
+  const runAutoSave = async () => {
+    if (doneLocked) return;
+    if (autoSaveInFlightRef.current) {
+      autoSavePendingRef.current = true;
       return;
     }
-    const empty = findEmptyTextSegment(normalized);
-    if (empty) {
-      setError("A line can't be left empty — type something back in, or undo the edit, or type a <break time=\"0.1s\"/> tag (and nothing else) into it to turn it into a pause instead.");
-      return;
-    }
-    if (changed) setSegments(normalized);
+    autoSaveInFlightRef.current = true;
     setSaving(true);
-    setError('');
+    setAutoSaveStatus('saving');
+    let hadError = false;
     try {
-      const freshAudios = await ensureFreshSegmentAudio(normalized, segmentAudios);
-      const wavBlob = await combineSegmentsToWav(normalized, freshAudios, undefined, { onRegenerateAudio: regenerateSegmentAudio });
-      const audioBase64 = await blobToBase64(wavBlob);
-      const response = await withTimeout(
-        base44.functions.invoke('uploadNarrationAudio', {
-          audioBase64,
-          mimeType: 'audio/wav',
-          filename: `narration_${Date.now()}.wav`,
-          ...getNarratorAuthPayload(),
-        }),
-        TTS_CALL_TIMEOUT_MS * 2,
-        'Uploading the updated audio took too long (check your connection) — nothing has been lost, just try again.'
-      );
-      if (!response.data?.url) throw new Error('Upload did not return a file URL.');
-      // One atomic update — per follow-up 53's own fix (see CLAUDE_CHANGELOG.md), three
-      // separate onWaypointUpdate calls for audio_clip_url/trigger_audio/waypoint_done
-      // in a row silently raced each other and only the LAST one survived. This is the
-      // exact same class of bug the "really saved" complaint that started this whole
-      // request was about, so it's done here as one single call from the start.
-      onSave({
-        narration_script: rebuildScript(normalized),
-        audio_clip_url: response.data.url,
-        trigger_audio: true,
-        waypoint_done: true,
-      });
-      setDirty(false);
-      onAutoSave?.();
+      let keepGoing = true;
+      while (keepGoing) {
+        autoSavePendingRef.current = false;
+        const currentSegments = segmentsRef.current;
+        if (!currentSegments) break;
+
+        const { segments: normalized, blockedError, changed } = collapseBreakTagOnlySegments(currentSegments);
+        if (blockedError) {
+          setError(blockedError);
+          hadError = true;
+          break;
+        }
+        const empty = findEmptyTextSegment(normalized);
+        if (empty) {
+          setError("A line can't be left empty — type something back in, or undo the edit, or type a <break time=\"0.1s\"/> tag (and nothing else) into it to turn it into a pause instead.");
+          hadError = true;
+          break;
+        }
+        if (changed) {
+          segmentsRef.current = normalized;
+          setSegments(normalized);
+        }
+
+        const freshAudios = await ensureFreshSegmentAudio(normalized, segmentAudiosRef.current);
+        const wavBlob = await combineSegmentsToWav(normalized, freshAudios, undefined, { onRegenerateAudio: regenerateSegmentAudio });
+        const audioBase64 = await blobToBase64(wavBlob);
+        const response = await withTimeout(
+          base44.functions.invoke('uploadNarrationAudio', {
+            audioBase64,
+            mimeType: 'audio/wav',
+            filename: `narration_${Date.now()}.wav`,
+            ...getNarratorAuthPayload(),
+          }),
+          TTS_CALL_TIMEOUT_MS * 2,
+          'Saving the updated audio took too long (check your connection) — it will try again the next time you make an edit here.'
+        );
+        if (!response.data?.url) throw new Error('Upload did not return a file URL.');
+        // One atomic update — per follow-up 53's own fix (see CLAUDE_CHANGELOG.md), three
+        // separate onWaypointUpdate calls for audio_clip_url/trigger_audio/waypoint_done
+        // in a row silently raced each other and only the LAST one survived. Still done
+        // here as one single call, same as before.
+        onSave({
+          narration_script: rebuildScript(normalized),
+          audio_clip_url: response.data.url,
+          trigger_audio: true,
+          waypoint_done: true,
+        });
+        onAutoSave?.();
+
+        keepGoing = autoSavePendingRef.current;
+      }
     } catch (err) {
-      setError(`Could not save: ${getFnErrorMessage(err)}`);
+      setError(`Could not save automatically: ${getFnErrorMessage(err)}`);
+      hadError = true;
+    } finally {
+      autoSaveInFlightRef.current = false;
+      setSaving(false);
+      setAutoSaveStatus(hadError ? 'error' : 'saved');
     }
-    setSaving(false);
   };
+
+  // Always keep a ref pointed at the latest runAutoSave closure — used by the
+  // unmount-flush effect below (whose own cleanup is fixed at mount time, so calling
+  // runAutoSave directly there would forever use the very first render's copy) and by
+  // handleRemoveSegment above (called from the same synchronous handler as the state
+  // update it needs to see, before this render's own runAutoSave would otherwise be in
+  // scope).
+  useEffect(() => {
+    runAutoSaveRef.current = runAutoSave;
+  });
+
+  // Per Enda: the pause slider is never actually dragged — it's too sensitive for that
+  // — it's adjusted with the keyboard's left/right arrow keys, 0.1s at a time. Checked
+  // directly in Radix's own Slider source (node_modules/@radix-ui/react-slider) rather
+  // than assumed: EVERY arrow-key press calls onValueCommit, not just a drag's final
+  // release — Radix treats each keyboard step as its own complete "interaction",
+  // unlike a mouse drag (which only commits once, on release). So saving immediately
+  // on commit — fine for a drag — would instead try to save after every single 0.1s
+  // nudge here, and since a save briefly disables the slider (see the `disabled` prop
+  // below) while it runs, that would lock the control mid-adjustment, exactly the
+  // opposite of what "automatic" is supposed to feel like. Debounced the same way a
+  // text edit already is (scheduleAutoSave below) instead of saving on every commit —
+  // a quick run of arrow-key presses coalesces into one save once they stop.
+  const handleDurationCommit = () => {
+    scheduleAutoSave();
+  };
+
+  // Shared debounce for both a text edit (handleTextChange above) and a pause-duration
+  // nudge (handleDurationCommit above) — restarted on every one of either, so the save
+  // only actually starts once edits have paused for a moment. Both end up saving the
+  // SAME combined file regardless of which kind of edit it was, so one shared timer is
+  // enough — there's never a need to save "just the text" or "just the duration"
+  // separately.
+  const scheduleAutoSave = () => {
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => {
+      autoSaveTimerRef.current = null;
+      runAutoSave();
+    }, AUTOSAVE_DEBOUNCE_MS);
+  };
+
+  // If this waypoint is switched away from (the dropdown, or the "Back 1 Waypoint"
+  // button) while an edit is still sitting in its debounce window, that edit must not
+  // just evaporate along with the rest of this component's state when it unmounts —
+  // flush it right now instead. Goes through runAutoSaveRef (always current — see
+  // above) rather than calling runAutoSave directly, since this effect's own cleanup
+  // closure is fixed at the very first render (empty deps) and would otherwise be
+  // stuck using that render's now-stale copy.
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+        runAutoSaveRef.current();
+      }
+    };
+  }, []);
 
   return (
     <div className="space-y-3">
@@ -592,6 +756,7 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
                     max={120}
                     step={0.1}
                     onValueChange={(val) => handleDurationChange(seg.id, val[0])}
+                    onValueCommit={handleDurationCommit}
                     disabled={loading || saving || testing || doneLocked}
                   />
                 )}
@@ -602,7 +767,7 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
       )}
 
       {segments && segments.length > 0 && (
-        <div className="flex items-center gap-2 pt-1">
+        <div className="flex items-center gap-3 pt-1 flex-wrap">
           <Button
             size="sm"
             onClick={handleTest}
@@ -613,16 +778,37 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
             {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
             Test this subsegment
           </Button>
-          <Button
-            size="sm"
-            onClick={handleSave}
-            disabled={loading || saving || testing || !dirty || doneLocked}
-            title={doneLocked ? 'Locked — unlock this waypoint above to save changes' : dirty ? 'Save this wording and pause timing as the real, live audio for this waypoint' : 'Nothing changed yet'}
-            className="bg-amber-500 hover:bg-amber-600 text-white gap-2"
-          >
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            {saving ? 'Saving…' : 'Save changes'}
-          </Button>
+
+          {/* Follow-up 129: replaces the old manual "Save changes" button — edits save
+              on their own now (see runAutoSave above), this just shows where that
+              stands. doneLocked hides it entirely since no edits are possible there. */}
+          {!doneLocked && autoSaveStatus !== 'idle' && (
+            <div className="text-xs">
+              {autoSaveStatus === 'pending' && (
+                <span className="flex items-center gap-1.5 text-amber-400">
+                  <Clock className="w-3.5 h-3.5" /> Unsaved changes — saving automatically…
+                </span>
+              )}
+              {autoSaveStatus === 'saving' && (
+                <span className="flex items-center gap-1.5 text-slate-400">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…
+                </span>
+              )}
+              {autoSaveStatus === 'saved' && (
+                <span className="flex items-center gap-1.5 text-emerald-400">
+                  <Check className="w-3.5 h-3.5" /> All changes saved
+                </span>
+              )}
+              {autoSaveStatus === 'error' && (
+                <span className="flex items-center gap-1.5 text-red-400">
+                  <AlertTriangle className="w-3.5 h-3.5" /> Not saved — see error above
+                  <button type="button" onClick={() => runAutoSave()} className="underline hover:text-red-300 ml-1">
+                    Retry now
+                  </button>
+                </span>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

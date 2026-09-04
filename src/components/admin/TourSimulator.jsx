@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Play, Pause, Square, Gauge, Clock, Volume2, AlertTriangle, CheckCircle2, MapPin, Radio, Flag, ChevronDown, ChevronUp, Save, Loader2, Lock } from 'lucide-react';
+import { Play, Pause, Square, Gauge, Clock, Volume2, AlertTriangle, CheckCircle2, MapPin, Radio, Flag, ChevronDown, ChevronUp, Save, Loader2, Lock, SkipBack } from 'lucide-react';
 import { calculateBearing, isBearingInRange, uniqueWaypointSegmentId } from '@/lib/routeExport';
 import TourSimulatorMap from './TourSimulatorMap';
 import WaypointPaceEditor from './WaypointPaceEditor';
@@ -638,6 +638,36 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     }
     stopSim();
   };
+
+  // Per Enda's follow-up 128 report (from watching Anoushka work): once pace-testing a
+  // location (speedMatchMode), the ONLY way back to an earlier point in it was Reset —
+  // and Reset lands all the way back at that location's own Primary-Start (e.g.
+  // BOR1a-PS), even just to re-hear one late leg like BOR1d→BOR1e. Checking a
+  // problem leg meant sitting through every earlier one first, every single time — a
+  // real workflow drag, reported directly from watching her hit exactly this wall.
+  //
+  // This steps back exactly ONE waypoint from whichever one is currently selected/open
+  // in the panel on the right (selectedWpIndex — the same waypoint "Test this
+  // subsegment" already anchors on), and resumes REAL, continuous playback — the
+  // waypoint's actual saved audio and trigger radius, not a one-off in-browser preview
+  // — from there onward, same as "Jump to location…" already does, just starting one
+  // waypoint later instead of at the location's own start. Reuses jumpToWaypoint
+  // exactly as-is: since a secondary waypoint like BOR1d isn't itself a primary_start,
+  // its own boundary calc (locationRangeBoundary → falls back to nextLocationBoundary)
+  // already correctly stops at THIS location's own end regardless, with no extra code
+  // needed here for that part.
+  //
+  // Clamped to never step back before this location's own start
+  // (currentLocationRange.startIndex) — going earlier than that would cross into a
+  // DIFFERENT location's data, which isn't "one step back", it's a different jump
+  // entirely ("Jump to location…" is the control for that).
+  const canStepBackWaypoint = !!currentLocationRange && selectedWpIndex > currentLocationRange.startIndex;
+  const handleBackOneWaypoint = () => {
+    if (!canStepBackWaypoint) return;
+    const prevIndex = selectedWpIndex - 1;
+    setSelectedWpIndex(prevIndex);
+    jumpToWaypoint(prevIndex, { autoplay: true });
+  };
   // Per Enda's follow-up 48 report: reversing follow-up 37's own change here —
   // jumping to a location must NOT autoplay any more. "The person editing this
   // location has to manually start the car/walker moving. It should never happen
@@ -1034,6 +1064,24 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
         <Button onClick={handleResetClick} size="sm" variant="outline" className="border-slate-500 text-slate-300 gap-2">
           <Square className="w-4 h-4" /> Reset
         </Button>
+        {/* Per Enda's follow-up 128 report — see handleBackOneWaypoint above for the
+            full story. Only shown while pace-testing a location (speedMatchMode) —
+            that's the exact workflow this was reported from; outside it, "Jump to
+            location…" and the plain waypoint dropdown already cover browsing. */}
+        {speedMatchMode && (
+          <Button
+            onClick={handleBackOneWaypoint}
+            size="sm"
+            variant="outline"
+            disabled={!canStepBackWaypoint}
+            title={canStepBackWaypoint
+              ? `Go back to ${waypoints[selectedWpIndex - 1]?.name || waypoints[selectedWpIndex - 1]?.segment_id || 'the previous waypoint'} and play on from there — for re-checking just the leg leading up to where you are now.`
+              : "Already at this location's own start — nothing earlier to go back to."}
+            className="border-slate-500 text-slate-300 gap-2"
+          >
+            <SkipBack className="w-4 h-4" /> Back 1 Waypoint
+          </Button>
+        )}
         <span className="flex items-center gap-1.5 text-slate-200 text-sm bg-slate-800/60 rounded-lg border border-slate-600 px-2.5 h-8" title={form.tour_category === 'WBT' ? 'Fixed walking speed' : 'Set by an Admin — never editable here'}>
           <Flag className="w-3.5 h-3.5 text-blue-400" /> {speed} km/h
           {currentSegment && (
