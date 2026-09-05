@@ -212,6 +212,18 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   const editVersionRef = useRef(0);
   const set = (field, value) => { setForm(prev => ({ ...prev, [field]: value })); editVersionRef.current += 1; setDirty(true); };
   const isDrivingAudioTour = form.route_type === 'driving_audio_tour';
+  // Per Enda's report: a WalkAbout (tour_category 'WBT') shares this exact same
+  // route_type ('driving_audio_tour') and waypoint/trigger-radius data shape with a
+  // real Driving Tour ('DDV') — both go through the Speech/Speed Route Checker — but a
+  // WalkAbout is WALKED, not driven. Importing 123 WalkAbout Rethymno waypoints gave
+  // every one of them the driving-speed default (150m), and with waypoints that close
+  // together on a walking route, their trigger-radius circles overlapped into a solid
+  // red mass covering the map. Same DDV-vs-not distinction already used a few lines
+  // below for the routing profile (`form.tour_category === 'DDV' ? 'driving' : 'foot'`)
+  // — reused here so a real driving tour still defaults to 150m (its own trigger needs
+  // to fire well before a car arrives) while a WalkAbout defaults to the tight 5m Enda
+  // asked for, since a pedestrian can be positioned far more precisely.
+  const DEFAULT_TRIGGER_RADIUS_M = form.tour_category === 'DDV' ? 150 : 5;
   // Per Enda: a soft heads-up only, not a hard block — "Translation finished" can still
   // be ticked at any point even if some waypoints aren't marked done yet (useful for a
   // demo, or a tour that's deliberately being sent for review early).
@@ -274,7 +286,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
           narration_script: '',
           trigger_audio: false,
           audio_clip_url: '',
-          trigger_radius_m: 150,
+          trigger_radius_m: DEFAULT_TRIGGER_RADIUS_M,
           trigger_once: true,
           use_bearing: false,
           bearing_direction: 0,
@@ -464,7 +476,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
             narration_script: '',
             trigger_audio: false,
             audio_clip_url: '',
-            trigger_radius_m: 150,
+            trigger_radius_m: DEFAULT_TRIGGER_RADIUS_M,
             trigger_once: true,
             use_bearing: false,
             bearing_direction: 0,
@@ -647,7 +659,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
               narration_script: '',
               trigger_audio: false,
               audio_clip_url: '',
-              trigger_radius_m: 150,
+              trigger_radius_m: DEFAULT_TRIGGER_RADIUS_M,
               trigger_once: true,
               use_bearing: false,
               bearing_direction: 0,

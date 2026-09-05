@@ -67,6 +67,66 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-05 (follow-up 132) — WalkAbout waypoints now default to a 5m trigger radius on import/add, instead of the Driving Tour default of 150m/30m
+Scope: `src/components/admin/WalkEditor.jsx`, `src/components/admin/DrivingTourWaypointEditor.jsx`
+— frontend only, no redeploy needed.
+
+**Per Enda's report:** "In the admin panel, general tab. When importing a WalkAbout tour, I
+need the trigger radius for each waypoint set to 5, no more. I just imported 123 WayPoints
+for WalkAbout Rethymno, and it turned the map red because they all default to 150 or
+something... This default of 5 is for WalkAbouts only!"
+
+**Investigated first:** a WalkAbout (`tour_category` `'WBT'`) and a real Driving Tour
+(`'DDV'`) both use the same underlying `route_type: 'driving_audio_tour'` and the same
+waypoint/trigger-radius data shape — both go through the Speech/Speed Route Checker — but
+nothing in the waypoint-creation code told them apart for `trigger_radius_m`, so every new
+waypoint got the driving default (150m in `WalkEditor.jsx`, 30m in
+`DrivingTourWaypointEditor.jsx`) regardless of which kind of tour it belonged to. A WalkAbout
+is walked, not driven, so its waypoints sit far closer together — at 150m, their trigger
+circles overlapped so much the map turned solid red, exactly as Enda described. This wasn't
+guessed at: traced every place a new waypoint gets created across both files before touching
+anything, and found the same problem existed in three spots in each — six sites in total, not
+just the one Enda happened to hit.
+
+This exact WBT-vs-DDV distinction already existed elsewhere in the codebase for other
+per-waypoint defaults — the routing profile (`form.tour_category === 'DDV' ? 'driving' :
+'foot'`) and the default speed (`tourCategory === 'WBT' ? 3.5 : (defaultDrivingSpeedKmh ||
+50)`) — so the fix reuses that same pattern rather than inventing a new one.
+
+**What changed:**
+- `WalkEditor.jsx`: added `const DEFAULT_TRIGGER_RADIUS_M = form.tour_category === 'DDV' ?
+  150 : 5;` and used it in place of the hardcoded `trigger_radius_m: 150` at all three
+  waypoint-creation sites — the GPX file import parser (the one 123-waypoint WalkAbout
+  Rethymno almost certainly hit), the FIT/Garmin file import parser, and the
+  auto-generate-waypoints fallback used when an imported file has no waypoints of its own.
+  A real Driving Tour import is unaffected — still defaults to 150m.
+- `DrivingTourWaypointEditor.jsx`: added `const defaultTriggerRadiusM = tourCategory === 'WBT'
+  ? 5 : 30;` next to the file's existing `defaultSpeed` default, and used it for the manual
+  "Add Waypoint" form's starting value, that form's submit-handler fallback, and this file's
+  own separate "Waypoint GPX Builder tool" import — all three previously hardcoded to 30m
+  regardless of tour type. A real Driving Tour keeps this file's existing 30m default,
+  unchanged.
+
+Deliberately left untouched: the runtime READ-time fallbacks in `DrivingTourPlayer.jsx` and
+`TourSimulator.jsx` (`trigger_radius_m || 150`, `Number(wp.trigger_radius_m) || 30`) — those
+only matter for old waypoints saved before this fix with no radius stored at all, not for new
+waypoints being created now, and weren't part of what Enda reported.
+
+**Verified:** `npx eslint` on both files shows only pre-existing, unrelated issues confirmed
+present before this change (unused `Download`/`validateDrivingTour`/`generateGpx`/
+`generateKml` imports and an unused `fileInputRef` in `WalkEditor.jsx`; an unused `Textarea`
+import in `DrivingTourWaypointEditor.jsx` — checked directly against the pre-edit version of
+the file to confirm it was already there, not something this change introduced). Full `rm -rf
+dist && npx vite build` completes with no errors. Read back every changed line against the
+diff to confirm each of the six sites now uses the tour-aware default rather than the old
+hardcoded number.
+
+**Not tested live** — worth confirming on a real WalkAbout: import a GPX/FIT file and check
+new waypoints show 5m instead of 150m, and separately check a real Driving Tour import/add
+still gets its usual 150m (import) or 30m (manual add).
+
+---
+
 ## 2026-09-04 (follow-up 131) — waypoint code labels reappear on the map, once a waypoint is marked Done — rebuilt safely after follow-up 120/121's crash
 Scope: `src/components/admin/TourSimulatorMap.jsx` — frontend only, no redeploy needed.
 

@@ -96,6 +96,10 @@ const ROLES = [
   { value: 'secondary', label: 'Secondary', icon: Circle },
 ];
 
+// Module-level, so avg_segment_speed_kmh/trigger_radius_m below are just generic
+// placeholders — every actual use of EMPTY_WP overrides both with the tour-aware
+// defaultSpeed/defaultTriggerRadiusM computed inside the component (WBT vs DDV), since
+// tourCategory isn't available out here.
 const EMPTY_WP = {
   lat: '',
   lng: '',
@@ -218,8 +222,13 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
   // Primary-Start waypoint sets its own avg_segment_speed_kmh; 50 is the last-resort
   // fallback only if an Admin hasn't set anything yet.
   const defaultSpeed = tourCategory === 'WBT' ? 3.5 : (defaultDrivingSpeedKmh || 50);
+  // Per Enda's report: a WalkAbout ('WBT') needs a tight trigger radius (5m) since a
+  // pedestrian can be positioned far more precisely than a car — the same reasoning
+  // that already gives WBT its own fixed walking-pace speed just above. DDV keeps this
+  // file's existing 30m default unchanged (no report of that being wrong).
+  const defaultTriggerRadiusM = tourCategory === 'WBT' ? 5 : 30;
   const [expanded, setExpanded] = useState(focusWaypointIndex != null ? focusWaypointIndex : null);
-  const [newWp, setNewWp] = useState({ ...EMPTY_WP, avg_segment_speed_kmh: defaultSpeed });
+  const [newWp, setNewWp] = useState({ ...EMPTY_WP, avg_segment_speed_kmh: defaultSpeed, trigger_radius_m: defaultTriggerRadiusM });
   const [showAddForm, setShowAddForm] = useState(false);
   const [addError, setAddError] = useState('');
   const [gpxImportResult, setGpxImportResult] = useState(null);
@@ -366,7 +375,7 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
       narration_script: newWp.narration_script || '',
       trigger_audio: newWp.trigger_audio || false,
       audio_clip_url: newWp.audio_clip_url || '',
-      trigger_radius_m: newWp.trigger_radius_m != null ? Number(newWp.trigger_radius_m) : 150,
+      trigger_radius_m: newWp.trigger_radius_m != null ? Number(newWp.trigger_radius_m) : defaultTriggerRadiusM,
       trigger_once: newWp.trigger_once !== false,
       use_bearing: newWp.use_bearing || false,
       bearing_direction: Number(newWp.bearing_direction) || 0,
@@ -377,7 +386,7 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
     };
 
     onChange([...waypoints, wp]);
-    setNewWp({ ...EMPTY_WP, avg_segment_speed_kmh: defaultSpeed, segment_number: nextSegmentNumber() });
+    setNewWp({ ...EMPTY_WP, avg_segment_speed_kmh: defaultSpeed, trigger_radius_m: defaultTriggerRadiusM, segment_number: nextSegmentNumber() });
     setShowAddForm(false);
     setExpanded(null);
   };
@@ -558,7 +567,7 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
           narration_script: '',
           trigger_audio: false,
           audio_clip_url: '',
-          trigger_radius_m: 30,
+          trigger_radius_m: defaultTriggerRadiusM,
           trigger_once: true,
           use_bearing: false,
           bearing_direction: 0,
