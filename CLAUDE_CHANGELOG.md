@@ -67,6 +67,60 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-05 (follow-up 133) — "Back to app" on About/Contact was sending logged-in visitors to a login form they could get stuck on
+Scope: `src/pages/About.jsx`, `src/pages/Contact.jsx`, `src/App.jsx` — frontend only, no
+redeploy needed.
+
+**Per Enda's report:** installed the app on an Android phone, logged in fine, changed
+language fine. Opened the About page, clicked "Back to app" at the bottom — instead of
+going back to the app's front page, it went to the login page, which then would not accept
+his (correct) login details. Had to close the app, open Chrome, type the app's address in
+by hand, and log in again from there. Same thing happened from the Contact page.
+
+**Investigated first, found the exact cause — not guessed at:** the "Back to app" link on
+both pages pointed at `/Login` instead of `/` (the app's actual front page). For someone
+already logged in, that's not harmless — this app has no separate check that sends an
+already-logged-in visitor away from `/Login` if they land there directly, so clicking it
+dropped Enda onto a bare login form with no way out: signing in again there doesn't take
+you anywhere new, because nothing ever moves the address away from `/Login` in the first
+place. That matches exactly what he described needing to do to escape it. Confirmed with
+`grep` that these were the only two places in the whole app pointing at `/Login`, so this
+wasn't a copy-pasted mistake sitting somewhere else too.
+
+**What changed:**
+- `About.jsx` and `Contact.jsx`: "Back to app" now points at `/` instead of `/Login`. The
+  app's own routing (`App.jsx`) already sends a logged-in visitor at `/` straight to the
+  home page, and sends anyone not logged in to the normal login screen — exactly what
+  "back to app" should do either way.
+- `App.jsx`: added a second, independent safety net alongside that — the `/Login` route
+  itself now checks if you're already logged in, and if so sends you straight to `/`
+  instead of showing the login form at all. This means no other way of landing on
+  `/Login` (an old bookmark, the phone's own Back button, a future stray link anywhere
+  else) can trap a logged-in visitor on a login screen with no way back again.
+
+**Not addressed — no evidence to act on, needs your confirmation:** the "would not accept
+the login credentials" part. His credentials were correct, and this app's login check
+(a standard WordPress login lookup) doesn't have any code path that would reject a correct
+password just because a valid session already exists elsewhere — so I can't point to a
+matching cause for that specific detail without guessing. It's possible what actually
+happened is: the login form on that broken page DID sign him in silently (nothing
+visually changes on that page either way, since it never navigates anywhere), and it only
+looked like his details weren't accepted. If it happens again after this fix — landing on
+a plain login form while already using the app — worth noting exactly what error message
+(if any) appeared, so it can be tracked down properly rather than assumed.
+
+**Verified:** `npx eslint` on all three files is clean (no new issues). Full `rm -rf dist
+&& npx vite build` completes with no errors. Read back both files' diffs and the full
+`App.jsx` routing logic line by line to confirm the fix matches how the rest of the
+routing already behaves (same `isAuthenticated` check already used elsewhere in this
+file), rather than inventing a new pattern.
+
+**Not tested live** — worth Enda re-testing on the same installed Android app: open
+About or Contact, tap "Back to app", and confirm it lands on the app's home page rather
+than a login screen (when already logged in).
+
+---
+
 ## 2026-09-05 (follow-up 132) — WalkAbout waypoints now default to a 5m trigger radius on import/add, instead of the Driving Tour default of 150m/30m
 Scope: `src/components/admin/WalkEditor.jsx`, `src/components/admin/DrivingTourWaypointEditor.jsx`
 — frontend only, no redeploy needed.

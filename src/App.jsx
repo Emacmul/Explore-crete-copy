@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import { pagesConfig } from './pages.config'
-import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { LanguageProvider } from '@/lib/i18n/LanguageContext';
@@ -66,7 +66,16 @@ const AuthenticatedApp = () => {
         />
       ))}
       <Route path="/Narr" element={<Narr />} />
-      <Route path="/Login" element={<Login />} />
+      {/* Per Enda's report: the About/Contact pages' "back to app" link used to point
+          straight at "/Login" (fixed in About.jsx/Contact.jsx), which — for someone
+          already logged in — landed them on this exact raw login form with no way out:
+          logging in again here doesn't go anywhere, because nothing ever moves the URL
+          away from "/Login" itself. That's fixed at the source now, but this is a second,
+          independent safety net: however someone reaches "/Login" (an old bookmark, the
+          browser's own Back button, a future stray link), an already-authenticated visitor
+          gets sent straight to the app's front page instead of being shown a login form
+          they don't need and could get stuck on. */}
+      <Route path="/Login" element={isAuthenticated ? <Navigate to="/" replace /> : <Login />} />
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );

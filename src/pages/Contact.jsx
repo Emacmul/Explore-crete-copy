@@ -30,7 +30,13 @@ export default function Contact() {
             <Link to="/About" className="text-sm text-teal-700 font-medium hover:underline">
               {t('contact.aboutLink')}
             </Link>
-            <Link to="/Login" className="inline-flex items-center gap-2 text-sm text-gray-500 hover:underline">
+            {/* Per Enda's report: this was wrongly pointed at "/Login" — for someone already
+                logged in, that dropped them onto a raw login form with no way back except
+                manually retyping the app's address in the browser. "/" is the app's actual
+                front page: App.jsx sends an already-logged-in visitor straight there, and
+                sends anyone not logged in to the normal login screen — exactly what "back
+                to app" should do either way. */}
+            <Link to="/" className="inline-flex items-center gap-2 text-sm text-gray-500 hover:underline">
               <ArrowLeft className="w-4 h-4" />
               {t('common.backToApp')}
             </Link>
