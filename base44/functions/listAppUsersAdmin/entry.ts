@@ -33,6 +33,7 @@ function toSafeUser(u: any) {
   return safe;
 }
 
+
 export default async function (req) {
   try {
     const base44 = wrapClientWithRetry(createClientFromRequest(req));
