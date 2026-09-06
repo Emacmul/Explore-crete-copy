@@ -67,6 +67,65 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-06 (follow-up 143) — GPX/KML piracy audit: closed a narrator gap, deleted two dead legacy fields
+Scope: `src/components/admin/WalkEditor.jsx`, `src/components/admin/WalksDashboard.jsx`,
+`base44/entities/Walk.jsonc`, `base44/functions/getWalkCatalog/entry.ts`. **The
+`Walk.jsonc` and `getWalkCatalog` changes touch backend files — `getWalkCatalog` needs
+its usual manual redeploy step in Base44.** Everything else here is frontend-only.
+
+**Per Enda:** asked for a full audit confirming nobody can generate or download a GPX/KML
+file from a walk, WalkAbout, or driving tour — prompted by knowing of individuals who
+record his private tours and republish them elsewhere. Investigated every export button,
+every backend function touching Walk data, and the database's own access rules before
+reporting back, then was told to fix what was fixable.
+
+**What the audit found and what changed:**
+
+1. **A real, fixable gap — closed.** Driving tours' GPX/KML export tool
+   (`DrivingTourExportPanel`) was already correctly admin-only. But the separate
+   Walk/Hike "Save and Download GPX" button (in `WaypointEditor.jsx`, wired up from
+   `WalkEditor.jsx`) had no role check of its own — it only stayed out of a narrator's
+   reach because the tab it lives on is hidden from narrators (follow-up 46). A hidden
+   tab is a UI convenience, not a security boundary — the exact lesson follow-up 47
+   already drew about this same file's data. Fixed by gating it in two places: the
+   button is only ever handed to a narrator's screen when they're not a narrator
+   (`onSaveAndDownload={isNarrator ? undefined : handleSaveAndDownloadGpx}`), and the
+   handler function itself now also refuses to run for a narrator, so it can't produce
+   a GPX no matter how it ends up being triggered in future.
+2. **Two dead legacy fields — deleted outright**, per Enda's call: `gpx_file_uri` and
+   `gpx_filename` on the Walk entity. Nothing has written to them since the
+   customer-facing GPX download feature was removed back on 2026-08-12 — they were
+   always empty — but they were still being sent to a customer's browser once they'd
+   bought a walk (only stripped for non-owners). Removed the fields from `Walk.jsonc`,
+   removed them from `getWalkCatalog`'s protected-fields list (nothing left to protect),
+   and removed the now-permanently-red "GPX" status column from the admin Walks
+   dashboard that only ever displayed based on these two fields.
+3. **Confirmed already solid, no change needed:** the customer-facing "Download GPX"
+   button removed in August is still fully gone. The Walk entity's own database-level
+   rule blocks any raw, direct read/write to it except by a genuine Base44 admin login —
+   a customer or narrator session can't reach it by any means other than going through
+   `getWalkCatalog` (customers) or `getWalksForBackend` (admin/narrator panel), and both
+   already apply real, deliberate narrowing of what each caller gets back.
+4. **Reported honestly, not "fixed":** to let a customer's map play their purchased tour,
+   or a narrator do their narration work, the app has to send the real route coordinates
+   to that person's screen — there's no way to draw a live map otherwise. A technically
+   capable person could still open their own browser's developer tools and reconstruct a
+   GPX by hand from that data, with no export button involved at all. No code change can
+   close that completely; it's true of any app that shows a live map. Enda confirmed he's
+   aware of this and that the specific individuals he's concerned about aren't technical
+   enough for it to be the realistic risk here.
+
+**Verified:** wrote a 6-case standalone logic test confirming the narrator gate — the
+button prop is `undefined` for a narrator (so `WaypointEditor` never renders the button
+at all), it's the real handler for an admin, and the handler itself independently refuses
+to run for a narrator even if called directly. All 6 passed. Confirmed no remaining
+reference to `gpx_file_uri`/`gpx_filename`/`gpx_url` anywhere in `src` or `base44`.
+`npx eslint` on all four touched files shows only the same pre-existing, unrelated
+warnings already noted in earlier entries. Full `rm -rf dist && npx vite build`
+completes with no errors.
+
+---
+
 ## 2026-09-06 (follow-up 142) — gave every waypoint a permanent ID, closing the reordering key-reuse gap left by follow-up 141
 Scope: `src/lib/routeExport.js`, `src/components/admin/WalkEditor.jsx`,
 `src/components/admin/DrivingTourWaypointEditor.jsx`. Frontend-only, no backend redeploy

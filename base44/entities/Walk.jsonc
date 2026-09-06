@@ -112,14 +112,6 @@
       "type": "number",
       "description": "Default average driving speed for audio tours (helper only)"
     },
-    "gpx_file_uri": {
-      "type": "string",
-      "description": "Private storage URI for GPX file"
-    },
-    "gpx_filename": {
-      "type": "string",
-      "description": "Original GPX filename"
-    },
     "import_files": {
       "type": "array",
       "description": "Master (non-clone) tour only: the shared narration-source depository. One entry per waypoint's segment_id, auto-populated the moment an admin marks that waypoint Done in the Waypoints tab (the same .odt that used to be emailed to narrators by hand). A narrator's clone reaches these through the manageTourImportFiles backend function's 'get' action, never by reading this field directly.",

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
-import { Sparkles, Ticket, Mountain, MapPin, Clock, Route, TrendingUp, CheckCircle2, XCircle } from 'lucide-react';
+import { Sparkles, Ticket, Mountain, MapPin, Clock, Route, TrendingUp } from 'lucide-react';
 
 const DIFFICULTY_COLORS = {
   easy: 'bg-green-900/40 text-green-300 border-green-700',
@@ -83,7 +83,6 @@ export default function WalksDashboard({ walks }) {
                 <th className="text-left px-4 py-3 text-slate-400 font-medium hidden sm:table-cell">Difficulty</th>
                 <th className="text-left px-4 py-3 text-slate-400 font-medium hidden md:table-cell">Stats</th>
                 <th className="text-center px-4 py-3 text-slate-400 font-medium">Access</th>
-                <th className="text-center px-4 py-3 text-slate-400 font-medium">GPX</th>
               </tr>
             </thead>
 
@@ -128,14 +127,6 @@ export default function WalksDashboard({ walks }) {
                       <span className={`inline-flex items-center gap-1 text-xs font-medium border px-2 py-1 rounded-full ${access.className}`}>
                         <AccessIcon className="w-3 h-3" /> {access.label}
                       </span>
-                    </td>
-
-                    <td className="px-4 py-3 text-center">
-                      {(walk.gpx_file_uri || walk.gpx_url) ? (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400 mx-auto" />
-                      ) : (
-                        <XCircle className="w-4 h-4 text-red-400/60 mx-auto" />
-                      )}
                     </td>
                   </tr>
                 );

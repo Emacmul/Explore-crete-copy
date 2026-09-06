@@ -1087,6 +1087,11 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   // same triggerSave() every other save path uses instead, so this is
   // coordinated with everything else rather than its own separate hole.
   const handleSaveAndDownloadGpx = async () => {
+    // Per Enda's GPX/KML audit (follow-up 143): a second, belt-and-suspenders check —
+    // the actual gate is at the call site below (onSaveAndDownload isn't even passed
+    // to WaypointEditor for a narrator), but this function itself refuses too, so it
+    // can never produce a GPX for a narrator no matter how it ends up being called.
+    if (isNarrator) return;
     if (downloadingGpx || saving) return;
     setDownloadingGpx(true);
     try {
@@ -1768,7 +1773,18 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 onSave={triggerSave}
                 saving={saving}
                 code={form.code}
-                onSaveAndDownload={handleSaveAndDownloadGpx}
+                // Per Enda's GPX/KML audit (follow-up 143): this button generates and
+                // downloads a real GPX file — an admin-only backup tool, exactly like
+                // DrivingTourExportPanel's own export a few tabs over. It used to rely
+                // purely on the Waypoints tab being hidden from narrators (WaypointEditor
+                // isn't rendered at all today unless this tab is reachable) — that's still
+                // true, but per the same lesson learned in follow-up 47 (a hidden tab is a
+                // UI convenience, not a security boundary), the button itself now also
+                // checks the role directly, so it can never be handed to a narrator even if
+                // something upstream ever changed. Only admins ever get onSaveAndDownload;
+                // a narrator gets undefined, so WaypointEditor doesn't render the button at
+                // all (see its own `{onSaveAndDownload && (...)}` guard).
+                onSaveAndDownload={isNarrator ? undefined : handleSaveAndDownloadGpx}
                 downloadingGpx={downloadingGpx}
               />
             )}
