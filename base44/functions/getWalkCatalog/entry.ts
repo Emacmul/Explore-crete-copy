@@ -55,6 +55,7 @@ export default async function(req) {
       ownedSet = new Set(purchases.map(p => p.creem_product_id).filter(Boolean));
     }
 
+
     const all = await base44.asServiceRole.entities.Walk.list('-created_date', 1000);
 
     const originals = all.filter(w => !w.clone_of);
