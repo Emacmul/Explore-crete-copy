@@ -36,6 +36,11 @@ function roleBadge(role) {
  * blank now means "leave their password exactly as it is", and only typing a new
  * one here actually changes it. A password is still required the one time it
  * matters — promoting someone to Narrator/Admin who has never had one set.
+ *
+ * Per Enda's follow-up (2026-09-06): listAppUsersAdmin no longer sends the real stored
+ * password (or any other user's private API keys) to the browser at all — see that
+ * function's own comment. `appUser.has_password` is a plain yes/no in its place, which
+ * is all this dialog ever actually needed to know.
  */
 function EditAppUserDialog({ appUser, onClose }) {
   const [role, setRole] = useState(appUser.role === 'admin' || appUser.role === 'narrator' ? appUser.role : 'user');
@@ -43,7 +48,7 @@ function EditAppUserDialog({ appUser, onClose }) {
   const [dateOfBirth, setDateOfBirth] = useState(appUser.date_of_birth ? String(appUser.date_of_birth).slice(0, 10) : '');
   const [saving, setSaving] = useState(false);
   const qc = useQueryClient();
-  const hasExistingPassword = !!appUser.password;
+  const hasExistingPassword = !!appUser.has_password;
 
   const handleSave = async () => {
     setSaving(true);

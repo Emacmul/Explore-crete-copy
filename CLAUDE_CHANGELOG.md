@@ -67,6 +67,56 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-06 (follow-up 136) — Manage Users no longer sends every listed person's real password and private API keys to other admins' browsers
+Scope: `base44/functions/listAppUsersAdmin/entry.ts`, `src/components/admin/UsersManager.jsx`
+— touches a backend function, needs its redeploy.
+
+**Per Enda's follow-up** to the front-end audit's Finding #2: he confirmed the
+password-creation RULE itself is exactly as intended — only an admin can set a
+Narrator's or a brand-new Admin's password, nobody sets their own — so that part needed
+no change. What he asked me to fix is narrower and separate: "Seeing private API keys is
+another question, that should not be possible."
+
+**What changed:** `listAppUsersAdmin` (the function behind the Manage Users list) used to
+send back every field of every AppUser row — the real stored password (hashed since
+2026-09, plain text for anyone who set theirs earlier and hasn't logged in since), each
+person's own Google TTS/Groq API keys, and their live Narr Studio login code — regardless
+of what the screen actually shows. It now builds a plain, minimal object per user before
+ever sending it: `id`, `email`, `first_name`, `last_name`, `role`, `date_of_birth`, and a
+new `has_password` true/false flag — nothing else leaves the server. The password, the
+API keys, and the login code aren't trimmed or masked, they're simply never included in
+the response at all.
+
+`has_password` replaces reading the real `password` field on the frontend — the Edit
+User dialog (follow-up 134's fix) only ever needed a yes/no to decide whether leaving the
+password box blank should be allowed to mean "keep the current one"; it never needed the
+actual value, so this loses no functionality. Updated `UsersManager.jsx`'s
+`hasExistingPassword` check to read `appUser.has_password` instead of `!!appUser.password`
+to match.
+
+Also wrapped this function's own database call with the same retry-on-429 protection
+from follow-up 135, since it was already being touched here — no extra redeploy cost
+beyond what this fix already needs.
+
+**Verified:** wrote a standalone test of the new field-picking logic — confirms a real
+user's password/API keys/session token are absent from the output while
+id/email/name/role/date_of_birth/has_password all survive correctly, that `has_password`
+comes back `true` for both a hashed AND a legacy plain-text stored password (so an
+old-format row doesn't wrongly look password-less), and `false` when nothing is set at
+all. Checked the rest of the frontend for any other place reading `.password` from this
+same data — only the one spot found and fixed; nothing else depends on it.
+`npx eslint` on the changed frontend file shows only the same one pre-existing, unrelated
+warning noted in follow-up 134. The backend file was checked for syntax errors (no Deno
+available in this sandbox to run it directly). Full `rm -rf dist && npx vite build`
+completes with no errors.
+
+**Not tested live** — worth confirming after redeploying: open Manage Users as an admin,
+edit a Narrator or Admin who already has a password set, and check the password box still
+correctly shows "Leave blank to keep their current password" rather than looking like no
+password exists.
+
+---
+
 ## 2026-09-06 (follow-up 135) — added automatic retry with backoff for Base44's own pooled rate limits (reads/lists/creates/updates), per Base44 support
 Scope: 2 new files (`base44/shared/withEntityRetry.ts`, `src/lib/withEntityRetry.js`),
 `src/api/base44Client.js` (frontend, no redeploy needed), and 12 backend functions listed

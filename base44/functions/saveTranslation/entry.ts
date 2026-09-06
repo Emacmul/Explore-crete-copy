@@ -34,7 +34,6 @@ export default async function(req) {
     // --- authorize ---
     let authorizedEmail = null;
     try {
-      
       const me = await base44.auth.me();
       if (me && me.role === 'admin') authorizedEmail = me.email || null;
     } catch { /* no Base44 session — fall through to the narrator path */ }

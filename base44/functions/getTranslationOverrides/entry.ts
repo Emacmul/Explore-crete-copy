@@ -3,7 +3,6 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 // see withEntityRetry.ts's own header comment for the full reasoning.
 import { wrapClientWithRetry } from '../../shared/withEntityRetry.ts';
 
-
 // Fetches every Translation override, for the admin/narrator editing tool to display
 // current values against. Exists specifically because a narrator has no genuine Base44
 // login session (they authenticate through their own email+password/token system, not
