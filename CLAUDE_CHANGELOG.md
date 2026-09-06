@@ -67,6 +67,31 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-06 (follow-up 138) — removed the unused "outside app sign-in" page
+Scope: deleted `src/pages/OAuthConsent.jsx`. Frontend-only, no backend redeploy needed.
+
+**Per Enda's question** about this audit finding ("A page for outside-app sign-in
+requests exists but isn't connected to anything") — he asked what it was for, and to
+remove it if there was no practical use.
+
+**What it was:** a consent screen for letting an outside AI tool (like Claude or
+Cursor) connect to this app and act on a user's behalf — the kind of "Do you approve
+this app?" screen you'd see approving a third-party sign-in. It was never in
+`src/pages.config.js`, so `App.jsx` never created a route for it — nothing in the app
+could ever reach it. It also called a settings file (an MCP config) that doesn't exist
+anywhere in this project, so it couldn't have worked even if something did link to it.
+No mention of it anywhere in this changelog's history — it looks like leftover
+scaffolding from when the app was first created in Base44, not something built for an
+actual feature here.
+
+**What changed:** confirmed nothing else in the codebase referenced this file, then
+deleted it.
+
+**Verified:** repo-wide search confirmed zero other references to it before deleting.
+`rm -rf dist && npx vite build` completes with no errors.
+
+---
+
 ## 2026-09-06 (follow-up 137) — fixed two more audit findings: changing a waypoint's role could silently drop its driving speed, and the date-of-birth boxes couldn't set a first date at all
 Scope: `src/components/admin/DrivingTourWaypointEditor.jsx`, `src/components/admin/WalkEditor.jsx`,
 `src/components/admin/DateOfBirthSelect.jsx` — all three are frontend-only, no backend
