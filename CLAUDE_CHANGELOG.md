@@ -67,6 +67,78 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-06 (follow-up 137) — fixed two more audit findings: changing a waypoint's role could silently drop its driving speed, and the date-of-birth boxes couldn't set a first date at all
+Scope: `src/components/admin/DrivingTourWaypointEditor.jsx`, `src/components/admin/WalkEditor.jsx`,
+`src/components/admin/DateOfBirthSelect.jsx` — all three are frontend-only, no backend
+redeploy needed.
+
+**Per Enda's report**, quoting his exact wording: "Changing a waypoint's role can silently
+drop its driving speed" and "The date-of-birth boxes don't work for a user who has never
+had one set." Both were Findings #3 and #4 (High severity) from the 2026-09-05 front-end
+audit. Fixed both.
+
+**Fix 1 — waypoint role change dropping driving speed:**
+
+Only a Primary-Start waypoint actually uses `avg_segment_speed_kmh` (it's the speed for
+the segment starting there); a Secondary or Primary-Stop waypoint is allowed to have none.
+In `DrivingTourWaypointEditor.jsx`, promoting an EXISTING waypoint to Primary-Start via
+the role dropdown left a blank speed untouched. The speed box then just displayed the
+tour's own default speed as its shown value — identical to what a real saved speed looks
+like — so nothing on screen looked wrong, and the blank value slipped through to Save
+unnoticed. Checked `TourSimulator.jsx`'s speed-zone logic to confirm the effect: it only
+picks up a Primary-Start waypoint's speed when `avg_segment_speed_kmh` is a real number
+greater than zero — a blank one is simply skipped, with no fallback, so that segment's
+speed control silently disappears from the finished tour rather than erroring or
+defaulting to something visible.
+
+The "Add Waypoint" form already refused to let a brand-new Primary-Start waypoint through
+without a real speed — this was specifically the gap when an EXISTING waypoint's role
+changes. Fixed by filling in the tour's real default speed automatically the moment a
+waypoint's role is changed to Primary-Start (only if it doesn't already have a valid one),
+instead of leaving it blank.
+
+**Checked for every other occurrence, per standing rule** — found the identical bug in
+three more places, all in `WalkEditor.jsx`, all creating Primary-Start waypoints with
+`avg_segment_speed_kmh` hardcoded to blank regardless of role: the GPX file import parser,
+the FIT/Garmin ("course points") import parser, and the fallback that auto-generates
+waypoints when an imported file has none of its own. Fixed all three the same way — a
+Primary-Start waypoint now gets the tour's real default speed at the moment it's created,
+using the same default-speed formula already used elsewhere (a fixed pace for WalkAbout
+tours, or the tour's own configured driving speed / 50 as a last resort for driving
+tours), so every part of the app agrees on what "the default" actually is.
+
+**Fix 2 — date-of-birth boxes not working for a first-time pick:**
+
+`DateOfBirthSelect.jsx` used to work out Day/Month/Year purely from the stored date every
+time it redrew the screen, with nowhere to hold a pick that wasn't a complete date yet.
+For a user who had never had a date of birth saved (nothing stored), picking just one box
+— say, the Year — immediately wiped it again, because "Year only, no Month or Day yet" was
+treated the same as "clear the whole thing." There was no way to ever build a first date
+at all, in any order. Editing an already-complete existing date happened to still work,
+which is why this only showed up for brand-new users.
+
+Fixed by having the three boxes keep their own picks as the admin makes them, instead of
+only ever reading from the stored date. A partial pick (just Year, or Year+Month) now
+stays on screen as picked; the actual save only happens once all three boxes have a value
+and form a real date — exactly matching the existing behaviour for an already-complete
+date, which is unchanged.
+
+**Verified:** for the date-of-birth fix, wrote a standalone test of the pick-accumulation
+logic covering: picking Year only (retained, nothing saved yet); picking all three in
+Year→Month→Day order; picking all three in Day→Month→Year order; editing one field of an
+already-complete existing date (still saves immediately, unchanged); and the existing
+day-clamping behaviour for invalid dates like Feb 30 (clamps to Feb 28) and Feb 29 in a
+leap year (stays valid) — all passed. `npx eslint` on all three changed files shows only
+pre-existing, unrelated warnings (unused imports from other in-progress work, not touched
+by this fix). Full `rm -rf dist && npx vite build` completes with no errors.
+
+**Not tested live** — worth confirming after the frontend refresh: in Manage Users, open
+a user who has never had a date of birth set and pick one in any order; and in the
+Driving Tour waypoint editor, change an existing Secondary waypoint to Primary-Start and
+confirm its speed box fills in with the tour's default instead of staying blank.
+
+---
+
 ## 2026-09-06 (follow-up 136) — Manage Users no longer sends every listed person's real password and private API keys to other admins' browsers
 Scope: `base44/functions/listAppUsersAdmin/entry.ts`, `src/components/admin/UsersManager.jsx`
 — touches a backend function, needs its redeploy.

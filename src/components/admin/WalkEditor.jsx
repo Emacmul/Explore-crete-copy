@@ -224,6 +224,18 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   // to fire well before a car arrives) while a WalkAbout defaults to the tight 5m Enda
   // asked for, since a pedestrian can be positioned far more precisely.
   const DEFAULT_TRIGGER_RADIUS_M = form.tour_category === 'DDV' ? 150 : 5;
+  // Per Enda's front-end audit (2026-09-05): every Primary-Start waypoint created by a
+  // GPX import, a FIT/Garmin import, or the no-waypoints-in-file auto-generate fallback
+  // below used to get `avg_segment_speed_kmh: null` unconditionally — the same "a
+  // Primary-Start waypoint with no real driving speed" problem already fixed for the
+  // role-change case in DrivingTourWaypointEditor.jsx (see that file's updateWaypoint),
+  // just hit at CREATION time instead of via an edit. A Primary-Start segment's speed
+  // silently defaulting to whatever the PREVIOUS segment used, with no visible sign
+  // anything was wrong, is exactly the same risk either way. Mirrors that file's own
+  // defaultSpeed formula (WBT walks at a fixed pace; DDV falls back to this tour's own
+  // configured default, or 50 as a last resort) so both places agree on what "the
+  // default" actually is.
+  const DEFAULT_SEGMENT_SPEED_KMH = form.tour_category === 'WBT' ? 3.5 : (Number(form.default_driving_speed_kmh) || 50);
   // Per Enda: a soft heads-up only, not a hard block — "Translation finished" can still
   // be ticked at any point even if some waypoints aren't marked done yet (useful for a
   // demo, or a tour that's deliberately being sent for review early).
@@ -281,7 +293,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
           segment_number: segNum,
           segment_id: segId,
           segment_title: role === 'primary_start' ? 'Start' : role === 'primary_stop' ? 'End' : `Point ${segNum}`,
-          avg_segment_speed_kmh: null,
+          avg_segment_speed_kmh: role === 'primary_start' ? DEFAULT_SEGMENT_SPEED_KMH : null,
           description: '',
           narration_script: '',
           trigger_audio: false,
@@ -471,7 +483,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
             segment_number: segNum,
             segment_id: segId,
             segment_title: nameTxt,
-            avg_segment_speed_kmh: null,
+            avg_segment_speed_kmh: role === 'primary_start' ? DEFAULT_SEGMENT_SPEED_KMH : null,
             description: descTxt,
             narration_script: '',
             trigger_audio: false,
@@ -654,7 +666,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
               segment_number: segNum,
               segment_id: segId,
               segment_title: cpName,
-              avg_segment_speed_kmh: null,
+              avg_segment_speed_kmh: role === 'primary_start' ? DEFAULT_SEGMENT_SPEED_KMH : null,
               description: cpDesc,
               narration_script: '',
               trigger_audio: false,

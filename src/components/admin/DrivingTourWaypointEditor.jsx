@@ -437,6 +437,21 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
       if ('waypoint_role' in fields) {
         next.waypoint_colour = autoColour(fields.waypoint_role);
         next.type = fields.waypoint_role;
+        // Per Enda's front-end audit (2026-09-05): a Secondary waypoint is allowed to
+        // have no driving speed set (only a Primary-Start one actually uses it), but
+        // promoting an EXISTING waypoint to Primary-Start via this dropdown used to
+        // leave that blank speed untouched — the speed box then displayed the
+        // tour-wide default (defaultSpeed) as its shown value, indistinguishable from
+        // a real saved one, so nothing looked wrong and the blank value slipped
+        // through to Save unnoticed. The "Add Waypoint" form already refuses to let a
+        // brand-new Primary-Start waypoint through without a real speed (see the
+        // check above, around line 354) — this brings an existing waypoint's role
+        // CHANGE up to the same standard, by filling in the real default rather than
+        // leaving it blank, instead of only blocking at creation time.
+        const speed = parseFloat(next.avg_segment_speed_kmh);
+        if (fields.waypoint_role === 'primary_start' && (isNaN(speed) || speed <= 0)) {
+          next.avg_segment_speed_kmh = defaultSpeed;
+        }
       }
       if ('segment_number' in fields || 'waypoint_role' in fields) {
         next.segment_id = buildSegmentId(tourCode, next.segment_number) || '';
