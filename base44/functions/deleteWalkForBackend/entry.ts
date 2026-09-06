@@ -25,7 +25,6 @@ export default async function(req) {
       return Response.json({ error: 'Not authorized' }, { status: 403 });
     }
 
-
     const { id } = body || {};
     if (!id) {
       return Response.json({ error: 'id is required' }, { status: 400 });
