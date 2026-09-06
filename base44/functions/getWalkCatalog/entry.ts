@@ -35,8 +35,9 @@ const PROTECTED_FIELDS = [
   'trail_breaks',
   'waypoints',
   'segment_scripts',
+  'gpx_file_uri',
+  'gpx_filename',
 ];
-
 
 export default async function(req) {
   try {
