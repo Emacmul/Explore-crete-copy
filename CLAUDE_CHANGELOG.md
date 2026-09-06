@@ -67,6 +67,56 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-06 (follow-up 142) — gave every waypoint a permanent ID, closing the reordering key-reuse gap left by follow-up 141
+Scope: `src/lib/routeExport.js`, `src/components/admin/WalkEditor.jsx`,
+`src/components/admin/DrivingTourWaypointEditor.jsx`. Frontend-only, no backend redeploy
+needed.
+
+**Per Enda**, quoting back the exact limitation flagged at the end of follow-up 141
+("Closing that properly would mean giving each waypoint its own permanent ID instead of
+one based on its position in the list — a bigger change."): "If it can happen, she'll
+make it happen. So, let's not let it happen…" — explicit instruction to close that
+remaining gap fully rather than leave it as an accepted edge case.
+
+**The gap:** every waypoint's shared-depository key (e.g. "BOR1a") was derived from
+WHERE it currently sits in the waypoint list, not from the waypoint itself. Follow-up
+141's cleanup could catch a key that disappeared entirely, but not a key that got reused
+by reordering — if a waypoint moves, or a new one is inserted earlier at the same
+location, the same key string can end up meaning a DIFFERENT waypoint. The old file
+never looked orphaned (its key still exists), so it could silently attach to the wrong
+waypoint's row.
+
+**What changed:** every waypoint now also gets a `waypoint_uid` — a permanent, randomly
+generated ID, assigned once the moment it's created (`generateWaypointUid()` in
+`routeExport.js`, at all 5 waypoint-creation sites: manual add, GPX import, and
+FIT/Garmin import in both `WalkEditor.jsx` and `DrivingTourWaypointEditor.jsx`) and never
+recomputed afterward — unlike its position, its segment_number, even its letter suffix.
+A new `waypointDepositoryKey()` helper prefers this permanent ID for every actual
+depository operation (upload, status check, fetch) in `DrivingTourWaypointEditor.jsx`
+and `pruneImportDepository`. The human-visible label (`uniqueWaypointSegmentId`, e.g.
+"BOR1a") is completely unchanged — still used for filenames, toast text, and the
+location-divider headings, exactly as before.
+
+**Backward compatible, no data migration:** a waypoint saved before this change has no
+`waypoint_uid` yet. `waypointDepositoryKey()` falls back to the old position-based label
+for exactly those waypoints, so nothing already in a depository gets orphaned by this
+change alone — a legacy waypoint keeps working under its old key until it's naturally
+recreated (e.g. re-imported), at which point it gets a permanent ID like everything new.
+
+**Verified:** wrote a standalone 14-case logic test covering `generateWaypointUid`
+uniqueness, `waypointDepositoryKey` preferring a waypoint's own uid, the legacy fallback
+for waypoints without one, a mixed list of legacy and new waypoints side by side, and —
+the actual scenario this was built to close — reconstructing follow-up 141's documented
+reorder-collision case with `waypoint_uid` present: two waypoints at the same location
+swap positions, and each one's depository key (and the file it finds) now correctly
+stays with the waypoint rather than the position, confirmed against the old label-based
+key genuinely flipping in the same scenario (proving this wasn't a no-op test). All 14
+passed. `npx eslint` on all three touched files shows only the same pre-existing,
+unrelated warnings already noted in earlier entries. Full `rm -rf dist && npx vite
+build` completes with no errors.
+
+---
+
 ## 2026-09-06 (follow-up 141) — cleaned up orphaned files in the shared narration depository
 Scope: `src/components/admin/DrivingTourWaypointEditor.jsx`. Frontend-only, no backend
 redeploy needed.

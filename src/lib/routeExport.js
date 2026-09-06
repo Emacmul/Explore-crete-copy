@@ -83,6 +83,51 @@ export function uniqueWaypointSegmentId(waypoints, index) {
 }
 
 /**
+ * A permanent, random ID for a single waypoint — generated once, the moment that
+ * waypoint is first created, and never recomputed or changed afterward, unlike every
+ * other field on it (segment_number, segment_title, even its position in the array).
+ *
+ * Per Enda's follow-up (2026-09-06): uniqueWaypointSegmentId above is still what
+ * everyone SEES (BOR1a, BOR1b — narrators, filenames, and this codebase's own
+ * comments all refer to a waypoint by that name), but it's derived from WHERE a
+ * waypoint currently sits in the list. Reorder waypoints, or insert a new one earlier
+ * at the same location, and that letter can end up pointing at a DIFFERENT waypoint
+ * than before — which let the shared narration depository (see
+ * waypointDepositoryKey below) silently attach an old file to the wrong waypoint,
+ * since the label itself never disappeared, it just started meaning something else.
+ * A `waypoint_uid` can't drift like that, because nothing about it is derived from
+ * position at all.
+ */
+export function generateWaypointUid() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  // Fallback for a browser without crypto.randomUUID — still unique enough for this
+  // purpose (an internal bookkeeping key, never shown to anyone or compared against
+  // anything outside this app).
+  return `wp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/**
+ * The actual key used to link a waypoint to its shared-depository narration file —
+ * use this (never uniqueWaypointSegmentId directly) for anything that uploads to,
+ * checks, or reads from the depository.
+ *
+ * Prefers the waypoint's own permanent `waypoint_uid` (see generateWaypointUid)
+ * whenever it has one, so its depository file stays correctly attached to THIS
+ * waypoint even if it's later reordered or a new waypoint is inserted earlier at the
+ * same location. A waypoint created before this existed has no `waypoint_uid` yet —
+ * for those, this falls back to the old label-based key exactly as before (so
+ * nothing already in a depository is orphaned by this change), until that waypoint
+ * is next recreated (e.g. a fresh import).
+ */
+export function waypointDepositoryKey(waypoints, index) {
+  const wp = waypoints?.[index];
+  if (wp?.waypoint_uid) return wp.waypoint_uid;
+  return uniqueWaypointSegmentId(waypoints, index);
+}
+
+/**
  * Calculate the great-circle bearing (in degrees) from point 1 to point 2.
  * 0° = North, 90° = East, 180° = South, 270° = West.
  *

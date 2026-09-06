@@ -17,7 +17,7 @@ import TourSimulator from './TourSimulator';
 import TrailPathEditor from './TrailPathEditor';
 import TrailPathMapEditor from './TrailPathMapEditor';
 import AdminPreviewMap from './AdminPreviewMap';
-import { validateDrivingTour, generateGpx, generateWalkGpx, generateKml, downloadTextFile, buildSegmentId, getRoleColour } from '@/lib/routeExport';
+import { validateDrivingTour, generateGpx, generateWalkGpx, generateKml, downloadTextFile, buildSegmentId, getRoleColour, generateWaypointUid } from '@/lib/routeExport';
 import { getRouteTypeForCategory, defaultPriceForCategory } from '@/lib/tourCategories';
 import { MAX_WAYPOINT_IMAGES } from '@/lib/waypointImages';
 import { toast } from '@/components/ui/use-toast';
@@ -289,6 +289,11 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
         const segId = buildSegmentId(form.code, segNum) || '';
         return {
           lat, lng,
+          // Per Enda's follow-up (2026-09-06): a permanent per-waypoint ID, generated
+          // once here and never recomputed — see generateWaypointUid's own comment for
+          // why (keeps this waypoint's shared-depository file correctly attached to it
+          // even if waypoints are later reordered).
+          waypoint_uid: generateWaypointUid(),
           waypoint_role: role,
           segment_number: segNum,
           segment_id: segId,
@@ -479,6 +484,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
           return {
             lat: parseFloat(wpt.getAttribute('lat')),
             lng: parseFloat(wpt.getAttribute('lon')),
+            waypoint_uid: generateWaypointUid(),
             waypoint_role: role,
             segment_number: segNum,
             segment_id: segId,
@@ -662,6 +668,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
             return {
               lat: cp.position_lat || cp.positionLat,
               lng: cp.position_long || cp.positionLong,
+              waypoint_uid: generateWaypointUid(),
               waypoint_role: role,
               segment_number: segNum,
               segment_id: segId,
