@@ -1,9 +1,9 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 import { recordPurchase } from '../../shared/purchaseRecorder.ts';
+import { isSuperAdmin } from '../../shared/appUserAuth.ts';
 
 // Manually grant a walk to a specific customer for free (birthday raffle, support gesture,
-// etc.). Admin-only — admins sign in with Base44's own login, so base44.auth.me() is the
-// right identity check here (unlike the customer flows, which use the WordPress token).
+// etc.).
 //
 // Granting works by recording a Purchase with processor "manual" against the walk's
 // creem_product_id + the customer's email. That is the SAME record getWalkCatalog and
@@ -11,11 +11,14 @@ import { recordPurchase } from '../../shared/purchaseRecorder.ts';
 // the customer's library immediately on their next catalogue load — no client changes,
 // no second code path. A walk must have a creem_product_id set (it's a sellable product)
 // before it can be gifted, since the entitlement check keys on that id.
+//
+// Per Enda (2026-09-06): gifting a tour is one of the highest-risk admin actions, so it
+// now requires a Super Admin (see appUserAuth.ts's isSuperAdmin()) rather than just any
+// real Base44 login.
 export default async function(req) {
   try {
     const base44 = createClientFromRequest(req);
-    const caller = await base44.auth.me();
-    if (!caller || caller.role !== 'admin') {
+    if (!(await isSuperAdmin(base44))) {
       return Response.json({ error: 'Forbidden' }, { status: 403 });
     }
 

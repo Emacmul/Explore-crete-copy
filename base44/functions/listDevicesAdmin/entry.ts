@@ -1,11 +1,16 @@
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.40";
 import { SESSION_TIMEOUT_MIN } from "../../shared/deviceAuth.ts";
+import { isSuperAdmin } from "../../shared/appUserAuth.ts";
 
+// Per Enda (2026-09-06): managing devices is one of the highest-risk admin actions,
+// so it now requires a Super Admin (see appUserAuth.ts's isSuperAdmin()) rather than
+// just a real Base44 login — this used to be the same thing in practice (Enda was the
+// only one with a real Base44 login), but Super Admin can now be handed to someone
+// else without also handing over the whole Base44 account.
 export default async function (req: Request): Promise<Response> {
   try {
     const base44 = createClientFromRequest(req);
-    const user = await base44.auth.me();
-    if (!user || user.role !== "admin") {
+    if (!(await isSuperAdmin(base44))) {
       return Response.json({ error: "Forbidden" }, { status: 403 });
     }
 

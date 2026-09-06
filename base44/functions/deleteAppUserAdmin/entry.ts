@@ -1,12 +1,16 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
-import { isAppAdmin } from '../../shared/appUserAuth.ts';
+import { isSuperAdmin } from '../../shared/appUserAuth.ts';
 
-// Deletes a single AppUser row — gated on app-admin, run with the service role.
+// Deletes a single AppUser row — run with the service role.
+//
+// Per Enda (2026-09-06): deleting a user account is one of the highest-risk actions
+// here, so it now requires a Super Admin (see appUserAuth.ts's isSuperAdmin()), not
+// just any regular Admin.
 export default async function (req) {
   try {
     const base44 = createClientFromRequest(req);
-    if (!(await isAppAdmin(base44))) {
-      return Response.json({ error: 'Admin only' }, { status: 403 });
+    if (!(await isSuperAdmin(base44))) {
+      return Response.json({ error: 'Super Admin only' }, { status: 403 });
     }
     const body = await req.json().catch(() => ({}));
     const { id } = body;

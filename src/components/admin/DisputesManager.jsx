@@ -8,7 +8,12 @@ import { toast } from '@/components/ui/use-toast';
 // Admin view of chargebacks that revoked access. Creem sends no "dispute won" event, so
 // when a dispute is resolved in our favor an admin clicks Restore here — it re-creates the
 // deleted Purchase (or re-activates the expired membership) via the restoreDispute function.
-export default function DisputesManager() {
+//
+// Per Enda (2026-09-06): restoring a disputed purchase is now Super-Admin-only on the
+// backend (see restoreDispute's own comment) — the Restore button below is hidden for
+// anyone else, so a regular Admin sees a clear note instead of a button that would
+// just fail.
+export default function DisputesManager({ isSuperAdmin = false }) {
   const [disputes, setDisputes] = useState([]);
   const [walks, setWalks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -81,9 +86,13 @@ export default function DisputesManager() {
                 </p>
                 <p className="text-xs text-slate-500">{new Date(d.created_date).toLocaleString()}</p>
               </div>
-              <Button size="sm" onClick={() => handleRestore(d)} disabled={restoringId === d.id} className="bg-emerald-600 hover:bg-emerald-700 gap-2 shrink-0">
-                {restoringId === d.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />} Restore
-              </Button>
+              {isSuperAdmin ? (
+                <Button size="sm" onClick={() => handleRestore(d)} disabled={restoringId === d.id} className="bg-emerald-600 hover:bg-emerald-700 gap-2 shrink-0">
+                  {restoringId === d.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />} Restore
+                </Button>
+              ) : (
+                <p className="text-xs text-slate-500 shrink-0">Only a Super Admin can restore this.</p>
+              )}
             </div>
           ))}
           {restored.map(d => (

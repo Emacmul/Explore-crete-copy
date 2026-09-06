@@ -67,6 +67,81 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-06 (follow-up 139) — added a Super Admin tier above Admin, for the highest-risk actions
+Scope: `base44/entities/AppUser.jsonc`, `base44/shared/appUserAuth.ts` (shared, not a
+function itself), and 7 backend functions — `saveAppUserAdmin`, `deleteAppUserAdmin`,
+`listDevicesAdmin`, `removeDeviceAdmin`, `forceLogoutAdmin`, `restoreDispute`,
+`grantWalk` — **each of these 7 needs its own redeploy**. Frontend:
+`src/pages/Admin.jsx`, `src/components/admin/BackendShell.jsx`,
+`src/components/admin/UsersManager.jsx`, `src/components/admin/DisputesManager.jsx`.
+
+**Per Enda**, following up on the audit's Finding #6 ("A few admin actions check for the
+wrong kind of admin"): those 5 actions (managing devices, forcing a logout, restoring a
+disputed purchase, gifting a tour) already only worked for a real Base44 login — which,
+in practice, is only him. He wants a formal "Super Admin" tier, above Admin, that holds
+those actions — so a future trusted partner (he named Anoushka, though not promoting her
+yet) could get regular Admin without automatically getting these, and could only ever be
+handed Super Admin by an existing one.
+
+**Why not just use "real Base44 login" as Super Admin:** a real Base44 login is much
+bigger than these few actions — it can rebuild the whole app, change billing, anything.
+Making that the definition of Super Admin would mean the only way to ever grant someone
+these 5 actions is to also hand them the entire Base44 account. So Super Admin is its
+own, separate, app-only label instead — set the exact same way Narrator and Admin
+already are, through Manage Users → saveAppUserAdmin.
+
+**How it works:** a new `super_admin` value on `AppUser.role`, alongside the existing
+`user` / `narrator` / `admin`. A new shared check, `isSuperAdmin()`, is true for a real
+Base44 login (the app's actual owner/builder) OR an AppUser explicitly marked
+`super_admin`. Because a real Base44 login always counts, **Enda already qualifies
+automatically — no separate step was needed to make him one.**
+
+**What now requires Super Admin specifically** (regular Admin is no longer enough):
+managing devices, forcing a logout, restoring a disputed purchase, gifting a tour (the
+original 5 named — device management is 2 functions), deleting a user account, and
+granting someone Admin or Super Admin (in either direction — also blocks a regular Admin
+from demoting an existing Admin/Super Admin, closing a related gap that would otherwise
+undermine the whole point). Editing an unrelated field (date of birth, etc.) on an
+existing Admin/Super Admin still only needs regular Admin, since nothing about their
+role is actually changing — only checked when the stored role would actually flip to or
+from Admin/Super Admin.
+
+**Per Enda's own answer**, checked and confirmed no change needed: managing narrator API
+keys is NOT part of this — that function already only ever lets someone view or change
+their own keys, never anyone else's, so there was nothing to lock down there.
+
+**Frontend:** Manage Users' role dropdown now only shows "Admin" and "Super Admin" as
+options to someone who is already a Super Admin — a regular Admin never sees them as a
+choice. Editing an existing Admin/Super Admin as a regular Admin shows the Role box
+locked with a short note, instead of a choice that would just get rejected on Save. The
+Gift and Delete buttons are hidden for anyone who isn't a Super Admin, for the same
+reason. The Disputes screen's Restore button is hidden the same way, replaced with a
+short note, for anyone who isn't a Super Admin (the list itself still shows).
+
+**Found along the way, not something I changed:** the Device management screen
+(`DeviceManager.jsx` — the one that would use `listDevicesAdmin`/`removeDeviceAdmin`/
+`forceLogoutAdmin`) isn't linked from anywhere in the app today — no button, no menu
+item reaches it. So "managing devices" and "forcing a logout" aren't actually reachable
+in the live app at all right now. Locked the backend down anyway for whenever it is
+wired up, but flagging this in case you want that screen actually added to the nav, or
+want to leave it as-is.
+
+**Verified:** wrote a standalone test of `isAppAdmin()`/`isSuperAdmin()` and the
+promotion/demotion gate logic in `saveAppUserAdmin` — 24 cases covering a real Base44
+login, a promoted Admin, a Super Admin, a narrator, a plain user, and no session at all,
+plus every combination of who's promoting/demoting whom in or out of Admin/Super Admin —
+all passed. `npx eslint` on the changed frontend files shows only pre-existing,
+unrelated warnings. The backend files were syntax-checked (no Deno available in this
+sandbox to run them directly). Full `rm -rf dist && npx vite build` completes with no
+errors.
+
+**Not tested live** — worth confirming after redeploying all 7 backend functions: open
+Manage Users as yourself and confirm the Role dropdown still shows Admin and Super Admin
+as choices (since you already qualify as Super Admin automatically); confirm Gift,
+Delete, and the Disputes Restore button all still work for you.
+
+---
+
 ## 2026-09-06 (follow-up 138) — removed the unused "outside app sign-in" page
 Scope: deleted `src/pages/OAuthConsent.jsx`. Frontend-only, no backend redeploy needed.
 

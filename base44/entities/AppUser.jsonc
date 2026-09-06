@@ -23,10 +23,11 @@
       "enum": [
         "user",
         "narrator",
-        "admin"
+        "admin",
+        "super_admin"
       ],
       "default": "user",
-      "description": "user = front-end only; narrator = translates cloned tours via the Narr button; admin = full backend via Base44 sign-in. Only ever changed by an admin through saveAppUserAdmin."
+      "description": "user = front-end only; narrator = translates cloned tours via the Narr button; admin = backend access, but NOT the handful of highest-risk actions (managing devices, forcing a logout, restoring a disputed purchase, gifting a tour, deleting a user, granting Admin/Super Admin); super_admin = full authority including those. Only ever changed by an admin through saveAppUserAdmin, and granting admin or super_admin specifically requires a Super Admin (see saveAppUserAdmin's own comment)."
     },
     "date_of_birth": {
       "type": "string",

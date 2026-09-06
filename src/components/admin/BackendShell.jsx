@@ -24,7 +24,7 @@ import { toast } from '@/components/ui/use-toast';
  * save/delete, clone workflow) is identical so narrators get the full editing
  * toolset; the role just gates which start-screen sections and tools appear.
  */
-export default function BackendShell({ user, userRole, authMode, unrestricted, onLogout }) {
+export default function BackendShell({ user, userRole, isSuperAdmin, authMode, unrestricted, onLogout }) {
   const [editingWalk, setEditingWalk] = useState(null);
   const [view, setView] = useState('start');
   const [focusWaypointIndex, setFocusWaypointIndex] = useState(null);
@@ -478,11 +478,11 @@ export default function BackendShell({ user, userRole, authMode, unrestricted, o
             onToggleAdminCompleted={handleToggleAdminCompleted}
           />
         ) : view === 'users' ? (
-          <UsersManager />
+          <UsersManager isSuperAdmin={isSuperAdmin} />
         ) : view === 'dashboard' ? (
           <WalksDashboard walks={walks} />
         ) : view === 'disputes' ? (
-          <DisputesManager />
+          <DisputesManager isSuperAdmin={isSuperAdmin} />
         ) : view === 'translations' ? (
           <TranslationsManager authMode={authMode} user={user} />
         ) : view === 'updateAudio' && isAdmin ? (

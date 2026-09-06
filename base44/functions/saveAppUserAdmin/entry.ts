@@ -1,5 +1,5 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
-import { isAppAdmin } from '../../shared/appUserAuth.ts';
+import { isAppAdmin, isSuperAdmin } from '../../shared/appUserAuth.ts';
 import { hashPassword } from '../../shared/passwordHash.ts';
 
 // Updates a single AppUser row (role / password / date of birth / gender /
@@ -18,6 +18,26 @@ export default async function (req) {
     if (!id || !updates || typeof updates !== 'object') {
       return Response.json({ error: 'id and updates are required' }, { status: 400 });
     }
+
+    // Per Enda (2026-09-06): moving anyone's role INTO or OUT OF Admin/Super Admin is
+    // one of the highest-risk actions here — Admin is how someone gets backend access
+    // at all, and Super Admin is the tier above that (see appUserAuth.ts's
+    // isSuperAdmin()) — so only a Super Admin can do it, not just any Admin. Only
+    // checked when the stored role would actually CHANGE to or from one of those two
+    // (compared against the current row), so a regular Admin can still save an
+    // unrelated edit (date of birth, etc.) on an existing Admin/Super Admin without
+    // hitting this.
+    if ('role' in updates) {
+      const elevatedRoles = ['admin', 'super_admin'];
+      const current = await base44.asServiceRole.entities.AppUser.get(String(id));
+      const wasElevated = elevatedRoles.includes(current?.role);
+      const willBeElevated = elevatedRoles.includes(updates.role);
+      const roleActuallyChanging = current?.role !== updates.role;
+      if ((wasElevated || willBeElevated) && roleActuallyChanging && !(await isSuperAdmin(base44))) {
+        return Response.json({ error: 'Only a Super Admin can grant or remove Admin/Super Admin.' }, { status: 403 });
+      }
+    }
+
     // Only allow the fields the edit dialog actually changes — never let a caller
     // rewrite email or sneak arbitrary fields through the update payload.
     const allowed = {};

@@ -1,20 +1,21 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 import { restoreAccess } from '../../shared/accessRevoker.ts';
+import { isSuperAdmin } from '../../shared/appUserAuth.ts';
 
-// Admin-only: puts access back after a chargeback dispute is resolved in our favor.
+// Super-Admin-only: puts access back after a chargeback dispute is resolved in our favor.
 //
 // Creem sends no "dispute won" webhook event, so there's nothing to listen for — an admin
 // sees the win in the Creem dashboard and clicks Restore in the Disputes panel, which calls
 // this. It re-creates the deleted one-time walk Purchase (or re-activates the expired
 // membership) via the shared restoreAccess(), then marks the Dispute record 'restored'.
 //
-// Mirrors grantWalk's admin identity check (admins sign in with Base44's own login, so
-// base44.auth.me() is the right check here — unlike customer flows that use the WP token).
+// Per Enda (2026-09-06): restoring a disputed purchase is one of the highest-risk admin
+// actions, so it now requires a Super Admin (see appUserAuth.ts's isSuperAdmin()) rather
+// than just any real Base44 login.
 export default async function(req) {
   try {
     const base44 = createClientFromRequest(req);
-    const caller = await base44.auth.me();
-    if (!caller || caller.role !== 'admin') {
+    if (!(await isSuperAdmin(base44))) {
       return Response.json({ error: 'Forbidden' }, { status: 403 });
     }
 
