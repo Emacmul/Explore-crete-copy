@@ -46,6 +46,7 @@ export default async function(req) {
       return Response.json({ walks: all });
     }
 
+
     const email = actor.email.toLowerCase();
 
     const masters = all
