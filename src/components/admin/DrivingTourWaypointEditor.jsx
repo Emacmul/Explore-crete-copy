@@ -90,6 +90,51 @@ async function uploadToImportDepository(walkId, segmentId, script, filename) {
   }
 }
 
+// Per Enda's report (2026-09-06): a waypoint's depository file is correctly REPLACED
+// (never duplicated) when the SAME waypoint is marked Done a second time — the backend
+// upserts by that waypoint's own key (see manageTourImportFiles's own comment). But two
+// other things could leave an old file behind with nothing ever cleaning it up:
+//   1. Deleting a waypoint that was already marked Done — removeWaypoint below never
+//      told the depository, so the file just sat there forever.
+//   2. Reordering waypoints, or inserting a new one earlier at the same location,
+//      between two "mark Done" cycles on the same waypoint — its key is partly its
+//      position among others at that location (see uniqueWaypointSegmentId), so a
+//      shifted position makes the next save look like a brand-new file rather than a
+//      replacement, orphaning the old one under its old key.
+// Rather than trying to catch every individual cause, this runs after every successful
+// Save Route and simply compares the depository's entries against the CURRENT
+// waypoints' own keys — anything in the depository that no longer matches a real
+// waypoint gets removed, whatever caused the mismatch. Best-effort and silent on
+// success, same spirit as uploadToImportDepository above: a cleanup step should never
+// make Save Route feel slower or riskier. If a removal call itself fails, that one
+// entry is just left in place to be retried on the next save, rather than lost from
+// the local list and never tried again.
+async function pruneImportDepository(walkId, waypoints, importFiles, onImportFilesChange) {
+  if (!walkId || !Array.isArray(importFiles) || importFiles.length === 0) return;
+  const validKeys = new Set(
+    (waypoints || []).map((_, i) => uniqueWaypointSegmentId(waypoints, i)).filter(Boolean)
+  );
+  const stale = importFiles.filter((f) => !validKeys.has(f?.segment_id));
+  if (stale.length === 0) return;
+  const survivors = importFiles.filter((f) => validKeys.has(f?.segment_id));
+  for (const entry of stale) {
+    try {
+      const res = await base44.functions.invoke('manageTourImportFiles', {
+        action: 'remove',
+        walkId,
+        segment_id: entry.segment_id,
+        ...getNarratorAuthPayload(),
+      });
+      if (res?.data?.error) throw new Error(res.data.error);
+    } catch {
+      // Leave it in the list so it's retried on the next Save Route instead of
+      // silently forgotten.
+      survivors.push(entry);
+    }
+  }
+  onImportFilesChange?.(survivors);
+}
+
 const ROLES = [
   { value: 'primary_start', label: 'Primary-Start', icon: Flag },
   { value: 'primary_stop', label: 'Primary-Stop', icon: Square },
@@ -1255,7 +1300,18 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                     {onSave && (
                       <div className="pt-2 border-t border-slate-600">
                         <Button
-                          onClick={onSave}
+                          onClick={async () => {
+                            const ok = await onSave();
+                            // Per Enda's report (2026-09-06): sweep any now-orphaned
+                            // depository files once the route's own save has genuinely
+                            // gone through — see pruneImportDepository's own comment.
+                            // Admin-only (same boundary as manageTourImportFiles'
+                            // 'remove' action), and deliberately not awaited — cleanup
+                            // should never make Save Route itself feel slower.
+                            if (ok && !isNarrator) {
+                              pruneImportDepository(walkId, waypoints, importFiles, onImportFilesChange);
+                            }
+                          }}
                           disabled={saving}
                           className="w-full bg-amber-500 hover:bg-amber-600 gap-2"
                         >

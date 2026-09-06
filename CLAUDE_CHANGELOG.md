@@ -67,6 +67,60 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-06 (follow-up 141) — cleaned up orphaned files in the shared narration depository
+Scope: `src/components/admin/DrivingTourWaypointEditor.jsx`. Frontend-only, no backend
+redeploy needed.
+
+**Per Enda's question** ("Does this new file overwrite the old one, or do we get an
+inflated depository with choices that should not be there?") and his follow-up asking
+to close this off before handing anything to Anoushka: confirmed the everyday case (undo
+a waypoint, fix its text, mark it Done again) already correctly replaces the old
+depository file — no fix needed there. But investigating further turned up two real
+ways an old file COULD get left behind with nothing ever cleaning it up:
+
+1. Deleting a waypoint that had already been marked Done. Nothing ever told the
+   depository that waypoint was gone, so its old file sat there forever.
+2. Reordering waypoints, or inserting a new one earlier at the same location, between
+   two "mark Done" cycles on the same waypoint. Each waypoint's depository key is partly
+   its position among others at that same location (e.g. BOR1a, BOR1b) — shift that
+   position and the next save looks like a brand-new file rather than a replacement,
+   orphaning the old one under its old key.
+
+**What changed:** rather than patching each individual cause, added one general
+cleanup (`pruneImportDepository`) that runs automatically every time Save Route is
+clicked (admin only). It compares the depository's current files against the tour's
+actual current waypoints, and removes any depository file that no longer matches a real
+waypoint — whatever caused the mismatch. Best-effort and silent on success, same as the
+existing upload step: it should never make Save Route itself feel slower, and if a
+single removal fails, that one file is just left for the next save to catch rather than
+forgotten about.
+
+**A related, narrower case not fully closed by this:** if waypoints are reordered or a
+new one is inserted in a way that makes an OLD key point at a DIFFERENT waypoint (rather
+than making the key disappear entirely), the old file could sit under that reused key
+with the wrong content, since the key itself still technically exists. This wouldn't
+show up as extra/duplicate choices (Enda's actual concern, now fully closed) — it's a
+rarer, different case that would need each waypoint to carry its own permanent ID
+instead of a position-based one to close completely. Flagging it, not fixing it now,
+since it needs reordering combined with already-marked-Done waypoints to happen at all.
+
+**Verified:** wrote a standalone test of the cleanup logic — confirms a plain text edit
+(no reordering) triggers zero removal calls; a genuinely deleted waypoint's file gets
+removed while its siblings survive; a shrunk location group correctly removes every key
+that no longer exists at all; a failed removal call keeps that one file in the list for
+a future retry rather than losing track of it; and nothing runs at all when there's no
+saved tour yet or no depository files to check — 14 cases, all passed. Also confirmed
+this can't fire for a narrator (matches the backend's own admin-only rule on removing a
+depository file). `npx eslint` shows only the same pre-existing, unrelated warning
+already noted in earlier entries. Full `rm -rf dist && npx vite build` completes with
+no errors.
+
+**Not tested live** — worth confirming after the frontend refresh: delete a waypoint
+that was already marked Done, click Save Route, and check its old file is gone from the
+depository (a narrator's clone screen, or checking the tour's `import_files` directly).
+
+---
+
 ## 2026-09-06 (follow-up 140) — "Segment Number" in the Waypoints tab was actually the location number
 Scope: `src/components/admin/DrivingTourWaypointEditor.jsx`. Frontend-only, no backend
 redeploy needed.
