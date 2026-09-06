@@ -32,6 +32,7 @@ export default async function(req) {
       return Response.json({ error: 'action must be "get" or "save"' }, { status: 400 });
     }
 
+
     let email = null;
     try {
       const me = await base44.auth.me();
