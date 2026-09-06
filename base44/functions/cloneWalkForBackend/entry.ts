@@ -1,5 +1,8 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 import { resolveActor } from '../../shared/backendActor.ts';
+// Per Enda / Base44 support: retries a real 429 (pooled rate limit) with a short backoff —
+// see withEntityRetry.ts's own header comment for the full reasoning.
+import { wrapClientWithRetry } from '../../shared/withEntityRetry.ts';
 
 // Creates a translation clone of a master tour. Replaces BackendShell.jsx's
 // handleCloneTour, which built the clone object client-side and called
@@ -22,7 +25,7 @@ import { resolveActor } from '../../shared/backendActor.ts';
 // exempt from the once-per-tour rule, only from the one-active-clone limit.
 export default async function(req) {
   try {
-    const base44 = createClientFromRequest(req);
+    const base44 = wrapClientWithRetry(createClientFromRequest(req));
     const body = await req.json().catch(() => ({}));
     const actor = await resolveActor(base44, body);
     if (!actor) return Response.json({ error: 'Not authorized' }, { status: 403 });

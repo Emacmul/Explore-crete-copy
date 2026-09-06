@@ -1,5 +1,8 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 import { resolveActor } from '../../shared/backendActor.ts';
+// Per Enda / Base44 support: retries a real 429 (pooled rate limit) with a short backoff —
+// see withEntityRetry.ts's own header comment for the full reasoning.
+import { wrapClientWithRetry } from '../../shared/withEntityRetry.ts';
 
 // Replaces browser-only localStorage for the Google TTS / Groq API keys with real,
 // permanent, server-side storage tied to whoever is actually calling — an admin's real
@@ -21,7 +24,7 @@ import { resolveActor } from '../../shared/backendActor.ts';
 // this app already relies on.
 export default async function(req) {
   try {
-    const base44 = createClientFromRequest(req);
+    const base44 = wrapClientWithRetry(createClientFromRequest(req));
     const body = await req.json().catch(() => ({}));
     const { action, google_tts_api_key, groq_api_key, groq_api_key_2 } = body || {};
 

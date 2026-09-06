@@ -67,6 +67,87 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-06 (follow-up 135) — added automatic retry with backoff for Base44's own pooled rate limits (reads/lists/creates/updates), per Base44 support
+Scope: 2 new files (`base44/shared/withEntityRetry.ts`, `src/lib/withEntityRetry.js`),
+`src/api/base44Client.js` (frontend, no redeploy needed), and 12 backend functions listed
+below (each needs its own redeploy — see the list).
+
+**Per Enda**, forwarding Base44 support's own answer about rate limits: with all 13
+narrators sharing one app and one database, Base44's read/list/create/update limits are
+pooled across everyone working at once (roughly 150 reads/min, 100 lists/min, 140
+creates/min, 100 updates/min, total — not per person), and a burst (e.g. several narrators
+saving near the same moment) can realistically hit them. Base44's own recommendation: "If
+your backend functions do not already have retry logic with a short backoff on 429
+responses, add it."
+
+**Investigated first:** searched the whole codebase for existing 429/retry handling before
+building anything new. Found plenty — but all of it protects against a DIFFERENT kind of
+429: Groq's own rate limit (`groqKeyRotation.ts`, `translateScript`, `seedUiTranslations`)
+and a routing API's rate limit (`routeWaypoints`). Nothing anywhere retried a 429 from
+Base44's OWN entity/database calls — confirming this was a genuine gap, not something
+already covered, before writing a single line.
+
+**What was built:** one shared helper (`withEntityRetry.ts` for the backend functions,
+`withEntityRetry.js` — the same logic — for the frontend, kept as two files since the
+frontend and backend build completely separately and never share code today). Given a
+Base44 client, it hands back one that behaves identically in every way, except: every
+`entities.<Entity>.list/filter/get/create/update/delete/...` call, and every
+`functions.invoke(...)` call, is automatically retried up to 4 times with a short,
+increasing pause between attempts (honouring Base44's own Retry-After header when it sends
+one) — but ONLY when the failure is genuinely a 429. Any other kind of error (not found, a
+real bug, bad input) comes back immediately, exactly as before — nothing here hides a real
+problem, it only smooths over a busy moment.
+
+**Frontend (`src/api/base44Client.js`):** wrapped the one client every page/component in
+the whole app already imports and uses. This covers every direct browser-side
+`entities.*`/`functions.invoke` call in the entire app automatically — no other frontend
+file needed to change. Frontend-only, no backend redeploy needed for this part.
+
+**Backend — applied to the 12 functions that are actually on the narrator/tour-editing
+"heavy burst" path Base44 support was describing** (each does real reads/writes and is
+called constantly during normal narration/translation work): `saveWalkForBackend` (the
+single busiest save path — every narrator's every edit goes through this one),
+`getWalksForBackend`, `cloneWalkForBackend`, `deleteWalkForBackend`, `translateScript`,
+`saveTranslation`, `saveTranslationsBulk`, `manageTourImportFiles`,
+`getTranslationOverrides`, `getWalkCatalog` (also the single most-loaded READ in the app —
+every visitor's every page load), `manageApiKeys`, and `pronunciationDictionary` (wrapped
+on BOTH ends — this app's own client, and the completely separate LinguaGloss app/database
+it talks to, which has its own separate pool of the same kind of limit).
+
+**Deliberately NOT touched yet:** roughly 20 more functions that also read/write the
+database but are admin-only, login/session, or device-management actions (things like
+`saveAppUserAdmin`, `narrLogin`, `verifyDeviceCode`, `restoreDispute`, `forceLogoutAdmin`,
+`creemWebhook`, and similar) — these aren't part of "13 narrators translating and recording
+audio at once," so they carry much less of the real risk Base44 support described, and
+each one added means one more function for you to individually redeploy. Left out for now
+on purpose, not missed — say the word and I'll extend the same fix to some or all of them.
+
+**Verified:** wrote a standalone test file (not part of the app, run separately) covering
+12 scenarios for each of the two retry helpers — a 429 that clears after 2-3 tries and
+succeeds; a real (non-429) error, confirmed to fail immediately with NO retry and no
+wasted wait; a 429 that never clears, confirmed to eventually give up rather than retry
+forever; `asServiceRole.entities` calls retried the same way (backend only); confirmed the
+wrapping never eagerly touches `asServiceRole` just because it's wrapped (that getter
+throws if a client has no service token — a client that never uses `asServiceRole` must
+never trip that, and it doesn't); `functions.invoke` retried the same way;
+`functions.fetch` and `.subscribe()` (a websocket, not a rate-limited HTTP call) both
+confirmed correctly left untouched; a short Retry-After header confirmed to be honoured
+over the default backoff. All 12 checks passed on both files. Separately confirmed (by
+reading the SDK's own source) that this app never checks two `entities`/`functions`
+references for being "the exact same object" anywhere, which the wrapping approach used
+here would otherwise be sensitive to. `npx eslint` on the two changed frontend files is
+clean. Full `rm -rf dist && npx vite build` completes with no errors. Every edited backend
+file parsed cleanly (checked with a standalone syntax check, since this sandbox has no
+Deno to run the real backend code directly).
+
+**Not tested live** — there's no realistic way to test an actual Base44 rate-limit burst
+from here. Worth knowing this exists as a safety net rather than something you'll ever
+consciously notice working — if it's doing its job, a busy moment with several narrators
+saving at once just quietly takes a second or two longer sometimes, instead of a save
+occasionally failing outright.
+
+---
+
 ## 2026-09-06 (follow-up 134) — Manage Users could silently break a Narrator/Admin's password on almost any save
 Scope: `src/components/admin/UsersManager.jsx` — frontend only, no redeploy needed.
 

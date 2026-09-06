@@ -1,5 +1,10 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 import { verifyPassword } from '../../shared/passwordHash.ts';
+// Per Enda / Base44 support: complements the chunking/pacing below — if a single write in
+// a chunk still hits a real 429 despite the pacing, it now gets retried automatically
+// instead of being recorded straight away as a permanent per-key failure. See
+// withEntityRetry.ts's own header comment for the full reasoning.
+import { wrapClientWithRetry } from '../../shared/withEntityRetry.ts';
 
 // Bulk-upserts many UI-string Translation overrides for ONE language in a single call.
 // Exists for seedUiTranslations' "Auto-translate missing" pass in TranslationsManager.jsx,
@@ -27,7 +32,7 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export default async function(req) {
   try {
-    const base44 = createClientFromRequest(req);
+    const base44 = wrapClientWithRetry(createClientFromRequest(req));
     const body = await req.json();
     const { lang, entries, email, narrPassword, narrToken } = body || {};
 

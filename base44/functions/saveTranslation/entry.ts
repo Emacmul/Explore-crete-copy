@@ -1,5 +1,8 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 import { verifyPassword } from '../../shared/passwordHash.ts';
+// Per Enda / Base44 support: retries a real 429 (pooled rate limit) with a short backoff —
+// see withEntityRetry.ts's own header comment for the full reasoning.
+import { wrapClientWithRetry } from '../../shared/withEntityRetry.ts';
 
 // Saves (or reverts) a UI-string override so an admin or narrator can correct an
 // unnatural AI translation. Overrides live in the Translation entity and are merged
@@ -20,7 +23,7 @@ import { verifyPassword } from '../../shared/passwordHash.ts';
 // records regardless of the caller's session.
 export default async function(req) {
   try {
-    const base44 = createClientFromRequest(req);
+    const base44 = wrapClientWithRetry(createClientFromRequest(req));
     const body = await req.json();
     const { key, lang, value, mode, email, narrPassword, narrToken } = body || {};
 

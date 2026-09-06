@@ -3,6 +3,10 @@ import { resolveActor } from '../../shared/backendActor.ts';
 import { callGroqWithKeyRotation } from '../../shared/groqKeyRotation.ts';
 import { translateWithGoogle } from '../../shared/googleTranslate.ts';
 import { protectPhrases, substituteTitleMentions } from '../../shared/protectedPhrases.ts';
+// Per Enda / Base44 support: retries a real 429 from Base44's OWN entity/database calls
+// (separate from the Groq rate-limit handling above, which is a different, third-party
+// 429) with a short backoff — see withEntityRetry.ts's own header comment.
+import { wrapClientWithRetry } from '../../shared/withEntityRetry.ts';
 
 // Per Enda: some words/names in the English source script are deliberately written in
 // their OWN original script (Greek, Cyrillic, Arabic) rather than English, specifically
@@ -34,7 +38,7 @@ function findUnpreservedForeignWords(original: string, translated: string): stri
 
 Deno.serve(async (req) => {
   try {
-    const base44 = createClientFromRequest(req);
+    const base44 = wrapClientWithRetry(createClientFromRequest(req));
 
     const body = await req.json();
     const { text, target_language, apiKey, apiKey2, googleApiKey, target_lang_code, walkId, titleOnly } = body;

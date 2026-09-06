@@ -1,4 +1,7 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
+// Per Enda / Base44 support: retries a real 429 (pooled rate limit) with a short backoff —
+// see withEntityRetry.ts's own header comment for the full reasoning.
+import { wrapClientWithRetry } from '../../shared/withEntityRetry.ts';
 
 // Fetches every Translation override, for the admin/narrator editing tool to display
 // current values against. Exists specifically because a narrator has no genuine Base44
@@ -32,7 +35,7 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 // resurface again the next time a few more languages get finished.
 export default async function(req) {
   try {
-    const base44 = createClientFromRequest(req);
+    const base44 = wrapClientWithRetry(createClientFromRequest(req));
     const list = await base44.asServiceRole.entities.Translation.list('-updated_date', 20000);
     return Response.json({ translations: list || [] });
   } catch (error) {

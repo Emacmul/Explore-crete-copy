@@ -1,5 +1,11 @@
 import { createClient, createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 import { resolveActor } from '../../shared/backendActor.ts';
+// Per Enda / Base44 support: retries a real 429 (pooled rate limit) with a short backoff —
+// see withEntityRetry.ts's own header comment for the full reasoning. Applied to BOTH
+// clients below: this app's own (for the resolveActor lookup) and LinguaGloss's (a
+// completely separate Base44 app/database, with its own separate pool of the same kind of
+// limit) for the actual dictionary reads/writes.
+import { wrapClientWithRetry } from '../../shared/withEntityRetry.ts';
 
 // Bridge to LinguaGloss (linguagloss.magicalcrete.com) — Enda's SEPARATE Base44 app that
 // holds the pronunciation dictionary used to steer PCV audio (PronunciationEntry:
@@ -41,12 +47,12 @@ async function getSecret(name: string): Promise<string | null> {
 async function linguaglossClient() {
   const [appId, apiKey] = await Promise.all([getSecret('LINGUAGLOSS_APP_ID'), getSecret('LINGUAGLOSS_API_KEY')]);
   if (!appId || !apiKey) return null;
-  return createClient({ appId, headers: { api_key: apiKey } });
+  return wrapClientWithRetry(createClient({ appId, headers: { api_key: apiKey } }));
 }
 
 Deno.serve(async (req) => {
   try {
-    const base44 = createClientFromRequest(req);
+    const base44 = wrapClientWithRetry(createClientFromRequest(req));
     const body = await req.json().catch(() => ({}));
     const { action } = body || {};
 

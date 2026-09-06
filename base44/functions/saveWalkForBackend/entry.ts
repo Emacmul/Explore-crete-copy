@@ -1,5 +1,9 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 import { resolveActor } from '../../shared/backendActor.ts';
+// Per Enda / Base44 support: this is the single busiest save path in the whole app — every
+// narrator's every edit comes through here — so it's first in line for the pooled-rate-limit
+// retry protection. See withEntityRetry.ts's own header comment for the full reasoning.
+import { wrapClientWithRetry } from '../../shared/withEntityRetry.ts';
 // Per Enda's follow-up 47 report: these two lists now live in one shared
 // place alongside the READ-side whitelist getWalksForBackend.ts uses, so the
 // two can never quietly drift apart — see narratorWalkFields.ts for the full
@@ -97,7 +101,7 @@ function mergeNarratorSegmentScripts(existingScripts: any[], incomingScripts: an
 // resolves to 'admin'.
 export default async function(req) {
   try {
-    const base44 = createClientFromRequest(req);
+    const base44 = wrapClientWithRetry(createClientFromRequest(req));
     const body = await req.json().catch(() => ({}));
     const actor = await resolveActor(base44, body);
     if (!actor) return Response.json({ error: 'Not authorized' }, { status: 403 });
