@@ -31,6 +31,7 @@ export default async function(req) {
       return Response.json({ error: 'key and lang are required' }, { status: 400 });
     }
 
+
     // --- authorize ---
     let authorizedEmail = null;
     try {
