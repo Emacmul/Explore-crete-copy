@@ -67,6 +67,38 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-06 (follow-up 140) — "Segment Number" in the Waypoints tab was actually the location number
+Scope: `src/components/admin/DrivingTourWaypointEditor.jsx`. Frontend-only, no backend
+redeploy needed.
+
+**Per Enda's report:** in the Admin panel's Waypoints tab, the box labelled "Segment
+Number" is really the location number — his example: a waypoint whose real, specific
+segment identifier is something like "Bor3a-PS" still belongs to location 1, so the
+plain number in that box was never the actual "segment" he means.
+
+**Confirmed in the code:** `segment_number` (what that box edits) is documented
+elsewhere in this codebase (`routeExport.js`'s `buildSegmentId` comment) as "the
+LOCATION-level code shared by every waypoint at that stop... NOT unique per waypoint."
+The box right next to it, editing the matching `segment_title` field, is already
+correctly labelled "Location Title" — so the two boxes describing the very same
+location were using two different words for it. The real, specific per-waypoint
+identifier (like "BRZ1a-PS") is a naming convention built from that location code plus
+a letter and a role, not a separate editable field anywhere.
+
+**What changed:** relabelled both boxes (the "Add Waypoint" form and the per-waypoint
+edit form) from "Segment Number" to "Location Number", and updated the explanatory text
+above the waypoint list to match. Nothing about the underlying data changed — only the
+words on screen.
+
+**Verified:** searched the whole codebase for every other place "Segment Number" (or
+similar) appears as on-screen text — only these three spots, all in this one file.
+Checked the other waypoint editors (`WaypointEditor.jsx`, used for walking tours) don't
+have this same mislabelled box. `npx eslint` shows only the same pre-existing,
+unrelated warning already noted in earlier entries. Full `rm -rf dist && npx vite
+build` completes with no errors.
+
+---
+
 ## 2026-09-06 (follow-up 139) — added a Super Admin tier above Admin, for the highest-risk actions
 Scope: `base44/entities/AppUser.jsonc`, `base44/shared/appUserAuth.ts` (shared, not a
 function itself), and 7 backend functions — `saveAppUserAdmin`, `deleteAppUserAdmin`,

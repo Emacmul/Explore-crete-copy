@@ -639,6 +639,13 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
     e.target.value = '';
   };
 
+  // Per Enda's report (2026-09-06): the field below (and its twin in the per-waypoint
+  // edit form further down) was labelled "Segment Number" — but `segment_number` is
+  // the LOCATION-level index shared by every waypoint at one stop (see routeExport.js's
+  // buildSegmentId comment), the same thing `segment_title` already correctly calls
+  // "Location Title" right next to it. Relabelled both to "Location Number" to match.
+  // The real, per-waypoint segment identifier (e.g. "BRZ1a-PS") is a naming convention
+  // built from this location code + a letter + role, not a separate editable field.
   return (
     <div className="space-y-5">
       <div>
@@ -648,7 +655,7 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
           <span>
             {isNarrator
               ? 'Edit narration scripts and audio triggers for each waypoint below. All other fields are managed by the admin.'
-              : `Define Primary-Start, Primary-Stop and Secondary points. Location IDs are built from the Tour Code (${tourCode || '—'}) + the segment number (e.g. BRZ1, BRZ2).`}
+              : `Define Primary-Start, Primary-Stop and Secondary points. Location IDs are built from the Tour Code (${tourCode || '—'}) + the location number (e.g. BRZ1, BRZ2).`}
           </span>
         </div>
       </div>
@@ -742,7 +749,7 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                   </Select>
                 </div>
                 <div>
-                  <Label className="text-slate-400 text-xs mb-1 block">Segment Number</Label>
+                  <Label className="text-slate-400 text-xs mb-1 block">Location Number</Label>
                   <Input
                     type="number" min="1"
                     value={newWp.segment_number}
@@ -1051,7 +1058,7 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                             </Select>
                           </div>
                           <div>
-                            <Label className="text-slate-400 text-xs mb-1 block">Segment Number</Label>
+                            <Label className="text-slate-400 text-xs mb-1 block">Location Number</Label>
                             <Input
                               type="number" min="1"
                               value={wp.segment_number || ''}
