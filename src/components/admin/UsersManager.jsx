@@ -25,13 +25,25 @@ function roleBadge(role) {
  * and sets the Narr's backend password. That password is used only for the Narr
  * button; it never replaces the WordPress password that gets them into the
  * front end (admins don't use it — they sign in via Base44).
+ *
+ * Per Enda's report (front-end audit, 2026-09-05): this box used to start already
+ * filled in with the user's CURRENT stored password — which, once passwords started
+ * being kept scrambled (hashed), is not the real password at all, just its scrambled
+ * form. Saving ANY change here (role, date of birth, anything) resent that scrambled
+ * text as if it were a brand-new password, and the backend scrambles whatever it's
+ * given — so it got scrambled a second time and saved, breaking the real password
+ * with no warning at all. Fixed by leaving this box blank every time it opens:
+ * blank now means "leave their password exactly as it is", and only typing a new
+ * one here actually changes it. A password is still required the one time it
+ * matters — promoting someone to Narrator/Admin who has never had one set.
  */
 function EditAppUserDialog({ appUser, onClose }) {
   const [role, setRole] = useState(appUser.role === 'admin' || appUser.role === 'narrator' ? appUser.role : 'user');
-  const [password, setPassword] = useState(appUser.password || '');
+  const [password, setPassword] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState(appUser.date_of_birth ? String(appUser.date_of_birth).slice(0, 10) : '');
   const [saving, setSaving] = useState(false);
   const qc = useQueryClient();
+  const hasExistingPassword = !!appUser.password;
 
   const handleSave = async () => {
     setSaving(true);
@@ -39,12 +51,19 @@ function EditAppUserDialog({ appUser, onClose }) {
       const updates = { role };
       if (dateOfBirth) updates.date_of_birth = dateOfBirth;
       if (role === 'narrator' || role === 'admin') {
-        if (!password.trim()) {
+        if (password.trim()) {
+          // Admin actually typed something — that's a deliberate new password.
+          updates.password = password.trim();
+        } else if (!hasExistingPassword) {
+          // Blank AND no password on file yet at all — this is a first-time
+          // promotion, so they'd have no way to ever log in. Block it, same as
+          // before.
           toast({ variant: 'destructive', title: 'Password required', description: 'Set a backend password for this Narrator/Admin.' });
           setSaving(false);
           return;
         }
-        updates.password = password.trim();
+        // Else: blank, but a password already exists — leave `updates.password`
+        // out entirely so saveAppUserAdmin never touches the stored one.
       } else {
         updates.password = '';
       }
@@ -91,8 +110,18 @@ function EditAppUserDialog({ appUser, onClose }) {
           </div>
           {(role === 'narrator' || role === 'admin') && (
             <div>
-              <Label className="text-slate-300 mb-1.5 block">Backend password <span className="text-red-400">*</span></Label>
-              <Input value={password} onChange={e => setPassword(e.target.value)} className="bg-slate-700 border-slate-600 text-white" placeholder="Set the backend password" />
+              <Label className="text-slate-300 mb-1.5 block">
+                Backend password {!hasExistingPassword && <span className="text-red-400">*</span>}
+              </Label>
+              <Input
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                className="bg-slate-700 border-slate-600 text-white"
+                placeholder={hasExistingPassword ? 'Leave blank to keep their current password' : 'Set the backend password'}
+              />
+              {hasExistingPassword && (
+                <p className="text-xs text-slate-500 mt-1">Only fill this in if you want to change their password.</p>
+              )}
             </div>
           )}
         </div>

@@ -67,6 +67,54 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-06 (follow-up 134) — Manage Users could silently break a Narrator/Admin's password on almost any save
+Scope: `src/components/admin/UsersManager.jsx` — frontend only, no redeploy needed.
+
+**Per Enda's request**, from the front-end audit delivered 2026-09-05: "Saving a user's
+details in Manage Users can silently break their password. Fix this one for sure." — the
+most urgent finding in that audit.
+
+**The bug, confirmed by tracing both sides:** the "Edit user" box's password field started
+out pre-filled with `appUser.password` — the CURRENT stored password, which (since
+passwords started being kept scrambled/hashed, per `base44/entities/AppUser.jsonc`) is not
+a real, usable password at all, just its scrambled form. `handleSave` always resent
+whatever was sitting in that box as `updates.password` whenever the role was
+Narrator/Admin — so unless the admin happened to also retype a real new password, it
+resent the scrambled text. `base44/functions/saveAppUserAdmin/entry.ts` unconditionally
+re-scrambles anything it's given as `password` before saving. Net effect: the scrambled
+text got scrambled a SECOND time and saved as the "new" password, breaking the real one —
+on almost any ordinary edit (changing a role, setting a date of birth, anything), not just
+a rare case — with zero warning; the toast still said "User updated".
+
+**What changed:** the password box now always starts blank, and blank means "leave their
+password exactly as it is" — `saveAppUserAdmin` is only ever sent a `password` field at all
+when the admin actually types something into that box. A password is still required
+before Save will go through in the one case where it genuinely matters: promoting someone
+to Narrator/Admin who has never had a password set at all (checked via a new
+`hasExistingPassword = !!appUser.password`, computed once when the dialog opens — before
+any edit). For anyone who already has a password, the field's placeholder now reads "Leave
+blank to keep their current password", with a small note underneath so this isn't
+surprising the next time someone opens this box. Demoting a Narrator/Admin back to a plain
+user still clears their backend password entirely, unchanged from before.
+
+**Verified:** confirmed directly in `base44/functions/saveAppUserAdmin/entry.ts` that
+`updates` fields are applied as a partial update — a field simply left out of `updates`
+(as `password` now is, whenever the box is left blank with an existing password on file)
+is never touched, not reset to blank — checked the same partial-update pattern used
+elsewhere in this codebase (e.g. `verifyDeviceCode/entry.ts`) to confirm this is how this
+backend's `.update()` calls behave generally, not assumed. `npx eslint` on the changed
+file shows only one pre-existing, unrelated warning (an unused `catch` variable on the
+`inviteUser` call, confirmed present in the file before this change too). Full `rm -rf
+dist && npx vite build` completes with no errors.
+
+**Not tested live** — worth trying on a real (non-critical) test account: edit an existing
+Narrator/Admin's role or date of birth without touching the password box, save, and confirm
+their old backend password still logs them into Narr Studio/Admin afterward. Also worth
+checking that promoting a brand-new user to Narrator/Admin still correctly demands a
+password before it lets you save.
+
+---
+
 ## 2026-09-05 (follow-up 133) — "Back to app" on About/Contact was sending logged-in visitors to a login form they could get stuck on
 Scope: `src/pages/About.jsx`, `src/pages/Contact.jsx`, `src/App.jsx` — frontend only, no
 redeploy needed.
