@@ -44,7 +44,6 @@ async function getSecret(name: string): Promise<string | null> {
   return Deno.env.get(name) || null;
 }
 
-
 async function linguaglossClient() {
   const [appId, apiKey] = await Promise.all([getSecret('LINGUAGLOSS_APP_ID'), getSecret('LINGUAGLOSS_API_KEY')]);
   if (!appId || !apiKey) return null;
