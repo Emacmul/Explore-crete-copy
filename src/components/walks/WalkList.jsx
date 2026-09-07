@@ -3,7 +3,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Search, Mountain, SlidersHorizontal, X, RefreshCw } from 'lucide-react';
+import { Search, Mountain, SlidersHorizontal, X, RefreshCw, Baby } from 'lucide-react';
 import WalkCard from './WalkCard';
 import OfflineWalksBanner from '../offline/OfflineWalksBanner';
 import { getTourCategory } from '../../lib/tourCategories';
@@ -23,6 +23,11 @@ export default function WalkList({ walks, selectedWalk, onWalkSelect, searchQuer
   const [maxDistance, setMaxDistance] = useState('all');
   const [maxDuration, setMaxDuration] = useState('all');
   const [sortBy, setSortBy] = useState('name');
+  // Per Enda/Anoushka (follow-up 144): Walks and Hikes (WHT) only — a dedicated,
+  // always-visible toggle rather than something buried in the Filters panel, so a
+  // parent looking for a buggy-suitable route doesn't have to go hunting for it.
+  const [buggyFriendlyOnly, setBuggyFriendlyOnly] = useState(false);
+  const showBuggyFriendlyToggle = tourCategoryCode === 'WHT';
 
   const activeFilterCount = [
     region !== 'all', difficulty !== 'all', maxDistance !== 'all', maxDuration !== 'all'
@@ -47,7 +52,8 @@ export default function WalkList({ walks, selectedWalk, onWalkSelect, searchQuer
       const matchesDifficulty = difficulty === 'all' || walk.difficulty === difficulty;
       const matchesDistance = maxDistance === 'all' || (walk.distance_km || 0) <= Number(maxDistance);
       const matchesDuration = maxDuration === 'all' || (walk.duration_hours || 0) <= Number(maxDuration);
-      return matchesSearch && matchesRegion && matchesDifficulty && matchesDistance && matchesDuration;
+      const matchesBuggyFriendly = !showBuggyFriendlyToggle || !buggyFriendlyOnly || walk.buggy_friendly === true;
+      return matchesSearch && matchesRegion && matchesDifficulty && matchesDistance && matchesDuration && matchesBuggyFriendly;
     })
     .sort((a, b) => {
       // Prefer tours narrated in the chosen UI language: matching tours float to the top,
@@ -115,6 +121,24 @@ export default function WalkList({ walks, selectedWalk, onWalkSelect, searchQuer
             className="pl-10 bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-400 focus:bg-slate-700"
           />
         </div>
+
+        {/* Buggy-Friendly quick toggle — Walks and Hikes only, always visible (not tucked
+            inside the Filters panel) so it's never something a parent has to go looking for. */}
+        {showBuggyFriendlyToggle && (
+          <button
+            type="button"
+            onClick={() => setBuggyFriendlyOnly(v => !v)}
+            aria-pressed={buggyFriendlyOnly}
+            className={`mt-2 flex items-center gap-1.5 text-xs font-semibold rounded-full px-3 py-1.5 border transition-colors ${
+              buggyFriendlyOnly
+                ? 'bg-amber-500 border-amber-400 text-white'
+                : 'bg-slate-700/50 border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white'
+            }`}
+          >
+            <Baby className="w-3.5 h-3.5" />
+            {t('list.buggyFriendly')}
+          </button>
+        )}
 
         {/* Filters panel */}
         {showFilters && (

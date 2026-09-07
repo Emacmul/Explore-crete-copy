@@ -67,6 +67,55 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-07 (follow-up 144) — "Buggy-Friendly" sub-category for Walks and Hikes
+Scope: `base44/entities/Walk.jsonc`, `src/components/admin/WalkEditor.jsx`,
+`src/components/walks/WalkList.jsx`, `src/components/walks/WalkCard.jsx`,
+`src/lib/i18n/index.js`. **`Walk.jsonc` is a backend/entity file — no function code
+changed, but Enda's usual backend redeploy step doesn't apply to entity schema files
+either way; a normal hard refresh + republish is enough for this whole change.**
+
+**Per Enda and Anoushka:** as a young mother, Anoushka can't easily find walks that work
+with an ordinary buggy (no off-road/4x4-style buggy needed) — walking with a young child
+has different needs than a typical hiking route. Wanted a way to mark and surface
+buggy-suitable walks so they don't get lost in the general Walks and Hikes list.
+
+Discussed two approaches: a filter + badge within the existing Walks and Hikes list, or a
+whole new top-level category alongside Walks/WalkAbouts/Driving Tours. Enda chose the
+former — much smaller change, and it directly solves the actual worry ("they'll get
+lost") without touching pricing, the editor, or admin tooling built around exactly 3
+categories. Scoped to Walks and Hikes (WHT) only, per Enda's choice — WalkAbouts and
+Driving Tours untouched.
+
+**What changed:**
+1. New `buggy_friendly` boolean field on the Walk entity (default false).
+2. A "Buggy-Friendly" tick-box in the Walks and Hikes admin editor, next to the existing
+   "Free sample" toggle — admin-only, same as region/difficulty (structural, shouldn't
+   vary between language clones of the same tour).
+3. An always-visible "Buggy-Friendly" toggle chip in the customer's walk list — shown
+   only when browsing Walks and Hikes, sitting right under the search bar rather than
+   tucked inside the collapsible Filters panel, so it's never something a parent has to
+   go hunting for.
+4. A small badge on the walk's own card whenever it's marked buggy-friendly, visible even
+   without the filter turned on.
+
+New UI text (`list.buggyFriendly`, `card.buggyFriendly`) was only added in English —
+this app's translation system already falls back to English for any key without a
+translation yet, degrading gracefully rather than showing a broken token, so this needs
+no per-language work right now.
+
+**Verified:** wrote an 8-case standalone logic test of the filter predicate — confirms
+the toggle has no effect when off, correctly narrows to only buggy-friendly walks when
+on (including a walk with the field simply unset, which correctly does NOT count as
+buggy-friendly), and never applies at all outside the Walks and Hikes category even if
+the toggle was left on from an earlier session. All 8 passed. Confirmed the field isn't
+blocked by the customer-facing catalog's protected-fields list (it was never added
+there, same treatment as difficulty/region — visible on the teaser card before
+purchase too, exactly like difficulty already is). `npx eslint` on all four touched
+files shows only the same pre-existing, unrelated issues already noted in earlier
+entries. Full `rm -rf dist && npx vite build` completes with no errors.
+
+---
+
 ## 2026-09-06 (follow-up 143) — GPX/KML piracy audit: closed a narrator gap, deleted two dead legacy fields
 Scope: `src/components/admin/WalkEditor.jsx`, `src/components/admin/WalksDashboard.jsx`,
 `base44/entities/Walk.jsonc`, `base44/functions/getWalkCatalog/entry.ts`. **The

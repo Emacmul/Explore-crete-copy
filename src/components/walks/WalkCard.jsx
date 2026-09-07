@@ -1,7 +1,7 @@
 import React from 'react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Clock, Route, TrendingUp, ChevronRight, Sparkles } from 'lucide-react';
+import { Clock, Route, TrendingUp, ChevronRight, Sparkles, Baby } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useOfflineWalks } from '../offline/useOfflineWalks';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
@@ -56,6 +56,14 @@ export default function WalkCard({ walk, onClick, isSelected, accessible = true 
               {walk.is_sample_walk && (
                 <Badge variant="outline" className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200 flex items-center gap-1">
                   <Sparkles className="w-3 h-3" /> {t('card.sampleWalk')}
+                </Badge>
+              )}
+
+              {/* Per Enda/Anoushka (follow-up 144): visible even without the quick filter
+                  turned on, so a parent scanning the list spots it at a glance. */}
+              {walk.buggy_friendly && (
+                <Badge variant="outline" className="text-xs bg-pink-50 text-pink-700 border-pink-200 flex items-center gap-1">
+                  <Baby className="w-3 h-3" /> {t('card.buggyFriendly')}
                 </Badge>
               )}
 

@@ -33,6 +33,7 @@ const EMPTY_WALK = {
   description: '',
   difficulty: 'moderate',
   is_sample_walk: false,
+  buggy_friendly: false,
   distance_km: '',
   duration_hours: '',
   elevation_gain_m: '',
@@ -1504,6 +1505,23 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                     <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${form.is_sample_walk ? 'translate-x-5' : 'translate-x-0.5'}`} />
                   </button>
                   <span className="text-slate-300 text-sm">{form.is_sample_walk ? 'Yes' : 'No'}</span>
+                </div>
+              </div>
+              {/* Per Enda/Anoushka (follow-up 144): a young parent needs to know a route
+                  works with an ordinary buggy — no off-road/4x4-style buggy required —
+                  before they set off, not find out halfway up a rocky path. Tick this and
+                  the walk gets a quick filter + a badge on its card for customers. */}
+              <div>
+                <Label className="text-slate-300 mb-1.5 block">Buggy-Friendly</Label>
+                <div className="flex items-center gap-3 h-9 bg-slate-700 border border-slate-600 rounded-md px-3">
+                  <button
+                    type="button"
+                    onClick={() => set('buggy_friendly', !form.buggy_friendly)}
+                    className={`w-10 h-5 rounded-full transition-colors relative ${form.buggy_friendly ? 'bg-amber-500' : 'bg-slate-500'}`}
+                  >
+                    <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${form.buggy_friendly ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                  </button>
+                  <span className="text-slate-300 text-sm">{form.buggy_friendly ? 'Yes' : 'No'}</span>
                 </div>
               </div>
             </div>
