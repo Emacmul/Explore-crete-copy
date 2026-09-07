@@ -3,7 +3,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Search, Mountain, SlidersHorizontal, X, RefreshCw, Baby } from 'lucide-react';
+import { Search, Mountain, SlidersHorizontal, X, RefreshCw, Baby, Church } from 'lucide-react';
 import WalkCard from './WalkCard';
 import OfflineWalksBanner from '../offline/OfflineWalksBanner';
 import { getTourCategory } from '../../lib/tourCategories';
@@ -28,6 +28,13 @@ export default function WalkList({ walks, selectedWalk, onWalkSelect, searchQuer
   // parent looking for a buggy-suitable route doesn't have to go hunting for it.
   const [buggyFriendlyOnly, setBuggyFriendlyOnly] = useState(false);
   const showBuggyFriendlyToggle = tourCategoryCode === 'WHT';
+  // Per Enda (follow-up 145): WalkAbouts (WBT) only. main_interest is a comma-separated
+  // string of up to 3 tags (see the admin editor's "Main Interests" picker) — "Routes of
+  // Faith" is one of the existing tag options, now surfaced to customers as its own chip.
+  const [routeOfFaithOnly, setRouteOfFaithOnly] = useState(false);
+  const showRouteOfFaithToggle = tourCategoryCode === 'WBT';
+  const hasRouteOfFaith = (walk) =>
+    (walk.main_interest || '').split(',').map(s => s.trim()).includes('Routes of Faith');
 
   const activeFilterCount = [
     region !== 'all', difficulty !== 'all', maxDistance !== 'all', maxDuration !== 'all'
@@ -53,7 +60,8 @@ export default function WalkList({ walks, selectedWalk, onWalkSelect, searchQuer
       const matchesDistance = maxDistance === 'all' || (walk.distance_km || 0) <= Number(maxDistance);
       const matchesDuration = maxDuration === 'all' || (walk.duration_hours || 0) <= Number(maxDuration);
       const matchesBuggyFriendly = !showBuggyFriendlyToggle || !buggyFriendlyOnly || walk.buggy_friendly === true;
-      return matchesSearch && matchesRegion && matchesDifficulty && matchesDistance && matchesDuration && matchesBuggyFriendly;
+      const matchesRouteOfFaith = !showRouteOfFaithToggle || !routeOfFaithOnly || hasRouteOfFaith(walk);
+      return matchesSearch && matchesRegion && matchesDifficulty && matchesDistance && matchesDuration && matchesBuggyFriendly && matchesRouteOfFaith;
     })
     .sort((a, b) => {
       // Prefer tours narrated in the chosen UI language: matching tours float to the top,
@@ -137,6 +145,24 @@ export default function WalkList({ walks, selectedWalk, onWalkSelect, searchQuer
           >
             <Baby className="w-3.5 h-3.5" />
             {t('list.buggyFriendly')}
+          </button>
+        )}
+
+        {/* Route of Faith quick toggle — WalkAbouts only, same always-visible treatment
+            as the Buggy-Friendly one above, per Enda's follow-up 145 request. */}
+        {showRouteOfFaithToggle && (
+          <button
+            type="button"
+            onClick={() => setRouteOfFaithOnly(v => !v)}
+            aria-pressed={routeOfFaithOnly}
+            className={`mt-2 flex items-center gap-1.5 text-xs font-semibold rounded-full px-3 py-1.5 border transition-colors ${
+              routeOfFaithOnly
+                ? 'bg-amber-500 border-amber-400 text-white'
+                : 'bg-slate-700/50 border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white'
+            }`}
+          >
+            <Church className="w-3.5 h-3.5" />
+            {t('list.routeOfFaith')}
           </button>
         )}
 

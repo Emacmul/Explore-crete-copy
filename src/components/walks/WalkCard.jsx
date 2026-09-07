@@ -1,7 +1,7 @@
 import React from 'react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Clock, Route, TrendingUp, ChevronRight, Sparkles, Baby } from 'lucide-react';
+import { Clock, Route, TrendingUp, ChevronRight, Sparkles, Baby, Church } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useOfflineWalks } from '../offline/useOfflineWalks';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
@@ -24,6 +24,9 @@ export default function WalkCard({ walk, onClick, isSelected, accessible = true 
   const tourLang = getTourLanguage(walk);
   const uiLangName = LANGUAGE_NAME_BY_CODE[lang] || 'English';
   const showLangBadge = tourLang !== uiLangName;
+  // Per Enda (follow-up 145): main_interest is a comma-separated string of up to 3 tags
+  // (see the admin editor's "Main Interests" picker) — "Routes of Faith" is one of them.
+  const isRouteOfFaith = (walk.main_interest || '').split(',').map(s => s.trim()).includes('Routes of Faith');
 
   return (
     <motion.div
@@ -64,6 +67,14 @@ export default function WalkCard({ walk, onClick, isSelected, accessible = true 
               {walk.buggy_friendly && (
                 <Badge variant="outline" className="text-xs bg-pink-50 text-pink-700 border-pink-200 flex items-center gap-1">
                   <Baby className="w-3 h-3" /> {t('card.buggyFriendly')}
+                </Badge>
+              )}
+
+              {/* Per Enda (follow-up 145): visible even without the quick filter turned
+                  on, same treatment as Buggy-Friendly above. */}
+              {isRouteOfFaith && (
+                <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700 border-purple-200 flex items-center gap-1">
+                  <Church className="w-3 h-3" /> {t('card.routeOfFaith')}
                 </Badge>
               )}
 

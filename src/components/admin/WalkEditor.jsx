@@ -1490,7 +1490,14 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
             </div>
             )}
 
-            {!isDrivingAudioTour && !isNarrator && (
+            {/* Per Enda/Anoushka (follow-up 145): Main Interests now also opens up for
+                WalkAbouts (WBT) — see the narrower `!isDrivingAudioTour` check further
+                below for the Free sample / Buggy-Friendly toggles, which stay Walks and
+                Hikes only; only Main Interests needed to widen. Driving Tours (DDV) are
+                untouched either way, exactly as asked. */}
+            {(!isDrivingAudioTour || form.tour_category === 'WBT') && !isNarrator && (
+            <>
+            {!isDrivingAudioTour && (
             <>
             {/* Walk access — pricing/publishing configuration, admin-only */}
             <div className="grid grid-cols-2 gap-4">
@@ -1525,8 +1532,13 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 </div>
               </div>
             </div>
+            </>
+            )}
 
-            {/* Main Interests — tour categorisation/discovery metadata, admin-only */}
+            {/* Main Interests — tour categorisation/discovery metadata, admin-only. Walks
+                and Hikes gets the full up-to-3 picker; WalkAbouts gets the same picker
+                (per Enda's follow-up 145 "Route of Faith" request) so a theme like Routes
+                of Faith can be tagged and then found by customers. */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <Label className="text-slate-300">

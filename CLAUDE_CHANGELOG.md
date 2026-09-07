@@ -67,6 +67,51 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-07 (follow-up 145) — "Route of Faith" theme section for WalkAbouts
+Scope: `src/components/admin/WalkEditor.jsx`, `src/components/walks/WalkList.jsx`,
+`src/components/walks/WalkCard.jsx`, `src/lib/i18n/index.js`. Frontend-only, no
+backend redeploy needed — the `main_interest` field this reuses already existed.
+
+**Per Enda:** reviving the "Route of Faith" concept — WalkAbouts themed around
+Byzantine churches, frescoes, and icons, aimed at the growing "religious tourism"
+segment that large organised-tour operators tend to leave people disappointed with.
+Wanted these findable as their own section within WalkAbouts, not buried in the
+general list.
+
+**What was found before building anything:** most of this already existed, unused.
+The Walks and Hikes admin editor already has a "Main Interests" tag picker (pick up to
+3), and "Routes of Faith" was already one of its options — added at some earlier point
+but never switched on for WalkAbouts, and never surfaced to customers at all (the
+`interest.*` translation keys for every one of these tags, including Routes of Faith,
+already existed too, sitting unused).
+
+**What changed:**
+1. The "Main Interests" tag picker now also opens up for WalkAbouts (WBT) in the admin
+   editor — previously it only showed for Walks and Hikes. Driving Tours (DDV) are
+   untouched, and the neighbouring "Free sample" / "Buggy-Friendly" toggles stay
+   Walks-and-Hikes-only exactly as before — only Main Interests needed widening.
+2. An always-visible "Route of Faith" filter chip on the customer's WalkAbout list,
+   same treatment as the Buggy-Friendly chip from follow-up 144 — sits right under the
+   search bar, shown only when browsing WalkAbouts.
+3. A badge on any WalkAbout's card tagged "Routes of Faith", visible even without the
+   filter turned on.
+
+Scoped to exactly this one theme, per Enda's choice — Wild Flowers, History, Mythology,
+Archaeology, and Photography stay dormant in the same picker, easy to switch on the same
+way later if wanted.
+
+**Verified:** wrote an 18-case standalone logic test covering three things: the
+comma-separated tag parsing (matches "Routes of Faith" as one of several tags, tolerates
+extra whitespace, doesn't match on other tags, and doesn't false-positive on a tag that
+merely contains the word "Faith"); the customer filter predicate (WBT-only, on/off
+behaviour matching the Buggy-Friendly pattern); and the admin editor's visibility gating
+(Main Interests now shows for WHT and WBT but still not DDV or narrators; Free
+sample/Buggy-Friendly remain WHT-only, unchanged). All 18 passed. `npx eslint` on all
+four touched files shows only the same pre-existing, unrelated issues already noted in
+earlier entries. Full `rm -rf dist && npx vite build` completes with no errors.
+
+---
+
 ## 2026-09-07 (follow-up 144) — "Buggy-Friendly" sub-category for Walks and Hikes
 Scope: `base44/entities/Walk.jsonc`, `src/components/admin/WalkEditor.jsx`,
 `src/components/walks/WalkList.jsx`, `src/components/walks/WalkCard.jsx`,
