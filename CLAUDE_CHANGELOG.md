@@ -67,6 +67,47 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-07 (follow-up 146) — Fix "Location Number" field silently incrementing itself
+Scope: `src/components/admin/DrivingTourWaypointEditor.jsx` only. Frontend-only, no
+backend redeploy needed.
+
+**Per Enda:** "In Waypoints tab, we changed the label from segment number to Location
+number, that is ook, but it doesn't hold the location number went entered. It insists on
+feeding in incremental numbers, increasing by 1."
+
+**Investigation:** this needed a real reproduction, not a code-reading guess — static
+review of the component's state logic looked correct. Ruled out, in order: leading-zero
+stripping on the field; a mouse-wheel-scroll auto-increment (inconclusive in headless
+testing, but not the reported trigger); a React state bug where the app silently
+overwrites what was typed (built a real component-level test harness rendering the actual
+`DrivingTourWaypointEditor.jsx` with React Testing Library — typing, blurring, and
+submitting all faithfully kept the typed value, so the app's own logic was never at
+fault); and a save-time recalculation (`WalkEditor.jsx`'s save flow never touches
+`segment_number`). Confirmed cause via direct browser reproduction: both "Location
+Number" fields were plain `<input type="number">`. On that native input type, pressing
+the Up/Down arrow keys while the field is focused (or scrolling the mouse wheel while
+hovering over it, a well-known Chrome/Firefox behaviour) silently bumps the value up or
+down by 1 — invisible to the app's own code, which is why nothing in the component logic
+looked wrong. This exactly matches "insists on feeding in incremental numbers, increasing
+by 1."
+
+**What changed:** both Location Number fields (the "Add Waypoint" form and each existing
+waypoint's own edit row) changed from `type="number"` to a plain text field
+(`type="text" inputMode="numeric"`) with digits-only filtering on every keystroke. This
+removes the arrow-key/scroll-wheel auto-increment entirely — typing still only accepts
+digits, and the numeric keypad still shows on mobile/tablet — while leading zeros (e.g.
+"07") still type and display exactly as entered, unchanged from before.
+
+**Verified:** extended the real component-level test harness with two regression cases —
+pressing ArrowUp three times on a field showing "01" now leaves it at "01" (previously
+would have become "04"), and non-digit keystrokes are filtered out while a typed leading
+zero ("07") is preserved exactly. All 5 cases in the harness passed (the 3 kept from the
+original investigation, plus the 2 new regression cases). `npx eslint` on the touched file
+shows only the same pre-existing, unrelated `Textarea` unused-import issue already noted
+in earlier entries. Full `rm -rf dist && npx vite build` completes with no errors.
+
+---
+
 ## 2026-09-07 (follow-up 145) — "Route of Faith" theme section for WalkAbouts
 Scope: `src/components/admin/WalkEditor.jsx`, `src/components/walks/WalkList.jsx`,
 `src/components/walks/WalkCard.jsx`, `src/lib/i18n/index.js`. Frontend-only, no

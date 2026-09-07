@@ -802,9 +802,9 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                 <div>
                   <Label className="text-slate-400 text-xs mb-1 block">Location Number</Label>
                   <Input
-                    type="number" min="1"
+                    type="text" inputMode="numeric" pattern="[0-9]*"
                     value={newWp.segment_number}
-                    onChange={e => setNewWp(p => ({ ...p, segment_number: e.target.value }))}
+                    onChange={e => setNewWp(p => ({ ...p, segment_number: e.target.value.replace(/\D/g, '') }))}
                     placeholder={nextSegmentNumber()}
                     className="bg-slate-700 border-slate-500 text-white font-mono"
                   />
@@ -1117,9 +1117,9 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                           <div>
                             <Label className="text-slate-400 text-xs mb-1 block">Location Number</Label>
                             <Input
-                              type="number" min="1"
+                              type="text" inputMode="numeric" pattern="[0-9]*"
                               value={wp.segment_number || ''}
-                              onChange={e => updateWaypoint(index, 'segment_number', e.target.value)}
+                              onChange={e => updateWaypoint(index, 'segment_number', e.target.value.replace(/\D/g, ''))}
                               className="bg-slate-700 border-slate-500 text-white font-mono h-8 text-sm"
                             />
                           </div>
