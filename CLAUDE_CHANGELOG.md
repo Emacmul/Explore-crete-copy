@@ -67,6 +67,63 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-08 (follow-up 148) — Master-tour delete warning was invisible; "TestTour" reinstated
+Scope: `src/components/admin/WalkAdminList.jsx`, `src/components/admin/AdminStartScreen.jsx`.
+Frontend-only, no backend redeploy needed. Also directly recreated the "TestTour"
+database record via the Base44 data tools (not a code change).
+
+**Per Enda:** he deleted the "TestTour" tour from the app's own "Manage Tours"
+screen and never saw an "are you sure?" warning first, or the warning wasn't
+doing its job. Asked for a real two-step delete (delete → are you sure? → yes)
+and for the test tour to be rebuilt — this time from BOR1 AND BOR2 of "The
+Battle of the Rivers", not BOR1 alone, since BOR1 opens with a stationary
+orientation waypoint (an exception) and he didn't want that to be the only
+example a new narrator sees.
+
+**Investigation:** the "Delete this tour?" confirmation Enda described already
+existed in the code (two clicks: the trash icon, then "Yes, delete tour" in a
+pop-up) — so the report was really "the warning isn't visible enough", not "the
+warning is missing". Checked why: this app is dark (slate/purple) everywhere,
+but this dialog (and two others sharing the same underlying component —
+"Delete this clone?" in the Narrator Studio, and the "Push back for
+correction" dialog) never had dark styling applied, so they were rendering
+using the shadcn default LIGHT theme — a plain white box popping up in an
+otherwise all-dark screen. This app has hit this exact bug before (see the
+standing "never a white button background" rule further up this file) — every
+other dialog in the app (Manage Users, Clone Tour, Gift a Tour, Pronunciation
+Dictionary) already carries the dark-styling fix; these three were simply
+missed at the time.
+
+**What changed:**
+1. Fixed the white-box styling on all three affected dialogs so they now
+   render dark, matching the rest of the app.
+2. The "Delete this tour?" dialog is also now much harder to miss or click
+   through: a red border, a warning icon, and a bold callout right in the text.
+3. Specifically for a MASTER tour (never a narrator's own translation clone,
+   which is lower-stakes and easily redone) — the exact case Enda hit — "Yes,
+   delete tour" now stays disabled until the tour's own code is typed into a
+   box first. This makes an accidental delete effectively impossible, since it
+   can no longer happen from a fast double-click.
+4. Recreated "TestTour" directly in the database: a small sandbox tour visible
+   only to admins/narrators (never to real customers — it has no shop price,
+   so it can never be bought or show up as a broken listing), combining BOR1
+   and BOR2's real waypoints, narration and audio from "The Battle of the
+   Rivers", per Enda's request.
+
+**Verified:** wrote a 7-case standalone logic test for the new "type the code
+to confirm" gate — covers case-insensitive matching, leading/trailing spaces
+being ignored, a wrong code staying blocked, and clones never being gated at
+all. All 7 passed. `npx eslint` on both touched files shows only pre-existing,
+unrelated issues (confirmed via `git diff` that neither is introduced by this
+change). Full `rm -rf dist && npx vite build` completes with no errors. The
+recreated "TestTour" record was queried back from the database afterward to
+confirm all 17 waypoints, their narration scripts and audio links saved
+correctly, and that it's flagged so narrators can clone it (`admin_completed:
+true`) while it stays invisible to real customers (`approved: false`, no
+shop price).
+
+---
+
 ## 2026-09-08 (follow-up 147) — Admins/narrators get every English tour for free
 Scope: `base44/functions/saveWalkForBackend/entry.ts`, `base44/functions/saveAppUserAdmin/entry.ts`,
 new `base44/shared/narratorFreeTours.ts`. Backend-only — both touched functions

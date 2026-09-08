@@ -280,19 +280,27 @@ export default function AdminStartScreen({
           )}
         </div>
 
+        {/* Per Enda (2026-09-08): same white-box fix as the master-tour delete dialog in
+            WalkAdminList.jsx — was rendering unstyled/light against this app's dark admin
+            UI, easy to miss. A clone is a narrator's own in-progress translation (lower
+            stakes than a master tour — it can be re-cloned and redone), so this keeps the
+            simpler Cancel/Confirm pattern rather than also requiring typed confirmation. */}
         <AlertDialog open={!!deleteTarget} onOpenChange={open => !open && !isDeletingClone && setDeleteTarget(null)}>
-          <AlertDialogContent>
+          <AlertDialogContent className="bg-slate-800 border-2 border-red-600 text-white">
             <AlertDialogHeader>
-              <AlertDialogTitle>Delete this clone?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This will permanently delete your <strong>{deleteTarget?.target_language}</strong> translation of
-                “<strong>{deleteTarget?.name}</strong>” — every waypoint, script edit, and audio you've done on it
+              <AlertDialogTitle className="flex items-center gap-2 text-red-400 text-xl">
+                <AlertTriangle className="w-6 h-6 shrink-0" />
+                Delete this clone?
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-slate-300">
+                This will permanently delete your <strong className="text-white">{deleteTarget?.target_language}</strong> translation of
+                “<strong className="text-white">{deleteTarget?.name}</strong>” — every waypoint, script edit, and audio you've done on it
                 so far. This can't be undone. Once it's deleted, that tour becomes available to clone again,
                 so you can start over from scratch.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel disabled={isDeletingClone}>Cancel</AlertDialogCancel>
+              <AlertDialogCancel disabled={isDeletingClone} className="bg-slate-700 border-slate-600 text-white hover:bg-slate-600 hover:text-white">Cancel</AlertDialogCancel>
               <AlertDialogAction
                 onClick={(e) => { e.preventDefault(); confirmDeleteClone(); }}
                 disabled={isDeletingClone}

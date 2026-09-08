@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Trash2, Mountain, Loader2, MapPin, Pencil, CalendarCheck, AlertTriangle, RefreshCw, Undo2, Languages } from 'lucide-react';
 import { toast } from '@/components/ui/use-toast';
@@ -34,6 +35,11 @@ const daysSince = (isoString) => {
 
 export default function WalkAdminList({ walks, isLoading, onEdit, onDelete, onMarkChecked, onToggleFree, onPushBack, onRefresh, userRole = 'admin' }) {
   const [confirmDelete, setConfirmDelete] = React.useState(null); // holds the walk object
+  // Per Enda (2026-09-08 report): typed here before "Yes, delete tour" unlocks, only for
+  // a MASTER tour (never a clone — a narrator's own clone is already lower-stakes and
+  // easily redone). Must exactly match the tour's own code, so a delete can't happen from
+  // a fast double-click or a misclick — it takes actually reading and typing the code.
+  const [deleteConfirmText, setDeleteConfirmText] = React.useState('');
   const [isDeleting, setIsDeleting] = React.useState(false);
   const [markingChecked, setMarkingChecked] = React.useState(null); // walk id currently being marked
   const [togglingFree, setTogglingFree] = React.useState(null); // walk id currently being toggled
@@ -44,15 +50,23 @@ export default function WalkAdminList({ walks, isLoading, onEdit, onDelete, onMa
 
   const handleDelete = (walk) => {
     setConfirmDelete(walk);
+    setDeleteConfirmText('');
   };
+
+  // A master tour (never a clone) needs its code typed out before it can be deleted —
+  // see the note by deleteConfirmText's declaration above.
+  const isMasterTourDelete = !!confirmDelete && !confirmDelete.clone_of;
+  const deleteConfirmMatches = !isMasterTourDelete
+    || deleteConfirmText.trim().toLowerCase() === (confirmDelete?.code || '').trim().toLowerCase();
 
   const confirmDeleteWalk = async () => {
     const id = confirmDelete?.id;
-    if (!id) return;
+    if (!id || !deleteConfirmMatches) return;
     setIsDeleting(true);
     try {
       await onDelete(id);
       setConfirmDelete(null);
+      setDeleteConfirmText('');
     } catch (e) {
       console.error('Delete failed:', e);
       toast({
@@ -267,20 +281,56 @@ export default function WalkAdminList({ walks, isLoading, onEdit, onDelete, onMa
         </div>
       )}
 
-      <AlertDialog open={!!confirmDelete} onOpenChange={open => !open && setConfirmDelete(null)}>
-        <AlertDialogContent>
+      {/* Per Enda (2026-09-08): this dialog was previously unstyled, so it rendered as a
+          plain white box against this app's otherwise all-dark admin screens — easy to
+          miss or click through without really registering it (same class of "unstyled
+          default against a dark app" issue already fixed for buttons elsewhere — see the
+          standing rule at the top of this changelog). Now explicitly dark, red-bordered,
+          with a warning icon, and — for a MASTER tour specifically — requires typing the
+          tour's own code before "Yes, delete tour" will even unlock. */}
+      <AlertDialog open={!!confirmDelete} onOpenChange={open => { if (!open) { setConfirmDelete(null); setDeleteConfirmText(''); } }}>
+        <AlertDialogContent className="bg-slate-800 border-2 border-red-600 text-white">
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete this tour?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action is irreversible and all tour details for <strong>{confirmDelete?.name}</strong> will be permanently deleted.
+            <AlertDialogTitle className="flex items-center gap-2 text-red-400 text-xl">
+              <AlertTriangle className="w-6 h-6 shrink-0" />
+              Delete this tour?
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="text-slate-300 space-y-3 pt-1">
+                <p>
+                  This action is <strong className="text-red-400">irreversible</strong> — every waypoint,
+                  script and audio file for <strong className="text-white">{confirmDelete?.name}</strong> will
+                  be permanently deleted.
+                </p>
+                {isMasterTourDelete && (
+                  <>
+                    <p className="text-amber-400 font-semibold">
+                      This is a MASTER tour, not a translation clone — deleting it removes the English original
+                      for every language, not just one.
+                    </p>
+                    <p>
+                      To confirm, type this tour's code — <strong className="text-white font-mono">{confirmDelete?.code}</strong> — below:
+                    </p>
+                    <Input
+                      autoFocus
+                      value={deleteConfirmText}
+                      onChange={e => setDeleteConfirmText(e.target.value)}
+                      placeholder={confirmDelete?.code}
+                      className="bg-slate-900 border-slate-600 text-white font-mono"
+                    />
+                  </>
+                )}
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel className="bg-slate-700 border-slate-600 text-white hover:bg-slate-600 hover:text-white">
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={(e) => { e.preventDefault(); confirmDeleteWalk(); }}
-              disabled={isDeleting}
-              className="bg-red-600 hover:bg-red-700 text-white"
+              disabled={isDeleting || !deleteConfirmMatches}
+              className="bg-red-600 hover:bg-red-700 text-white disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-red-600"
             >
               {isDeleting ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
               Yes, delete tour
@@ -289,13 +339,15 @@ export default function WalkAdminList({ walks, isLoading, onEdit, onDelete, onMa
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Same white-box fix as the delete dialog above — was rendering unstyled/light
+          against this app's dark admin UI. */}
       <Dialog open={!!pushBackTarget} onOpenChange={open => !open && setPushBackTarget(null)}>
-        <DialogContent>
+        <DialogContent className="bg-slate-800 border-slate-700 text-white">
           <DialogHeader>
             <DialogTitle>Push back for correction</DialogTitle>
-            <DialogDescription>
-              <strong>{pushBackTarget?.name}</strong> will be unpublished and sent back to{' '}
-              <strong>{pushBackTarget?.assigned_narrator_email || 'the narrator'}</strong> to fix.
+            <DialogDescription className="text-slate-300">
+              <strong className="text-white">{pushBackTarget?.name}</strong> will be unpublished and sent back to{' '}
+              <strong className="text-white">{pushBackTarget?.assigned_narrator_email || 'the narrator'}</strong> to fix.
               They won't be able to start any new translation until this one is corrected
               and re-published.
             </DialogDescription>
@@ -305,6 +357,7 @@ export default function WalkAdminList({ walks, isLoading, onEdit, onDelete, onMa
             onChange={e => setPushBackReason(e.target.value)}
             placeholder="What needs fixing? e.g. 'The word for church on waypoint 3 is misspelled' or 'The safety notes paragraph reads awkwardly'"
             rows={4}
+            className="bg-slate-900 border-slate-600 text-white placeholder:text-slate-500"
           />
           <DialogFooter>
             <Button variant="ghost" onClick={() => setPushBackTarget(null)}>Cancel</Button>
