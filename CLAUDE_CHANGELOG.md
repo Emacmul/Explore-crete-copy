@@ -67,6 +67,74 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-08 (follow-up 149) — "Segment Number" was never actually saving; found and fixed the real cause
+Scope: `base44/entities/Walk.jsonc` (schema fix, no backend redeploy needed — same as
+the `waypoint_done` precedent above), `src/components/admin/DrivingTourWaypointEditor.jsx`
+(label text only, frontend-only, no redeploy needed). Also directly repaired the live
+"BOR", "WAR" and "TestTour" database records via the Base44 data tools (not a code
+change — nothing for Enda to do for this part).
+
+**Per Enda:** he reported that the "Location Number" field in the Waypoints tab had
+again replaced his correctly-typed numbers with nonsensical sequential ones — even
+though this looked like the follow-up 146 bug (native `type="number"` input arrow-key
+auto-increment), which was already fixed.
+
+**Investigation:** followed the binding rule — investigated fully before proposing
+anything. The follow-up 146 fix was still intact and correct; this was a second,
+unrelated bug. Found it by direct evidence, not guesswork: while rebuilding "TestTour"
+last session, `segment_number` was silently missing from the newly-created record even
+though it had been passed in. Checked why — `Walk.jsonc`'s `waypoints[]` schema never
+declared a `segment_number` property at all, and Base44 silently strips any field a
+save doesn't recognise. Confirmed this was really happening on Enda's own real saves,
+not just mine: queried the live "BOR" tour seconds after Enda had saved it himself, and
+`segment_number` was completely absent from all 122 waypoints. So every Location Number
+he ever typed was discarded the instant he saved — the field never worked since it was
+added, regardless of the follow-up 146 input-type fix. What looked like "replaced with
+sequential numbers" was `DrivingTourWaypointEditor.jsx`'s mount-only auto-fill effect,
+which assigns a fresh incrementing number to any waypoint missing `segment_number` — and
+since it never actually saved, that effect fired fresh on every reload. The visible
+"BOR1"/"BOR2" labels stayed correct throughout because those come from a different,
+unaffected field (`segment_id`), which is why the corruption wasn't obvious from the tab.
+
+Enda then asked directly whether the field does anything or is purely cosmetic. Traced
+actual usages across the codebase rather than assuming: `segment_number` is the exact
+grouping key `SegmentScriptManager.jsx` ("Segment Script Manager" / "Combine Scripts")
+uses to group waypoints into stops and merge their narration into one combined script
+per stop for audio production — not cosmetic. It plays no role in the Waypoints tab's
+own grouping (that uses `segment_id`, deliberately, per an existing follow-up 67 code
+comment).
+
+**What changed:**
+1. Added `segment_number` to `Walk.jsonc`'s waypoint schema, so it now actually saves.
+2. Directly restored the lost values for "BOR" (122 waypoints), "WAR" (87 waypoints,
+   found to have the identical corruption while checking BOR) and "TestTour" (17
+   waypoints) in the live database — not guessed, but read back from each waypoint's
+   still-intact `segment_id` label (e.g. "BOR7" → segment_number "7"), which the
+   corruption never touched. Verified the derivation against the live data immediately
+   before writing, and again by querying every record back afterward: zero mismatches,
+   zero missing values, correct grouping counts throughout.
+3. Per Enda's follow-up instruction, changed the field's label back from "Location
+   Number" to "Segment Number" everywhere it appears in the Waypoints tab (the Add
+   Waypoint form, the per-waypoint edit form, and the collapsed-row fallback text), and
+   updated the code comment and the new schema description to match.
+
+**Verified:** confirmed live, before writing anything, that `segment_number` was still
+completely absent from BOR's and WAR's real waypoints (not already fixed by something
+else) and that the intended restore values matched a fresh read of the current data
+exactly. After writing, queried all three tours back from the database and confirmed
+every waypoint's `segment_number` now matches its `segment_id`'s number with no gaps or
+mismatches. `npx eslint` on the touched frontend file shows only one pre-existing,
+unrelated issue (confirmed via `git diff` it isn't introduced by this change). Full
+`rm -rf dist && npx vite build` completes with no errors.
+
+**Not done / worth knowing for next time:** the BOR/WAR/TestTour data repair was done
+directly in the live database, not through a code change — nothing for Enda to sync or
+redeploy for that part. He only needs the normal sync + hard-refresh + republish for the
+schema and label changes in this zip, same as any other change (per the standing rule,
+`base44/entities/*.jsonc` changes need no special per-function redeploy).
+
+---
+
 ## 2026-09-08 (follow-up 148) — Master-tour delete warning was invisible; "TestTour" reinstated
 Scope: `src/components/admin/WalkAdminList.jsx`, `src/components/admin/AdminStartScreen.jsx`.
 Frontend-only, no backend redeploy needed. Also directly recreated the "TestTour"

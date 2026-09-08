@@ -42,7 +42,7 @@ function letterForIndexInGroup(index, segGroup) {
 }
 
 function buildNarrationExportFilename(wp, segGroup, index) {
-  const locationLabel = wp.segment_id || (wp.segment_number ? `Location ${wp.segment_number}` : `Waypoint ${index + 1}`);
+  const locationLabel = wp.segment_id || (wp.segment_number ? `Segment ${wp.segment_number}` : `Waypoint ${index + 1}`);
   const letter = letterForIndexInGroup(index, segGroup);
   const roleLabel = getRoleLabel(wp.waypoint_role);
   const parts = [`${locationLabel}${letter}`, roleLabel, wp.segment_title]
@@ -690,13 +690,15 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
     e.target.value = '';
   };
 
-  // Per Enda's report (2026-09-06): the field below (and its twin in the per-waypoint
-  // edit form further down) was labelled "Segment Number" — but `segment_number` is
-  // the LOCATION-level index shared by every waypoint at one stop (see routeExport.js's
-  // buildSegmentId comment), the same thing `segment_title` already correctly calls
-  // "Location Title" right next to it. Relabelled both to "Location Number" to match.
-  // The real, per-waypoint segment identifier (e.g. "BRZ1a-PS") is a naming convention
-  // built from this location code + a letter + role, not a separate editable field.
+  // Per Enda's report (2026-09-06) the field below (and its twin in the per-waypoint
+  // edit form further down) was briefly relabelled "Location Number" — but per Enda's
+  // follow-up (2026-09-08), once the real bug (segment_number missing from the Walk
+  // entity schema, silently dropping every save — see Walk.jsonc) was found and fixed,
+  // he asked for the label to go back to "Segment Number". `segment_number` is the
+  // LOCATION-level index shared by every waypoint at one stop (see routeExport.js's
+  // buildSegmentId comment) and feeds the Segment Script Manager's grouping — it is not
+  // cosmetic. The real, per-waypoint segment identifier (e.g. "BRZ1a-PS") is a naming
+  // convention built from this location code + a letter + role, not a separate field.
   return (
     <div className="space-y-5">
       <div>
@@ -800,7 +802,7 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                   </Select>
                 </div>
                 <div>
-                  <Label className="text-slate-400 text-xs mb-1 block">Location Number</Label>
+                  <Label className="text-slate-400 text-xs mb-1 block">Segment Number</Label>
                   <Input
                     type="text" inputMode="numeric" pattern="[0-9]*"
                     value={newWp.segment_number}
@@ -909,7 +911,7 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                 <div className="flex items-center gap-3 pt-4 pb-1 px-1">
                   <div className="h-px flex-1 bg-amber-500/70" />
                   <span className="text-xs font-semibold text-amber-400 tracking-wider uppercase shrink-0">
-                    {wp.segment_id || `Location ${wp.segment_number}`}
+                    {wp.segment_id || `Segment ${wp.segment_number}`}
                   </span>
                   <div className="h-px flex-1 bg-amber-500/70" />
                 </div>
@@ -1115,7 +1117,7 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                             </Select>
                           </div>
                           <div>
-                            <Label className="text-slate-400 text-xs mb-1 block">Location Number</Label>
+                            <Label className="text-slate-400 text-xs mb-1 block">Segment Number</Label>
                             <Input
                               type="text" inputMode="numeric" pattern="[0-9]*"
                               value={wp.segment_number || ''}

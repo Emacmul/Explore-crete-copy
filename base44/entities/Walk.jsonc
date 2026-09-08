@@ -211,6 +211,10 @@
             "type": "string",
             "description": "Segment/waypoint code \u2014 e.g. BOR03 for driving/WalkAbout tour segments, or MXR14 for a plain walk/hike waypoint"
           },
+          "segment_number": {
+            "type": "string",
+            "description": "Admin/narrator-entered code shared by every waypoint at one stop (shown as \"Segment Number\" in the Waypoints tab), used to build segment_id via buildSegmentId(tourCode, segmentNumber) and as the grouping key for the Segment Script Manager's combined-script feature \u2014 not cosmetic. Was missing from this schema entirely until follow-up 149 \u2014 Base44 silently drops any waypoint field that isn't declared here on save, so every typed Segment Number was discarded the moment the tour was saved, then re-guessed as a plain incrementing sequence the next time the editor loaded (see DrivingTourWaypointEditor.jsx's mount-only auto-fill effect, which only ever fires for a waypoint missing this field)."
+          },
           "segment_title": {
             "type": "string",
             "description": "Driving tour segment title"
