@@ -67,6 +67,59 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-08 (follow-up 147) — Admins/narrators get every English tour for free
+Scope: `base44/functions/saveWalkForBackend/entry.ts`, `base44/functions/saveAppUserAdmin/entry.ts`,
+new `base44/shared/narratorFreeTours.ts`. Backend-only — both touched functions
+need their manual redeploy step (add/remove a blank line, redeploy) in Base44.
+
+**Per Enda:** "When an English language tour gets published and is made available
+for purchase, I want each registered admin/narrator to receive that tour in their
+library as a free tour so that, if they want to, they have the opportunity to get
+do the tour and get the right 'feel' for it before they start translating." He
+also confirmed new narrators must get ALL existing and future English tours, not
+just ones published after they join, since they'll be translating the older ones
+too.
+
+**What was found before building anything:** the app already has a manual
+"gift a tour for free" mechanism (`grantWalk.ts` / `purchaseRecorder.ts`) —
+recording a `Purchase` with `processor: "manual"` against a walk's
+`creem_product_id` and a person's email, which is the exact same record the
+catalogue already reads to decide who owns what. This was reused rather than
+building a second, parallel way of granting access.
+
+**What changed:** two moments now trigger an automatic free grant, both routed
+through the same shared helper (`narratorFreeTours.ts`) so a person can never end
+up owning a tour through one path but not the other:
+1. `saveWalkForBackend.ts` — the moment an English tour (never a translation
+   clone) actually goes live for purchase (the `approved` false→true transition),
+   every CURRENT admin/narrator/super-admin is gifted that tour.
+2. `saveAppUserAdmin.ts` — the moment someone is genuinely promoted into
+   narrator/admin/super_admin, they're gifted every English tour already
+   published up to that point.
+
+Both are wrapped in try/catch so a problem in the gifting step can never block
+the actual tour publish or the actual role change from going through. A tour
+still can't be gifted before it has a Creem product id set (same rule the manual
+gift tool already enforces) — publishing a tour before its shop pricing is set up
+means the auto-gift simply doesn't happen for it (no error shown to Enda; it's a
+silent no-op, matching how the manual gift tool already treats this case).
+Applies to all three tour types (WHT/WBT/DDV), since narrators translate all of
+them.
+
+**Verified:** wrote a 7-case standalone logic test (bundled the real
+`narratorFreeTours.ts` + `purchaseRecorder.ts` with esbuild and ran them against
+an in-memory mock of the Base44 entity client) covering: publishing gifts every
+narrator/admin/super-admin but never a plain customer; a walk with no
+`creem_product_id` yet is silently skipped; a translation clone never triggers a
+grant; a newly promoted narrator receives every already-published English tour
+(including a legacy tour whose `approved` field was never explicitly set, but
+correctly excluding a draft tour, a tour with no product id, and a translation
+clone); and re-running either grant path twice never creates duplicate records.
+All 7 passed. Both edited backend files were also bundle-compiled with esbuild
+as a syntax/type sanity check — clean on both.
+
+---
+
 ## 2026-09-07 (follow-up 146) — Fix "Location Number" field silently incrementing itself
 Scope: `src/components/admin/DrivingTourWaypointEditor.jsx` only. Frontend-only, no
 backend redeploy needed.

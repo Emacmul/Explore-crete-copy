@@ -12,6 +12,10 @@ import { wrapClientWithRetry } from '../../shared/withEntityRetry.ts';
 // read/write split explicit at every call site below; behaviour is
 // unchanged, only the names and where they're declared.
 import { NARRATOR_WALK_WRITE_FIELDS, NARRATOR_WAYPOINT_WRITE_FIELDS } from '../../shared/narratorWalkFields.ts';
+// Per Enda's follow-up 146: the moment an English tour is actually published,
+// every current admin/narrator gets it for free — see narratorFreeTours.ts for
+// the full reasoning.
+import { grantTourToAllNarrators } from '../../shared/narratorFreeTours.ts';
 
 // Top-level Walk fields a narrator may change on their own clone. Everything
 // else (region, difficulty, distance_km, duration_hours, elevation_gain_m,
@@ -121,14 +125,20 @@ export default async function(req) {
       // an Admin builds directly — same rule, same check, both go through this one
       // saveWalkForBackend admin branch either way.
       if (id) {
+        // Fetched once, before the save, and reused for two separate checks below:
+        // the audio-readiness gate right here, and (further down) deciding whether
+        // this save is the actual moment the tour goes live — the false->true
+        // transition on `approved` — which triggers the free-tour grant to
+        // narrators/admins.
+        let existingBeforeSave = null;
         // This only fires on the actual false->true transition, so it never
         // retroactively blocks editing an already-published tour (which predates
         // this field and has no final_audio_applied stamps of its own) — it only
         // gates the moment a tour is (re)approved.
         if (patch.approved === true) {
-          const existing = await base44.asServiceRole.entities.Walk.get(String(id));
-          if (existing && existing.approved !== true) {
-            const waypoints = ('waypoints' in patch) ? patch.waypoints : existing.waypoints;
+          existingBeforeSave = await base44.asServiceRole.entities.Walk.get(String(id));
+          if (existingBeforeSave && existingBeforeSave.approved !== true) {
+            const waypoints = ('waypoints' in patch) ? patch.waypoints : existingBeforeSave.waypoints;
             const notReady = (waypoints || []).filter((wp: any) => wp && wp.trigger_audio && !wp.final_audio_applied);
             if (notReady.length > 0) {
               return Response.json({
@@ -138,6 +148,25 @@ export default async function(req) {
           }
         }
         const saved = await base44.asServiceRole.entities.Walk.update(String(id), patch);
+
+        // Per Enda (follow-up 146): the moment an English tour (never a translation
+        // clone) actually goes live for purchase, every current admin/narrator gets
+        // it added to their own library for free — same mechanism as the manual
+        // "gift a tour" action — so they can experience it themselves before
+        // translating. Best-effort: a problem here must never block the tour from
+        // actually publishing.
+        const isFreshPublish = patch.approved === true
+          && existingBeforeSave
+          && existingBeforeSave.approved !== true
+          && !existingBeforeSave.clone_of;
+        if (isFreshPublish) {
+          try {
+            await grantTourToAllNarrators(base44, saved);
+          } catch (grantError) {
+            console.error('Free-tour grant to narrators/admins failed (tour is still published):', grantError);
+          }
+        }
+
         return Response.json({ ok: true, walk: saved });
       }
       // Brand-new tour (master or otherwise) — the entity schema itself still

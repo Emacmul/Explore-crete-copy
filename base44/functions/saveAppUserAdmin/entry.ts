@@ -1,6 +1,10 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 import { isAppAdmin, isSuperAdmin } from '../../shared/appUserAuth.ts';
 import { hashPassword } from '../../shared/passwordHash.ts';
+// Per Enda's follow-up 146: the moment someone becomes a narrator/admin/super
+// admin, they get every already-published English tour for free — see
+// narratorFreeTours.ts for the full reasoning.
+import { grantAllPublishedToursToNarrator } from '../../shared/narratorFreeTours.ts';
 
 // Updates a single AppUser row (role / password / date of birth / gender /
 // newsletter opt-in) — gated on app-admin and run with the service role so the
@@ -27,12 +31,16 @@ export default async function (req) {
     // (compared against the current row), so a regular Admin can still save an
     // unrelated edit (date of birth, etc.) on an existing Admin/Super Admin without
     // hitting this.
+    // Fetched once when the role is changing, and reused below for a second,
+    // unrelated check: whether this save is a genuine promotion into
+    // narrator/admin/super_admin, which triggers the free-tour grant further down.
+    let currentBeforeSave = null;
     if ('role' in updates) {
+      currentBeforeSave = await base44.asServiceRole.entities.AppUser.get(String(id));
       const elevatedRoles = ['admin', 'super_admin'];
-      const current = await base44.asServiceRole.entities.AppUser.get(String(id));
-      const wasElevated = elevatedRoles.includes(current?.role);
+      const wasElevated = elevatedRoles.includes(currentBeforeSave?.role);
       const willBeElevated = elevatedRoles.includes(updates.role);
-      const roleActuallyChanging = current?.role !== updates.role;
+      const roleActuallyChanging = currentBeforeSave?.role !== updates.role;
       if ((wasElevated || willBeElevated) && roleActuallyChanging && !(await isSuperAdmin(base44))) {
         return Response.json({ error: 'Only a Super Admin can grant or remove Admin/Super Admin.' }, { status: 403 });
       }
@@ -53,6 +61,24 @@ export default async function (req) {
       allowed.login_locked_until = null;
     }
     const updated = await base44.asServiceRole.entities.AppUser.update(String(id), allowed);
+
+    // Per Enda (follow-up 146): a genuine promotion into narrator/admin/super_admin
+    // (role actually changing to one of these, not just re-saving the same role)
+    // gets every already-published English tour added to their library for free —
+    // not just tours published from here on, since they'll be translating the
+    // older ones too. Best-effort: a problem here must never block the role save.
+    const NEW_NARRATOR_ROLES = ['narrator', 'admin', 'super_admin'];
+    const isNewPromotion = 'role' in updates
+      && NEW_NARRATOR_ROLES.includes(updates.role)
+      && currentBeforeSave?.role !== updates.role;
+    if (isNewPromotion) {
+      try {
+        await grantAllPublishedToursToNarrator(base44, updated.email);
+      } catch (grantError) {
+        console.error('Free-tour grant to newly promoted narrator/admin failed (role change still saved):', grantError);
+      }
+    }
+
     return Response.json({ ok: true, user: updated });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
