@@ -25,6 +25,7 @@ export default async function(req) {
       purchases.filter(p => p.status !== 'revoked').map(p => p.creem_product_id).filter(Boolean)
     )];
 
+
     return Response.json({ productIds });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
