@@ -67,6 +67,91 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-09 (follow-up 160) — Deleting an account now also force-logs-out its device session
+(`deleteAppUserAdmin/entry.ts` — BACKEND, needs redeploy — `UsersManager.jsx`)
+
+**Per Enda:** his policy is never to demote an admin, only delete one who behaves badly —
+and when that happens, deletion needs to really cut off every access path, not just hide
+them from the frontend: WordPress login, the AppUser record, narrator/admin session tokens,
+and any Base44-native admin access. Investigated every one of those paths in full before
+proposing anything (see below) — some were already solid, one was a genuine gap, two are
+structurally outside what this codebase can touch at all. He picked: yes to auto force-
+logout on delete, and yes to a WordPress reminder on the delete screen (since the code
+genuinely can't do that part itself).
+
+**What was found (investigation, before any code changed):**
+- **Already solid:** `narr_session_token` (Narr Studio / `resolveActor` / `saveTranslation` /
+  `manageApiKeys`) and the promoted-admin backend gate (`isAppAdmin`/`isSuperAdmin`) both
+  re-read the `AppUser` row fresh on every single request — deleting the row fails both
+  closed immediately, no caching, no replay window.
+- **The real gap:** `deleteAppUserAdmin` only ever deleted the `AppUser` row. It never
+  touched that person's `ActiveSession` records — the device-session bookkeeping that
+  `forceLogoutAdmin` clears — so someone deleted for bad behaviour could keep using a
+  device they were already logged into until that session happened to expire on its own.
+  Worse, `forceLogoutAdmin` itself was never reachable through the UI at all (its screen,
+  `DeviceManager.jsx`, isn't linked from anywhere in the app) — so there was no working way
+  to force a logout at all, deletion or otherwise, until this fix.
+- **Structurally outside this codebase, confirmed rather than assumed:** WordPress login
+  itself. This app has no mechanism to revoke a WordPress-issued JWT or deactivate a
+  WordPress account before its natural expiry — verified by reading `wpToken.ts` in full
+  and searching the whole `base44/` tree for anything resembling a revoke/blocklist call;
+  none exists. That lives entirely on the separate WordPress/WooCommerce site.
+- **Also structurally outside this codebase:** a genuine Base44-platform login (as opposed
+  to an `AppUser` row promoted to admin). Platform role assignment happens only inside
+  Base44's own builder UI — nothing in this app's backend function surface writes to it, by
+  design (promoted admins are deliberately invited at platform role 'user', not 'admin',
+  specifically so this case shouldn't normally arise).
+
+**What changed:**
+- `deleteAppUserAdmin` now reads the row first (for its email, and to give a clean 404 if
+  it's already gone), deletes it, then deactivates every `ActiveSession` row for that email
+  — the same thing `forceLogoutAdmin` does on its own, folded into one action. Returns how
+  many sessions were deactivated.
+- `UsersManager.jsx`'s delete button now opens a confirmation dialog first (matching the
+  existing tour-deletion confirmation elsewhere in this admin panel) — explains the action
+  is irreversible, that any logged-in device gets signed out immediately, and states plainly
+  that WordPress login is NOT touched and has to be handled separately on the WordPress
+  site. The success message afterward repeats the session count and the WordPress reminder,
+  so it's visible at the moment the account is actually gone, not just before.
+
+**Why:** matches Enda's stated policy precisely — this closes the one real gap found
+(device sessions), makes the previously-unreachable force-logout capability actually usable
+(via deletion, since the standalone screen still isn't wired up), and is honest on-screen
+about the two paths that genuinely cannot be closed from this codebase, rather than
+implying a false sense of completeness.
+
+**Verified:** `npx vite build` completes with no errors; `npx eslint` on `UsersManager.jsx`
+shows one pre-existing unrelated warning (confirmed via `git diff` — an unused catch-block
+variable in `EditAppUserDialog`, untouched this session). The backend function was parse-
+checked with esbuild (no errors). Wrote and ran a standalone test (10 checks, all passing)
+against a fake in-memory AppUser/ActiveSession pair mirroring the real function's control
+flow: confirms a deleted admin's active sessions are all deactivated and the count reported
+correctly; confirms an unrelated user's session is never touched; confirms deleting someone
+with zero active sessions still succeeds and correctly reports 0; confirms deleting an
+already-gone id returns a clean 404 rather than silently doing nothing; confirms an
+already-inactive session isn't double-touched or miscounted. Also re-ran every test from
+follow-ups 152–159 — all still pass (57 checks across those).
+
+**BACKEND CHANGE — needs the redeploy dance:** `deleteAppUserAdmin` is a backend function.
+Per the standing rule, this needs the manual per-function redeploy step in Base44 (blank
+line in, redeploy, blank line out) before it takes effect. `UsersManager.jsx` needs no such
+step.
+
+**Not done / worth knowing for next time:**
+- Not yet tested live — worth Enda deleting a test admin account that has an active device
+  session and confirming that device is actually signed out immediately, and separately
+  confirming the confirmation dialog and success message both read clearly.
+- The standalone `DeviceManager.jsx` screen (manual force-logout / device management,
+  independent of deletion) is still not linked from anywhere in the app — untouched this
+  round since it wasn't what was asked for, but worth knowing it's still dead code if it's
+  ever wanted as its own reachable feature.
+- WordPress-side revocation genuinely cannot be automated from this codebase without a
+  WordPress/WooCommerce admin API call this app doesn't currently make (and it's unconfirmed
+  whether the WordPress JWT Auth plugin even exposes a revoke endpoint) — the on-screen
+  reminder is the honest fix available today, not a placeholder for something bigger.
+
+---
+
 ## 2026-09-09 (follow-up 159) — Admin-only draft tour preview in the real customer app
 (`getWalkCatalog/entry.ts` — BACKEND, needs redeploy — `Home.jsx`, `WalkCard.jsx`,
 `WalkDetail.jsx`, `i18n/index.js`)

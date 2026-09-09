@@ -5,8 +5,9 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import {
-  Trash2, Loader2, Mail, ShieldCheck, Mic, Users, Pencil, Search, User, KeyRound, Gift,
+  Trash2, Loader2, Mail, ShieldCheck, Mic, Users, Pencil, Search, User, KeyRound, Gift, AlertTriangle,
 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -165,6 +166,13 @@ export default function UsersManager({ isSuperAdmin = false }) {
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState(null);
   const [gifting, setGifting] = useState(null);
+  // Per Enda (follow-up 160): deleting an account is one-way and now also force-logs-out
+  // any device the person was signed into — a confirmation step matches how tour deletion
+  // already works elsewhere in this admin panel, and is the natural place to show the
+  // WordPress reminder below (deleteAppUserAdmin's own comment explains why this app can't
+  // do that part for you).
+  const [confirmDeleteUser, setConfirmDeleteUser] = useState(null);
+  const [deleting, setDeleting] = useState(false);
   const qc = useQueryClient();
 
   const { data: appUsers = [], isLoading } = useQuery({
@@ -190,12 +198,27 @@ export default function UsersManager({ isSuperAdmin = false }) {
   // Per Enda (2026-09-06): deleting a user is now Super-Admin-only (see
   // deleteAppUserAdmin's own comment) — the Delete button is hidden for anyone else
   // (below), but wrapped in a try/catch here too in case it's ever reached another way.
-  const handleDelete = async (userId) => {
+  //
+  // Per Enda (follow-up 160): the backend now also deactivates any device session this
+  // person was logged into as part of deletion (see deleteAppUserAdmin) — the success
+  // toast reports how many, and repeats the WordPress reminder from the confirmation
+  // dialog so it's still visible at the exact moment the account is actually gone.
+  const handleDelete = async () => {
+    if (!confirmDeleteUser) return;
+    setDeleting(true);
     try {
-      await base44.functions.invoke('deleteAppUserAdmin', { id: userId });
+      const res = await base44.functions.invoke('deleteAppUserAdmin', { id: confirmDeleteUser.id });
       qc.invalidateQueries({ queryKey: ['appUsers-all'] });
+      const n = res?.data?.sessionsDeactivated || 0;
+      toast({
+        title: 'Account deleted',
+        description: `${confirmDeleteUser.email} removed${n > 0 ? ` — ${n} active device session${n === 1 ? '' : 's'} logged out` : ''}. Their WordPress login still works until you change or disable it on the WordPress site.`,
+      });
+      setConfirmDeleteUser(null);
     } catch (err) {
       toast({ variant: 'destructive', title: 'Delete failed', description: err?.message });
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -245,12 +268,54 @@ export default function UsersManager({ isSuperAdmin = false }) {
               )}
               <Button variant="ghost" size="sm" onClick={() => setEditing(u)} className="text-slate-300 hover:text-white gap-2"><Pencil className="w-3.5 h-3.5" /> Edit</Button>
               {isSuperAdmin && (
-                <Button variant="ghost" size="icon" onClick={() => handleDelete(u.id)} className="text-slate-500 hover:text-red-400 w-7 h-7" title="Remove"><Trash2 className="w-3.5 h-3.5" /></Button>
+                <Button variant="ghost" size="icon" onClick={() => setConfirmDeleteUser(u)} className="text-slate-500 hover:text-red-400 w-7 h-7" title="Remove"><Trash2 className="w-3.5 h-3.5" /></Button>
               )}
             </div>
           ))}
         </div>
       )}
+
+      {/* Per Enda (follow-up 160): deleting an account is one-way, so it gets the same
+          confirm-before-you-commit treatment as tour deletion elsewhere in this admin
+          panel. The WordPress line here is not boilerplate — it's the one real gap the
+          backend genuinely cannot close on its own (see deleteAppUserAdmin's own
+          comment), so it needs to actually be read, not just clicked past. */}
+      <AlertDialog open={!!confirmDeleteUser} onOpenChange={open => { if (!open) setConfirmDeleteUser(null); }}>
+        <AlertDialogContent className="bg-slate-800 border-2 border-red-600 text-white">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-red-400 text-xl">
+              <AlertTriangle className="w-6 h-6 shrink-0" />
+              Delete this account?
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="text-slate-300 space-y-3 pt-1">
+                <p>
+                  This action is <strong className="text-red-400">irreversible</strong> — the account record for{' '}
+                  <strong className="text-white">{confirmDeleteUser?.email}</strong> will be permanently deleted,
+                  and any device they're currently logged into will be signed out immediately.
+                </p>
+                <p className="text-amber-400 font-semibold">
+                  This does NOT touch their WordPress login. Their WordPress password will keep working until you
+                  separately change or disable it on the WordPress site — this app has no way to do that for you.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="bg-slate-700 border-slate-600 text-white hover:bg-slate-600 hover:text-white">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); handleDelete(); }}
+              disabled={deleting}
+              className="bg-red-600 hover:bg-red-700 text-white disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-red-600"
+            >
+              {deleting ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+              Yes, delete account
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
