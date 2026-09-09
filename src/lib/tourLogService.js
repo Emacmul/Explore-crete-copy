@@ -173,6 +173,8 @@ function entryToText(entry) {
         parts.push(`✓ TRIGGERED (dist=${d.distance}m/${d.triggerRadius}m)`);
       } else if (d.result === 'skip_low_accuracy') {
         parts.push(`✗ FAILED — GPS fix too imprecise to trust: ±${Math.round(d.accuracy || 0)}m accuracy vs ${d.triggerRadius}m radius`);
+      } else if (d.result === 'skip_off_route') {
+        parts.push(`✗ FAILED — off-route warning is active, new narration held back`);
       } else if (d.result === 'skip_distance') {
         parts.push(`✗ FAILED — outside radius: ${d.distance}m > ${d.triggerRadius}m`);
       } else if (d.result === 'skip_bearing') {

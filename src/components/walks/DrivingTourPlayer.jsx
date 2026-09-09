@@ -83,18 +83,53 @@ const ON_ROUTE_RECOVER_M = 200;
 // "you've gone the wrong way" is a bigger claim to make than "signal is weak".
 const OFF_ROUTE_STREAK_THRESHOLD = 3;
 
-// Nearest-vertex distance (metres) from a live position to the recorded route line —
-// same brute-force approach WalkProgressBar.jsx's progressAlongTrail already uses for the
-// walk/hike progress bar, just returning the distance itself rather than cumulative
-// distance travelled. trail_breaks (gaps where the drawn line skips a join) don't matter
-// here — a break only means "don't draw a connecting line between these two recorded
-// points", not that either point stops being part of the real route, so every point in
-// trail_path is a valid candidate regardless of trail_breaks.
+// Shortest distance (metres) from a live position to the nearest point ON the recorded
+// route LINE — not just to the nearest recorded dot. Follow-up 157 fix: an earlier version
+// of this measured distance to the nearest trail_path VERTEX only, which over-estimates
+// how far off the route someone is if they're between two recorded points (worst case:
+// standing exactly at the midpoint of a long straight gap, up to half that gap's length
+// away from the nearest single vertex, even though they're right on the line). Checked
+// against real tour data (see the follow-up 156 changelog entry) and the biggest gap on
+// either real driving tour today is under 170m, so this wasn't actually misfiring — but a
+// future tour with sparser geometry (e.g. a long straight road, or a plain GPX import
+// rather than a dense OSRM-routed line) could hit it, so this measures it properly rather
+// than relying on today's data staying dense enough. trail_breaks (gaps where the drawn
+// line skips a join) don't matter here — a break only means "don't draw a connecting line
+// between these two recorded points", not that either point stops being part of the real
+// route, so every segment in trail_path is a valid candidate regardless of trail_breaks.
+function distanceToSegmentM(lat, lng, aLat, aLng, bLat, bLng) {
+  // Flat-earth (equirectangular) projection around point A — accurate to well under a
+  // metre of error for segments this short (real route segments measure tens of metres;
+  // even a very sparse future import would realistically be low hundreds of metres), so a
+  // full spherical cross-track-distance calculation isn't needed here.
+  const latRad = (aLat * Math.PI) / 180;
+  const mPerDegLat = 111320;
+  const mPerDegLng = 111320 * Math.cos(latRad);
+  const px = (lng - aLng) * mPerDegLng;
+  const py = (lat - aLat) * mPerDegLat;
+  const bx = (bLng - aLng) * mPerDegLng;
+  const by = (bLat - aLat) * mPerDegLat;
+
+  const segLenSq = bx * bx + by * by;
+  // t is how far along the A→B segment the projection of the live position falls, clamped
+  // to [0,1] so the closest point is never outside the actual recorded segment — a
+  // degenerate zero-length segment (two identical consecutive points) falls back to
+  // distance-to-A, which is correct.
+  const t = segLenSq === 0 ? 0 : Math.max(0, Math.min(1, (px * bx + py * by) / segLenSq));
+  const cx = t * bx;
+  const cy = t * by;
+  const dx = px - cx;
+  const dy = py - cy;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
 function nearestTrailDistanceM(lat, lng, trailPath) {
   let best = Infinity;
-  for (const pt of trailPath) {
-    if (!pt || pt.lat == null || pt.lng == null) continue;
-    const d = haversine(lat, lng, pt.lat, pt.lng);
+  for (let i = 0; i < trailPath.length - 1; i++) {
+    const a = trailPath[i];
+    const b = trailPath[i + 1];
+    if (!a || a.lat == null || a.lng == null || !b || b.lat == null || b.lng == null) continue;
+    const d = distanceToSegmentM(lat, lng, a.lat, a.lng, b.lat, b.lng);
     if (d < best) best = d;
   }
   return best;
@@ -173,6 +208,12 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
   // Same "announce once per episode" pattern as spokenGpsIssueRef, kept as its own ref so
   // the two spoken alerts never interfere with each other's timing.
   const offRouteAnnouncedRef = useRef(false);
+  // How many spoken alerts currently want narration paused ("ducked") — a count, not a
+  // flag, so two alerts that queue back-to-back (see speak() below, follow-up 157) keep
+  // narration paused continuously through both instead of it briefly resuming in the gap
+  // between the first ending and the second starting. Narration only actually resumes once
+  // this drops back to 0.
+  const narrationDuckCountRef = useRef(0);
   // Every secondary waypoint the driver has actually reached so far this drive (see the
   // "last known position" comment above) — restored from this device's storage on open,
   // so it survives the app being closed and reopened.
@@ -283,9 +324,17 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
       // compute "within radius" by chance is exactly the false trigger this guards
       // against (see GPS_ACCURACY_HARD_CAP_M/fixIsTrustworthy above), so it must never
       // be allowed to reach the distance check at all.
+      // Off-route is checked next, before distance/bearing/audio — per Enda (follow-up
+      // 157): while the app has already told the driver they're off route, no NEW
+      // narration should start firing, so that message's promise ("I'll carry on once
+      // you're back on the route") is actually true rather than just usually true.
+      // Whatever's already playing is never interrupted by this — only NEW triggers are
+      // held back (see playTriggerAudio, untouched).
       let result;
       if (!accuracyOk) {
         result = 'skip_low_accuracy';
+      } else if (offRoute) {
+        result = 'skip_off_route';
       } else if (!withinRadius) {
         result = 'skip_distance';
       } else if (alreadyTriggered && wp.trigger_once !== false) {
@@ -362,7 +411,7 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
     if (isFixUsable(accuracy, GPS_ACCURACY_HARD_CAP_M)) {
       prevPosRef.current = { lat, lng };
     }
-  }, [triggerWaypoints, secondaryWaypoints, persistPassedSecondary, isFixUsable, walk.trail_path]);
+  }, [triggerWaypoints, secondaryWaypoints, persistPassedSecondary, isFixUsable, walk.trail_path, offRoute]);
 
   // Actually starts (or advances to) the next queued clip — called once at the top of
   // playTriggerAudio when nothing else is playing, and again from onEnded/a failed
@@ -449,6 +498,7 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
     prevPosRef.current = null;
     audioQueueRef.current = [];
     currentlyPlayingWpRef.current = null;
+    narrationDuckCountRef.current = 0;
     gpsErrorStreakRef.current = 0;
     gpsAccuracyStreakRef.current = 0;
     setGpsIssue(null);
@@ -546,6 +596,10 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
     if (typeof window !== 'undefined' && window.speechSynthesis) {
       window.speechSynthesis.cancel();
     }
+    // playerRef.current was just destroyed above, so any pending unduck (from a warning
+    // still speaking when Stop was pressed) would no-op on it anyway — reset the count
+    // directly too, so a fresh Start Tour never inherits a stale duck count from before.
+    narrationDuckCountRef.current = 0;
     spokenGpsIssueRef.current = false;
     offRouteStreakRef.current = 0;
     offRouteAnnouncedRef.current = false;
@@ -559,24 +613,63 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
     gpsAccuracyStreakRef.current = 0;
   };
 
-  // Speaks a message via the browser's built-in text-to-speech (Web Speech API),
-  // replacing anything already speaking/queued. Shared by every spoken alert this
-  // component raises (GPS trouble, off-route below) so they can never overlap or stack up.
+  // Pauses (never stops/destroys) the currently loaded narration clip, if any, so it can
+  // resume exactly where it left off. Safe to call with nothing loaded/playing — pausing an
+  // Audio element with no source is a harmless no-op. Per Enda (follow-up 157): the spoken
+  // safety alerts used to just start talking over whatever narration was already playing,
+  // making both hard to follow — this ducks the recording out of the way instead.
+  const duckNarration = useCallback(() => {
+    narrationDuckCountRef.current += 1;
+    playerRef.current?.pause();
+  }, []);
+
+  // Resumes narration only once EVERY alert that asked for it has finished (count back to
+  // 0) — see narrationDuckCountRef above for why this is a count, not a flag. Swallows a
+  // resume failure (e.g. the browser blocking an unprompted play()) rather than throwing —
+  // narration staying paused is a far smaller problem than an unhandled promise rejection.
+  const unduckNarration = useCallback(() => {
+    narrationDuckCountRef.current = Math.max(0, narrationDuckCountRef.current - 1);
+    if (narrationDuckCountRef.current === 0) {
+      playerRef.current?.play().catch(() => {});
+    }
+  }, []);
+
+  // Speaks a message via the browser's built-in text-to-speech (Web Speech API). Per Enda
+  // (follow-up 157): this used to cancel anything already speaking before starting a new
+  // alert, so a GPS-trouble alert and an off-route alert arriving close together could cut
+  // each other off mid-sentence. Removed the cancel — the Web Speech API already queues
+  // multiple speak() calls and plays them one after another on its own, so two different
+  // alerts now both get heard in full, back-to-back, instead of one being lost. An explicit
+  // window.speechSynthesis.cancel() is still used elsewhere (handleStop, unmount) for the
+  // deliberate "stop talking right now" case.
   const speak = useCallback((text, onSpoken) => {
     if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    // Tracked outside the try block so the catch below can always safely undo a duck that
+    // was already applied, even if something after it throws — narration must never be
+    // left permanently paused because of a speech-API error.
+    let ducked = false;
     try {
-      window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       // This alert text only exists in English so far (see i18n/index.js) regardless of
       // the driver's chosen UI language, so the voice is pinned to English too rather than
       // left to guess from the UI language and mispronounce it.
       utterance.lang = 'en-US';
+      duckNarration();
+      ducked = true;
+      const undoOnce = () => {
+        if (!ducked) return;
+        ducked = false;
+        unduckNarration();
+      };
+      utterance.onend = undoOnce;
+      utterance.onerror = undoOnce;
       window.speechSynthesis.speak(utterance);
       onSpoken?.(text);
     } catch (err) {
+      if (ducked) unduckNarration();
       tourLogService.logWarning(`Spoken alert failed: ${err?.message || 'unknown'}`);
     }
-  }, []);
+  }, [duckNarration, unduckNarration]);
 
   // Spoken (text-to-speech) GPS-trouble alert — per Enda: a driver shouldn't have to look at
   // the screen to find out narration has stopped triggering, so this reads the same news the

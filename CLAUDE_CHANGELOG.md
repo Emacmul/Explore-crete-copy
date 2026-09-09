@@ -67,6 +67,66 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-09 (follow-up 157) — Four fixes to the follow-up 156 audio warnings
+(`DrivingTourPlayer.jsx`, `tourLogService.js`)
+
+**Per Enda:** raised four specific problems with the off-route/GPS spoken warnings just
+shipped in follow-up 156. Investigated each against the real code and real route data
+before proposing anything, per standing rule. All four were confirmed real; he approved
+building all four.
+
+**What changed:**
+1. **Warnings talked over the narration.** `speak()` never touched the narration player.
+   Fixed: narration now pauses (not stops — same clip resumes exactly where it left off)
+   for as long as any alert is speaking, via a count rather than a flag, so two alerts
+   speaking back-to-back keep narration paused continuously through both rather than
+   letting it flicker back on in the gap between them.
+2. **Off-route distance measured to the nearest recorded route POINT, not the nearest
+   point on the route LINE.** With a sparse enough route, someone genuinely on the road
+   between two recorded points could in principle be measured as further away than they
+   really are. Checked real data first: today's two real tours have a max gap of under
+   170m between recorded points, so this wasn't actually misfiring — but fixed it properly
+   (distance to the nearest point on each line segment, not just to the dots) rather than
+   relying on route density staying favourable for every future tour.
+3. **Narration could still auto-fire while "off route" was showing**, which didn't match
+   the warning's own promise ("I'll carry on once you're back on the route"). Fixed: while
+   the off-route warning is active, new narration is held back (whatever's already playing
+   is never interrupted) — so that promise is now literally true, not just usually true.
+4. **The two independent spoken alerts (GPS trouble, off-route) could cancel each other**
+   if they happened close together, since each one cancelled anything already speaking
+   first. Fixed: removed that cancel — the Web Speech API already queues multiple
+   `speak()` calls and plays them one after another on its own, so both now get heard in
+   full instead of one being lost. An explicit cancel is still used for the deliberate
+   "stop talking now" cases (Stop button, leaving the page).
+
+**Why:** all four were genuine gaps in the follow-up 156 build, caught and named precisely
+enough (nearest-point-vs-nearest-line, count-vs-flag, cancel-vs-queue) that this reads
+like a real review, not a guess — worth taking at face value and verifying rather than
+brushing off.
+
+**Verified:** `npx vite build` completes with no errors; `npx eslint` clean on both changed
+files. Wrote and ran a standalone test (12 checks, all passing) that: demonstrates the OLD
+nearest-point approach really would over-estimate distance by ~400m at the midpoint of an
+800m gap (a false-positive in that scenario) while the NEW segment-based approach
+correctly measures ~0m for the same on-the-line position; confirms a waypoint that would
+otherwise fire is held back while off-route is active, but a low-accuracy fix still wins
+if both are true at once; confirms narration ducks for a single alert and un-ducks after;
+confirms two alerts queued close together keep narration paused continuously through both
+and that both are actually spoken in full. Also re-ran every test from follow-ups 152–156
+— all still pass (21 checks across those). Frontend-only — no backend redeploy needed.
+
+**Not done / worth knowing for next time:**
+- Not yet tested on a real device — in particular, worth confirming in a real drive (or a
+  parked-car test) that resuming a paused narration clip sounds smooth and not glitchy on
+  real hardware, and that Android/iOS actually let a paused-then-resumed HTML5 Audio
+  element restart promptly (no console-only test can fully confirm this).
+- The flat-earth approximation used for the new distance-to-segment math is deliberately
+  simple (accurate to well under a metre for route segments this short) rather than a full
+  spherical calculation — fine for this use, but worth knowing if it's ever reused for
+  something measuring much longer distances.
+
+---
+
 ## 2026-09-09 (follow-up 156) — Off-route detection + spoken warning for driving tours
 (`DrivingTourPlayer.jsx`, `src/lib/i18n/index.js`)
 
