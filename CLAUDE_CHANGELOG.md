@@ -67,6 +67,30 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-09 (follow-up 154) — Corrected the "cellular AND GPS" claim; added a GPS-delay
+notice to the pre-tour safety notes (`src/lib/i18n/index.js`)
+
+**Per Enda:** he asked whether the app needs to tell people GPS trouble (not just weak
+cellular signal) can delay their tour, after realizing "Stay Safe Offline" only fixes the
+cellular/data side — GPS is a separate, satellite-based system that downloading a tour
+can't fix. He confirmed: "make those fixes."
+
+- `detail.offlineWarning` and `player.mustSaveFirst` both used to say "cellular AND GPS
+  signals can be weak... [tap Stay Safe Offline]" — wrongly implying downloading fixes
+  GPS too. Both now mention only cellular signal, which is what "Stay Safe Offline"
+  actually addresses. `offlineWarning` also no longer promises "uninterrupted playback"
+  (GPS trouble can still delay a trigger even with a perfect download).
+- `detail.defaultSafetyNotes` (the general "Before You Set Off" text, shown for every
+  tour type unless a walk has its own custom safety notes) — added a new paragraph
+  explaining GPS is separate from phone signal, downloading doesn't fix it, and narration
+  may be delayed if it drops out.
+
+**Verified:** `npx eslint` clean, full `rm -rf dist && npx vite build` completes with no
+errors, and the edited safety-notes string was printed and read back to confirm the
+paragraph breaks render correctly. Frontend-only — no backend redeploy needed.
+
+---
+
 ## 2026-09-09 (follow-up 153) — "Save for offline"/"Save offline" wording → "Stay Safe Offline"
 (`src/lib/i18n/index.js`)
 
