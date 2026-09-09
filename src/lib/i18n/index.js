@@ -291,6 +291,14 @@ export const translations = {
     'player.gpsAccuracyIssueTitle': "GPS too imprecise to use",
     'player.gpsAccuracyWeak': "Your location signal is on but not precise enough right now, so directions and narration may not trigger. This is common in mountainous areas — it should improve as you keep driving. If you're unsure of the route, pull over safely.",
     'player.gpsNotSupported': "This device or browser doesn't support location tracking, so this tour can't start. Try a different browser, or a phone with GPS.",
+    // Off-route warning — per Anoushka/Enda (follow-up 156): different from the GPS-issue
+    // warnings above. Those mean the GPS fix itself can't be trusted; this means the fix
+    // IS trusted, and it says the driver is genuinely far from the recorded route (a wrong
+    // turn), not just between waypoints. The app doesn't have turn-by-turn directions, so
+    // this can't literally guide anyone back — it prompts them to check their own map.
+    'player.offRouteTitle': "Possibly off route",
+    'player.offRouteMessage': "Your position looks far from this tour's planned route. Check your map, or turn around to get back on track. The tour will carry on automatically once you're back on the route.",
+    'player.offRouteSpoken': "It looks like you've gone off the planned route. Please check your map to get back on track. I'll carry on with the tour once you're back on the route.",
     // Spoken out loud (text-to-speech) the moment the GPS warning banner first appears,
     // so a driver never has to look at the screen to know what's happening or what to do.
     'player.gpsIssueSpokenNoSignal': "We're experiencing a GPS signal problem due to your surroundings. This is not an app failure. If your narration doesn't resume, press the Play button on your screen to continue listening to your tour.",

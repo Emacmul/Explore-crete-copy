@@ -65,6 +65,41 @@ function fixIsTrustworthy(accuracy, radius) {
 // its own, so that one is treated as sustained immediately rather than counted.
 const GPS_ERROR_STREAK_THRESHOLD = 2;
 
+// Off-route detection — per Anoushka/Enda (follow-up 156): a driver can genuinely take a
+// wrong turn (missed a turnoff, inattention) and end up nowhere near the recorded route at
+// all, which is a different problem from GPS being unreliable. This is deliberately a
+// bigger distance than any single waypoint's trigger radius (default 150m) or the GPS
+// accuracy hard cap above (100m), so ordinary road-following/GPS noise near the route
+// never trips it — only being genuinely, sustainedly far from the whole route does.
+// ON_ROUTE_RECOVER_M is smaller than OFF_ROUTE_DISTANCE_M on purpose (hysteresis): once
+// warned, a fix has to come back clearly inside the route, not just barely under the
+// warning line, before the warning clears — otherwise a position sitting right at the
+// boundary could flicker the warning on and off with every fix. A fix landing between the
+// two thresholds doesn't move the state either way.
+const OFF_ROUTE_DISTANCE_M = 400;
+const ON_ROUTE_RECOVER_M = 200;
+// Same reasoning as GPS_ERROR_STREAK_THRESHOLD — one stray fix shouldn't declare a driver
+// lost, only a run of consecutive ones. Set a little higher than that threshold since
+// "you've gone the wrong way" is a bigger claim to make than "signal is weak".
+const OFF_ROUTE_STREAK_THRESHOLD = 3;
+
+// Nearest-vertex distance (metres) from a live position to the recorded route line —
+// same brute-force approach WalkProgressBar.jsx's progressAlongTrail already uses for the
+// walk/hike progress bar, just returning the distance itself rather than cumulative
+// distance travelled. trail_breaks (gaps where the drawn line skips a join) don't matter
+// here — a break only means "don't draw a connecting line between these two recorded
+// points", not that either point stops being part of the real route, so every point in
+// trail_path is a valid candidate regardless of trail_breaks.
+function nearestTrailDistanceM(lat, lng, trailPath) {
+  let best = Infinity;
+  for (const pt of trailPath) {
+    if (!pt || pt.lat == null || pt.lng == null) continue;
+    const d = haversine(lat, lng, pt.lat, pt.lng);
+    if (d < best) best = d;
+  }
+  return best;
+}
+
 function loadPassedSecondaryIds(walkId) {
   if (!walkId) return new Set();
   try {
@@ -129,6 +164,15 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
   // during the same drive is announced again. Prevents the alert repeating on every single
   // GPS fix/error while one sustained issue is ongoing (see the effect below).
   const spokenGpsIssueRef = useRef(false);
+  // True while a trusted GPS fix says the driver is sustainedly far from the recorded
+  // route line — a genuine wrong turn, not a GPS reliability problem (see
+  // OFF_ROUTE_DISTANCE_M above). Deliberately separate from gpsIssue: that state means the
+  // fix itself can't be trusted; this one only ever gets set from a fix that WAS trusted.
+  const [offRoute, setOffRoute] = useState(false);
+  const offRouteStreakRef = useRef(0);
+  // Same "announce once per episode" pattern as spokenGpsIssueRef, kept as its own ref so
+  // the two spoken alerts never interfere with each other's timing.
+  const offRouteAnnouncedRef = useRef(false);
   // Every secondary waypoint the driver has actually reached so far this drive (see the
   // "last known position" comment above) — restored from this device's storage on open,
   // so it survives the app being closed and reopened.
@@ -286,6 +330,27 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
       persistPassedSecondary(nextPassed);
     }
 
+    // Off-route detection — only ever evaluated from a fix trusted for ANY waypoint (same
+    // hard-cap gate as the bearing reference point below, not tied to one waypoint's own
+    // radius), and only when this walk actually has a recorded route line to compare
+    // against. Some tours (e.g. a brand new one not yet routed) have no trail_path at all —
+    // skip entirely rather than guess at "off route" with nothing to measure against.
+    if (walk.trail_path && walk.trail_path.length >= 2 && isFixUsable(accuracy, GPS_ACCURACY_HARD_CAP_M)) {
+      const trailDistance = nearestTrailDistanceM(lat, lng, walk.trail_path);
+      if (trailDistance > OFF_ROUTE_DISTANCE_M) {
+        offRouteStreakRef.current += 1;
+        if (offRouteStreakRef.current >= OFF_ROUTE_STREAK_THRESHOLD) {
+          setOffRoute(true);
+        }
+      } else if (trailDistance <= ON_ROUTE_RECOVER_M) {
+        offRouteStreakRef.current = 0;
+        setOffRoute(false);
+      }
+      // Between the two thresholds (the hysteresis band) — leave the streak and state as
+      // they are; this fix is neither a fresh "still off route" data point nor clearly back
+      // on the route.
+    }
+
     // Only ever advance the bearing-reference point from a fix precise enough to trust for
     // ANY waypoint (the hard cap alone — this point isn't tied to one specific waypoint's
     // radius, it feeds the NEXT fix's bearing calculation). An untrusted fix simply leaves
@@ -297,7 +362,7 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
     if (isFixUsable(accuracy, GPS_ACCURACY_HARD_CAP_M)) {
       prevPosRef.current = { lat, lng };
     }
-  }, [triggerWaypoints, secondaryWaypoints, persistPassedSecondary, isFixUsable]);
+  }, [triggerWaypoints, secondaryWaypoints, persistPassedSecondary, isFixUsable, walk.trail_path]);
 
   // Actually starts (or advances to) the next queued clip — called once at the top of
   // playTriggerAudio when nothing else is playing, and again from onEnded/a failed
@@ -387,6 +452,9 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
     gpsErrorStreakRef.current = 0;
     gpsAccuracyStreakRef.current = 0;
     setGpsIssue(null);
+    offRouteStreakRef.current = 0;
+    offRouteAnnouncedRef.current = false;
+    setOffRoute(false);
     setStatus('running');
 
     watchIdRef.current = gpsService.watchPosition(
@@ -479,14 +547,36 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
       window.speechSynthesis.cancel();
     }
     spokenGpsIssueRef.current = false;
+    offRouteStreakRef.current = 0;
+    offRouteAnnouncedRef.current = false;
     tourLogService.stopSession();
     setStatus('idle');
     setCurrentPos(null);
     setGpsAccuracy(null);
     setGpsIssue(null);
+    setOffRoute(false);
     gpsErrorStreakRef.current = 0;
     gpsAccuracyStreakRef.current = 0;
   };
+
+  // Speaks a message via the browser's built-in text-to-speech (Web Speech API),
+  // replacing anything already speaking/queued. Shared by every spoken alert this
+  // component raises (GPS trouble, off-route below) so they can never overlap or stack up.
+  const speak = useCallback((text, onSpoken) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    try {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      // This alert text only exists in English so far (see i18n/index.js) regardless of
+      // the driver's chosen UI language, so the voice is pinned to English too rather than
+      // left to guess from the UI language and mispronounce it.
+      utterance.lang = 'en-US';
+      window.speechSynthesis.speak(utterance);
+      onSpoken?.(text);
+    } catch (err) {
+      tourLogService.logWarning(`Spoken alert failed: ${err?.message || 'unknown'}`);
+    }
+  }, []);
 
   // Spoken (text-to-speech) GPS-trouble alert — per Enda: a driver shouldn't have to look at
   // the screen to find out narration has stopped triggering, so this reads the same news the
@@ -494,23 +584,11 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
   // points them at the manual Play button. Deliberately separate from — and never blocks —
   // the tour's own narration audio, which keeps using audioService/playerRef untouched.
   const speakGpsIssueAlert = useCallback((kind) => {
-    if (typeof window === 'undefined' || !window.speechSynthesis) return;
     const text = kind === 'low_accuracy'
       ? t('player.gpsIssueSpokenLowAccuracy')
       : t('player.gpsIssueSpokenNoSignal');
-    try {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      // The spoken alert text only exists in English so far (see i18n/index.js) regardless
-      // of the driver's chosen UI language, so the voice is pinned to English too rather
-      // than left to guess from the UI language and mispronounce it.
-      utterance.lang = 'en-US';
-      window.speechSynthesis.speak(utterance);
-      tourLogService.logSpokenAlert(kind, text);
-    } catch (err) {
-      tourLogService.logWarning(`Spoken GPS alert failed: ${err?.message || 'unknown'}`);
-    }
-  }, [t]);
+    speak(text, (spoken) => tourLogService.logSpokenAlert(kind, spoken));
+  }, [t, speak]);
 
   useEffect(() => {
     const active = !!gpsIssue && status === 'running';
@@ -523,6 +601,27 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
       spokenGpsIssueRef.current = false;
     }
   }, [gpsIssue, status, speakGpsIssueAlert]);
+
+  // Spoken off-route alert — per Anoushka/Enda: read out once per off-route episode (see
+  // offRouteAnnouncedRef above), same pattern as the GPS-trouble alert just above but a
+  // separate ref/effect so the two never interfere with each other's once-per-episode
+  // timing. The app has no turn-by-turn directions to give, so this is honest about that —
+  // it points the driver at their own map rather than claiming to guide them.
+  const speakOffRouteAlert = useCallback(() => {
+    speak(t('player.offRouteSpoken'), (spoken) => tourLogService.logSpokenAlert('off_route', spoken));
+  }, [t, speak]);
+
+  useEffect(() => {
+    const active = offRoute && status === 'running';
+    if (active) {
+      if (!offRouteAnnouncedRef.current) {
+        offRouteAnnouncedRef.current = true;
+        speakOffRouteAlert();
+      }
+    } else {
+      offRouteAnnouncedRef.current = false;
+    }
+  }, [offRoute, status, speakOffRouteAlert]);
 
   useEffect(() => {
     return () => {
@@ -547,6 +646,11 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
     ? { label: gpsIssueTitle, color: 'text-red-400' }
     : STATUS[status];
   const accuracyIsWeak = gpsAccuracy != null && gpsAccuracy > GPS_ACCURACY_HARD_CAP_M;
+  // Shown in amber, not red — deliberately distinct from the GPS-issue banner above. Red
+  // there means "GPS itself is unreliable right now"; this means GPS is working fine and
+  // says the driver is genuinely off the route, a different problem needing a different
+  // reaction (check the map / turn around, not just wait for signal to improve).
+  const offRouteActive = offRoute && status === 'running';
 
   return (
     <div className="bg-slate-800 rounded-xl border border-slate-600 overflow-hidden">
@@ -587,6 +691,21 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
           <div>
             <p className="text-sm font-semibold text-red-300">{gpsIssueTitle}</p>
             <p className="text-xs text-red-300/90 mt-0.5">{gpsIssue.message}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Off-route warning — per Anoushka/Enda (follow-up 156). Separate from the GPS-issue
+          banner above and can appear at the same time as (or instead of) it; this only ever
+          shows once a fix has been TRUSTED and it's the trusted position itself that's far
+          from the route (see offRoute above). Clears once a trusted fix comes back close
+          enough to the route (ON_ROUTE_RECOVER_M) — see evaluateTriggers. */}
+      {offRouteActive && (
+        <div className="mx-4 mb-3 flex items-start gap-2 bg-amber-900/30 border border-amber-600 rounded-lg px-3 py-2">
+          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-amber-300">{t('player.offRouteTitle')}</p>
+            <p className="text-xs text-amber-300/90 mt-0.5">{t('player.offRouteMessage')}</p>
           </div>
         </div>
       )}

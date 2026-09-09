@@ -67,6 +67,72 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-09 (follow-up 156) — Off-route detection + spoken warning for driving tours
+(`DrivingTourPlayer.jsx`, `src/lib/i18n/index.js`)
+
+**Per Anoushka/Enda:** an idea from Anoushka — if a driver genuinely takes a wrong turn
+(missed a turnoff, inattention) and ends up nowhere near the planned route at all, can the
+app notice and say something, rather than just going quiet? Investigated two separate
+questions before building anything: (1) can the app detect a genuine wrong turn, as
+opposed to just a GPS problem, and (2) can it then give real spoken turn-by-turn
+directions back to the route, the way Anoushka's suggested wording implied ("let me guide
+you back to the route"). Answer on (2): no — this app has never had turn-by-turn
+navigation, and the one routing service it does use (OSRM) only draws a static line at
+authoring time, with no live directions capability. Building that would mean adding a
+whole new live navigation service, a much bigger project with its own ongoing cost. Enda
+agreed to build only (1) — detect the wrong turn and speak a plain warning telling the
+driver to check their own map, not attempt real guidance.
+
+**What changed:**
+- Reused the same "distance from live GPS position to the nearest point on the recorded
+  route line" approach already used for the walk/hike progress bar (`WalkProgressBar.jsx`),
+  applied here to driving tours' `trail_path` for the first time.
+- A sustained run of trusted GPS fixes landing more than 400m from the route (not a single
+  stray fix — needs 3 in a row, same "don't nag over one bad fix" principle as the
+  existing GPS warnings) shows a new amber "Possibly off route" banner and speaks a
+  one-time warning ("It looks like you've gone off the planned route. Please check your
+  map..."). Deliberately separate from the existing red GPS-signal warnings — this only
+  ever fires from a fix that WAS trusted, unlike those. Clears automatically (state, not
+  narration) once a trusted fix comes back within 200m of the route — narration itself was
+  never paused or interrupted by this, so it "continues where it should" simply because
+  the existing GPS-triggered narration was never touched.
+- Checked real tour data before choosing the 400m/200m/3-in-a-row numbers: live Base44
+  Walk records show one driving tour's `trail_path` has 4164 points over 75.6km (~18m
+  spacing) and one has zero points (never routed) — confirmed the distance-scan approach
+  is cheap enough to run on every GPS fix, and confirmed the feature MUST skip cleanly
+  when a tour has no route line, which it does.
+- The `speak()` text-to-speech call from follow-up 155 (the GPS-trouble alert) was pulled
+  out into a small shared helper so both alerts use the exact same speak/cancel logic
+  instead of duplicating it.
+- New i18n keys (English only, same as everything else under `player.*`):
+  `player.offRouteTitle`, `player.offRouteMessage`, `player.offRouteSpoken`.
+
+**Why:** closes a real gap Anoushka's question identified — until now, a driver who
+genuinely went the wrong way got no signal from the app at all, on top of the "GPS problem
+vs actually lost" distinction from follow-up 155's manual-Play/spoken-GPS-alert work.
+
+**Verified:** `npx vite build` completes with no errors; `npx eslint` clean on the changed
+file. Wrote and ran a standalone test mirroring the real distance/hysteresis/streak logic
+(13 checks, all passing) covering: driving normally along the route never fires it; one
+stray far fix doesn't either; a genuine sustained run of far fixes does; a fix landing in
+the hysteresis gap doesn't clear the warning but a fix clearly back near the route does;
+an untrustworthy (low-accuracy) fix is ignored rather than counted either way; a tour with
+no `trail_path`, or fewer than 2 points, never raises the warning; the spoken alert fires
+exactly once per off-route episode and re-fires on a later, separate one. Also re-ran
+every test from prior follow-ups (152–155) — all still pass. Frontend-only — no backend
+redeploy needed.
+
+**Not done / worth knowing for next time:**
+- The 400m/200m/3-fix numbers are a reasonable starting point based on the real trail_path
+  density measured above, not tuned against an actual test drive — worth adjusting if it
+  fires too eagerly or too late in practice.
+- Still no real turn-by-turn guidance — the spoken message tells the driver to check their
+  own map, it doesn't and can't point them which way to go. If that's ever wanted, it's a
+  separate, bigger project (a live directions/navigation service).
+- Same English-only caveat as follow-up 155's spoken alert.
+
+---
+
 ## 2026-09-09 (follow-up 155) — Manual "Play" button on each Tour Stop, plus a spoken
 GPS-trouble alert (`DrivingTourPlayer.jsx`, `WalkDetail.jsx`, `tourLogService.js`,
 `src/lib/i18n/index.js`)
