@@ -32,7 +32,6 @@ async function verifySignature(payload, signature, secret) {
   return computed === signature;
 }
 
-
 Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
