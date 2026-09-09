@@ -67,6 +67,57 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-09 (follow-up 158) — Two more fixes to the off-route warning (`trail_breaks`, queued narration)
+(`DrivingTourPlayer.jsx`, `tourLogService.js`)
+
+**Per Enda:** raised two more specific problems with the follow-up 157 build. Investigated
+both against the real code before proposing anything, per standing rule. Both confirmed
+real; his message ("Continue from where you left off") was taken as the explicit go-ahead
+to build them directly.
+
+**What changed:**
+1. **`trail_breaks` was being ignored by the off-route distance check.** The follow-up 157
+   distance function tested every consecutive pair of route points as a valid line — but
+   `trail_breaks` (used consistently everywhere else in this app: the Walk entity
+   definition, the map rendering, GPX export) marks specific gaps where there is genuinely
+   NO connecting road between two points, because the route has two separate sections.
+   Ignoring it meant the off-route check could invent a fictitious straight-line "route"
+   across a real gap, and wrongly judge a driver as on-route while they were actually well
+   away from either real section. Fixed: a break is now treated as a real gap — distance is
+   measured to the two real points either side of it, never to a straight line joining them.
+2. **Already-queued narration kept playing after going off-route.** The off-route check
+   correctly stopped NEW clips being queued, but didn't touch clips already sitting in the
+   queue from just before the driver went off-route — so the app could say "I'll carry on
+   once you're back on the route" and then keep playing queued narration anyway. Fixed: the
+   moment off-route is first established, any not-yet-started queued clip is dropped (audio
+   already playing is never interrupted), and its waypoint is un-marked as triggered so it
+   plays normally if the driver returns to that spot later.
+
+**Why:** both were genuine, precisely-described gaps — the first a real conflict with how
+`trail_breaks` is defined and used everywhere else in the codebase, the second a real gap
+between what the warning promises and what the queue actually did.
+
+**Verified:** `npx vite build` completes with no errors; `npx eslint` clean on both changed
+files. Wrote and ran a standalone test (12 checks, all passing) that: proves a real gap
+between two route sections is correctly measured as far away (not ~0m) once `trail_breaks`
+is respected, while a position genuinely on a real segment still measures correctly close;
+confirms a route with no breaks at all still behaves exactly as before (no regression); and
+confirms clearing the queue drops only queued-but-not-yet-played clips, un-marks their
+waypoints as triggered, leaves whatever's currently playing untouched, and is a safe no-op
+when the queue is already empty. Also re-ran every test from follow-ups 152–157 — all still
+pass (33 checks across those). Frontend-only — no backend redeploy needed.
+
+**Not done / worth knowing for next time:**
+- Not yet tested on a real device — same caveat as follow-up 157: worth confirming on an
+  actual drive that dropping a queued clip and later re-triggering it at the same spot feels
+  right in practice, not just in the log.
+- Checked the real data (not guessed): "WalkAbout Rethymno Old Town" does have one real
+  `trail_breaks` entry (index 1073, a 138m gap near the end of its route) — so this wasn't
+  just a future-proofing fix, it was already affecting a live tour's off-route accuracy at
+  that one spot. "The Battle of the Rivers" and TestTour have no breaks currently.
+
+---
+
 ## 2026-09-09 (follow-up 157) — Four fixes to the follow-up 156 audio warnings
 (`DrivingTourPlayer.jsx`, `tourLogService.js`)
 

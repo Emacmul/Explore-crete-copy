@@ -134,6 +134,16 @@ export function logSpokenAlert(kind, text) {
   addEntry('spoken_alert', { kind, text });
 }
 
+// Off-route queue clearing (follow-up 158) — fires the moment off-route status is first
+// established, if one or more narration clips were queued but hadn't started playing yet.
+// Records how many were dropped, so a "why didn't stop X play?" question has a clear answer:
+// it was queued, then dropped because the driver went off-route before it got its turn. The
+// waypoint itself isn't lost — DrivingTourPlayer un-marks it as triggered so it can fire again
+// normally if the driver returns to that spot.
+export function logOffRouteQueueCleared(count) {
+  addEntry('off_route_queue_cleared', { count });
+}
+
 // --- Subscription ---
 
 export function subscribe(callback) {
@@ -202,6 +212,8 @@ function entryToText(entry) {
       return `[${t}] ▶ MANUAL PLAY — "${entry.data.waypointId}" (tapped by driver)`;
     case 'spoken_alert':
       return `[${t}] 🔊 SPOKEN ALERT (${entry.data.kind}) — "${entry.data.text}"`;
+    case 'off_route_queue_cleared':
+      return `[${t}] 🚫 OFF-ROUTE — cleared ${entry.data.count} queued clip(s) not yet played`;
     default:
       return `[${t}] ${entry.type}`;
   }

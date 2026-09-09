@@ -93,10 +93,19 @@ const OFF_ROUTE_STREAK_THRESHOLD = 3;
 // either real driving tour today is under 170m, so this wasn't actually misfiring — but a
 // future tour with sparser geometry (e.g. a long straight road, or a plain GPX import
 // rather than a dense OSRM-routed line) could hit it, so this measures it properly rather
-// than relying on today's data staying dense enough. trail_breaks (gaps where the drawn
-// line skips a join) don't matter here — a break only means "don't draw a connecting line
-// between these two recorded points", not that either point stops being part of the real
-// route, so every segment in trail_path is a valid candidate regardless of trail_breaks.
+// than relying on today's data staying dense enough.
+//
+// Follow-up 158 correction: the follow-up 157 comment here was WRONG about trail_breaks —
+// per Walk.jsonc's own field description and every other consumer of this data
+// (WalkDetailMap.jsx, routeExport.js's splitTrailRuns, WalkProgressBar.jsx's
+// progressAlongTrail/trailLength), a break at index b means there is genuinely no road
+// connecting point b to point b+1 — two separate sections of the route, not just a
+// rendering choice. Treating that gap as a valid line segment invents a fictitious "route"
+// straight across it, which could wrongly judge a driver as on-route while they're really
+// well away from either real section. Fixed: a broken segment is never treated as a line —
+// only the two real recorded points either side of the break are considered (as isolated
+// points, not connected to each other), same as every other consumer of trail_breaks
+// already does.
 function distanceToSegmentM(lat, lng, aLat, aLng, bLat, bLng) {
   // Flat-earth (equirectangular) projection around point A — accurate to well under a
   // metre of error for segments this short (real route segments measure tens of metres;
@@ -123,12 +132,27 @@ function distanceToSegmentM(lat, lng, aLat, aLng, bLat, bLng) {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-function nearestTrailDistanceM(lat, lng, trailPath) {
+function nearestTrailDistanceM(lat, lng, trailPath, trailBreaks) {
+  // Same break-index validation/shape as splitTrailRuns (routeExport.js) and
+  // WalkProgressBar.jsx's trailLength/progressAlongTrail — a value in this set is the
+  // START index of a segment with no real line, i.e. no road between point i and i+1.
+  const breakSet = new Set(
+    (trailBreaks || []).filter(b => Number.isInteger(b) && b >= 0 && b < trailPath.length - 1)
+  );
   let best = Infinity;
   for (let i = 0; i < trailPath.length - 1; i++) {
     const a = trailPath[i];
     const b = trailPath[i + 1];
     if (!a || a.lat == null || a.lng == null || !b || b.lat == null || b.lng == null) continue;
+    if (breakSet.has(i)) {
+      // No real road between these two recorded points — measure distance to each one as
+      // an isolated point instead of inventing a line across the gap.
+      const dA = haversine(lat, lng, a.lat, a.lng);
+      const dB = haversine(lat, lng, b.lat, b.lng);
+      if (dA < best) best = dA;
+      if (dB < best) best = dB;
+      continue;
+    }
     const d = distanceToSegmentM(lat, lng, a.lat, a.lng, b.lat, b.lng);
     if (d < best) best = d;
   }
@@ -290,6 +314,25 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
     return !deviceReportsAccuracyRef.current;
   }, []);
 
+  // Drops any narration clip that was QUEUED but hadn't started playing yet, the moment
+  // off-route is first established (see the offRoute detection block below) — never touches
+  // whatever's already actively playing, which keeps playing to completion as always.
+  // Per Enda (follow-up 158): without this, a clip queued just before going off-route would
+  // still play out afterward, directly contradicting the off-route warning's own promise
+  // that new narration is held back until the driver is back on the route. Each dropped
+  // waypoint is un-marked as triggered (not just dropped silently) so it can fire normally
+  // again if the driver returns to that spot later, rather than being permanently skipped.
+  const clearQueuedNarration = useCallback(() => {
+    const queued = audioQueueRef.current;
+    if (queued.length === 0) return;
+    audioQueueRef.current = [];
+    for (const { wpKey } of queued) {
+      triggeredRef.current.delete(wpKey);
+    }
+    setTriggeredWpIds(new Set(triggeredRef.current));
+    tourLogService.logOffRouteQueueCleared(queued.length);
+  }, []);
+
   const evaluateTriggers = useCallback((lat, lng, accuracy) => {
     tourLogService.logGpsFix(lat, lng, accuracy);
 
@@ -385,10 +428,17 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
     // against. Some tours (e.g. a brand new one not yet routed) have no trail_path at all —
     // skip entirely rather than guess at "off route" with nothing to measure against.
     if (walk.trail_path && walk.trail_path.length >= 2 && isFixUsable(accuracy, GPS_ACCURACY_HARD_CAP_M)) {
-      const trailDistance = nearestTrailDistanceM(lat, lng, walk.trail_path);
+      const trailDistance = nearestTrailDistanceM(lat, lng, walk.trail_path, walk.trail_breaks);
       if (trailDistance > OFF_ROUTE_DISTANCE_M) {
         offRouteStreakRef.current += 1;
         if (offRouteStreakRef.current >= OFF_ROUTE_STREAK_THRESHOLD) {
+          // Per Enda (follow-up 158): only do this on the actual transition into
+          // off-route (offRoute was false as of the last fix) — not on every later fix
+          // while it stays true, or this would try to clear an already-empty queue every
+          // time, harmlessly but pointlessly.
+          if (!offRoute) {
+            clearQueuedNarration();
+          }
           setOffRoute(true);
         }
       } else if (trailDistance <= ON_ROUTE_RECOVER_M) {
@@ -411,7 +461,7 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
     if (isFixUsable(accuracy, GPS_ACCURACY_HARD_CAP_M)) {
       prevPosRef.current = { lat, lng };
     }
-  }, [triggerWaypoints, secondaryWaypoints, persistPassedSecondary, isFixUsable, walk.trail_path, offRoute]);
+  }, [triggerWaypoints, secondaryWaypoints, persistPassedSecondary, isFixUsable, walk.trail_path, walk.trail_breaks, offRoute, clearQueuedNarration]);
 
   // Actually starts (or advances to) the next queued clip — called once at the top of
   // playTriggerAudio when nothing else is playing, and again from onEnded/a failed
