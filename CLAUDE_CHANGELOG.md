@@ -67,6 +67,40 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-09 (follow-up 153) — "Save for offline"/"Save offline" wording → "Stay Safe Offline"
+(`src/lib/i18n/index.js`)
+
+**Per Enda:** the button itself already said "Stay Safe Offline" (renamed in follow-up
+89), but several other spots describing the same feature still used the old generic
+"save it/this tour for offline use" phrasing instead of the actual branded name. Enda:
+"the correct wording is 'Stay Safe Offline'... do indeed fix the wording."
+
+Found and fixed every remaining instance describing the action generically:
+- `mywalks.offlineNote` — "save it for offline use" → "Stay Safe Offline"
+- `player.mustSaveFirst` — "Save this tour for offline use" → `Tap "Stay Safe Offline"`
+- `detail.offlineThankYou` — "this tour is saved for offline use" → `you've activated
+  "Stay Safe Offline"`
+- `download.incompleteBody` — "not fully saved for offline use yet" → `isn't fully ready
+  for "Stay Safe Offline" yet`
+- `download.failedBody` — "saving this tour for offline use" → `setting up "Stay Safe
+  Offline"`
+
+**Left unchanged, worth knowing:** the "Saved Offline" status badge (`download.
+savedOffline`) and "Offline ready" badge (`offline.ready`) — these are past-tense STATE
+labels shown after the fact, not the "save/save for offline" action phrasing Enda
+flagged, and "Stay Safe Offline" doesn't have a natural past-tense form. Left as-is;
+flagged to Enda in chat in case he wants those changed too.
+
+`player.mustSaveFirst` and `detail.offlineWarning`/`detail.defaultSafetyNotes` still say
+"cellular and GPS signals can be weak" — that specific claim (whether GPS trouble is
+something "Stay Safe Offline" fixes) is a separate, not-yet-decided question raised in
+the same conversation — only the branding was corrected here, not that claim.
+
+**Verified:** `npx eslint` clean, full `rm -rf dist && npx vite build` completes with no
+errors. Frontend-only — no backend redeploy needed, normal republish covers it.
+
+---
+
 ## 2026-09-09 (follow-up 152) — Third pass: 3 narrower gaps left in the follow-up 151 fixes
 
 **Per Enda:** three more specific, narrower issues in U-03, U-07 and U-08 came in after
