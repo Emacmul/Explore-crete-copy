@@ -37,6 +37,7 @@ export default async function(req) {
       return Response.json({ error: 'This walk has no Creem product id set — add one in the Walk editor before granting it.' }, { status: 400 });
     }
 
+
     // Already owned? Check across every processor (a real Creem purchase OR a prior manual
     // gift) so we don't create a redundant record and can tell the admin it's already there.
     // A revoked purchase (a past refund/chargeback) doesn't count as owned — the customer
