@@ -36,40 +36,64 @@ const STATIC_CACHE = `${CACHE_VERSION}-static`;
 // served, not guessed at. This is best-effort: if it fails (e.g. installing while already
 // offline), the worker still installs and falls back to exactly the old cache-as-you-go
 // behaviour — nothing about this fix can make the app WORSE than it already was.
+//
+// Returns a result object instead of just swallowing failures silently — was: nothing
+// recorded whether this actually worked before the worker went ahead and installed anyway
+// (audit re-check, 2026-09-09 — third pass, finding U-03 refinement: "never proves the
+// shell successfully cached"). Posted to any open page via SW_SHELL_PRECACHE_RESULT below
+// so it's at least checkable, even though nothing in the app currently blocks on it.
 async function precacheAppShell() {
+  const result = { ok: false, shellCached: false, assetsCached: 0, assetsTotal: 0 };
   try {
     const cache = await caches.open(STATIC_CACHE);
     const shellResponse = await fetch('/', { cache: 'no-store' });
-    if (!shellResponse.ok) return;
+    if (!shellResponse.ok) return result;
     const html = await shellResponse.clone().text();
     await cache.put('/', shellResponse);
+    result.shellCached = true;
 
     const assetUrls = new Set();
     const re = /(?:src|href)="(\/assets\/[^"]+\.(?:js|css))"/g;
     let match;
     while ((match = re.exec(html))) assetUrls.add(match[1]);
+    result.assetsTotal = assetUrls.size;
 
     await Promise.all(
       [...assetUrls].map(async (url) => {
         try {
           const res = await fetch(url, { cache: 'no-store' });
-          if (res.ok) await cache.put(url, res);
+          if (res.ok) {
+            await cache.put(url, res);
+            result.assetsCached += 1;
+          }
         } catch {
           // One missing asset doesn't block the rest — it'll still get cached the normal
           // way the first time this worker sees a request for it go by.
         }
       })
     );
+
+    result.ok = result.shellCached && result.assetsCached === result.assetsTotal;
+    return result;
   } catch {
     // Best-effort precache only — installing while offline, or any other failure here,
     // still leaves the worker installing normally with the prior cache-as-you-go behaviour.
+    return result;
   }
 }
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     (async () => {
-      await precacheAppShell();
+      const result = await precacheAppShell();
+      // Best-effort notification — a page that isn't listening (or isn't open yet) simply
+      // never sees this; it doesn't block or delay installing either way.
+      try {
+        const clients = await self.clients.matchAll({ type: 'window' });
+        clients.forEach((client) => client.postMessage({ type: 'SW_SHELL_PRECACHE_RESULT', ...result }));
+      } catch {
+        // Non-fatal — see above.
+      }
       await self.skipWaiting();
     })()
   );

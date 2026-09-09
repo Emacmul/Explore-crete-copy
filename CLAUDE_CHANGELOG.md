@@ -67,6 +67,60 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-09 (follow-up 152) — Third pass: 3 narrower gaps left in the follow-up 151 fixes
+
+**Per Enda:** three more specific, narrower issues in U-03, U-07 and U-08 came in after
+follow-up 151. Checked all three against the live code — all real. For U-08 (unknown GPS
+accuracy) there was a genuine trade-off to make, not just a bug: always treating a missing
+accuracy reading as untrustworthy would silence narration completely on any phone that
+never reports accuracy at all. Explained the trade-off and asked before touching it. Enda
+picked the middle-ground option; approved both other fixes too.
+
+### U-08 refinement — unknown GPS accuracy no longer auto-trusted once a device has proven
+it can report a real one (`src/components/walks/DrivingTourPlayer.jsx`)
+`fixIsTrustworthy` alone still treated a fix with NO accuracy value as trustworthy,
+always — meant to keep narration working on a phone that never reports accuracy, but it
+also meant a phone that HAS shown it can report accuracy, then gives one glitchy reading
+with none, still got treated as precise. Added `isFixUsable`, which remembers (for this
+page load) whether this device has ever once reported a real accuracy value. A missing
+reading is trusted only until that happens — a phone that genuinely never reports
+accuracy is unaffected; one that does gets the missing reading treated as untrustworthy
+instead. Replaces every in-component call to `fixIsTrustworthy` (trigger check, "passed"
+tracking, bearing reference point, and the sustained-low-accuracy warning). Test:
+`/tmp/test_gps_unknown_accuracy_recheck.mjs` (10/10).
+
+### U-07 refinement — no GPS support at all now shows a clear on-screen error
+(`src/components/walks/DrivingTourPlayer.jsx`, `src/lib/i18n/index.js`)
+Clicking "Start Tour" on a device/browser with no location support did nothing visible —
+only a debug-log entry nobody would see without opening the audit log panel. Now shows a
+clear red message right above the Start button explaining the tour can't start on this
+device/browser.
+
+### U-03 refinement — the app-shell precache now records whether it actually worked
+(`public/sw.js`, `src/lib/registerSw.js`)
+The follow-up 151 fix silently swallowed every outcome the same way — success, partial
+failure, and total failure all looked identical from the outside, so nothing could tell
+them apart afterwards. `precacheAppShell` now tracks and returns whether the shell page
+and every discovered asset actually cached successfully, and the service worker posts
+that result to any open tab. `registerSw.js` stores it (`getShellPrecacheStatus()`) so
+it's checkable going forward. Nothing in the app currently blocks on this or shows it to
+the user — there wasn't an existing "offline ready" indicator at the app-shell level to
+wire it into — but it's now a real, inspectable signal instead of pure silence. Tests:
+`/tmp/test_sw_precache_result.mjs` (9/9, runs the real `sw.js` covering a clean success, a
+partial failure, and a total failure), `/tmp/test_registersw_shell_status.mjs` (8/8, runs
+the real `registerSw.js`).
+
+**Verified:** `npx eslint` clean on every touched file. Full `rm -rf dist && npx vite
+build` completes with no errors, and `sw.js`'s asset-discovery pattern was re-checked
+against this fresh build's actual output. All 16 standalone test files (130+ assertions
+total, every prior fix's test re-run for regressions) pass.
+
+**No backend functions touched this round** — every change is frontend-only
+(`DrivingTourPlayer.jsx`, `i18n/index.js`, `public/sw.js`, `registerSw.js`). A normal
+republish covers all of it, no manual redeploy dance needed.
+
+---
+
 ## 2026-09-09 (follow-up 151) — Recheck audit after the follow-up 150 redeploy: 6 of the 8 fixes had real gaps
 
 **Per Enda:** after redeploying the 5 functions follow-up 150 flagged, he ran a fresh

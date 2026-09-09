@@ -14,6 +14,23 @@
  * content-hashed under /assets/), so registering there is safe and desirable for
  * offline support — see public/sw.js for the cache strategy.
  */
+const SHELL_PRECACHE_STATUS_KEY = 'explore_crete_shell_precache_status';
+
+// Was: the service worker's install-time app-shell precache (see public/sw.js) ran
+// entirely silently — nothing recorded whether it actually worked before the app went
+// ahead and relied on it (audit re-check, 2026-09-09 — third pass, finding U-03
+// refinement: "never proves the shell successfully cached"). The worker now posts its
+// result here; this stores it so it's at least checkable — read it with
+// getShellPrecacheStatus() below.
+export function getShellPrecacheStatus() {
+  try {
+    const raw = localStorage.getItem(SHELL_PRECACHE_STATUS_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
 
@@ -42,6 +59,14 @@ export async function registerServiceWorker() {
   navigator.serviceWorker.addEventListener('message', (event) => {
     if (event.data && event.data.type === 'SW_UPDATED') {
       window.dispatchEvent(new CustomEvent('explore-crete:update-available'));
+    }
+    if (event.data && event.data.type === 'SW_SHELL_PRECACHE_RESULT') {
+      const { type: _type, ...status } = event.data;
+      try {
+        localStorage.setItem(SHELL_PRECACHE_STATUS_KEY, JSON.stringify({ ...status, checkedAt: Date.now() }));
+      } catch {
+        /* best-effort — not having this stored just means getShellPrecacheStatus() returns null */
+      }
     }
   });
 }

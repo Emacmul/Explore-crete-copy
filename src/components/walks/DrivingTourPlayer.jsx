@@ -93,6 +93,11 @@ export default function DrivingTourPlayer({ walk }) {
     paused: { label: t('player.paused'), color: 'text-amber-400' },
   };
   const [status, setStatus] = useState('idle');
+  // Non-null when Start Tour was clicked but couldn't actually start (e.g. this device/
+  // browser has no GPS support at all). Was previously just a debug-log entry with nothing
+  // shown on screen — clicking Start looked like it silently did nothing (audit re-check,
+  // 2026-09-09 — third pass, finding U-07 refinement).
+  const [startError, setStartError] = useState(null);
   const [currentPos, setCurrentPos] = useState(null);
   const [triggeredWpIds, setTriggeredWpIds] = useState(new Set());
   const [lastTriggered, setLastTriggered] = useState(null);
@@ -109,6 +114,11 @@ export default function DrivingTourPlayer({ walk }) {
   const [gpsIssue, setGpsIssue] = useState(null);
   const gpsErrorStreakRef = useRef(0);
   const gpsAccuracyStreakRef = useRef(0);
+  // Set true the first time THIS device reports a real (finite) accuracy value this page
+  // load, and never reset — a device's ability to report accuracy doesn't change mid-drive.
+  // Used by isFixUsable below (audit re-check, 2026-09-09 — third pass, finding U-08
+  // refinement).
+  const deviceReportsAccuracyRef = useRef(false);
   // Every secondary waypoint the driver has actually reached so far this drive (see the
   // "last known position" comment above) — restored from this device's storage on open,
   // so it survives the app being closed and reopened.
@@ -167,6 +177,24 @@ export default function DrivingTourPlayer({ walk }) {
     }
   }, [walk.id]);
 
+  // Was: a fix with NO accuracy reading at all was always trusted, unconditionally — meant
+  // to keep narration working on a device that never reports accuracy, but it meant a
+  // device that HAS shown it can report accuracy, then gives one glitchy reading with none,
+  // still got treated as if it were precise (audit re-check, 2026-09-09 — third pass,
+  // finding U-08 refinement). Fix: a missing/NaN accuracy is trusted only for a device that
+  // has never once reported a real accuracy value this page load. Once we've seen this
+  // device CAN report one, a later fix with none is treated as untrustworthy instead — a
+  // device that genuinely never reports accuracy is completely unaffected, so narration
+  // isn't silenced for it.
+  const isFixUsable = useCallback((accuracy, radius) => {
+    const hasRealAccuracy = accuracy != null && Number.isFinite(accuracy);
+    if (hasRealAccuracy) {
+      deviceReportsAccuracyRef.current = true;
+      return fixIsTrustworthy(accuracy, radius);
+    }
+    return !deviceReportsAccuracyRef.current;
+  }, []);
+
   const evaluateTriggers = useCallback((lat, lng, accuracy) => {
     tourLogService.logGpsFix(lat, lng, accuracy);
 
@@ -179,7 +207,7 @@ export default function DrivingTourPlayer({ walk }) {
       const distance = haversine(lat, lng, wp.lat, wp.lng);
       const radius = wp.trigger_radius_m || 150;
       const withinRadius = distance <= radius;
-      const accuracyOk = fixIsTrustworthy(accuracy, radius);
+      const accuracyOk = isFixUsable(accuracy, radius);
 
       let bearingOk = true;
       const bearingInfo = (wp.use_bearing && movementBearing !== null) ? {
@@ -234,7 +262,7 @@ export default function DrivingTourPlayer({ walk }) {
       const radius = wp.trigger_radius_m || 150;
       // Same accuracy guard as the audio triggers above — an imprecise fix must not be
       // allowed to mark a waypoint "passed" either (see U-08).
-      if (!fixIsTrustworthy(accuracy, radius)) continue;
+      if (!isFixUsable(accuracy, radius)) continue;
       const distance = haversine(lat, lng, wp.lat, wp.lng);
       if (distance <= radius) {
         if (!passedChanged) nextPassed = new Set(nextPassed);
@@ -256,10 +284,10 @@ export default function DrivingTourPlayer({ walk }) {
     // finding U-08: this was previously unconditional, so one bad fix could throw off the
     // bearing calculated for the very next one, even though the bad fix itself was
     // correctly rejected everywhere else).
-    if (fixIsTrustworthy(accuracy, GPS_ACCURACY_HARD_CAP_M)) {
+    if (isFixUsable(accuracy, GPS_ACCURACY_HARD_CAP_M)) {
       prevPosRef.current = { lat, lng };
     }
-  }, [triggerWaypoints, secondaryWaypoints, persistPassedSecondary]);
+  }, [triggerWaypoints, secondaryWaypoints, persistPassedSecondary, isFixUsable]);
 
   // Actually starts (or advances to) the next queued clip — called once at the top of
   // playTriggerAudio when nothing else is playing, and again from onEnded/a failed
@@ -320,8 +348,10 @@ export default function DrivingTourPlayer({ walk }) {
   const handleStart = (seedKeys) => {
     if (!gpsService.isSupported()) {
       tourLogService.logWarning('Geolocation not supported on this device');
+      setStartError(t('player.gpsNotSupported'));
       return;
     }
+    setStartError(null);
 
     tourLogService.startSession(walk.id, walk.name);
     triggeredRef.current = new Set(seedKeys || []);
@@ -342,7 +372,7 @@ export default function DrivingTourPlayer({ walk }) {
         // warning clears here regardless of that fix's quality.
         gpsErrorStreakRef.current = 0;
 
-        const accuracyOk = accuracy == null || !Number.isFinite(accuracy) || accuracy <= GPS_ACCURACY_HARD_CAP_M;
+        const accuracyOk = isFixUsable(accuracy, GPS_ACCURACY_HARD_CAP_M);
         if (accuracyOk) {
           // A genuinely usable fix — also clears a sustained "too imprecise" warning.
           gpsAccuracyStreakRef.current = 0;
@@ -548,6 +578,15 @@ export default function DrivingTourPlayer({ walk }) {
 
       {/* Controls */}
       <div className="px-4 pb-3 space-y-2">
+        {/* Clicking Start Tour on a device/browser with no GPS support at all used to do
+            nothing visible — see startError above (audit re-check, 2026-09-09 — third
+            pass, finding U-07 refinement). */}
+        {status === 'idle' && startError && (
+          <div className="flex items-start gap-2 bg-red-900/30 border border-red-600 rounded-lg px-3 py-2">
+            <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+            <p className="text-xs text-red-300">{startError}</p>
+          </div>
+        )}
         {status === 'idle' && !savedOffline && (
           <p className="text-xs text-amber-400 text-center">
             {t('player.mustSaveFirst')}

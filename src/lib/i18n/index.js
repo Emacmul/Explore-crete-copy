@@ -285,6 +285,7 @@ export const translations = {
     'player.gpsWeakSignal': "weak signal",
     'player.gpsAccuracyIssueTitle': "GPS too imprecise to use",
     'player.gpsAccuracyWeak': "Your location signal is on but not precise enough right now, so directions and narration may not trigger. This is common in mountainous areas — it should improve as you keep driving. If you're unsure of the route, pull over safely.",
+    'player.gpsNotSupported': "This device or browser doesn't support location tracking, so this tour can't start. Try a different browser, or a phone with GPS.",
 
     'download.savingPct': "Saving {n}%",
     'download.removing': "Removing…",
