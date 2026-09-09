@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useImperativeHandle, forwardRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Play, Pause, Square, Bug, AlertTriangle } from 'lucide-react';
 import * as gpsService from '@/lib/gpsService';
@@ -83,7 +83,12 @@ function loadPassedSecondaryIds(walkId) {
   }
 }
 
-export default function DrivingTourPlayer({ walk }) {
+// Exposes an imperative handle (playWaypoint) so WalkDetail.jsx's Tour Stops list can play
+// a specific stop's narration on demand — the manual "Play" button. Per Enda: a GPS problem
+// should never leave a driver stuck with no way to hear a clip that failed to auto-trigger,
+// and the driver shouldn't have to look at the screen to find out something's wrong in the
+// first place (see the spoken GPS alert below), just to recover from it once they notice.
+const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
   const { t } = useLanguage();
   const { isDownloaded } = useOfflineWalks();
   const savedOffline = isDownloaded(walk.id);
@@ -119,6 +124,11 @@ export default function DrivingTourPlayer({ walk }) {
   // Used by isFixUsable below (audit re-check, 2026-09-09 — third pass, finding U-08
   // refinement).
   const deviceReportsAccuracyRef = useRef(false);
+  // True once the spoken GPS-trouble alert has been read out for the CURRENT gpsIssue
+  // episode — reset to false the moment the issue clears, so a later, separate GPS problem
+  // during the same drive is announced again. Prevents the alert repeating on every single
+  // GPS fix/error while one sustained issue is ongoing (see the effect below).
+  const spokenGpsIssueRef = useRef(false);
   // Every secondary waypoint the driver has actually reached so far this drive (see the
   // "last known position" comment above) — restored from this device's storage on open,
   // so it survives the app being closed and reopened.
@@ -341,6 +351,21 @@ export default function DrivingTourPlayer({ walk }) {
     }
   }, [playNextQueuedAudio]);
 
+  // Manual "Play" — called from WalkDetail.jsx's Tour Stops list via the imperative handle
+  // below. Reuses playTriggerAudio exactly as GPS-triggered playback does (same queueing so
+  // it doesn't interrupt whatever's already playing, same "mark as triggered" so GPS won't
+  // also fire this stop again later if it recovers). Unlike an automatic trigger, this
+  // always plays when tapped — it doesn't check whether the stop was already triggered, so
+  // a driver can also use it to simply hear a clip again.
+  const playWaypoint = useCallback((wp) => {
+    if (!wp || !wp.audio_clip_url) return;
+    const wpKey = wpKeyFor(wp);
+    tourLogService.logManualPlay(wp);
+    playTriggerAudio(wp, wpKey);
+  }, [playTriggerAudio]);
+
+  useImperativeHandle(ref, () => ({ playWaypoint }), [playWaypoint]);
+
   // seedKeys (optional): waypoint keys to mark as "already triggered" before GPS tracking
   // begins. Used by "Restart tour from here" below so picking up mid-route doesn't replay
   // every earlier segment's audio again — a normal Start Tour click passes nothing, so it
@@ -450,6 +475,10 @@ export default function DrivingTourPlayer({ walk }) {
     }
     audioQueueRef.current = [];
     currentlyPlayingWpRef.current = null;
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    spokenGpsIssueRef.current = false;
     tourLogService.stopSession();
     setStatus('idle');
     setCurrentPos(null);
@@ -459,6 +488,42 @@ export default function DrivingTourPlayer({ walk }) {
     gpsAccuracyStreakRef.current = 0;
   };
 
+  // Spoken (text-to-speech) GPS-trouble alert — per Enda: a driver shouldn't have to look at
+  // the screen to find out narration has stopped triggering, so this reads the same news the
+  // red banner shows out loud, once per issue episode (see spokenGpsIssueRef above), and
+  // points them at the manual Play button. Deliberately separate from — and never blocks —
+  // the tour's own narration audio, which keeps using audioService/playerRef untouched.
+  const speakGpsIssueAlert = useCallback((kind) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    const text = kind === 'low_accuracy'
+      ? t('player.gpsIssueSpokenLowAccuracy')
+      : t('player.gpsIssueSpokenNoSignal');
+    try {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      // The spoken alert text only exists in English so far (see i18n/index.js) regardless
+      // of the driver's chosen UI language, so the voice is pinned to English too rather
+      // than left to guess from the UI language and mispronounce it.
+      utterance.lang = 'en-US';
+      window.speechSynthesis.speak(utterance);
+      tourLogService.logSpokenAlert(kind, text);
+    } catch (err) {
+      tourLogService.logWarning(`Spoken GPS alert failed: ${err?.message || 'unknown'}`);
+    }
+  }, [t]);
+
+  useEffect(() => {
+    const active = !!gpsIssue && status === 'running';
+    if (active) {
+      if (!spokenGpsIssueRef.current) {
+        spokenGpsIssueRef.current = true;
+        speakGpsIssueAlert(gpsIssue.kind);
+      }
+    } else {
+      spokenGpsIssueRef.current = false;
+    }
+  }, [gpsIssue, status, speakGpsIssueAlert]);
+
   useEffect(() => {
     return () => {
       if (watchIdRef.current !== null) {
@@ -466,6 +531,9 @@ export default function DrivingTourPlayer({ walk }) {
       }
       if (playerRef.current) {
         playerRef.current.destroy();
+      }
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
       }
     };
   }, []);
@@ -659,4 +727,6 @@ export default function DrivingTourPlayer({ walk }) {
       )}
     </div>
   );
-}
+});
+
+export default DrivingTourPlayer;

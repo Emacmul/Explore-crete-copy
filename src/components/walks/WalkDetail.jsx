@@ -6,7 +6,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   X, Clock, Route, TrendingUp, MapPin, AlertTriangle,
   Eye, Droplets, TreePine, Navigation, Crosshair, ShieldAlert,
-  CheckCircle2, Circle, RotateCcw, Mountain
+  CheckCircle2, Circle, RotateCcw, Mountain, Play
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import WalkDetailMap from '../map/WalkDetailMap';
@@ -80,6 +80,18 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
   const { t } = useLanguage();
   const { isDownloaded } = useOfflineWalks();
   const savedOffline = isDownloaded(walk.id);
+
+  // Handle onto DrivingTourPlayer's playWaypoint, so the manual "Play" button on each Tour
+  // Stop below can trigger that stop's narration directly — see the comment on
+  // DrivingTourPlayer's forwardRef for why: a GPS problem should never leave a driver with
+  // no way to hear a clip that didn't auto-trigger. manuallyPlayedKeys is purely this list's
+  // own "tapped" feedback (turns the button into a checkmark) — DrivingTourPlayer tracks the
+  // real triggered/played state itself; this is just so the driver can see the tap worked.
+  const driverPlayerRef = React.useRef(null);
+  const [manuallyPlayedKeys, setManuallyPlayedKeys] = React.useState(new Set());
+  React.useEffect(() => {
+    setManuallyPlayedKeys(new Set());
+  }, [walk?.id]);
 
   // If the offline copy is removed (e.g. from "My Library", to free up phone storage)
   // while this exact tour is still open and already started, the gate must re-lock
@@ -295,7 +307,7 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
             )}
 
             {walk.route_type === 'driving_audio_tour' && (
-              <DrivingTourPlayer walk={walk} />
+              <DrivingTourPlayer ref={driverPlayerRef} walk={walk} />
             )}
 
             {/* Legal/safety compliance banner — required every time this tour is opened,
@@ -472,6 +484,34 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
 
                             {isLastReached && (
                               <Badge className="text-xs bg-blue-600 hover:bg-blue-600">{t('detail.youWereLastHere')}</Badge>
+                            )}
+
+                            {/* Manual "Play" — lets the driver hear this stop's narration on
+                                demand, so a GPS problem (weak signal, wrong angle, a missed
+                                trigger) never leaves them stuck with no way to continue. Only
+                                shown for driving-tour stops that actually have narration. */}
+                            {isDrivingTour && waypoint.trigger_audio && waypoint.audio_clip_url && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  driverPlayerRef.current?.playWaypoint(waypoint);
+                                  setManuallyPlayedKeys(prev => new Set(prev).add(key));
+                                }}
+                                title={t('detail.playStopTitle')}
+                                className="h-7 gap-1 px-2 border-blue-400 text-blue-600 hover:bg-blue-50"
+                              >
+                                {manuallyPlayedKeys.has(key) ? (
+                                  <>
+                                    <CheckCircle2 className="w-3.5 h-3.5" /> {t('detail.stopPlayed')}
+                                  </>
+                                ) : (
+                                  <>
+                                    <Play className="w-3.5 h-3.5" /> {t('detail.playStop')}
+                                  </>
+                                )}
+                              </Button>
                             )}
                           </div>
 

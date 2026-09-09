@@ -67,6 +67,75 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-09 (follow-up 155) — Manual "Play" button on each Tour Stop, plus a spoken
+GPS-trouble alert (`DrivingTourPlayer.jsx`, `WalkDetail.jsx`, `tourLogService.js`,
+`src/lib/i18n/index.js`)
+
+**Per Enda:** following on from follow-up 154, he asked how a driver whose tour has gone
+quiet because of GPS trouble is meant to get themselves out of that situation without it
+turning into a bad review. He then asked — before this was built — that any error also be
+announced out loud, since the driver is driving and shouldn't have to look at the screen;
+he suggested wording along the lines of "we are experiencing a GPS failure due to your
+surroundings, this is not an app failure, please press Play to continue," and asked
+whether a voice command ("say Play") could replace the on-screen tap. Voice command was
+researched (Web Speech API browser support) and found unreliable in a moving car — road
+noise degrades recognition badly, and Chrome/Edge's recognition needs an internet
+connection, which is exactly what's often missing in the areas this matters for. Enda
+agreed to skip voice command for now and approved building the manual Play button plus a
+spoken (text-to-speech) alert.
+
+**What changed:**
+- **Manual Play button** — each stop in the "Tour Stops" list (`WalkDetail.jsx`, driving
+  tours only) that has narration (`trigger_audio` + `audio_clip_url`) now shows a Play
+  button. Tapping it plays that stop's clip immediately and marks it as done, so GPS won't
+  also fire it later if signal recovers. This works whether the tour is running or not yet
+  started, and works even for a stop that's already played (so it can double as "play that
+  again"). `DrivingTourPlayer.jsx` is now a `forwardRef` component exposing a
+  `playWaypoint(waypoint)` handle for exactly this purpose; the button reuses the same
+  playback queue GPS triggers already use, so it queues politely behind whatever's
+  currently playing rather than interrupting it.
+- **Spoken GPS-trouble alert** — the moment the existing on-screen red GPS warning banner
+  first appears during a running tour, the browser now also reads out loud (via the
+  standard `speechSynthesis`/Web Speech API — ~95% browser support, no new audio files,
+  works fully offline) that this is a signal/terrain issue, not an app failure, and to tap
+  Play if narration doesn't resume. It speaks once per GPS-trouble episode — not once every
+  GPS reading — clearing itself as soon as the on-screen banner would clear too. Stopping
+  the tour cancels any speech in progress. Text differs slightly for "no signal at all" vs.
+  "signal present but too imprecise," matching the two existing on-screen warning kinds.
+- Added `tourLogService.logManualPlay` / `logSpokenAlert` so both new actions show up in
+  the existing debug audit log, same as every other trigger/audio event already does.
+- New i18n keys (English only, matching every other `player.*`/`detail.*` string that
+  hasn't been translated into the other languages yet): `detail.playStop`,
+  `detail.playStopTitle`, `detail.stopPlayed`, `player.gpsIssueSpokenNoSignal`,
+  `player.gpsIssueSpokenLowAccuracy`.
+
+**Why:** closes the exact gap identified after follow-up 154 — until now, a GPS problem
+that stopped a clip from auto-triggering had genuinely no recovery path in the app at all,
+and the only warning about it required looking at the screen while driving.
+
+**Verified:** `npx vite build` completes with no errors on both changed components. Wrote
+and ran a standalone test mirroring the real `playWaypoint`/spoken-alert gating logic
+(11 checks, all passing) covering: a never-triggered stop plays and gets marked done; a
+stop with no audio does nothing; replaying an already-triggered stop queues behind the
+current clip and plays once it ends; the spoken alert fires exactly once per sustained GPS
+issue even though the underlying state updates repeatedly; a new, separate issue later in
+the same drive is announced again; nothing is spoken while paused/idle; stopping and
+restarting the tour re-arms the announcement. Frontend-only — no backend redeploy needed.
+
+**Not done / worth knowing for next time:**
+- Not tested on a real device/browser yet — in particular, `speechSynthesis` voice quality
+  and exact timing can vary by phone/browser, and this hasn't been driven live. Worth a
+  real test drive (or at least sitting in a parked car with the screen off) before trusting
+  it fully.
+- The spoken alert text is English only, same as the rest of `player.*` — it'll read out
+  in English even for a driver using the Dutch or Czech UI, since those languages don't
+  have any `player.*` translations yet (not new to this change, just worth knowing).
+- No visible "played" indicator is shared with the real GPS-triggered state — the Play
+  button's checkmark is just local, in-the-moment feedback for that tap; it doesn't persist
+  across closing and reopening the app the way the driving tour's own progress bar does.
+
+---
+
 ## 2026-09-09 (follow-up 154) — Corrected the "cellular AND GPS" claim; added a GPS-delay
 notice to the pre-tour safety notes (`src/lib/i18n/index.js`)
 

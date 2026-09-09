@@ -252,6 +252,11 @@ export const translations = {
     'detail.youWereLastHere': "You were last here",
     'detail.roleStart': "Start",
     'detail.roleStop': "Stop",
+    // Manual "Play" button on each Tour Stop — lets a driver hear that stop's narration on
+    // demand, so a GPS problem never leaves them stuck with no way to continue the tour.
+    'detail.playStop': "Play",
+    'detail.playStopTitle': "Play this stop's narration now",
+    'detail.stopPlayed': "Played",
 
     'progress.gettingLocation': "Getting GPS location…",
     'progress.yourProgress': "Your progress",
@@ -286,6 +291,10 @@ export const translations = {
     'player.gpsAccuracyIssueTitle': "GPS too imprecise to use",
     'player.gpsAccuracyWeak': "Your location signal is on but not precise enough right now, so directions and narration may not trigger. This is common in mountainous areas — it should improve as you keep driving. If you're unsure of the route, pull over safely.",
     'player.gpsNotSupported': "This device or browser doesn't support location tracking, so this tour can't start. Try a different browser, or a phone with GPS.",
+    // Spoken out loud (text-to-speech) the moment the GPS warning banner first appears,
+    // so a driver never has to look at the screen to know what's happening or what to do.
+    'player.gpsIssueSpokenNoSignal': "We're experiencing a GPS signal problem due to your surroundings. This is not an app failure. If your narration doesn't resume, press the Play button on your screen to continue listening to your tour.",
+    'player.gpsIssueSpokenLowAccuracy': "Your GPS signal is too weak to pinpoint your location right now, due to your surroundings. This is not an app failure. If your narration doesn't resume, press the Play button on your screen to continue listening to your tour.",
 
     'download.savingPct': "Saving {n}%",
     'download.removing': "Removing…",

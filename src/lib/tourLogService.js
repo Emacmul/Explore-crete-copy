@@ -117,6 +117,23 @@ export function logWarning(message) {
   addEntry('warning', { message });
 }
 
+// Manual "Play" button (WalkDetail.jsx Tour Stops list) — a driver tapped a stop directly
+// rather than it firing from GPS. Recorded separately from audio_play so the log makes it
+// obvious this one wasn't GPS-triggered, in case that's ever relevant to diagnosing a report.
+export function logManualPlay(waypoint) {
+  addEntry('manual_play', {
+    waypointId: waypoint.segment_id || waypoint.name || 'unnamed',
+  });
+}
+
+// Spoken GPS-trouble alert (text-to-speech) — fires once each time the visible GPS warning
+// banner first appears, telling the driver out loud that this is a signal issue, not an app
+// failure, without requiring them to look at the screen. Logged so a support conversation
+// about "the app went quiet" can confirm whether the spoken alert actually played.
+export function logSpokenAlert(kind, text) {
+  addEntry('spoken_alert', { kind, text });
+}
+
 // --- Subscription ---
 
 export function subscribe(callback) {
@@ -179,6 +196,10 @@ function entryToText(entry) {
       return `[${t}] ✗ AUDIO SKIPPED — "${entry.data.waypointId}" (${entry.data.reason})`;
     case 'warning':
       return `[${t}] ⚠ ${entry.data.message}`;
+    case 'manual_play':
+      return `[${t}] ▶ MANUAL PLAY — "${entry.data.waypointId}" (tapped by driver)`;
+    case 'spoken_alert':
+      return `[${t}] 🔊 SPOKEN ALERT (${entry.data.kind}) — "${entry.data.text}"`;
     default:
       return `[${t}] ${entry.type}`;
   }
