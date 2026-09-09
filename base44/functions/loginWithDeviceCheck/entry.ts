@@ -28,6 +28,7 @@ export default async function (req: Request): Promise<Response> {
     const svc = base44.asServiceRole;
     const siteUrl = secrets.get("WC_SITE_URL");
 
+
     // 1. Validate credentials against the WordPress JWT endpoint.
     let wpData;
     try {
