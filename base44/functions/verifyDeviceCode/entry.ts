@@ -25,7 +25,6 @@ export default async function (req: Request): Promise<Response> {
     const svc = base44.asServiceRole;
     const siteUrl = secrets.get("WC_SITE_URL");
 
-
     // Find the newest pending challenge for this email+device.
     const challenges = await svc.entities.DeviceChallenge.filter({ user_email: email, device_id, status: "pending" });
     const challenge = challenges.sort((a: any, b: any) =>
