@@ -9,7 +9,9 @@
 //
 // Idempotent: the subscription id is stable across the entire lifecycle (start → each
 // renewal → cancellation/expiry), so we upsert keyed by (processor, subscription_id).
-// A redelivered webhook just re-writes the same status/expiry — never a duplicate row.
+// A redelivered webhook just re-writes the same status/expiry — never a duplicate row —
+// UNLESS the membership is currently 'disputed' (see below), in which case it's refused
+// outright rather than written.
 
 export async function recordMembership(base44, { buyerEmail, processor, subscriptionId, status, expiresAt }) {
   const email = (buyerEmail || '').toLowerCase().trim();
@@ -24,6 +26,18 @@ export async function recordMembership(base44, { buyerEmail, processor, subscrip
     subscription_id: subscriptionId,
   });
   const current = existing[0];
+
+  // A membership marked 'disputed' had its access pulled by a refund/chargeback (see
+  // accessRevoker.ts), not by an ordinary processor lifecycle event. An out-of-order or
+  // redelivered webhook for this same subscription — e.g. Creem re-sending the ORIGINAL
+  // subscription.paid event after the dispute already revoked access — must never be able
+  // to silently undo that on its own (audit finding U-06, 2026-09-09 review). Only the
+  // Super-Admin dispute-restore flow (accessRevoker.ts's restoreAccess) clears the flag;
+  // until then, every ordinary webhook for this subscription id is ignored outright.
+  if (current?.disputed) {
+    return { recorded: false, reason: 'disputed', membership_id: current.id };
+  }
+
   let expiresAtValue = expiresAt || null;
 
   // Safeguard: a cancellation should keep the member covered until the end of the period

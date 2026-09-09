@@ -3,9 +3,11 @@ import { Button } from '@/components/ui/button';
 import { Download, Trash2, CheckCircle, Loader2 } from 'lucide-react';
 import { useOfflineWalks } from '@/components/offline/useOfflineWalks';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+import { useToast } from '@/components/ui/use-toast';
 
 export default function DownloadButton({ walk, size = 'sm', showLabel = true }) {
   const { t } = useLanguage();
+  const { toast } = useToast();
   const { downloadWalk, removeWalk, isDownloaded } = useOfflineWalks();
   const [phase, setPhase] = useState('idle'); // 'idle' | 'saving' | 'removing'
   const [progress, setProgress] = useState(0);
@@ -17,8 +19,27 @@ export default function DownloadButton({ walk, size = 'sm', showLabel = true }) 
     setProgress(0);
     try {
       // Saves the full walk data, pre-caches the map tiles, then pre-downloads the
-      // narration audio — all into one IndexedDB store, with a real progress %.
-      await downloadWalk(walk, p => setProgress(p));
+      // narration audio — all into one IndexedDB store, with a real progress %. The
+      // walk is only marked "saved offline" once the narration is confirmed complete
+      // (see useOfflineWalks.jsx / audit finding U-02) — if it isn't, tell the person
+      // instead of silently showing the same success state as a clean download.
+      const result = await downloadWalk(walk, p => setProgress(p));
+      if (!result?.success) {
+        toast({
+          variant: 'destructive',
+          title: t('download.incompleteTitle'),
+          description: t('download.incompleteBody', {
+            cached: result?.audio?.cached ?? 0,
+            total: result?.audio?.total ?? 0,
+          }),
+        });
+      }
+    } catch {
+      toast({
+        variant: 'destructive',
+        title: t('download.failedTitle'),
+        description: t('download.failedBody'),
+      });
     } finally {
       setPhase('idle');
       setProgress(0);

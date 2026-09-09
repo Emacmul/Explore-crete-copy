@@ -39,6 +39,8 @@ function entryLabel(entry) {
       const parts = [`${d.waypointId}`];
       if (d.result === 'fire') {
         parts.push(`✓ fired (${d.distance}m/${d.triggerRadius}m)`);
+      } else if (d.result === 'skip_low_accuracy') {
+        parts.push(`✗ GPS too imprecise: ±${Math.round(d.accuracy || 0)}m vs ${d.triggerRadius}m radius`);
       } else if (d.result === 'skip_distance') {
         parts.push(`✗ outside: ${d.distance}m > ${d.triggerRadius}m`);
       } else if (d.result === 'skip_bearing') {

@@ -39,11 +39,18 @@ function openDB() {
 
 // --- Walk data (IndexedDB) ---
 
-export async function saveWalkData(walk) {
+// `ownerEmail` (the account that downloaded this walk — see AuthContext.jsx) is stamped
+// onto the record as `_owner_email` and used everywhere offline walks are listed or opened
+// to make sure one account's paid offline content never shows up for a different account
+// signed in on the same browser (audit finding U-04, 2026-09-09 review — see
+// useOfflineWalks.jsx's reload() for where the filtering actually happens). Only one copy
+// of a given walk is ever kept locally (indexed by walk id), so re-downloading it under a
+// different account replaces the previous owner's copy rather than keeping both.
+export async function saveWalkData(walk, ownerEmail) {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_WALKS, 'readwrite');
-    tx.objectStore(STORE_WALKS).put({ ...walk, _savedAt: Date.now() });
+    tx.objectStore(STORE_WALKS).put({ ...walk, _savedAt: Date.now(), _owner_email: (ownerEmail || '').toLowerCase().trim() || null });
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });

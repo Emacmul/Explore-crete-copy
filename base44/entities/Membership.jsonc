@@ -34,6 +34,11 @@
       "format": "date-time",
       "description": "End of the current paid period (the processor's current_period_end_date). The membership lapses after this moment — an annual fee must actually expire if it isn't renewed."
     },
+    "disputed": {
+      "type": "boolean",
+      "default": false,
+      "description": "True when this membership's access was pulled by a refund/chargeback (see accessRevoker.ts), as opposed to an ordinary processor lifecycle change. While true, an out-of-order or redelivered webhook (e.g. Creem re-sending the original subscription.paid event after the dispute already revoked access) cannot silently reactivate the membership on its own (audit finding U-06, 2026-09-09 review) — only the Super-Admin dispute-restore flow clears it."
+    },
     "description": {
       "type": "string",
       "maxLength": 1000,

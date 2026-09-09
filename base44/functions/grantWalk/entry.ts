@@ -39,20 +39,27 @@ export default async function(req) {
 
     // Already owned? Check across every processor (a real Creem purchase OR a prior manual
     // gift) so we don't create a redundant record and can tell the admin it's already there.
+    // A revoked purchase (a past refund/chargeback) doesn't count as owned — the customer
+    // genuinely has no access right now, so an admin must be able to gift it to them again.
     const existing = await base44.asServiceRole.entities.Purchase.filter({
       buyer_email: email,
       creem_product_id: walk.creem_product_id,
     });
-    if (existing.length > 0) {
+    if (existing.some(p => p.status !== 'revoked')) {
       return Response.json({ granted: false, reason: 'already_owned', walk_id: walk.id, walk_name: walk.name });
     }
 
     // Record the gift. transactionId null => recordPurchase dedupes by (manual, email, product).
+    // allowReactivate: true — if this exact person + product was previously gifted and then
+    // revoked (e.g. a mistaken gift undone via a dispute-style revoke), re-activate that same
+    // record instead of leaving it stuck revoked. This function is already Super-Admin-gated
+    // above, so it's trusted to do that.
     await recordPurchase(base44, {
       buyerEmail: email,
       productId: walk.creem_product_id,
       processor: 'manual',
       transactionId: null,
+      allowReactivate: true,
     });
 
     return Response.json({ granted: true, walk_id: walk.id, walk_name: walk.name });

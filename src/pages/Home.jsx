@@ -11,7 +11,7 @@ import CreteMap from '../components/map/CreteMap';
 import WalkList from '../components/walks/WalkList';
 import WalkDetail from '../components/walks/WalkDetail';
 import UpdateInProgressModal from '../components/offline/UpdateInProgressModal';
-import { isWalkOutdated, replaceWalkOffline, preCacheWalkTiles, preCacheWalkAudio } from '../components/offline/offlineStorage';
+import { isWalkOutdated, replaceWalkOffline, preCacheWalkTiles, preCacheWalkAudio, isWalkSavedOffline, removeWalkFullyOffline } from '../components/offline/offlineStorage';
 import SplashScreen from '../components/onboarding/SplashScreen';
 import { getTourCategory, TOUR_CATEGORIES } from '../lib/tourCategories';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@/components/ui/select';
@@ -95,15 +95,24 @@ export default function Home() {
       updatingRef.current = true;
 
       for (const serverWalk of walks) {
-        // Skip walks the caller doesn't own — they have no protected content to cache, and
-        // pre-caching tiles/audio for a locked walk would be wasted work on teaser data.
-        if (serverWalk._accessible === false) continue;
+        // A walk the caller doesn't own has no protected content to cache — and if it WAS
+        // downloaded earlier and access was since taken away (a refund/chargeback — see
+        // accessRevoker.ts), any offline copy is removed right here so it stops working
+        // once the device goes offline (audit finding U-04, 2026-09-09 review). This only
+        // runs while online (it needs the fresh catalogue to know access changed), so it
+        // catches up the next time the app opens with a connection.
+        if (serverWalk._accessible === false) {
+          if (await isWalkSavedOffline(serverWalk.id)) {
+            await removeWalkFullyOffline(serverWalk.id);
+          }
+          continue;
+        }
 
         const outdated = await isWalkOutdated(serverWalk);
 
         if (outdated) {
           setUpdatingWalkName(serverWalk.name);
-          await replaceWalkOffline(serverWalk);
+          await replaceWalkOffline(serverWalk, user.email);
           await preCacheWalkTiles(serverWalk, () => {});
           await preCacheWalkAudio(serverWalk, () => {});
           setUpdatingWalkName(null);
@@ -119,8 +128,13 @@ export default function Home() {
   }, [walks]);
 
   const handleWalkSelect = async (walk) => {
-    // A locked walk has no protected content to cache — just open its paywall.
+    // A locked walk has no protected content to cache — just open its paywall. Same
+    // U-04 cleanup as the bulk update effect above: if it used to be downloaded and no
+    // longer is, remove the stale offline copy instead of leaving it usable offline.
     if (walk._accessible === false) {
+      if (await isWalkSavedOffline(walk.id)) {
+        await removeWalkFullyOffline(walk.id);
+      }
       setSelectedWalk(walk);
       setShowDetail(true);
       return;
@@ -130,7 +144,7 @@ export default function Home() {
 
     if (outdated) {
       setUpdatingWalkName(walk.name);
-      await replaceWalkOffline(walk);
+      await replaceWalkOffline(walk, user.email);
       await preCacheWalkTiles(walk, () => {});
       await preCacheWalkAudio(walk, () => {});
       setUpdatingWalkName(null);

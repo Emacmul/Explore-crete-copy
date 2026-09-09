@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
-import { Play, Pause, Square, Bug } from 'lucide-react';
+import { Play, Pause, Square, Bug, AlertTriangle } from 'lucide-react';
 import * as gpsService from '@/lib/gpsService';
 import * as audioService from '@/lib/audioService';
 import * as tourLogService from '@/lib/tourLogService';
@@ -41,6 +41,30 @@ function lastPositionStorageKey(walkId) {
   return `explore_crete_driving_last_position__${walkId}`;
 }
 
+// Per audit finding U-08 (2026-09-09 code review): a GPS fix's accuracy needs to be at
+// least as good as the trigger radius it's being judged against, or the fix can't be
+// trusted to resolve at that distance. Crete's mountains are notorious for weak signal —
+// a plain distance check can't tell a precise fix from a rough one that just happens to
+// land "inside" the radius by chance. GPS_ACCURACY_HARD_CAP_M additionally rejects any
+// fix so imprecise it shouldn't be trusted for ANY waypoint, however large that
+// waypoint's own radius is. Applied to both audio triggers and "last known position".
+const GPS_ACCURACY_HARD_CAP_M = 100;
+
+function fixIsTrustworthy(accuracy, radius) {
+  // No accuracy reported at all (not standard, but not every device/browser is
+  // guaranteed to supply it) — behave as before rather than silently blocking every
+  // trigger on an unrelated device quirk.
+  if (accuracy == null || !Number.isFinite(accuracy)) return true;
+  return accuracy <= Math.min(radius, GPS_ACCURACY_HARD_CAP_M);
+}
+
+// Per audit finding U-07: a single dropped GPS fix (a tunnel, a tall building, a brief
+// timeout) is normal in Crete's mountains and driving through them shouldn't alarm the
+// driver — but a RUN of consecutive failures means signal is genuinely gone, and that
+// needs to be visible, not just logged. A denied location permission never recovers on
+// its own, so that one is treated as sustained immediately rather than counted.
+const GPS_ERROR_STREAK_THRESHOLD = 2;
+
 function loadPassedSecondaryIds(walkId) {
   if (!walkId) return new Set();
   try {
@@ -74,6 +98,11 @@ export default function DrivingTourPlayer({ walk }) {
   const [lastTriggered, setLastTriggered] = useState(null);
   const [showDebug, setShowDebug] = useState(false);
   const [gpsAccuracy, setGpsAccuracy] = useState(null);
+  // Non-null while GPS has sustained-failed (see GPS_ERROR_STREAK_THRESHOLD above) —
+  // { code, message }. Drives the visible red warning; cleared the moment any fix,
+  // even a low-accuracy one, comes back in.
+  const [gpsIssue, setGpsIssue] = useState(null);
+  const gpsErrorStreakRef = useRef(0);
   // Every secondary waypoint the driver has actually reached so far this drive (see the
   // "last known position" comment above) — restored from this device's storage on open,
   // so it survives the app being closed and reopened.
@@ -144,6 +173,7 @@ export default function DrivingTourPlayer({ walk }) {
       const distance = haversine(lat, lng, wp.lat, wp.lng);
       const radius = wp.trigger_radius_m || 150;
       const withinRadius = distance <= radius;
+      const accuracyOk = fixIsTrustworthy(accuracy, radius);
 
       let bearingOk = true;
       const bearingInfo = (wp.use_bearing && movementBearing !== null) ? {
@@ -161,8 +191,14 @@ export default function DrivingTourPlayer({ walk }) {
       const wpKey = wpKeyFor(wp);
       const alreadyTriggered = triggeredRef.current.has(wpKey);
 
+      // Accuracy is checked FIRST and on its own — a low-confidence fix that happens to
+      // compute "within radius" by chance is exactly the false trigger this guards
+      // against (see GPS_ACCURACY_HARD_CAP_M/fixIsTrustworthy above), so it must never
+      // be allowed to reach the distance check at all.
       let result;
-      if (!withinRadius) {
+      if (!accuracyOk) {
+        result = 'skip_low_accuracy';
+      } else if (!withinRadius) {
         result = 'skip_distance';
       } else if (alreadyTriggered && wp.trigger_once !== false) {
         result = 'skip_already_triggered';
@@ -174,7 +210,7 @@ export default function DrivingTourPlayer({ walk }) {
         result = 'fire';
       }
 
-      tourLogService.logTriggerCheck(wp, distance, withinRadius, bearingInfo, alreadyTriggered, result);
+      tourLogService.logTriggerCheck(wp, distance, withinRadius, bearingInfo, alreadyTriggered, result, accuracy);
 
       if (result === 'fire') {
         playTriggerAudio(wp, wpKey);
@@ -189,8 +225,11 @@ export default function DrivingTourPlayer({ walk }) {
     for (const wp of secondaryWaypoints) {
       const key = wpKeyFor(wp);
       if (nextPassed.has(key)) continue;
-      const distance = haversine(lat, lng, wp.lat, wp.lng);
       const radius = wp.trigger_radius_m || 150;
+      // Same accuracy guard as the audio triggers above — an imprecise fix must not be
+      // allowed to mark a waypoint "passed" either (see U-08).
+      if (!fixIsTrustworthy(accuracy, radius)) continue;
+      const distance = haversine(lat, lng, wp.lat, wp.lng);
       if (distance <= radius) {
         if (!passedChanged) nextPassed = new Set(nextPassed);
         nextPassed.add(key);
@@ -274,11 +313,18 @@ export default function DrivingTourPlayer({ walk }) {
     prevPosRef.current = null;
     audioQueueRef.current = [];
     currentlyPlayingWpRef.current = null;
+    gpsErrorStreakRef.current = 0;
+    setGpsIssue(null);
     setStatus('running');
 
     watchIdRef.current = gpsService.watchPosition(
       (pos) => {
         const { latitude, longitude, accuracy } = pos.coords;
+        // Any fix at all — even a low-accuracy one that evaluateTriggers below will
+        // still reject per-waypoint — means GPS itself is working again, so the
+        // sustained-failure warning clears here regardless of that fix's quality.
+        gpsErrorStreakRef.current = 0;
+        setGpsIssue(null);
         setCurrentPos([latitude, longitude]);
         setGpsAccuracy(accuracy);
         if (statusRef.current === 'running') {
@@ -287,6 +333,19 @@ export default function DrivingTourPlayer({ walk }) {
       },
       (err) => {
         tourLogService.logWarning(`GPS error: ${err.message}`);
+        // Per audit finding U-07: a permission denial never recovers on its own, so it's
+        // treated as sustained immediately. Anything else (timeout, position
+        // unavailable) only becomes a visible warning after GPS_ERROR_STREAK_THRESHOLD
+        // consecutive failures, so a single brief blip (a tunnel, a tall building)
+        // doesn't needlessly alarm the driver.
+        const isPermissionDenied = err.code === 1;
+        gpsErrorStreakRef.current += 1;
+        if (isPermissionDenied || gpsErrorStreakRef.current >= GPS_ERROR_STREAK_THRESHOLD) {
+          setGpsIssue({
+            code: err.code,
+            message: isPermissionDenied ? t('player.gpsPermissionDenied') : t('player.gpsUnavailable'),
+          });
+        }
       },
       { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
     );
@@ -330,6 +389,8 @@ export default function DrivingTourPlayer({ walk }) {
     setStatus('idle');
     setCurrentPos(null);
     setGpsAccuracy(null);
+    setGpsIssue(null);
+    gpsErrorStreakRef.current = 0;
   };
 
   useEffect(() => {
@@ -343,13 +404,20 @@ export default function DrivingTourPlayer({ walk }) {
     };
   }, []);
 
-  const statusMeta = STATUS[status];
+  // While a sustained GPS failure is active during a running tour, the status bar must
+  // never keep showing a reassuring green "running" — see audit finding U-07.
+  const gpsIssueActive = !!gpsIssue && status === 'running';
+  const statusMeta = gpsIssueActive
+    ? { label: t('player.gpsIssueTitle'), color: 'text-red-400' }
+    : STATUS[status];
+  const accuracyIsWeak = gpsAccuracy != null && gpsAccuracy > GPS_ACCURACY_HARD_CAP_M;
 
   return (
     <div className="bg-slate-800 rounded-xl border border-slate-600 overflow-hidden">
       {/* Status bar */}
       <div className="flex items-center gap-3 px-4 py-3">
         <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+          gpsIssueActive ? 'bg-red-500 animate-pulse' :
           status === 'running' ? 'bg-green-400 animate-pulse' :
           status === 'paused' ? 'bg-amber-400' : 'bg-slate-500'
         }`} />
@@ -358,9 +426,10 @@ export default function DrivingTourPlayer({ walk }) {
             {statusMeta.label}
           </div>
           {currentPos && (
-            <div className="text-xs text-slate-500 font-mono">
+            <div className={`text-xs font-mono ${accuracyIsWeak ? 'text-amber-400' : 'text-slate-500'}`}>
               {currentPos[0].toFixed(5)}, {currentPos[1].toFixed(5)}
-              {gpsAccuracy && ` (±${Math.round(gpsAccuracy)}m)`}
+              {gpsAccuracy != null && ` (±${Math.round(gpsAccuracy)}m)`}
+              {accuracyIsWeak && ` — ${t('player.gpsWeakSignal')}`}
             </div>
           )}
         </div>
@@ -370,6 +439,19 @@ export default function DrivingTourPlayer({ walk }) {
           </div>
         )}
       </div>
+
+      {/* GPS sustained-failure warning — per audit finding U-07, this must be genuinely
+          hard to miss, not a small status-bar colour change alone. Stays up until a fresh
+          fix (of any accuracy — see the success callback in handleStart) comes back in. */}
+      {gpsIssueActive && (
+        <div className="mx-4 mb-3 flex items-start gap-2 bg-red-900/30 border border-red-600 rounded-lg px-3 py-2">
+          <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-red-300">{t('player.gpsIssueTitle')}</p>
+            <p className="text-xs text-red-300/90 mt-0.5">{gpsIssue.message}</p>
+          </div>
+        </div>
+      )}
 
       {/* Last known position — shows the single most recent point along the route the
           driver has actually reached (never the full list of points), and while the tour

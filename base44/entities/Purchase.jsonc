@@ -36,6 +36,20 @@
       "format": "date-time",
       "description": "When the purchase was recorded (webhook arrival time, or the manual grant time)."
     },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "revoked"
+      ],
+      "default": "active",
+      "description": "active = currently grants access; revoked = access was removed after a refund or chargeback on this purchase (see accessRevoker.ts). The record is kept rather than deleted, so a redelivered/retried checkout.completed webhook for the same transaction can never silently recreate access after a legitimate refund (audit finding U-05, 2026-09-09 review) — recordPurchase treats an existing revoked row for the same transaction as a dedupe match, not a fresh grant. A genuine repurchase (a new transaction id) still creates a normal new record. Older records predating this field have no status set and are treated as active everywhere this is checked."
+    },
+    "revoked_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this purchase was revoked, if applicable. Cleared back to empty if access is later restored (e.g. a won dispute)."
+    },
     "description": {
       "type": "string",
       "maxLength": 1000,

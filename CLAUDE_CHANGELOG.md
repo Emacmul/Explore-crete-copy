@@ -67,6 +67,166 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-09 (follow-up 150) — Fixed the 8 "urgent" findings from the third-party code audit
+
+**Per Enda:** he had another AI run a full security/safety audit of the codebase and
+asked for a review of its findings. Independently re-verified all 16 findings against
+the live code (not the audit's own line numbers) using parallel read-only checks before
+trusting any of them, confirmed all 16 were genuinely true, and delivered a plain-language
+review document with a suggested fix order. Enda then said: **"ok, do as you suggest to do
+with the 'urgent' failures."** This entry covers all 8 URGENT-graded findings (U-01
+through U-08). The 6 NECESSARY and 2 COSMETIC findings from the same audit were NOT
+touched — out of scope for this instruction.
+
+Each fix below was investigated by reading the actual current files directly (never
+going on the audit's own description alone), and each has either a standalone logic
+test (copied from the real source and verified to match it) or, where the fix is a
+data-flow/wiring change with nothing meaningfully "logic" to unit-test, a full
+`npx eslint` + `rm -rf dist && npx vite build` pass plus a manual trace confirming
+every request/response field name matches between the frontend and the backend
+function it calls.
+
+### U-07 + U-08 — Driving tour GPS safety (`src/components/walks/DrivingTourPlayer.jsx`,
+`src/lib/i18n/index.js`, `src/lib/tourLogService.js`, `src/components/walks/TourDebugLog.jsx`)
+- U-07: GPS errors during a driving tour were only ever logged to the console — the
+  screen kept showing "running" (green) even with a dead GPS signal, with nothing
+  telling the driver to pull over. Now a sustained GPS failure (2+ consecutive errors in
+  a row, so one normal blip in the mountains doesn't cause a false alarm) shows a clear
+  on-screen warning; a permission-denied error warns immediately since it can't recover
+  on its own; any good fix clears the warning right away.
+- U-08: a GPS fix's own accuracy (how imprecise the reading is) was recorded but never
+  used to decide anything — a poor-quality fix could still fire narration at the wrong
+  spot, or update "last known position" to a wrong location. Now a fix worse than the
+  waypoint's own trigger radius (capped at 100m either way) is treated as untrustworthy
+  and skipped for both triggering and position tracking.
+- Tests: `/tmp/test_gps_accuracy.mjs` (12/12), `/tmp/test_gps_streak.mjs` (6/6), copied
+  from the real functions and checked to match them exactly.
+
+### U-03 — The app's own offline safety net was never switched on (`src/main.jsx`)
+The service worker that lets the app keep working (old UI, no new data) with no signal
+was fully built (`src/lib/registerSw.js`, `public/sw.js`) but the function that
+registers it was never actually called anywhere. Added the one missing call at startup.
+
+### U-02 — "Saved for offline" could lie (`src/components/offline/useOfflineWalks.jsx`,
+`src/components/walks/DownloadButton.jsx`, `src/lib/i18n/index.js`)
+Downloading a walk for offline use saved the walk record as "offline" BEFORE any map
+tiles or narration audio had actually downloaded, silently dropped any individual clip
+that failed to fetch, and always showed 100%/success regardless of what really made it
+onto the device. A driver relying on "Saved Offline" could be trusting a tour with
+missing narration. Now tiles + audio download first, and a walk is only marked
+"saved offline" once every narration clip is confirmed present (map tiles are a
+secondary visual aid and don't block the save — the trail line itself comes from the
+walk's own GPS points, not the tile images). If audio didn't fully complete, the person
+sees a clear "Download incomplete" message instead of the same success state as a clean
+download. Test: `/tmp/test_download_completeness.mjs` (4/4).
+
+### U-05 — A refund could be silently undone by a repeated payment webhook
+(`base44/entities/Purchase.jsonc`, `base44/entities/Dispute.jsonc`,
+`base44/shared/accessRevoker.ts`, `base44/shared/purchaseRecorder.ts`,
+`base44/functions/getOwnedProductIds/entry.ts`, `base44/functions/getWalkCatalog/entry.ts`,
+`base44/functions/grantWalk/entry.ts`, `src/components/admin/DisputesManager.jsx`)
+A refund/chargeback used to hard-delete the Purchase record. Payment processors
+(Creem included) can redeliver the same webhook — a retry, a timeout, or a manual resend
+from their dashboard for support purposes — and the delete meant nothing was left for the
+dedupe check to catch, so a redelivered copy of the ORIGINAL purchase webhook could
+silently recreate access after a legitimate refund, with no new payment. Fix: a refund now
+marks the Purchase `revoked` instead of deleting it, so it's still there for the dedupe
+check to catch. An ordinary payment webhook can never revive a revoked purchase — only the
+existing Super-Admin-gated "restore after a won dispute" flow (and re-gifting a walk after
+a refund) can, via a new `allowReactivate` flag on the shared recorder function. A genuine
+new purchase (a different transaction) is unaffected either way. Test:
+`/tmp/test_purchase_revoke.mjs` (11/11) — specifically proves a webhook replay after a
+refund is rejected, while the legitimate admin restore path still works.
+
+### U-06 — Same problem, for annual memberships (`base44/entities/Membership.jsonc`,
+`base44/shared/accessRevoker.ts`, `base44/shared/membershipRecorder.ts`)
+Memberships had no equivalent protection at all: revoking one for a chargeback only set
+its status to 'expired', with nothing stopping a later/redelivered webhook (e.g. Creem
+re-sending the original subscription.paid event) from silently flipping it back to
+active. Added a `disputed` flag: set when a membership is revoked by a refund/chargeback,
+it blocks every ordinary webhook for that subscription until the Super-Admin dispute-
+restore flow explicitly clears it. Ordinary renewals/cancellations for a non-disputed
+membership are completely unaffected. Test: `/tmp/test_membership_dispute.mjs` (10/10).
+
+### U-01 — Customer login skipped the device-check system entirely
+(`src/lib/AuthContext.jsx`, `src/pages/Login.jsx`, `src/lib/deviceId.js` [new],
+`src/lib/i18n/index.js`)
+The full device-check/one-time-code/concurrent-session system (new-device email code,
+one active session per account, admin "Device Logins" panel) was already built on the
+backend but the login screen called the plain `wpLogin` function directly, bypassing all
+of it — anyone with a password could sign in from unlimited devices at once, no code, no
+lock. The login screen now goes through the real `loginWithDeviceCheck` /
+`verifyDeviceCode` functions: a known device signs in exactly as before; a new device
+gets a 6-digit code emailed and a new screen to enter it; a second device signing in
+while another is active is refused with a clear message. A session now also pings the
+server every 5 minutes to stay alive, and signing out releases the device lock right
+away instead of waiting for the 20-minute timeout. Admin/narrator staff accounts are
+exempted from all of this on the backend, unchanged. No backend files were touched for
+this fix — the device-check functions were already correct, only the frontend needed
+wiring up. Tests: `/tmp/test_device_id.mjs` (8/8, run against the real source file
+directly) plus a manual field-by-field trace confirming every request the frontend now
+sends matches what each backend function expects.
+
+### U-04 — Offline downloads weren't tied to an account
+(`src/lib/offlineStorageService.js`, `src/components/offline/offlineStorage.jsx`,
+`src/components/offline/useOfflineWalks.jsx`, `src/components/offline/OfflineWalksBanner.jsx`,
+`src/pages/Home.jsx`)
+Downloaded walks (full trail, waypoints, narration) sat in one shared on-device store
+with no link to WHO downloaded them — so on a shared device, whoever was signed in could
+see and open anyone else's previously-downloaded paid tours, and a refunded purchase's
+downloaded copy kept working offline forever regardless. Fix: every offline download is
+now tagged with the downloading account's email, and every place that lists or opens
+offline walks (the offline banner, "My Library", the download button, the driving-tour
+player) only ever shows the CURRENTLY signed-in account's own downloads — a walk saved
+before this fix, or by a different account, is treated as belonging to nobody until
+re-downloaded. Logging out does NOT delete the files, so the same person logging back in
+on their own device doesn't have to re-download anything (worth knowing: map tiles are
+still shared across accounts on purpose — they're just generic map imagery, not paid
+content). Separately, whenever the app reloads the tour list while online and finds a
+walk it used to have access to no longer accessible (a refund/chargeback), it now
+actively deletes any offline copy of it — this only runs while online, so it catches up
+the next time the app opens with a connection rather than during the offline session
+itself. Test: `/tmp/test_offline_ownership.mjs` (6/6).
+
+**Not done / worth knowing for next time:** the 6 NECESSARY and 2 COSMETIC findings from
+the same audit (safety-notice not gating Start Tour, app-switch-pause not implemented,
+unknown refund products wrongly treated as membership, JWT stored in plain localStorage,
+no automated test suite, an unreproducible clean-install build, a dead unused
+registration form component, and a non-constant-time webhook signature comparison) were
+NOT touched — Enda's instruction was specifically the "urgent" ones. Also worth knowing:
+U-04's account-scoping only prevents a DIFFERENT account from seeing a device's offline
+downloads, and cleans up a revoked walk's offline copy the next time the app is online —
+it does not add a live "am I still entitled to this" recheck while genuinely offline,
+which isn't possible without a network call.
+
+**Verified:** `npx eslint` on every touched frontend file (`src/lib/**` files aren't
+covered by this project's eslint config at all — same as before this session — so those
+were reviewed by careful reading and the standalone tests instead); the only warnings/
+errors shown are pre-existing and unrelated (confirmed via `git status` they predate this
+session's changes). Full `rm -rf dist && npx vite build` completes with no errors. All 7
+standalone test files (57 assertions total) pass. The 3 edited `.jsonc` entity files were
+also confirmed to still parse as valid JSON.
+
+**Backend functions that need Enda's manual redeploy step** (per the standing rule above)
+— these either changed directly or import a shared file that changed, so the redeploy is
+needed even where the function's own file looks untouched:
+- `creemWebhook` (imports the changed `purchaseRecorder.ts`, `membershipRecorder.ts` and
+  `accessRevoker.ts` — its own file wasn't edited, but it needs redeploying anyway so it
+  picks up those changes)
+- `restoreDispute` (imports the changed `accessRevoker.ts`)
+- `grantWalk` (own file changed, and imports the changed `purchaseRecorder.ts`)
+- `getOwnedProductIds` (own file changed)
+- `getWalkCatalog` (own file changed)
+
+The device-login functions (`loginWithDeviceCheck`, `verifyDeviceCode`, `sessionHeartbeat`,
+`sessionEnd`) were NOT touched — they were already correct — so no redeploy needed for
+those; U-01 was a frontend-only fix. The 3 entity schema files
+(`Purchase.jsonc`/`Dispute.jsonc`/`Membership.jsonc`) need no special redeploy, just the
+normal sync + republish, per the standing rule. Every other touched file is frontend-only,
+same normal sync + republish.
+
+---
+
 ## 2026-09-08 (follow-up 149) — "Segment Number" was never actually saving; found and fixed the real cause
 Scope: `base44/entities/Walk.jsonc` (schema fix, no backend redeploy needed — same as
 the `waypoint_done` precedent above), `src/components/admin/DrivingTourWaypointEditor.jsx`

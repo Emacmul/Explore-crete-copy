@@ -5,8 +5,9 @@
 // the buyer and the disputed product, it revokes the right thing — because a chargeback
 // means the money came back out, so whatever access that payment granted must come off too:
 //
-//  - if the disputed product is a one-time walk/tour product → delete the Purchase record(s)
-//    for that buyer + product, so getOwnedProductIds stops returning it (walk access gone);
+//  - if the disputed product is a one-time walk/tour product → mark the Purchase record(s)
+//    for that buyer + product 'revoked' (not deleted — see U-05 note below), so
+//    getOwnedProductIds/getWalkCatalog stop treating it as owned (walk access gone);
 //  - otherwise (a membership product — no walk matches that product id) → mark the buyer's
 //    membership(s) for this processor 'expired', so getMembershipStatus reports no current
 //    membership.
@@ -30,8 +31,20 @@ export async function revokeAccess(base44, { buyerEmail, processor, productId })
       buyer_email: email,
       creem_product_id: productId,
     });
-    for (const p of purchases) {
-      await base44.asServiceRole.entities.Purchase.delete(p.id);
+    // Marked 'revoked', never deleted (audit finding U-05, 2026-09-09 review): deleting the
+    // row let a redelivered/retried checkout.completed webhook for the SAME transaction pass
+    // recordPurchase's dedupe check (nothing left to match) and silently recreate access
+    // after a legitimate refund. Keeping the row closes that gap, and recordPurchase already
+    // knows how to re-activate a revoked row in place for the genuine "restore after a won
+    // dispute" / "re-gift after a revoke" cases. Only touch rows not already revoked, so a
+    // repeat delivery of this same refund/dispute event doesn't overwrite the original
+    // revoked_at timestamp.
+    const stillActive = purchases.filter((p) => p.status !== 'revoked');
+    for (const p of stillActive) {
+      await base44.asServiceRole.entities.Purchase.update(p.id, {
+        status: 'revoked',
+        revoked_at: new Date().toISOString(),
+      });
     }
     return {
       revoked: true,
@@ -43,14 +56,16 @@ export async function revokeAccess(base44, { buyerEmail, processor, productId })
   }
 
   // Not a walk product → it's the membership product. Revoke the buyer's membership(s) for
-  // this processor. Setting status 'expired' is enough: getMembershipStatus treats
-  // 'expired' as no current access regardless of expires_at.
+  // this processor. Setting status 'expired' is enough for getMembershipStatus to treat it
+  // as no current access regardless of expires_at; `disputed: true` additionally blocks
+  // recordMembership from letting an ordinary (non-admin) webhook event undo this — see
+  // membershipRecorder.ts / audit finding U-06.
   const memberships = await base44.asServiceRole.entities.Membership.filter({
     buyer_email: email,
     processor,
   });
   for (const m of memberships) {
-    await base44.asServiceRole.entities.Membership.update(m.id, { status: 'expired' });
+    await base44.asServiceRole.entities.Membership.update(m.id, { status: 'expired', disputed: true });
   }
   return {
     revoked: true,
@@ -67,8 +82,11 @@ export async function revokeAccess(base44, { buyerEmail, processor, productId })
 // option later needs no new restore path).
 //
 // Mirrors revokeAccess: membership → flip status back to 'active' (only if the paid period
-// hasn't naturally ended while revoked); purchase → re-record the Purchase that was deleted,
-// reusing recordPurchase so dedupe + walk resolution match the original grant.
+// hasn't naturally ended while revoked); purchase → call recordPurchase with the SAME
+// transaction id revokeAccess revoked, which re-activates that exact (now-revoked) row in
+// place rather than creating a second one (see purchaseRecorder.ts). If no row is found at
+// all — a dispute logged before the U-05 fix, back when revokeAccess still deleted the row
+// outright — recordPurchase falls back to creating a fresh one, so old disputes still restore.
 export async function restoreAccess(base44, { buyerEmail, processor, accessTarget, productId, transactionId, subscriptionId }) {
   const email = (buyerEmail || '').toLowerCase().trim();
   if (!email) return { restored: false, reason: 'missing_email' };
@@ -81,18 +99,23 @@ export async function restoreAccess(base44, { buyerEmail, processor, accessTarge
     for (const m of memberships) {
       const stillValid = !m.expires_at || new Date(m.expires_at).getTime() > Date.now();
       if (m.status === 'expired' && stillValid) {
-        await base44.asServiceRole.entities.Membership.update(m.id, { status: 'active' });
+        // Clears the U-06 'disputed' guard too — this Super-Admin-gated restore is the one
+        // path allowed to lift it, so ordinary webhooks resume working for this subscription.
+        await base44.asServiceRole.entities.Membership.update(m.id, { status: 'active', disputed: false });
       }
     }
     return { restored: true, target: 'membership', count: memberships.length };
   }
 
   if (accessTarget === 'purchase') {
+    // allowReactivate: true — this function is only ever reached from restoreDispute.ts,
+    // which is already Super-Admin-gated, so it's trusted to bring a revoked row back.
     const res = await recordPurchase(base44, {
       buyerEmail: email,
       productId,
       processor,
       transactionId: transactionId || null,
+      allowReactivate: true,
     });
     return { restored: res.recorded, target: 'purchase', reason: res.reason || null };
   }

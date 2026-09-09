@@ -6,8 +6,8 @@ import { AlertTriangle, RotateCcw, Loader2, CheckCircle2 } from 'lucide-react';
 import { toast } from '@/components/ui/use-toast';
 
 // Admin view of chargebacks that revoked access. Creem sends no "dispute won" event, so
-// when a dispute is resolved in our favor an admin clicks Restore here — it re-creates the
-// deleted Purchase (or re-activates the expired membership) via the restoreDispute function.
+// when a dispute is resolved in our favor an admin clicks Restore here — it re-activates the
+// revoked Purchase (or the expired membership) via the restoreDispute function.
 //
 // Per Enda (2026-09-06): restoring a disputed purchase is now Super-Admin-only on the
 // backend (see restoreDispute's own comment) — the Restore button below is hidden for

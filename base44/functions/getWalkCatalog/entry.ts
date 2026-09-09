@@ -49,8 +49,11 @@ export default async function(req) {
     // language version of it.
     let ownedSet = new Set();
     if (email) {
+      // A revoked purchase (refund/chargeback — see accessRevoker.ts) is kept in the table
+      // but must not count as owned, or a refunded customer would keep the protected fields
+      // below. Records from before that field existed have no status and are treated as active.
       const purchases = await base44.asServiceRole.entities.Purchase.filter({ buyer_email: email });
-      ownedSet = new Set(purchases.map(p => p.creem_product_id).filter(Boolean));
+      ownedSet = new Set(purchases.filter(p => p.status !== 'revoked').map(p => p.creem_product_id).filter(Boolean));
     }
 
     const all = await base44.asServiceRole.entities.Walk.list('-created_date', 1000);

@@ -69,7 +69,7 @@ export function logGpsFix(lat, lng, accuracy) {
   addEntry('gps_fix', { lat, lng, accuracy });
 }
 
-export function logTriggerCheck(waypoint, distance, withinRadius, bearingInfo, alreadyTriggered, result) {
+export function logTriggerCheck(waypoint, distance, withinRadius, bearingInfo, alreadyTriggered, result, accuracy) {
   addEntry('trigger_check', {
     waypointId: waypoint.segment_id || waypoint.name || 'unnamed',
     waypointRole: waypoint.waypoint_role,
@@ -80,7 +80,8 @@ export function logTriggerCheck(waypoint, distance, withinRadius, bearingInfo, a
     bearingInfo, // { movement, target, tolerance, ok } or null
     alreadyTriggered,
     hasAudio: !!waypoint.audio_clip_url,
-    result, // 'fire' | 'skip_distance' | 'skip_bearing' | 'skip_already_triggered' | 'skip_no_audio'
+    accuracy, // metres — the GPS fix's own reported accuracy, present when result is skip_low_accuracy
+    result, // 'fire' | 'skip_distance' | 'skip_bearing' | 'skip_already_triggered' | 'skip_no_audio' | 'skip_low_accuracy'
   });
 }
 
@@ -153,6 +154,8 @@ function entryToText(entry) {
 
       if (d.result === 'fire') {
         parts.push(`✓ TRIGGERED (dist=${d.distance}m/${d.triggerRadius}m)`);
+      } else if (d.result === 'skip_low_accuracy') {
+        parts.push(`✗ FAILED — GPS fix too imprecise to trust: ±${Math.round(d.accuracy || 0)}m accuracy vs ${d.triggerRadius}m radius`);
       } else if (d.result === 'skip_distance') {
         parts.push(`✗ FAILED — outside radius: ${d.distance}m > ${d.triggerRadius}m`);
       } else if (d.result === 'skip_bearing') {

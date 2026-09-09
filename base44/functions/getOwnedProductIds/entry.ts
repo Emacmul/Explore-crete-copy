@@ -16,9 +16,14 @@ export default async function(req) {
     if (!email) return Response.json({ productIds: [] });
 
     // Service role: read this caller's Purchase records (the client only receives product
-    // IDs, never raw purchase records, so other buyers' data is never exposed).
+    // IDs, never raw purchase records, so other buyers' data is never exposed). A revoked
+    // purchase (refund/chargeback — see accessRevoker.ts) is kept in the table but no longer
+    // counts as owned; records from before that field existed have no status and are
+    // treated as active.
     const purchases = await base44.asServiceRole.entities.Purchase.filter({ buyer_email: email });
-    const productIds = [...new Set(purchases.map(p => p.creem_product_id).filter(Boolean))];
+    const productIds = [...new Set(
+      purchases.filter(p => p.status !== 'revoked').map(p => p.creem_product_id).filter(Boolean)
+    )];
 
     return Response.json({ productIds });
   } catch (error) {

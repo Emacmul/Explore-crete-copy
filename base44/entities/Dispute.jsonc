@@ -24,7 +24,7 @@
         "membership",
         "purchase"
       ],
-      "description": "What was revoked: 'membership' = the annual membership was marked expired; 'purchase' = a one-time walk Purchase record was deleted."
+      "description": "What was revoked: 'membership' = the annual membership was marked expired; 'purchase' = a one-time walk Purchase record was marked revoked."
     },
     "walk_id": {
       "type": "string",
@@ -32,7 +32,7 @@
     },
     "transaction_id": {
       "type": "string",
-      "description": "For purchases: the original Purchase transaction_id captured before deletion, so the recreated Purchase keeps the same dedupe key."
+      "description": "For purchases: the original Purchase transaction_id, so restoring re-activates that exact same record instead of creating a second one."
     },
     "subscription_id": {
       "type": "string",

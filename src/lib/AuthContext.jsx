@@ -1,10 +1,16 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
+import { getDeviceId, getDeviceLabel } from '@/lib/deviceId';
 
 const AuthContext = createContext();
 
 const TOKEN_KEY = 'explore_crete_token';
 const USER_KEY = 'explore_crete_user';
+
+// How often a signed-in session pings the server to prove it's still open — must stay
+// comfortably under deviceAuth.ts's SESSION_TIMEOUT_MIN (20 min) so a session doesn't go
+// stale just because a background/mobile tab throttled the interval by a minute or two.
+const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
 
 const decodeJwt = (token) => {
   try {
@@ -51,9 +57,10 @@ export const AuthProvider = ({ children }) => {
     setIsLoadingAuth(false);
   }, []);
 
-  const login = async (email, password) => {
-    const response = await base44.functions.invoke('wpLogin', { email, password });
-    const { token: wpToken, user: wpUser } = response.data;
+  // Finishes a successful login (either straight through, or after a device code was
+  // verified) — stores the token/user and marks the session authenticated.
+  const completeLogin = (data) => {
+    const { token: wpToken, user: wpUser } = data;
 
     const userData = {
       id: wpUser.id,
@@ -70,16 +77,74 @@ export const AuthProvider = ({ children }) => {
     setToken(wpToken);
     setIsAuthenticated(true);
 
-    return userData;
+    return { challengeRequired: false, user: userData };
+  };
+
+  // Per Enda (audit finding U-01, 2026-09-09 review): this now goes through the real
+  // device-check flow (loginWithDeviceCheck) instead of calling wpLogin directly — a known
+  // device on an account with no other active session signs straight in exactly as before;
+  // a NEW device gets an emailed one-time code first (see verifyDeviceCode below), and a
+  // second device trying to sign in while another is already active is refused with a clear
+  // message, both enforced server-side. Admin/narrator staff accounts are exempted from all
+  // of this on the backend (see loginWithDeviceCheck's own comment) — nothing to handle here.
+  const login = async (email, password) => {
+    const response = await base44.functions.invoke('loginWithDeviceCheck', {
+      email,
+      password,
+      device_id: getDeviceId(),
+      device_label: getDeviceLabel(),
+    });
+    const data = response.data;
+    if (data?.status === 'challenge_required') {
+      return { challengeRequired: true, expiresAt: data.expires_at };
+    }
+    return completeLogin(data);
+  };
+
+  // Step 2 of a new-device sign-in: submits the code the user got by email, alongside the
+  // same email/password (the server re-validates them to mint a fresh token — a stale
+  // password left sitting in the browser while the email loads isn't trusted on its own).
+  const verifyDeviceCode = async (email, password, code) => {
+    const response = await base44.functions.invoke('verifyDeviceCode', {
+      email,
+      password,
+      code,
+      device_id: getDeviceId(),
+      device_label: getDeviceLabel(),
+    });
+    return completeLogin(response.data);
   };
 
   const logout = () => {
+    const deviceId = getDeviceId();
+    const currentToken = token;
+
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
     setUser(null);
     setToken(null);
     setIsAuthenticated(false);
+
+    // Best-effort, fire-and-forget: releases the concurrent-session lock right away so
+    // switching to a different device doesn't force a wait for the 20-minute session
+    // timeout. Never blocks signing out even if this fails.
+    if (currentToken) {
+      base44.functions.invoke('sessionEnd', { token: currentToken, device_id: deviceId }).catch(() => {});
+    }
   };
+
+  // Keeps the session's ActiveSession record alive while the app is open — see
+  // deviceAuth.ts's SESSION_TIMEOUT_MIN. Runs for both a fresh login and a session restored
+  // from localStorage on page load; stops automatically on logout.
+  useEffect(() => {
+    if (!isAuthenticated || !token) return;
+    const deviceId = getDeviceId();
+    const send = () => {
+      base44.functions.invoke('sessionHeartbeat', { token, device_id: deviceId }).catch(() => {});
+    };
+    const id = setInterval(send, HEARTBEAT_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [isAuthenticated, token]);
 
   const syncLibrary = async () => {
     if (!token) return null;
@@ -94,6 +159,7 @@ export const AuthProvider = ({ children }) => {
       isLoadingAuth,
       token,
       login,
+      verifyDeviceCode,
       logout,
       syncLibrary
     }}>
