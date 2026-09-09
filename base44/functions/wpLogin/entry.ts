@@ -9,7 +9,6 @@
 // that protection pointless. Disabled here (not deleted) so the file — and this note — stay
 // easy to find if it's ever needed again; every request gets refused before it touches
 // WordPress or does anything else.
-
 Deno.serve(async (_req) => {
   return Response.json(
     { error: 'This sign-in method has been retired. Please sign in through the app.' },
