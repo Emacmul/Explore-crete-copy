@@ -6,7 +6,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   X, Clock, Route, TrendingUp, MapPin, AlertTriangle,
   Eye, Droplets, TreePine, Navigation, Crosshair, ShieldAlert,
-  CheckCircle2, Circle, RotateCcw, Mountain, Play
+  CheckCircle2, Circle, RotateCcw, Mountain, Play, FlaskConical
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import WalkDetailMap from '../map/WalkDetailMap';
@@ -300,6 +300,20 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
 
         <ScrollArea className="flex-1">
           <div className="p-4 space-y-4">
+            {/* Admin-only draft preview banner (follow-up 159) — always shown, whether or
+                not the tour is otherwise "accessible", so it's never possible to mistake a
+                draft for a real published tour while testing it. Only ever set for an
+                admin caller viewing a tour nobody else can see yet (getWalkCatalog). */}
+            {walk._is_draft_preview && (
+              <div className="bg-violet-50 border border-violet-300 rounded-xl p-3 flex items-center gap-2">
+                <FlaskConical className="w-5 h-5 text-violet-600 shrink-0" />
+                <div>
+                  <p className="text-violet-900 text-sm font-semibold">{t('detail.draftPreviewTitle')}</p>
+                  <p className="text-violet-800 text-sm">{t('detail.draftPreviewMessage')}</p>
+                </div>
+              </div>
+            )}
+
             {accessible ? (
             <>
             {walk.route_type === 'driving_audio_tour' && (

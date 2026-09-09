@@ -67,6 +67,68 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-09 (follow-up 159) — Admin-only draft tour preview in the real customer app
+(`getWalkCatalog/entry.ts` — BACKEND, needs redeploy — `Home.jsx`, `WalkCard.jsx`,
+`WalkDetail.jsx`, `i18n/index.js`)
+
+**Per Enda:** "Battle of the Rivers" is nearly ready, but there was no way to test it inside
+the real app (listing, map, paywall unlock, driving player) without first publishing it —
+making it available to every customer. Investigated first: confirmed this was a genuine
+gap, not something already solved (see the investigation notes below). Enda chose "admin
+accounts only, not narrators" and gave an explicit go-ahead before anything was built.
+
+**What changed:**
+- `getWalkCatalog` (the one function both Home and My Library read the tour list from) now
+  additionally returns draft tours — an unapproved original, or an unfinished/unpublished
+  clone — to a caller whose AppUser role is `admin` or `super_admin`. Narrators, and every
+  customer, get exactly what they got before this change; nothing about a published tour's
+  behaviour changes for anyone.
+- Each such record is tagged `_is_draft_preview: true` and force-unlocked (bypassing the
+  purchase check — a draft never has a real Purchase record to check against), so an admin
+  gets the full route/waypoints/narration to actually test, not a paywalled teaser.
+- The frontend shows this unmistakably: a violet "Draft — Admin Preview" badge on the tour
+  card in the list, and a violet banner at the top of the tour itself ("This tour isn't
+  published yet... customers can't see or buy it until it's published").
+- A draft tour now shows up in Home's list and in My Library (same as any owned tour) for
+  an admin only — nothing added to the Admin panel itself, which already showed drafts.
+
+**Why:** this reuses the exact same admin-role lookup (`AppUser.role`) already used by
+`isAppAdmin`/`ensureAppUserOnboarding` elsewhere in this codebase, rather than inventing a
+new identity check — keeps the security boundary consistent with everywhere else.
+
+**Verified:** `npx vite build` completes with no errors. `npx eslint` on the four changed
+frontend files shows two pre-existing unused-import errors unrelated to this change (`Card`
+in `WalkDetail.jsx`, `getTourCategory` in `Home.jsx` — confirmed via `git diff` that neither
+line was touched this session); nothing new introduced. The backend function was parse-
+checked with esbuild (no errors). Wrote and ran a standalone test (12 checks, all passing)
+mirroring the real family-building/active-selection logic: confirms a non-admin (customer
+or narrator) sees exactly the same tours as before this change, with drafts completely
+invisible; confirms an admin sees both the published tour and the draft tour, the draft
+correctly tagged and fully unlocked; confirms an admin requesting a narration language whose
+only version is an unfinished clone still gets that draft, correctly tagged; confirms a
+published tour's ordinary purchase-based locking is completely unaffected for an admin with
+no purchase. Also re-ran every test from follow-ups 152–158 — all still pass (45 checks
+across those).
+
+**BACKEND CHANGE — needs the redeploy dance:** `getWalkCatalog` is a backend function
+(`base44/functions/getWalkCatalog/entry.ts`). Per the standing rule, this needs the manual
+per-function redeploy step in Base44 (blank line in, redeploy, blank line out) before it
+takes effect — pushing the code alone isn't enough. The four frontend files need no such
+step.
+
+**Not done / worth knowing for next time:**
+- Not yet tested live — worth Enda opening "Battle of the Rivers" as an admin and confirming
+  it shows the violet badge/banner and plays properly, and separately confirming a logged-in
+  customer account still can't see it at all.
+- Investigated first (per standing rule) and confirmed via the changelog that this exact gap
+  had come up before but was never built — the closest existing thing (admins/narrators
+  auto-getting a free copy of a tour, follow-up 147) only fires AFTER a tour is published,
+  which doesn't help before that point.
+- Scope is deliberately narrow: any admin sees every draft automatically (not a per-tour
+  toggle) — Enda picked this over a manual "give me a test copy" button per tour.
+
+---
+
 ## 2026-09-09 (follow-up 158) — Two more fixes to the off-route warning (`trail_breaks`, queued narration)
 (`DrivingTourPlayer.jsx`, `tourLogService.js`)
 

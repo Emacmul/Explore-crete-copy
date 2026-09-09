@@ -1,7 +1,7 @@
 import React from 'react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Clock, Route, TrendingUp, ChevronRight, Sparkles, Baby, Church } from 'lucide-react';
+import { Clock, Route, TrendingUp, ChevronRight, Sparkles, Baby, Church, FlaskConical } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useOfflineWalks } from '../offline/useOfflineWalks';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
@@ -59,6 +59,15 @@ export default function WalkCard({ walk, onClick, isSelected, accessible = true 
               {walk.is_sample_walk && (
                 <Badge variant="outline" className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200 flex items-center gap-1">
                   <Sparkles className="w-3 h-3" /> {t('card.sampleWalk')}
+                </Badge>
+              )}
+
+              {/* Admin-only draft preview (follow-up 159) — a tour that isn't published yet,
+                  visible only because the caller is an admin (see getWalkCatalog's own
+                  comment). Unmissable so it's never confused with a real, live tour. */}
+              {walk._is_draft_preview && (
+                <Badge variant="outline" className="text-xs bg-violet-50 text-violet-700 border-violet-300 flex items-center gap-1">
+                  <FlaskConical className="w-3 h-3" /> {t('card.draftPreview')}
                 </Badge>
               )}
 

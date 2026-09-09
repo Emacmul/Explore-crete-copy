@@ -182,7 +182,10 @@ export default function Home() {
     setShowDetail(false);
   };
 
-  const accessibleWalks = walks.filter(w => w.approved !== false);
+  // A draft tour an admin is previewing (w._is_draft_preview) has approved: false, but it
+  // must still show up here — that's the whole point of the preview. Nobody else can ever
+  // get one of these records back from getWalkCatalog (see that function's own comment).
+  const accessibleWalks = walks.filter(w => w.approved !== false || w._is_draft_preview === true);
   const categoryWalks = selectedTourCategory
     ? accessibleWalks.filter(w => w.tour_category === selectedTourCategory)
     : accessibleWalks;

@@ -29,7 +29,19 @@ import { wrapClientWithRetry } from '../../shared/withEntityRetry.ts';
 // Protected content is withheld from non-entitled callers (the paywall-is-just-CSS fix):
 // teaser fields only for walks the caller doesn't own. The caller is identified from the
 // WordPress-issued token (not Base44's session), like syncLibrary / getOwnedProductIds.
-
+//
+// Admin draft preview (per Enda, follow-up 159): a tour like "Battle of the Rivers" needs
+// to be tested inside the REAL customer app — the actual listing, map, paywall unlock and
+// driving player — before it's published to everyone. Previously the only way to do that
+// was to flip `approved` to true first, which means publishing it. Now, an admin caller
+// (AppUser.role 'admin' or 'super_admin' — same definition isAppAdmin/isSuperAdmin use
+// elsewhere) additionally sees every draft: an unapproved original, or a clone that isn't
+// yet finished/approved. Each such record is tagged `_is_draft_preview: true` so the
+// frontend can badge it clearly, and is force-unlocked (bypassing the purchase check below)
+// since a draft never has a real Purchase record to check against. A NON-admin caller (a
+// customer, or a narrator — Enda was explicit this is admin-only, not narrators) is
+// completely unaffected: this only ever ADDS records for admins, never changes what a
+// published tour looks like to anyone.
 const PROTECTED_FIELDS = [
   'trail_path',
   'trail_breaks',
@@ -43,6 +55,16 @@ export default async function(req) {
     const body = await req.json().catch(() => ({}));
     const email = await verifyEmailFromToken(body.token, Deno.env.get('WC_SITE_URL'));
     const narrationLang = body.narrationLang || 'English';
+
+    // Admin-only draft preview gate. Same AppUser.role lookup ensureAppUserOnboarding and
+    // isAppAdmin/isSuperAdmin already use elsewhere — kept deliberately narrow to 'admin' and
+    // 'super_admin' only, NOT 'narrator', per Enda's explicit instruction (follow-up 159).
+    let isAdmin = false;
+    if (email) {
+      const appUserRows = await base44.asServiceRole.entities.AppUser.filter({ email });
+      const role = (Array.isArray(appUserRows) ? appUserRows[0] : null)?.role;
+      isAdmin = role === 'admin' || role === 'super_admin';
+    }
 
     // Owned product ids by email. Entitlement is decided HERE, by the ORIGINAL's product id
     // — a clone is never a separate sellable product, so owning the original grants every
@@ -65,8 +87,11 @@ export default async function(req) {
     // A record reaches a customer when:
     //  - original: approved !== false
     //  - clone: finished === true AND approved !== false (only swap once finished + published)
-    const approvedOriginals = originals.filter(w => w.approved !== false);
-    const eligibleClones = clones.filter(w => w.finished === true && w.approved !== false);
+    // An admin additionally sees every draft (see the header comment above) — every original
+    // and every clone, regardless of approved/finished — so they can open and test it in the
+    // real app before it's published to anyone else.
+    const approvedOriginals = isAdmin ? originals : originals.filter(w => w.approved !== false);
+    const eligibleClones = isAdmin ? clones : clones.filter(w => w.finished === true && w.approved !== false);
 
     // Group into families keyed by the original's id (the stable identity). `original` holds
     // the APPROVED original only — null when the English source is paused for edits or gone —
@@ -119,7 +144,21 @@ export default async function(req) {
       out.checkout_url = metaOriginal?.checkout_url ?? active.checkout_url;
       out.is_sample_walk = metaOriginal?.is_sample_walk ?? active.is_sample_walk ?? false;
 
-      const accessible = out.is_sample_walk === true || !!(out.creem_product_id && ownedSet.has(out.creem_product_id));
+      // Would this exact active record have made it through the normal, non-admin gate
+      // above? If not, it's only here because the caller is an admin — mark it so the
+      // frontend can badge it clearly as a draft, not a real published tour.
+      const passesNormalGate = active.clone_of
+        ? (active.finished === true && active.approved !== false)
+        : (active.approved !== false);
+      const isDraftPreview = isAdmin && !passesNormalGate;
+      out._is_draft_preview = isDraftPreview;
+
+      // A draft never has a real Purchase record (nothing to buy yet), so without this an
+      // admin previewing their own unpublished tour would hit the paywall and lose
+      // trail_path/waypoints — exactly the content they need to actually test it.
+      const accessible = out.is_sample_walk === true
+        || !!(out.creem_product_id && ownedSet.has(out.creem_product_id))
+        || isDraftPreview;
       if (!accessible) {
         for (const f of PROTECTED_FIELDS) delete out[f];
       }
