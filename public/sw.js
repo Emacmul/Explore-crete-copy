@@ -17,12 +17,62 @@
  * for people already using it.
  */
 
-const CACHE_VERSION = 'explore-crete-v9';
+const CACHE_VERSION = 'explore-crete-v10';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 
-// Install: activate immediately, don't wait for old SW to release
+// Install: cache the app shell FIRST, then activate immediately.
+//
+// Was: install did nothing but skipWaiting() — every asset only ever got cached
+// reactively, as the fetch handler below happened to see it go by AFTER this worker had
+// already taken control. That leaves a real gap for a brand-new visitor: the very first
+// page load's own HTML/JS/CSS is fetched by the browser directly, before any service
+// worker exists to see those requests — so none of it lands in this cache. If that same
+// visitor goes offline before ever reloading the page again, relaunching the app finds
+// nothing cached to fall back on (audit re-check, 2026-09-09 — finding U-03).
+//
+// Fix: fetch '/' during install and read the actual <script>/<link> tags out of it to find
+// this build's JS/CSS bundle filenames. Nothing is hardcoded — Vite content-hashes those
+// filenames on every deploy, so they're discovered fresh from whatever HTML was just
+// served, not guessed at. This is best-effort: if it fails (e.g. installing while already
+// offline), the worker still installs and falls back to exactly the old cache-as-you-go
+// behaviour — nothing about this fix can make the app WORSE than it already was.
+async function precacheAppShell() {
+  try {
+    const cache = await caches.open(STATIC_CACHE);
+    const shellResponse = await fetch('/', { cache: 'no-store' });
+    if (!shellResponse.ok) return;
+    const html = await shellResponse.clone().text();
+    await cache.put('/', shellResponse);
+
+    const assetUrls = new Set();
+    const re = /(?:src|href)="(\/assets\/[^"]+\.(?:js|css))"/g;
+    let match;
+    while ((match = re.exec(html))) assetUrls.add(match[1]);
+
+    await Promise.all(
+      [...assetUrls].map(async (url) => {
+        try {
+          const res = await fetch(url, { cache: 'no-store' });
+          if (res.ok) await cache.put(url, res);
+        } catch {
+          // One missing asset doesn't block the rest — it'll still get cached the normal
+          // way the first time this worker sees a request for it go by.
+        }
+      })
+    );
+  } catch {
+    // Best-effort precache only — installing while offline, or any other failure here,
+    // still leaves the worker installing normally with the prior cache-as-you-go behaviour.
+  }
+}
+
 self.addEventListener('install', (event) => {
-  self.skipWaiting();
+  event.waitUntil(
+    (async () => {
+      await precacheAppShell();
+      await self.skipWaiting();
+    })()
+  );
 });
 
 // Activate: purge ALL old caches and take control of all clients

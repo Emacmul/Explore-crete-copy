@@ -283,6 +283,8 @@ export const translations = {
     'player.gpsUnavailable': "Directions and narration may be delayed or missing until signal returns. If you're unsure of the route, pull over safely.",
     'player.gpsPermissionDenied': "This app no longer has permission to use your location. Directions and narration have stopped. Pull over safely, then re-enable location for this app.",
     'player.gpsWeakSignal': "weak signal",
+    'player.gpsAccuracyIssueTitle': "GPS too imprecise to use",
+    'player.gpsAccuracyWeak': "Your location signal is on but not precise enough right now, so directions and narration may not trigger. This is common in mountainous areas — it should improve as you keep driving. If you're unsure of the route, pull over safely.",
 
     'download.savingPct': "Saving {n}%",
     'download.removing': "Removing…",

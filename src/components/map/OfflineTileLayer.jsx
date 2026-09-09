@@ -27,7 +27,11 @@ export default function OfflineTileLayer({ url, attribution }) {
               return res.blob();
             })
             .then(blob => {
-              cacheTile(tileUrl, blob);
+              // Best-effort background cache while browsing live (unrelated to the
+              // offline-download completeness check in offlineStorage.jsx). cacheTile can
+              // now reject on a real storage failure (U-02 fix, 2026-09-09) — swallow that
+              // here since this tile still displays either way; nothing else depends on it.
+              cacheTile(tileUrl, blob).catch(() => {});
               const objectUrl = URL.createObjectURL(blob);
               tile.src = objectUrl;
               tile.onload = () => { URL.revokeObjectURL(objectUrl); done(null, tile); };

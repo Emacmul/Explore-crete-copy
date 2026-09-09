@@ -8,11 +8,21 @@ import {
 export default async function (req: Request): Promise<Response> {
   try {
     const body = await req.json();
-    const { email, password, device_id, device_label } = body;
+    const { email: rawEmail, password, device_id, device_label } = body;
 
-    if (!email || !password || !device_id) {
+    if (!rawEmail || !password || !device_id) {
       return Response.json({ error: "Email, password and device_id are required" }, { status: 400 });
     }
+
+    // Normalize for OUR OWN device/session records only (audit re-check, 2026-09-09 —
+    // finding U-01). Matches the .toLowerCase().trim() convention already used everywhere
+    // else in this app (purchaseRecorder.ts, membershipRecorder.ts, useOfflineWalks.jsx).
+    // Without this, "Enda@x.com" and "enda@x.com" were treated as two different people for
+    // the device limit and the one-session lock, so either could be sidestepped just by
+    // varying how an email is capitalised between logins. The password check below still
+    // gets the exact, as-typed email, unchanged, so this can't affect whether a correct
+    // password is accepted.
+    const email = String(rawEmail).toLowerCase().trim();
 
     const base44 = createClientFromRequest(req);
     const svc = base44.asServiceRole;
@@ -21,7 +31,7 @@ export default async function (req: Request): Promise<Response> {
     // 1. Validate credentials against the WordPress JWT endpoint.
     let wpData;
     try {
-      wpData = await fetchWpToken(email, password, siteUrl);
+      wpData = await fetchWpToken(rawEmail, password, siteUrl);
     } catch (err: any) {
       return Response.json({ error: err.message || "Invalid email or password" }, { status: 401 });
     }

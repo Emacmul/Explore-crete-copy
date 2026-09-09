@@ -98,11 +98,17 @@ export default function DrivingTourPlayer({ walk }) {
   const [lastTriggered, setLastTriggered] = useState(null);
   const [showDebug, setShowDebug] = useState(false);
   const [gpsAccuracy, setGpsAccuracy] = useState(null);
-  // Non-null while GPS has sustained-failed (see GPS_ERROR_STREAK_THRESHOLD above) —
-  // { code, message }. Drives the visible red warning; cleared the moment any fix,
-  // even a low-accuracy one, comes back in.
+  // Non-null while GPS has sustained-failed OR sustained-stayed-too-imprecise-to-use (see
+  // GPS_ERROR_STREAK_THRESHOLD above) — { kind: 'no_signal' | 'low_accuracy', message }.
+  // Drives the visible red warning. A 'no_signal' issue clears the moment any fix, even a
+  // low-accuracy one, comes back in. A 'low_accuracy' issue additionally requires that fix
+  // to actually be precise enough to trust (audit re-check, 2026-09-09 — finding U-07: a
+  // sustained run of fixes that keep arriving but stay too imprecise for any waypoint used
+  // to raise no warning at all, leaving the screen looking reassuring while nothing could
+  // ever trigger).
   const [gpsIssue, setGpsIssue] = useState(null);
   const gpsErrorStreakRef = useRef(0);
+  const gpsAccuracyStreakRef = useRef(0);
   // Every secondary waypoint the driver has actually reached so far this drive (see the
   // "last known position" comment above) — restored from this device's storage on open,
   // so it survives the app being closed and reopened.
@@ -242,7 +248,17 @@ export default function DrivingTourPlayer({ walk }) {
       persistPassedSecondary(nextPassed);
     }
 
-    prevPosRef.current = { lat, lng };
+    // Only ever advance the bearing-reference point from a fix precise enough to trust for
+    // ANY waypoint (the hard cap alone — this point isn't tied to one specific waypoint's
+    // radius, it feeds the NEXT fix's bearing calculation). An untrusted fix simply leaves
+    // the last good reference point in place, the same "only defer, never corrupt" pattern
+    // used for the secondary-waypoint gate just above (audit re-check, 2026-09-09 —
+    // finding U-08: this was previously unconditional, so one bad fix could throw off the
+    // bearing calculated for the very next one, even though the bad fix itself was
+    // correctly rejected everywhere else).
+    if (fixIsTrustworthy(accuracy, GPS_ACCURACY_HARD_CAP_M)) {
+      prevPosRef.current = { lat, lng };
+    }
   }, [triggerWaypoints, secondaryWaypoints, persistPassedSecondary]);
 
   // Actually starts (or advances to) the next queued clip — called once at the top of
@@ -314,6 +330,7 @@ export default function DrivingTourPlayer({ walk }) {
     audioQueueRef.current = [];
     currentlyPlayingWpRef.current = null;
     gpsErrorStreakRef.current = 0;
+    gpsAccuracyStreakRef.current = 0;
     setGpsIssue(null);
     setStatus('running');
 
@@ -321,10 +338,27 @@ export default function DrivingTourPlayer({ walk }) {
       (pos) => {
         const { latitude, longitude, accuracy } = pos.coords;
         // Any fix at all — even a low-accuracy one that evaluateTriggers below will
-        // still reject per-waypoint — means GPS itself is working again, so the
-        // sustained-failure warning clears here regardless of that fix's quality.
+        // still reject per-waypoint — means GPS itself is working again, so a "no signal"
+        // warning clears here regardless of that fix's quality.
         gpsErrorStreakRef.current = 0;
-        setGpsIssue(null);
+
+        const accuracyOk = accuracy == null || !Number.isFinite(accuracy) || accuracy <= GPS_ACCURACY_HARD_CAP_M;
+        if (accuracyOk) {
+          // A genuinely usable fix — also clears a sustained "too imprecise" warning.
+          gpsAccuracyStreakRef.current = 0;
+          setGpsIssue(null);
+        } else {
+          // A single imprecise fix still isn't alarming on its own — mountain terrain does
+          // this normally — so this only surfaces after GPS_ERROR_STREAK_THRESHOLD in a row,
+          // the same "don't nag over one bad fix" threshold the no-signal case uses.
+          gpsAccuracyStreakRef.current += 1;
+          if (gpsAccuracyStreakRef.current >= GPS_ERROR_STREAK_THRESHOLD) {
+            setGpsIssue({ kind: 'low_accuracy', message: t('player.gpsAccuracyWeak') });
+          } else {
+            setGpsIssue(null);
+          }
+        }
+
         setCurrentPos([latitude, longitude]);
         setGpsAccuracy(accuracy);
         if (statusRef.current === 'running') {
@@ -342,6 +376,7 @@ export default function DrivingTourPlayer({ walk }) {
         gpsErrorStreakRef.current += 1;
         if (isPermissionDenied || gpsErrorStreakRef.current >= GPS_ERROR_STREAK_THRESHOLD) {
           setGpsIssue({
+            kind: 'no_signal',
             code: err.code,
             message: isPermissionDenied ? t('player.gpsPermissionDenied') : t('player.gpsUnavailable'),
           });
@@ -391,6 +426,7 @@ export default function DrivingTourPlayer({ walk }) {
     setGpsAccuracy(null);
     setGpsIssue(null);
     gpsErrorStreakRef.current = 0;
+    gpsAccuracyStreakRef.current = 0;
   };
 
   useEffect(() => {
@@ -404,11 +440,13 @@ export default function DrivingTourPlayer({ walk }) {
     };
   }, []);
 
-  // While a sustained GPS failure is active during a running tour, the status bar must
-  // never keep showing a reassuring green "running" — see audit finding U-07.
+  // While a sustained GPS failure OR a sustained too-imprecise-to-use streak is active
+  // during a running tour, the status bar must never keep showing a reassuring green
+  // "running" — see audit findings U-07 (2026-09-09 original review and re-check).
   const gpsIssueActive = !!gpsIssue && status === 'running';
+  const gpsIssueTitle = gpsIssue?.kind === 'low_accuracy' ? t('player.gpsAccuracyIssueTitle') : t('player.gpsIssueTitle');
   const statusMeta = gpsIssueActive
-    ? { label: t('player.gpsIssueTitle'), color: 'text-red-400' }
+    ? { label: gpsIssueTitle, color: 'text-red-400' }
     : STATUS[status];
   const accuracyIsWeak = gpsAccuracy != null && gpsAccuracy > GPS_ACCURACY_HARD_CAP_M;
 
@@ -440,14 +478,16 @@ export default function DrivingTourPlayer({ walk }) {
         )}
       </div>
 
-      {/* GPS sustained-failure warning — per audit finding U-07, this must be genuinely
-          hard to miss, not a small status-bar colour change alone. Stays up until a fresh
-          fix (of any accuracy — see the success callback in handleStart) comes back in. */}
+      {/* GPS sustained-failure / sustained-too-imprecise warning — per audit finding U-07,
+          this must be genuinely hard to miss, not a small status-bar colour change alone.
+          A 'no_signal' issue stays up until a fresh fix of any accuracy comes back in; a
+          'low_accuracy' issue (2026-09-09 re-check) needs a fix that's actually precise
+          enough — see the success callback in handleStart for both. */}
       {gpsIssueActive && (
         <div className="mx-4 mb-3 flex items-start gap-2 bg-red-900/30 border border-red-600 rounded-lg px-3 py-2">
           <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-semibold text-red-300">{t('player.gpsIssueTitle')}</p>
+            <p className="text-sm font-semibold text-red-300">{gpsIssueTitle}</p>
             <p className="text-xs text-red-300/90 mt-0.5">{gpsIssue.message}</p>
           </div>
         </div>

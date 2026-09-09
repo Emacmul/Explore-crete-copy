@@ -10,10 +10,15 @@
 // Idempotent: the subscription id is stable across the entire lifecycle (start → each
 // renewal → cancellation/expiry), so we upsert keyed by (processor, subscription_id).
 // A redelivered webhook just re-writes the same status/expiry — never a duplicate row —
-// UNLESS the membership is currently 'disputed' (see below), in which case it's refused
-// outright rather than written.
-
-export async function recordMembership(base44, { buyerEmail, processor, subscriptionId, status, expiresAt }) {
+// UNLESS the membership is currently 'disputed' (see below), or the incoming event is
+// genuinely OLDER than the last one already applied (see the last_event_at check below),
+// in which case it's refused outright rather than written.
+//
+// `eventCreatedAt` is the PROCESSOR's own timestamp for when it generated this lifecycle
+// event (Creem's event.created_at) — not when we received it. It's optional: a caller with
+// no such timestamp (a processor that doesn't provide one, or a manual admin grant) simply
+// skips the ordering check below, exactly as before this fix existed.
+export async function recordMembership(base44, { buyerEmail, processor, subscriptionId, status, expiresAt, eventCreatedAt }) {
   const email = (buyerEmail || '').toLowerCase().trim();
   if (!email || !subscriptionId || !status) {
     return { recorded: false, reason: 'missing_email_subscription_or_status' };
@@ -38,6 +43,20 @@ export async function recordMembership(base44, { buyerEmail, processor, subscrip
     return { recorded: false, reason: 'disputed', membership_id: current.id };
   }
 
+  // General out-of-order guard (audit re-check, 2026-09-09 — finding U-06, the wider case
+  // beyond just the disputed one above): the disputed flag only ever covers a refund/
+  // chargeback. Any two ordinary webhooks can still arrive out of order for lots of mundane
+  // reasons (retries, network delays, processor-side queueing) — e.g. a genuinely newer
+  // subscription.expired followed by a delayed, older subscription.paid must not be allowed
+  // to silently reactivate a membership that correctly already ended. Reject only a
+  // STRICTLY older event than the last one applied — an equal timestamp (the same event
+  // redelivered) still passes through, keeping redelivery idempotent as documented above.
+  const newEventTime = eventCreatedAt ? new Date(eventCreatedAt).getTime() : null;
+  const lastEventTime = current?.last_event_at ? new Date(current.last_event_at).getTime() : null;
+  if (newEventTime !== null && !Number.isNaN(newEventTime) && lastEventTime !== null && !Number.isNaN(lastEventTime) && newEventTime < lastEventTime) {
+    return { recorded: false, reason: 'stale_event', membership_id: current.id };
+  }
+
   let expiresAtValue = expiresAt || null;
 
   // Safeguard: a cancellation should keep the member covered until the end of the period
@@ -50,6 +69,12 @@ export async function recordMembership(base44, { buyerEmail, processor, subscrip
     expiresAtValue = current.expires_at;
   }
 
+  // Only advance last_event_at when this event actually carried a timestamp — a caller with
+  // none (see above) leaves whatever was already stored untouched, rather than blanking it.
+  const newLastEventAt = newEventTime !== null && !Number.isNaN(newEventTime)
+    ? new Date(newEventTime).toISOString()
+    : (current?.last_event_at ?? null);
+
   if (!current) {
     const created = await base44.asServiceRole.entities.Membership.create({
       buyer_email: email,
@@ -57,13 +82,14 @@ export async function recordMembership(base44, { buyerEmail, processor, subscrip
       subscription_id: subscriptionId,
       status,
       expires_at: expiresAtValue,
+      last_event_at: newLastEventAt,
     });
     return { recorded: true, action: 'created', membership_id: created.id };
   }
 
   // Update the status + expiry. The buyer email can very rarely change for the same
   // subscription id — keep it fresh if it did.
-  const update = { status, expires_at: expiresAtValue };
+  const update = { status, expires_at: expiresAtValue, last_event_at: newLastEventAt };
   if (current.buyer_email !== email) update.buyer_email = email;
   await base44.asServiceRole.entities.Membership.update(current.id, update);
   return { recorded: true, action: 'updated', membership_id: current.id };

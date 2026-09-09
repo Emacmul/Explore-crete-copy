@@ -1,59 +1,17 @@
-Deno.serve(async (req) => {
-  try {
-    const body = await req.json();
-    const { email, password } = body;
-
-    if (!email || !password) {
-      return Response.json({ error: 'Email and password are required' }, { status: 400 });
-    }
-
-    const siteUrl = Deno.env.get("WC_SITE_URL");
-    if (!siteUrl) {
-      return Response.json({ error: 'Server not configured (WC_SITE_URL missing)' }, { status: 500 });
-    }
-
-    // Call the WordPress JWT Auth plugin endpoint
-    const response = await fetch(`${siteUrl}/wp-json/jwt-auth/v1/token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: email, password })
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      // tMeister JWT Auth returns errors as an array of objects
-      const errorMsg = Array.isArray(data)
-        ? data[0]?.message
-        : data.message || 'Invalid email or password';
-      return Response.json({ error: errorMsg }, { status: 401 });
-    }
-
-    // Decode the JWT payload to extract the WordPress user ID
-    // (the token response doesn't include it directly)
-    let userId = null;
-    let userEmail = data.user_email || null;
-    try {
-      const parts = data.token.split('.');
-      if (parts.length === 3) {
-        const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
-        userId = payload.data?.user?.id || payload.user_id || payload.sub || null;
-        userEmail = userEmail || payload.data?.user?.email || payload.email || null;
-      }
-    } catch (_e) {
-      // Token decode failed — continue without user_id (sync will fail gracefully)
-    }
-
-    return Response.json({
-      token: data.token,
-      user: {
-        id: userId,
-        email: userEmail,
-        display_name: data.user_display_name || null,
-        username: data.user_nicename || null
-      }
-    });
-  } catch (error) {
-    return Response.json({ error: error.message }, { status: 500 });
-  }
+// SECURITY (audit re-check, 2026-09-09 — finding U-01): this used to be the app's ONLY
+// login path — a plain password check that handed back a full working session, with no
+// device check and no one-session limit. On 2026-09-09 the app itself was switched over to
+// loginWithDeviceCheck / verifyDeviceCode instead (see src/lib/AuthContext.jsx), which DO
+// enforce both. But this function stayed live and publicly callable under its own URL the
+// whole time — Base44 functions are open HTTP endpoints regardless of which frontend screen
+// calls them — so anyone who knew this function's name could call it directly and get a
+// full session while completely skipping the new device check and one-session lock, making
+// that protection pointless. Disabled here (not deleted) so the file — and this note — stay
+// easy to find if it's ever needed again; every request gets refused before it touches
+// WordPress or does anything else.
+Deno.serve(async (_req) => {
+  return Response.json(
+    { error: 'This sign-in method has been retired. Please sign in through the app.' },
+    { status: 410 }
+  );
 });

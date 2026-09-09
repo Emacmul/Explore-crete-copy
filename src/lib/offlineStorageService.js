@@ -104,11 +104,15 @@ export async function isWalkDataOutdated(serverWalk) {
 
 export async function cacheTile(url, blob) {
   const db = await openDB();
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_TILES, 'readwrite');
     tx.objectStore(STORE_TILES).put({ url, blob, cachedAt: Date.now() });
     tx.oncomplete = () => resolve();
-    tx.onerror = () => resolve();
+    // Was `() => resolve()` — a failed write (e.g. storage full, a real risk with large
+    // tile/audio blobs) was silently counted as a success (audit re-check, 2026-09-09 —
+    // finding U-02). preCacheWalkTiles's per-tile try/catch already correctly excludes a
+    // failed tile from its `cached` count — it just needed this to actually throw.
+    tx.onerror = () => reject(tx.error);
   });
 }
 
@@ -129,11 +133,16 @@ export async function getCachedTile(url) {
 
 export async function cacheAudio(url, blob) {
   const db = await openDB();
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_AUDIO, 'readwrite');
     tx.objectStore(STORE_AUDIO).put({ url, blob, cachedAt: Date.now() });
     tx.oncomplete = () => resolve();
-    tx.onerror = () => resolve();
+    // Was `() => resolve()` — a failed write (e.g. storage full) was silently counted as a
+    // success, so a walk could be marked "fully saved offline" with narration that was never
+    // actually stored (audit re-check, 2026-09-09 — finding U-02). preCacheWalkAudio's
+    // per-clip try/catch already correctly excludes a failed clip from its `cached` count —
+    // it just needed this to actually throw so that catch runs.
+    tx.onerror = () => reject(tx.error);
   });
 }
 

@@ -39,6 +39,11 @@
       "default": false,
       "description": "True when this membership's access was pulled by a refund/chargeback (see accessRevoker.ts), as opposed to an ordinary processor lifecycle change. While true, an out-of-order or redelivered webhook (e.g. Creem re-sending the original subscription.paid event after the dispute already revoked access) cannot silently reactivate the membership on its own (audit finding U-06, 2026-09-09 review) — only the Super-Admin dispute-restore flow clears it."
     },
+    "last_event_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the processor generated the lifecycle event that last updated this record (Creem's event.created_at — not when we received or processed it). Used to reject a genuinely older, out-of-order webhook arriving after a newer one already applied — e.g. a delayed subscription.paid landing after a subscription.expired already ended the membership (audit re-check, 2026-09-09 — finding U-06, the general case beyond just the disputed one above). Null for records created before this field existed, or by a processor/path that doesn't supply an event timestamp (e.g. a manual admin grant) — those are never treated as stale against a newer webhook, only genuinely timestamped events are compared against each other."
+    },
     "description": {
       "type": "string",
       "maxLength": 1000,

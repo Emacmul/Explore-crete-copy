@@ -8,11 +8,18 @@ import {
 export default async function (req: Request): Promise<Response> {
   try {
     const body = await req.json();
-    const { email, password, device_id, code, device_label } = body;
+    const { email: rawEmail, password, device_id, code, device_label } = body;
 
-    if (!email || !password || !device_id || !code) {
+    if (!rawEmail || !password || !device_id || !code) {
       return Response.json({ error: "Email, password, device_id and code are required" }, { status: 400 });
     }
+
+    // Normalize for OUR OWN device/session records only (audit re-check, 2026-09-09 —
+    // finding U-01) — see loginWithDeviceCheck/entry.ts for the full reasoning. Must match
+    // the normalization used there, since this function looks up the SAME challenge/device
+    // records that function created. The password check below still gets the exact,
+    // as-typed email, unchanged.
+    const email = String(rawEmail).toLowerCase().trim();
 
     const base44 = createClientFromRequest(req);
     const svc = base44.asServiceRole;
@@ -61,7 +68,7 @@ export default async function (req: Request): Promise<Response> {
     // Code correct — re-validate credentials to mint a fresh token.
     let wpData;
     try {
-      wpData = await fetchWpToken(email, password, siteUrl);
+      wpData = await fetchWpToken(rawEmail, password, siteUrl);
     } catch (err: any) {
       return Response.json({ error: err.message || "Invalid email or password" }, { status: 401 });
     }

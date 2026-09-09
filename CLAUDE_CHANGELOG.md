@@ -67,6 +67,131 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-09 (follow-up 151) — Recheck audit after the follow-up 150 redeploy: 6 of the 8 fixes had real gaps
+
+**Per Enda:** after redeploying the 5 functions follow-up 150 flagged, he ran a fresh
+audit and it still wasn't giving a clean bill of health. He said **"Check and report back
+before fixing."** Independently re-verified all 8 of that new audit's claims against the
+live code, file by line, before changing anything — confirmed U-04 and U-05 were
+genuinely fixed, but U-01, U-02, U-03, U-06, U-07 and U-08 all had a real remaining gap
+(in U-01's case, a bigger one than the audit itself described). Delivered a plain-language
+recheck document with the honest verdict on each, and Enda then said to go ahead,
+starting with U-01. This entry covers all 6.
+
+### U-01 — The new device-check login could still be walked straight around
+(`base44/functions/wpLogin/entry.ts`, `base44/functions/loginWithDeviceCheck/entry.ts`,
+`base44/functions/verifyDeviceCode/entry.ts`)
+Two separate gaps in the follow-up 150 fix:
+1. The OLD, original login function (`wpLogin`) was left live and publicly callable under
+   its own URL the whole time — Base44 functions are open HTTP endpoints regardless of
+   which frontend screen calls them, so anyone who knew its name could call it directly
+   and get a full session with zero device check and zero one-session lock, completely
+   bypassing the new protection. It's now disabled: every request gets an immediate,
+   fixed "retired" response before it touches WordPress or anything else. The file is
+   kept (not deleted) so it's easy to find again if ever needed.
+2. `loginWithDeviceCheck` and `verifyDeviceCode` used the submitted email exactly as
+   typed for every device/session/challenge lookup — so "Enda@x.com" and "enda@x.com"
+   were treated as two different people for the device limit and the one-session lock,
+   letting either be dodged just by varying capitalisation between logins. Both functions
+   now normalize (lowercase + trim) the email for their own records, matching the
+   `.toLowerCase().trim()` convention already used elsewhere in this codebase. The
+   password check itself still gets the exact, as-typed email, unchanged, so this can't
+   affect whether a correct password is accepted.
+Tests: `/tmp/test_wplogin_disabled.mjs` (5/5, runs the real `wpLogin/entry.ts` file
+directly with the Deno globals stubbed), `/tmp/test_login_email_normalization.mjs` (4/4).
+
+### U-02 — "Saved offline" could still lie underneath the follow-up 150 fix
+(`src/lib/offlineStorageService.js`, `src/components/map/OfflineTileLayer.jsx`)
+The follow-up 150 fix correctly refuses to mark a walk "saved offline" unless every
+narration clip is confirmed cached — but the actual save functions underneath it
+(`cacheTile`/`cacheAudio`) silently treated a FAILED write (e.g. storage full, a real
+risk with large audio blobs) as a success. So the fix was checking the right thing, but
+the thing underneath it could lie to it. Both now correctly fail when the write fails, so
+a genuinely-failed clip is excluded from the "saved" count as intended. One unrelated
+fire-and-forget caller (the live map's tile cache) got a harmless `.catch()` added so a
+failed background cache attempt there doesn't surface as a console error. Test:
+`/tmp/test_offline_cache_failopen.mjs` (5/5, runs the real `offlineStorageService.js`
+against a fake IndexedDB that can simulate a failed write).
+
+### U-03 — The app's offline safety net wasn't ready for a brand-new visitor
+(`public/sw.js`)
+Turning the service worker on (follow-up 150) meant everything got cached reactively, as
+it happened to be requested AFTER the worker took control — but a visitor's very first
+page load (its own HTML/JS/CSS) is fetched by the browser directly, before any worker
+exists to see it. If that same visitor went offline before ever reloading the page again,
+relaunching the app found nothing cached to fall back on. Fixed: the worker's install
+step now fetches the shell page and reads its actual script/style tags to find that
+build's real (content-hashed) file names — nothing hardcoded, discovered fresh from
+whatever was just served — and caches all of it before finishing install. Best-effort: if
+this fails (e.g. installing while already offline), the worker still installs fine with
+the old reactive-only behaviour, never worse than before. Test:
+`/tmp/test_sw_precache.mjs` (9/9, runs the real `public/sw.js` with the service-worker
+globals it expects stubbed out, using a real Vite build's actual output to confirm the
+file-name pattern it looks for is correct).
+
+### U-06 — Old membership webhooks could still win outside a dispute
+(`base44/entities/Membership.jsonc`, `base44/shared/membershipRecorder.ts`,
+`base44/functions/creemWebhook/entry.ts`)
+The follow-up 150 fix only covered ONE case: a disputed/refunded membership being
+silently revived by a delayed webhook. Any two ORDINARY webhooks can still arrive out of
+order for mundane reasons (retries, network delays, processor-side queueing) — a
+genuinely newer "expired" followed by a delayed, older "paid" could still silently bring
+a lapsed membership back. Fixed using Creem's own event timestamp (confirmed against
+their real webhook docs, not guessed — `event.created_at`, not the random, non-sequential
+`event.id`): a new `last_event_at` field on Membership records when the processor
+generated the last event actually applied; any incoming event genuinely OLDER than that
+is now rejected, while an exact redelivery of the same event still goes through
+(redelivery must stay idempotent). Callers with no timestamp at all (e.g. a manual admin
+grant) are unaffected — this only ever compares two real timestamps against each other.
+The pre-existing disputed-only guard from follow-up 150 is untouched and still works the
+same. Test: `/tmp/test_membership_event_ordering.mjs` (10/10, runs the real
+`membershipRecorder.ts` against a fake entity store).
+
+### U-07 + U-08 — Two more driving-tour GPS gaps (`src/components/walks/DrivingTourPlayer.jsx`,
+`src/lib/i18n/index.js`)
+- U-07: the follow-up 150 fix clears the GPS warning banner on ANY fix, even a low-accuracy
+  one — deliberate, so the app doesn't nag over one rough reading in the mountains. But
+  that meant a SUSTAINED run of fixes that keep arriving but stay too imprecise for any
+  waypoint never raised any warning at all — the screen could look reassuring for a long
+  stretch where nothing could ever trigger. Added a second, separate warning for exactly
+  that case (same "don't nag over a single bad fix" threshold as the original), with its
+  own message explaining GPS is on but not precise enough right now — the original
+  "signal lost" warning is untouched and still behaves exactly as before.
+- U-08: the follow-up 150 accuracy check correctly guards audio triggers and "waypoint
+  passed" tracking, but the point used to work out which direction the car is heading
+  (`prevPosRef`) was still updated from EVERY fix regardless of accuracy — so one bad fix
+  could throw off the bearing calculated for the very next one, even though the bad fix
+  itself was correctly rejected everywhere else. It now only advances from a fix precise
+  enough to trust for any waypoint; an untrustworthy fix just leaves the last good
+  reference point in place.
+Test: `/tmp/test_gps_u07_u08_recheck.mjs` (13/13) — plus re-ran the original
+`/tmp/test_gps_accuracy.mjs` (12/12) and `/tmp/test_gps_streak.mjs` (6/6) to confirm no
+regression.
+
+**Confirmed genuinely fixed on re-check, no action needed:** U-04 (offline downloads tied
+to the paying account) and U-05 (a refunded purchase can't quietly return) — both
+re-verified from scratch against the live code and found solid.
+
+**Verified:** `npx eslint` (only pre-existing, unrelated warnings in files untouched this
+session — confirmed by file path). Full `rm -rf dist && npx vite build` completes with no
+errors, and the real build output's file-name pattern was checked against the new
+`sw.js` precache logic directly (not assumed). All 13 standalone test files (100+
+assertions total, including every file from follow-up 150 re-run for regressions) pass.
+`Membership.jsonc` confirmed to still parse as valid JSON.
+
+**Backend functions that need Enda's manual redeploy step** (per the standing rule above):
+- `wpLogin` (own file changed — now refuses every request)
+- `loginWithDeviceCheck` (own file changed — email normalization)
+- `verifyDeviceCode` (own file changed — email normalization)
+- `creemWebhook` (own file changed, and imports the changed `membershipRecorder.ts`)
+
+`Membership.jsonc` is an entity schema change — no redeploy dance needed, just the normal
+sync + republish. `public/sw.js`, `DrivingTourPlayer.jsx`, `i18n/index.js`,
+`offlineStorageService.js` and `OfflineTileLayer.jsx` are frontend-only — same, normal
+republish covers them.
+
+---
+
 ## 2026-09-09 (follow-up 150) — Fixed the 8 "urgent" findings from the third-party code audit
 
 **Per Enda:** he had another AI run a full security/safety audit of the codebase and

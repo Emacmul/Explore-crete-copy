@@ -100,12 +100,18 @@ Deno.serve(async (req) => {
         return Response.json({ received: true, skipped: true, reason: 'unhandled_subscription_event' });
       }
 
+      // event.created_at is Creem's own timestamp for when IT generated this event (confirmed
+      // against Creem's webhook docs, 2026-09-09) — passed through so recordMembership can
+      // reject a genuinely older, out-of-order event arriving after a newer one already
+      // applied (audit re-check — finding U-06, the general case). event.id is random, not
+      // sequential, so it can't be used for ordering — only created_at can.
       const result = await recordMembership(base44, {
         buyerEmail: customerEmail,
         processor: 'creem',
         subscriptionId,
         status,
         expiresAt,
+        eventCreatedAt: event.created_at || null,
       });
       return Response.json({
         received: true,
