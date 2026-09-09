@@ -33,6 +33,7 @@ export default async function(req) {
       return Response.json({ restored: false, reason: 'already_restored' });
     }
 
+
     const result = await restoreAccess(base44, {
       buyerEmail: dispute.buyer_email,
       processor: dispute.processor,
