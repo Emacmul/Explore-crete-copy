@@ -44,6 +44,7 @@ export default async function(req) {
     const email = await verifyEmailFromToken(body.token, Deno.env.get('WC_SITE_URL'));
     const narrationLang = body.narrationLang || 'English';
 
+
     // Owned product ids by email. Entitlement is decided HERE, by the ORIGINAL's product id
     // — a clone is never a separate sellable product, so owning the original grants every
     // language version of it.
