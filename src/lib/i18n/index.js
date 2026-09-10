@@ -287,6 +287,7 @@ export const translations = {
     'player.toggleLog': "Toggle audit log",
     'player.lastKnownPosition': "This was your last known position",
     'player.restartFromHere': "Restart tour from here",
+    'player.nextStopLabel': "Next stop",
     'player.gpsIssueTitle': "GPS signal lost",
     'player.gpsUnavailable': "Directions and narration may be delayed or missing until signal returns. If you're unsure of the route, pull over safely.",
     'player.gpsPermissionDenied': "This app no longer has permission to use your location. Directions and narration have stopped. Pull over safely, then re-enable location for this app.",

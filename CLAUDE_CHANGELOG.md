@@ -67,6 +67,60 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-10 (follow-up 162) — Always-visible "Next stop" card with its own Play button
+Scope: `src/components/walks/DrivingTourPlayer.jsx`, `src/lib/i18n/index.js`.
+
+**Per Enda:** raised while drafting BOR1a's intro narration about GPS trouble — if a clip
+doesn't auto-trigger, the only fallback today is a manual Play button, but it sits inside a
+long, scrollable "Tour Stops" list. A stressed driver shouldn't have to scroll through 100+
+stops to find the one button they need. Talked through the design with him before building:
+
+- His first instinct was "the nearest stop" — but he then reasoned through it himself: since
+  a clip that's already playing always finishes regardless of GPS (confirmed directly from
+  the code), "nearest" could misleadingly point at the stop currently playing, or one just
+  passed. Settled on: the **next untriggered stop in sequence**, not geographic distance.
+- He also asked, correctly, whether this should only appear once the app notices GPS trouble
+  — pointed out that detection itself can take a streak of bad fixes (and referenced a past
+  bad experience with a competing app's slow detection). Confirmed: no, it needed to be
+  **always visible** the whole time the tour is running, never gated behind trouble
+  detection, so it's already there before any warning would even show up.
+- He then asked whether tapping the card's Play button mid-playback would interrupt the
+  clip already going. It doesn't — it was already going to use the exact same
+  queue-behind-whatever's-playing path (`playTriggerAudio`) as every other trigger in this
+  player, so this needed no extra code, just confirming it explicitly before building.
+
+**What changed:** a small card, always shown near the top of the driving screen while the
+tour is running, showing the next stop that hasn't played yet with its own Play button.
+Tapping it calls the same manual-trigger path the Tour Stops list's own Play button uses —
+queues behind current audio (never interrupts it), and marks the stop as triggered so GPS
+won't also fire it again later if it recovers; ordinary auto-triggering just continues from
+there. A stop with no audio yet is skipped when picking "next," and the card disappears
+once nothing is left to play.
+
+**Why:** the manual Play button already existed (follow-up 155) as the safety net for GPS
+trouble, but it was never actually easy to reach in the moment it's needed — this makes it
+immediately visible instead of requiring a scroll through a long list.
+
+**Verified:** `npx vite build` completes with no errors; `npx eslint` clean on both changed
+files. Wrote and ran a standalone test (12 checks, all passing): confirms the card correctly
+advances to the next stop as each one gets triggered; confirms a stop with no audio yet is
+never offered; confirms the card is hidden before/after the tour is actually running and
+once nothing is left; confirms it's visible the moment the tour starts running, with no
+dependency on any GPS-trouble state; confirms tapping Play while another clip is playing
+queues behind it rather than interrupting it. Also re-ran every test from follow-ups
+152–161 — all still pass (79 checks across those). Frontend-only — no backend redeploy
+needed.
+
+**Not done / worth knowing for next time:**
+- Not yet tested live — worth Enda confirming on a real drive that the card tracks forward
+  correctly as stops trigger automatically, and that tapping it mid-clip genuinely doesn't
+  cut anything off.
+- The BOR1a intro narration text itself (mentioning "Stay Safe Offline" and GPS) is a
+  separate, still-open item — drafted in conversation but not yet placed into the tour's
+  actual narration script.
+
+---
+
 ## 2026-09-10 (follow-up 161) — Fixed "Mark Waypoint as Done" jumping to a distant waypoint
 Scope: `src/components/admin/DrivingTourWaypointEditor.jsx` only.
 

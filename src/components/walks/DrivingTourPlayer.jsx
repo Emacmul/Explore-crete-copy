@@ -795,6 +795,24 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
   // reaction (check the map / turn around, not just wait for signal to improve).
   const offRouteActive = offRoute && status === 'running';
 
+  // Per Enda (follow-up 162): a stressed driver whose narration didn't auto-trigger
+  // shouldn't have to scroll down through the whole Tour Stops list to find the one Play
+  // button that matters right now. This card is ALWAYS visible while the tour is running
+  // — deliberately NOT gated behind gpsIssueActive/offRouteActive, which can take a
+  // streak of bad fixes before the app even notices anything's wrong (see
+  // GPS_ERROR_STREAK_THRESHOLD/OFF_ROUTE_STREAK_THRESHOLD above) — so it's already on
+  // screen before any warning would even appear, not after.
+  //
+  // Shows the NEXT untriggered stop in sequence, not the geographically nearest one —
+  // once a clip starts playing it always plays to completion regardless of what GPS does
+  // afterward (see playTriggerAudio/playNextQueuedAudio), so "nearest" could point right
+  // at the stop that's currently playing, or one just passed. Tapping Play here calls the
+  // exact same manual path the Tour Stops list's own Play button uses (playTriggerAudio),
+  // so it marks the stop as triggered — GPS won't also fire it again later if it
+  // recovers, and ordinary auto-triggering just continues on from there.
+  const nextStop = triggerWaypoints.find(wp => wp.audio_clip_url && !triggeredWpIds.has(wpKeyFor(wp)));
+  const nextStopActive = status === 'running' && !!nextStop;
+
   return (
     <div className="bg-slate-800 rounded-xl border border-slate-600 overflow-hidden">
       {/* Status bar */}
@@ -822,6 +840,32 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
           </div>
         )}
       </div>
+
+      {/* "Next stop" card — see the comment above nextStop/nextStopActive for why this is
+          always here rather than only appearing once trouble is detected. Tapping Play
+          queues behind whatever's currently playing (playTriggerAudio) — it never
+          interrupts audio in progress, it only starts once that finishes, exactly like
+          every other trigger path in this player. */}
+      {nextStopActive && (
+        <div className="mx-4 mb-3 flex items-center justify-between gap-3 bg-slate-700/40 border border-slate-600 rounded-lg px-3 py-2">
+          <div className="min-w-0">
+            <p className="text-xs text-slate-400">{t('player.nextStopLabel')}</p>
+            <p className="text-sm font-medium text-slate-100 truncate">
+              {nextStop.segment_title || nextStop.name || nextStop.segment_id}
+            </p>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => playTriggerAudio(nextStop, wpKeyFor(nextStop))}
+            title={t('detail.playStopTitle')}
+            className="shrink-0 border-slate-500 text-slate-200 hover:bg-slate-600 gap-1.5"
+          >
+            <Play className="w-3.5 h-3.5" /> {t('detail.playStop')}
+          </Button>
+        </div>
+      )}
 
       {/* GPS sustained-failure / sustained-too-imprecise warning — per audit finding U-07,
           this must be genuinely hard to miss, not a small status-bar colour change alone.
