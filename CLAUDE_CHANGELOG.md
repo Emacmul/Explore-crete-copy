@@ -67,6 +67,64 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-10 (follow-up 161) — Fixed "Mark Waypoint as Done" jumping to a distant waypoint
+Scope: `src/components/admin/DrivingTourWaypointEditor.jsx` only.
+
+**Per Enda's report:** working through Battle of the Rivers' 117 waypoints, clicking "Mark
+Waypoint as Done" on BOR1c correctly closed it, but the page immediately jumped to around
+BOR4 instead of staying put so BOR1d (right below BOR1c) was ready to open next. He'd
+reported this before and thought it was already fixed.
+
+**Investigated first, per standing rule — and he was right that it had been reported
+before, but the earlier fix didn't cover this exact case:**
+- Follow-up 97 (2026-09-01) fixed a related but different bug: opening one waypoint right
+  after another appeared to open some random waypoint further down. Root cause there: a
+  waypoint's expanded panel is many times taller than a collapsed row, so opening/closing
+  it in the same click reflows the page by a large amount; with nothing to compensate,
+  whatever row ended up under the browser's unchanged raw scroll position is what showed —
+  often several rows away. The fix added a `useEffect` that scrolls the newly-OPENED row
+  into view every time `expanded` changes.
+- That fix is still in the code, unreverted, and still correct for its own case. But it had
+  a `return` whenever `expanded` becomes `null` — i.e. it explicitly did nothing when a row
+  is CLOSED rather than switched. "Mark Waypoint as Done" always ends in `setExpanded(null)`
+  — it always lands in exactly the branch the old fix skipped. Same tall-panel collapse,
+  same page reflow, just nothing compensating for it on close, which is why this looked
+  identical to the "fixed" bug but kept happening.
+
+**What changed:** the effect now remembers which row was open right before it closes
+(`prevExpandedRef`), and when a row closes — Mark Waypoint as Done, or manually collapsing
+a row by clicking its own chevron again — it scrolls back to that row's now-collapsed
+position, instead of doing nothing. Opening a row still scrolls to the newly-opened row,
+exactly as follow-up 97 already fixed; only the close case was missing.
+
+**Why:** closes the actual gap in the earlier fix rather than reapplying the same approach
+that didn't cover this — the earlier fix compensated for "switching which row is open," this
+one compensates for "a row closing with nothing opening in its place," which is a different
+transition through the same state.
+
+**Verified:** `npx vite build` completes with no errors; `npx eslint` shows one pre-existing
+unrelated error (`Textarea` unused import — confirmed via `git diff` untouched this
+session). Wrote and ran a standalone test (7 checks, all passing) mirroring the effect's
+exact state machine: confirms the precise reported scenario (open BOR1c, Mark as Done)
+scrolls back to BOR1c's row, not away from it; confirms the original follow-up 97 scenario
+(switching directly from one open row to another) is completely unchanged; confirms no
+scroll happens on initial mount when nothing was ever open; confirms manually collapsing a
+row (not just Mark-as-Done) is also compensated; confirms a spurious repeated close doesn't
+mis-fire. Also re-ran every test from follow-ups 152–160 — all still pass (67 checks across
+those). Frontend-only — no backend redeploy needed.
+
+**Not done / worth knowing for next time:**
+- Not yet tested live — worth Enda confirming directly on Battle of the Rivers that closing
+  a waypoint via Mark Waypoint as Done now leaves the view sitting right where he was, with
+  the next waypoint visible and ready to open, across a few consecutive waypoints in a row.
+- The exact "lands on BOR4" distance was never something the code specifically targeted —
+  it was wherever the raw scroll pixel offset happened to land after the tall panel
+  collapsed, which depends on that panel's exact content height. The fix removes the cause
+  rather than the specific symptom, so it should hold regardless of which waypoint or how
+  much content is in its panel.
+
+---
+
 ## 2026-09-09 (follow-up 160) — Deleting an account now also force-logs-out its device session
 (`deleteAppUserAdmin/entry.ts` — BACKEND, needs redeploy — `UsersManager.jsx`)
 

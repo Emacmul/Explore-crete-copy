@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { getNarratorAuthPayload } from '@/lib/useNarratorApiKeys';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -342,10 +342,36 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
   // case above), so what's on screen always matches what's actually open. `nearest`
   // (vs. the deep-link effect's `center`) avoids yanking the view somewhere new for
   // an ordinary click when the row is already visible enough.
+  //
+  // Per Enda (follow-up 161): that fix only covered the "a row ends up OPEN" case
+  // (this effect used to just `return` when `expanded` was null) — it never covered
+  // "a row gets CLOSED", which is exactly what "Mark Waypoint as Done" does every
+  // single time (it always ends in `setExpanded(null)`, below). The same tall-panel
+  // collapse that caused follow-up 97's bug still happens on close, just with nothing
+  // to compensate for it — so clicking Mark Waypoint as Done on BOR1c could leave the
+  // page sitting wherever the raw scroll pixel offset happened to land after BOR1c's
+  // panel collapsed (e.g. somewhere around BOR4), instead of staying near BOR1c so
+  // BOR1d (right below it) is immediately visible. prevExpandedRef remembers which
+  // row was open just before it closed, so this can scroll back to THAT row's now-
+  // collapsed position — putting the admin back exactly where they were working,
+  // with the next waypoint right there to open.
+  const prevExpandedRef = useRef(null);
   useEffect(() => {
-    if (expanded == null) return;
+    if (expanded != null) {
+      prevExpandedRef.current = expanded;
+      const timer = setTimeout(() => {
+        const el = document.getElementById(`wp-row-${expanded}`);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+
+    const closedIndex = prevExpandedRef.current;
+    prevExpandedRef.current = null;
+    if (closedIndex == null) return; // nothing was open before (e.g. initial mount) — nothing to compensate
+
     const timer = setTimeout(() => {
-      const el = document.getElementById(`wp-row-${expanded}`);
+      const el = document.getElementById(`wp-row-${closedIndex}`);
       if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }, 50);
     return () => clearTimeout(timer);
