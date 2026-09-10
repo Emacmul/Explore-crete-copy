@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Play, Pause, Square, Gauge, Clock, Volume2, AlertTriangle, CheckCircle2, MapPin, Radio, Flag, ChevronDown, ChevronUp, Save, Loader2, Lock, SkipBack } from 'lucide-react';
+import { Play, Pause, Square, Gauge, Clock, Volume2, AlertTriangle, CheckCircle2, MapPin, Radio, Flag, ChevronDown, ChevronUp, Save, Loader2, Lock, SkipBack, ArrowLeft } from 'lucide-react';
 import { calculateBearing, isBearingInRange, uniqueWaypointSegmentId } from '@/lib/routeExport';
 import TourSimulatorMap from './TourSimulatorMap';
 import WaypointPaceEditor from './WaypointPaceEditor';
@@ -714,6 +714,27 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     if (bounds.length > 0) setMapFocusBounds(bounds);
   };
 
+  // Per Enda/Anoushka's follow-up 163 report: pace-testing one waypoint's own speech
+  // used to only be reachable via "Jump to location…" above — which is gated behind
+  // EVERY waypoint in that whole location already being marked done — so testing only
+  // ever happened LAST, after all the writing for a whole location was finished. Enda
+  // wants "Test this segment" available right in NarrationTtsEditor, straight after a
+  // listen pass and well before Finalise, so pacing/trigger radius/wording can all be
+  // checked and adjusted per-waypoint as he goes — leaving "Jump to location…" as the
+  // FINAL whole-location cross-check instead of the only door into pace-testing at
+  // all.
+  //
+  // Reuses jumpToWaypoint's existing scopeToThisWaypoint mode exactly as-is — the same
+  // single-waypoint boundary "Test this subsegment" (inside WaypointPaceEditor) already
+  // drives, unchanged — with NONE of jumpToLocation's own whole-location completeness
+  // gate, since nothing here depends on any OTHER waypoint being finished. Switches the
+  // panel over to WaypointPaceEditor the same way jumpToLocation does, for whichever
+  // waypoint is currently open in NarrationTtsEditor (selectedWpIndex).
+  const testThisWaypoint = () => {
+    jumpToWaypoint(selectedWpIndex, { scopeToThisWaypoint: true });
+    setSpeedMatchMode(true);
+  };
+
   // Per Enda: while actually pace-testing one leg (speedMatchMode — the WaypointPaceEditor
   // panel), the map must stay zoomed to just the CURRENTLY selected waypoint's own leg —
   // from wherever it sits to the very next waypoint in the list — never the whole
@@ -1403,23 +1424,54 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                   above is shared by both modes, so the narrator always knows which
                   waypoint they're looking at either way. */}
               {selectedWp && (speedMatchMode ? (
-                <WaypointPaceEditor
-                  key={selectedWpIndex}
-                  waypoint={selectedWp}
-                  fixedLanguage={targetLanguage}
-                  onSave={(updates) => onWaypointUpdate(toRawIndex(selectedWpIndex), updates)}
-                  onAutoSave={onAutoSave}
-                  onTestSubsegment={(previewUrl) => jumpToWaypoint(selectedWpIndex, { autoplay: true, scopeToThisWaypoint: true, audioOverrideUrl: previewUrl })}
-                  testDisabled={selectedWp.waypoint_role === 'primary_start'}
-                  testDisabledReason="Not applicable here — this point is heard while parked, before any driving starts, so there's no driving speed to test its speech against. Its pause timing above can still be tuned normally."
-                  doneLocked={doneLocked}
-                />
+                <div className="space-y-2">
+                  {/* Per Enda/Anoushka's follow-up 163 report: neither this whole-
+                      location "Jump to location…" flow NOR the new per-waypoint "Test
+                      this segment" (NarrationTtsEditor, below) had any way back to the
+                      script editor except Reset (stopSim) — which also wipes the
+                      current playback position and trigger log. This is a plain mode
+                      switch only (setSpeedMatchMode(false)) — it doesn't touch any
+                      drive/trigger state, so nothing already tested is lost by
+                      stepping back to fix wording. */}
+                  <button
+                    type="button"
+                    onClick={() => setSpeedMatchMode(false)}
+                    className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-200"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" /> Back to script editor
+                  </button>
+                  <WaypointPaceEditor
+                    key={selectedWpIndex}
+                    waypoint={selectedWp}
+                    fixedLanguage={targetLanguage}
+                    onSave={(updates) => onWaypointUpdate(toRawIndex(selectedWpIndex), updates)}
+                    onAutoSave={onAutoSave}
+                    onTestSubsegment={(previewUrl) => jumpToWaypoint(selectedWpIndex, { autoplay: true, scopeToThisWaypoint: true, audioOverrideUrl: previewUrl })}
+                    testDisabled={selectedWp.waypoint_role === 'primary_start'}
+                    testDisabledReason="Not applicable here — this point is heard while parked, before any driving starts, so there's no driving speed to test its speech against. Its pause timing above can still be tuned normally."
+                    doneLocked={doneLocked}
+                  />
+                </div>
               ) : (
                 <NarrationTtsEditor
                   key={selectedWpIndex}
                   script={selectedWp.narration_script || ''}
                   audioUrl={selectedWp.audio_clip_url || ''}
                   doneLocked={doneLocked}
+                  // Per Enda/Anoushka's follow-up 163 report: "Test this segment" used
+                  // to be reachable ONLY via "Jump to location…" above, which requires
+                  // every waypoint in the whole location to already be finished — so
+                  // testing only ever happened last. This lets NarrationTtsEditor offer
+                  // its own "Test this segment" button, right after a listen pass and
+                  // before Finalise, that jumps straight to THIS one waypoint via
+                  // testThisWaypoint (scoped exactly like WaypointPaceEditor's own
+                  // "Test this subsegment" already is) — no other waypoint needs to be
+                  // touched first. Same primary_start exemption as WaypointPaceEditor's
+                  // own testDisabled — a static "welcome" point has no driving leg to
+                  // pace-match against.
+                  onTestSegment={testThisWaypoint}
+                  testSegmentDisabled={selectedWp.waypoint_role === 'primary_start'}
+                  testSegmentDisabledReason="Not applicable here — this point is heard while parked, before any driving starts, so there's no driving speed to test its speech against."
                   onScriptChange={(val) => onWaypointUpdate(toRawIndex(selectedWpIndex), 'narration_script', val)}
                   onAudioChange={(val) => {
                     // Same atomic-update reasoning as follow-up 53 — see that entry in

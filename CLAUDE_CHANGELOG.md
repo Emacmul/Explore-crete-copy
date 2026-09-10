@@ -67,6 +67,71 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-10 (follow-up 163) — "Test this segment" moved earlier — before Finalise, not only via "Jump to location"
+Scope: `src/components/admin/TourSimulator.jsx`, `src/components/admin/NarrationTtsEditor.jsx`.
+
+**Per Enda/Anoushka:** in the "Narration & Simulate" tab, pace-matching a waypoint's
+speech against real driving/walking speed ("Test this segment") was only reachable via
+"Jump to location…" — which requires EVERY waypoint in that whole location to already
+be marked done. So testing only ever happened LAST, after all the writing for a whole
+location was finished, instead of as each waypoint was written. Enda wanted "Test this
+segment" available right after "Save and listen again", before "Finalise" — so pacing,
+trigger radius, and even wording can be checked and adjusted per waypoint as he goes,
+leaving "Jump to location…" as the final whole-location cross-check instead of the only
+door into testing at all.
+
+**Investigated first:** the actual per-waypoint pace-testing tool (`WaypointPaceEditor`,
+its "Test this subsegment" button) already only needs the ONE waypoint's own script — it
+has zero dependency on any other waypoint's state. The whole-location gate belonged only
+to `jumpToLocation`/`speedMatchMode`, not to the testing tool itself. So the fix is a new,
+narrower entry point into the exact same tool, not a rebuild of it.
+
+**What changed:**
+1. `TourSimulator.jsx`: added `testThisWaypoint()` — jumps straight to whichever waypoint
+   is currently open in the script editor (`selectedWpIndex`), scoped to just that one
+   waypoint's own leg (`scopeToThisWaypoint: true`, the same boundary "Test this
+   subsegment" already uses), then switches the panel to `WaypointPaceEditor` the same way
+   "Jump to location…" does — but with none of its whole-location completeness gate.
+2. `NarrationTtsEditor.jsx`: added a "Test this segment" button, wired to a new
+   `onTestSegment` prop. It only renders in 'edit' phase — i.e. after at least one full
+   listen pass (Build & Play or Save & Listen Again) — and sits right before the
+   "Finalize Narration Audio" box, matching Enda's requested order. Not gated by
+   `doneLocked` (testing is read-only — same reasoning `WaypointPaceEditor`'s own "Test
+   this subsegment" already uses to stay available on a Done waypoint), but is gated by
+   `busy`/an open per-line editor, same as every other control on the panel. Disabled (with
+   an explanation) on a primary_start waypoint, same reason `WaypointPaceEditor` already
+   disables its own test there — no driving leg exists to pace-match a static "welcome"
+   point's speech against.
+3. `TourSimulator.jsx`: added a small "← Back to script editor" button, shown whenever
+   `WaypointPaceEditor` is open (both from the new "Test this segment" AND from "Jump to
+   location…" — neither had any way back before except Reset, which also wipes the
+   current playback position/trigger log). It's a plain `setSpeedMatchMode(false)` toggle —
+   nothing about drive/trigger state is touched, so stepping back to fix wording loses
+   nothing already tested.
+
+**Why it's scoped to `TourSimulator.jsx` only:** per Enda's own follow-up 65 request, all
+testing lives in the one "Narrate & Simulate" tab — the duplicate testing popup that used
+to exist in the Waypoints tab was removed at his request. `onTestSegment` is only passed
+by `TourSimulator.jsx`; `NarrationTtsEditor`'s two other embeds (in
+`DrivingTourWaypointEditor.jsx`'s Waypoints tab) don't pass it, so this button simply
+doesn't appear there — no duplication introduced.
+
+**Verified:** full production build (`npm run build`) succeeds with no errors. New
+standalone test (`test_test_this_segment_followup163.mjs`, 17 checks) covers: the
+whole-location gate is genuinely absent from the new entry point; the new button's
+disabled logic (busy/open editor/primary_start block it, `doneLocked` deliberately does
+not); the button only renders in 'edit' phase and only when `onTestSegment` is actually
+passed; "Back to script editor" only flips the one mode flag, leaving drive/trigger state
+untouched. Full accumulated regression suite (135 checks across 14 files) re-run and
+passing.
+
+**Not done — worth knowing:** "Back to script editor" is a small necessary addition, not
+separately requested — without it, the new "Test this segment" (and the pre-existing
+"Jump to location…") would strand a narrator in the pace-testing panel with no way back
+except a full Reset. No backend files touched — frontend only, no manual redeploy needed.
+
+---
+
 ## 2026-09-10 (follow-up 162) — Always-visible "Next stop" card with its own Play button
 Scope: `src/components/walks/DrivingTourPlayer.jsx`, `src/lib/i18n/index.js`.
 

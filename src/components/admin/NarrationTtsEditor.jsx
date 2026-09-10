@@ -10,7 +10,7 @@ import { parseScript, rebuildScript, countCharacters, countBreaks } from '@/lib/
 import TtsSegmentCard from './TtsSegmentCard';
 import TranslationPanel from './TranslationPanel';
 import AudioPlayer from '@/components/ui/AudioPlayer';
-import { Loader2, Sparkles, Pause, Play, Download, Braces, FileText, Square, CheckCircle2 } from 'lucide-react';
+import { Loader2, Sparkles, Pause, Play, Download, Braces, FileText, Square, CheckCircle2, Gauge } from 'lucide-react';
 import { downloadScriptAsDocx } from '@/lib/docxExporter';
 import { useNarratorApiKeys } from '@/lib/useNarratorApiKeys';
 import { getFnErrorMessage, withTimeout } from '@/lib/utils';
@@ -164,7 +164,7 @@ function deriveSubsections(segments, subsectionSizes) {
   return chunkIntoSubsections(segments);
 }
 
-export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, onAudioChange, onAutoSave, fixedLanguage, waypointSegmentId, waypointSegmentTitle, doneLocked = false, currentWalkId }) {
+export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, onAudioChange, onAutoSave, fixedLanguage, waypointSegmentId, waypointSegmentTitle, doneLocked = false, currentWalkId, onTestSegment, testSegmentDisabled = false, testSegmentDisabledReason }) {
   const { keys: apiKeys } = useNarratorApiKeys();
   const [selectedVoice, setSelectedVoice] = useState('NEUTRAL');
   const [selectedLanguage, setSelectedLanguage] = useState(fixedLanguage || 'English');
@@ -1694,6 +1694,56 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
             // own script box are unlocked; Build & Play itself is gone (see the comment
             // block above this whole section for the full reasoning).
             <>
+              {/* Per Enda/Anoushka's follow-up 163 report: pace-matching a waypoint's
+                  speech against real driving/walking speed used to only be reachable
+                  via "Jump to location…" in the Narrate & Simulate toolbar — which is
+                  gated behind every OTHER waypoint in that whole location already
+                  being marked done, so testing only ever happened last, after all the
+                  writing was finished. This offers the exact same test right here,
+                  the moment a listen pass has actually happened (this whole block
+                  only renders in 'edit' phase — i.e. after Build & Play or Save &
+                  Listen Again has played the current wording through at least once) —
+                  well before Finalize Narration Audio further down, so pacing,
+                  trigger radius, and wording can all be checked and adjusted per
+                  waypoint as a narrator goes, leaving "Jump to location…" as the
+                  FINAL whole-location cross-check instead of the only door into
+                  testing at all.
+
+                  onTestSegment is provided by TourSimulator.jsx only (its sole
+                  caller with the actual drive/simulate engine behind it) — the two
+                  other places this component is embedded (DrivingTourWaypointEditor's
+                  Waypoints tab) don't pass it, so this block simply doesn't render
+                  there. That matches Enda's own follow-up 65 request that all testing
+                  live in the one Narrate & Simulate tab, never duplicated elsewhere.
+
+                  Deliberately NOT gated by doneLocked, unlike every editing control on
+                  this panel — testing is read-only (it only jumps the simulator and
+                  plays a preview, it never itself edits anything), the same reasoning
+                  WaypointPaceEditor's own "Test this subsegment" already uses to stay
+                  available regardless of doneLocked. It IS gated by busy/an open
+                  per-line editor (same as every other control here), since switching
+                  panels out from under an in-flight save or an unsaved per-line draft
+                  would be confusing. */}
+              {onTestSegment && (
+                <div className="bg-blue-900/20 border border-blue-600/40 rounded-lg p-3 space-y-2 text-center">
+                  <p className="text-sm text-blue-300">
+                    Want to check the pace against real driving/walking speed before finalising?
+                  </p>
+                  <Button
+                    type="button"
+                    onClick={onTestSegment}
+                    disabled={busy || editingSegmentId !== null || testSegmentDisabled}
+                    title={testSegmentDisabled ? testSegmentDisabledReason : 'Jump straight to this waypoint and test its pause timing and trigger radius against a real drive — no need to finish every other waypoint in this location first.'}
+                    className="w-full bg-blue-700/30 hover:bg-blue-700/50 border border-blue-600/50 text-blue-300 hover:text-blue-200 gap-2"
+                  >
+                    <Gauge className="w-4 h-4" /> Test this segment
+                  </Button>
+                  {testSegmentDisabled && testSegmentDisabledReason && (
+                    <p className="text-xs text-blue-400/70">{testSegmentDisabledReason}</p>
+                  )}
+                </div>
+              )}
+
               {canMarkAsDone && (
                 <div className="bg-emerald-900/20 border border-emerald-600/40 rounded-lg p-3 space-y-2 text-center">
                   <p className="text-sm text-emerald-300 flex items-center justify-center gap-1.5">
