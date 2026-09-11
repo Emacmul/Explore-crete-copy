@@ -67,6 +67,42 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-11 (follow-up 166) — Narration & Simulate panel: "Mark segment as done" button, and a more visible "Back to script editor" link
+Scope: `src/components/admin/WaypointPaceEditor.jsx`, `src/components/admin/TourSimulator.jsx`.
+
+**Per Enda:** sent screenshots of the WaypointPaceEditor panel (Narration & Simulate,
+testing BOR1b) and reported "There is no way to go back to the editing section, or the
+finalize the segment from here. Both must be possible."
+
+Checked precisely. "Back to script editor" genuinely did work already (it's a real
+button), but Enda then separately reported it was "barely visible" — its text colour
+(`text-slate-400`) was too close to the dark panel background to read comfortably.
+Fixed by switching it to `text-blue-300`/hover `text-blue-200`, the same colour already
+used for every other "back"/navigation link elsewhere in the admin area (e.g.
+`WalkEditor.jsx`'s own Back button), for a clear, consistent, non-white colour.
+
+The "finalize from here" half was a genuine gap, not a visibility issue: this panel's
+auto-save (which is what actually marks a waypoint done) only ever runs in response to
+an actual text/pause edit — testing a segment and confirming it sounds right, with zero
+edits made, never triggered it, so `waypoint_done` could be stuck false indefinitely.
+Added a new "Mark segment as done" button next to "Test this subsegment" that calls the
+exact same save pipeline directly, so listening back and confirming it's good is now
+enough on its own — no throwaway edit needed first. Styled to match the app's existing
+"confirm/complete" button convention (blue background, amber text, `CheckCircle2` icon —
+same as `DrivingTourWaypointEditor.jsx`'s "Mark Waypoint as Done"). Hidden automatically
+once the waypoint is already marked done, same as the existing save-status indicator.
+
+No backend files touched — frontend-only, no redeploy dance needed.
+
+Tested: `npx eslint` on both files (0 errors), full `npm run build` (exit 0, fresh
+`dist/assets/*.js`), new standalone test `/tmp/test_mark_segment_done_followup166.mjs`
+(14 checks: button calls the save pipeline with segments present, works with zero edits
+made, no-ops once already doneLocked, no-ops with no/empty segments, disabled state
+mirrors loading/saving/testing, visibility mirrors the segments-parsed + not-done
+condition), full accumulated regression suite re-run (28 files, 178 checks, all passing).
+
+---
+
 ## 2026-09-11 (follow-up 165) — Waypoint 2's Play button now waits for waypoint 1's audio to actually finish
 Scope: `src/components/walks/DrivingTourPlayer.jsx`.
 

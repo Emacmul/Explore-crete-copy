@@ -1436,7 +1436,13 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                   <button
                     type="button"
                     onClick={() => setSpeedMatchMode(false)}
-                    className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-200"
+                    // Per Enda's report: the original text-slate-400 read as barely
+                    // visible against this panel's dark background — switched to the
+                    // same text-blue-300 already used for every other "back"/navigation
+                    // link in the admin area (e.g. WalkEditor's own Back button), for a
+                    // clearly readable, consistent colour rather than a near-white or
+                    // washed-out one.
+                    className="flex items-center gap-1 text-xs text-blue-300 hover:text-blue-200"
                   >
                     <ArrowLeft className="w-3.5 h-3.5" /> Back to script editor
                   </button>

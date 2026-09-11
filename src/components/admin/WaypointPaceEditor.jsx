@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Slider } from '@/components/ui/slider';
-import { Loader2, Play, AlertTriangle, Clock, Trash2, X, Check, BookOpen } from 'lucide-react';
+import { Loader2, Play, AlertTriangle, Clock, Trash2, X, Check, BookOpen, CheckCircle2 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { getNarratorAuthPayload, useNarratorApiKeys } from '@/lib/useNarratorApiKeys';
 import { parseScript, rebuildScript } from '@/lib/ttsParser';
@@ -778,6 +778,27 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
             {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
             Test this subsegment
           </Button>
+
+          {/* Per Enda's report ("no way to...finalize the segment from here"): testing
+              alone never edits anything, so runAutoSave (which is what actually sets
+              waypoint_done: true) was never being called from this panel unless the
+              narrator also happened to change some text. This button calls that same
+              save pipeline directly, so listening back and confirming it's good is
+              enough on its own to finalize — no throwaway edit needed first. Hidden
+              once doneLocked is already true since there's nothing left to finalize. */}
+          {!doneLocked && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => runAutoSave()}
+              disabled={loading || saving || testing}
+              title="Save this wording and pacing as the finished version for this waypoint"
+              className="bg-blue-700/30 hover:bg-blue-700/50 border-blue-600/50 text-amber-400 hover:text-amber-300 gap-2"
+            >
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+              Mark segment as done
+            </Button>
+          )}
 
           {/* Follow-up 129: replaces the old manual "Save changes" button — edits save
               on their own now (see runAutoSave above), this just shows where that
