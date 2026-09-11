@@ -132,7 +132,7 @@ export default function SegmentScriptEditor({ segmentScripts, onSegmentScriptsCh
           {availableSegments.map((seg) => (
             <SelectItem key={seg.segment_number} value={seg.segment_number}>
               {seg.segment_id || `Segment ${seg.segment_number}`}
-              {seg.status === 'accepted' ? ' ✓ Accepted' : seg.status === 'finalized' ? ' ✓ Finalized' : ' (draft)'}
+              {seg.status === 'accepted' ? ' ✓ Accepted' : seg.status === 'finalized' ? ' ✓ Finalised' : ' (draft)'}
             </SelectItem>
           ))}
         </SelectContent>
@@ -148,7 +148,7 @@ export default function SegmentScriptEditor({ segmentScripts, onSegmentScriptsCh
               </span>
             ) : isFinalized ? (
               <span className="flex items-center gap-1 text-amber-400">
-                <FileText className="w-3 h-3" /> Finalized — test in the simulator above, then accept to unlock finished audio upload
+                <FileText className="w-3 h-3" /> Finalised — test in the simulator above, then accept to unlock finished audio upload
               </span>
               ) : (
               <span className="flex items-center gap-1 text-blue-400">

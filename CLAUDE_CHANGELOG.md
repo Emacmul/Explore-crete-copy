@@ -38,6 +38,12 @@ Pulled: 2026-08-03
   and comments — never "ElevenLabs" or any other specific vendor. Enda may
   switch labs; PCV describes what the audio is, not who made it, so it
   never needs revisiting if that happens.
+- STANDING RULE — British spelling, never American, in any user-facing
+  text: e.g. "Finalise"/"Finalised"/"Finalising", never "Finalize" etc.
+  Applies to every new label, button, tooltip, or status message added to
+  this app. (Internal code — variable/function names, stored data enum
+  values like a status of `'finalized'` — is NOT required to change, only
+  what the user actually reads on screen.)
 - STANDING RULE — no GPX export, ever, and no customer-uploaded walks: a
   customer must NEVER be able to download a walk's raw GPX (trail route)
   file — that would let them export the tour to another platform. This
@@ -64,6 +70,42 @@ Pulled: 2026-08-03
   something to build — just context for why a narration-focused test
   clone of a tour exists alongside its master, and why the master file's
   writing style may look conversational rather than formal on purpose.
+
+---
+
+## 2026-09-11 (follow-up 168) — "Finalise Narration Audio" hidden only where the new "Mark segment as done" replaces it, plus British spelling everywhere
+Scope: `src/components/admin/NarrationTtsEditor.jsx`, `src/components/admin/SegmentScriptEditor.jsx`, `src/components/admin/SegmentScriptManager.jsx`, `src/components/admin/WaypointPaceEditor.jsx`.
+
+**Per Enda's answer to follow-up 167's question:** confirmed "Finalize Narration Audio"
+should stay wherever it's the only way to finalise a segment, and only disappear where
+"Mark segment as done" (via "Test this subsegment") already covers the same job — that's
+the Narration & Simulate tab only. Implemented exactly that: `NarrationTtsEditor.jsx`'s
+old "Finalise Narration Audio" panel now also checks `!onTestSegment` before showing.
+Confirmed via source (not assumed) that `onTestSegment` is passed by `TourSimulator.jsx`
+alone — `SegmentScriptEditor.jsx` and both embeddings in
+`DrivingTourWaypointEditor.jsx`'s Waypoints tab never pass it, so this button, its
+"you've listened all the way through" panel, and its listen-twice-with-no-edits-since
+gate are all completely unchanged there.
+
+Also: Enda's spelling correction — British English throughout, "Finalise" not
+"Finalize" (added as a new STANDING RULE above). Renamed every user-facing occurrence:
+the "Finalise Narration Audio" / "Finalising…" button text, its two select-dropdown
+tooltips, the "Finalise Narration Audio saves the new version" help text, and the
+"Finalised" status badges/labels in `SegmentScriptEditor.jsx` and
+`SegmentScriptManager.jsx`. Left the underlying stored status value itself as
+`'finalized'` (internal data, not something the user reads) — only the displayed label
+changed, so no data migration is needed and nothing else that checks that value breaks.
+
+No backend files touched — frontend-only, no redeploy dance needed.
+
+Tested: `npx eslint` on all four files (0 new errors — one pre-existing unrelated
+`SegmentScriptEditor.jsx` warning about an unused `Lock` import, confirmed via `git
+stash` to predate this change), full `npm run build` (exit 0, fresh `dist/assets/*.js`),
+new standalone test `/tmp/test_finalize_hide_and_spelling_followup168.mjs` (14 checks:
+button hidden with onTestSegment present, still shown without it, still gated by
+canMarkAsDone either way, every UI string uses the British spelling with none of the
+American spelling left, the stored status value is untouched), full accumulated
+regression suite re-run (30 files, 202 checks, all passing).
 
 ---
 

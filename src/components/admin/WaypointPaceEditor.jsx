@@ -821,8 +821,8 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
                 waypoint_done: true) was never being called from this panel unless the
                 narrator also happened to change some text. This button calls that same
                 save pipeline directly, so listening back and confirming it's good is
-                enough on its own to finalize — no throwaway edit needed first. Hidden
-                once doneLocked is already true since there's nothing left to finalize. */}
+                enough on its own to finalise — no throwaway edit needed first. Hidden
+                once doneLocked is already true since there's nothing left to finalise. */}
             {!doneLocked && (
               <Button
                 size="sm"

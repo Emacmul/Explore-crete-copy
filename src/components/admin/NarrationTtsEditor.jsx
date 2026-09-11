@@ -1564,7 +1564,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
             via fixedLanguage, just for the ordinary non-clone case too.
           */}
           <Select value={selectedVoice} onValueChange={setSelectedVoice} disabled={!!segments}>
-            <SelectTrigger className="bg-slate-700 border-slate-500 text-white h-8 text-sm" title={segments ? 'Set for this pass when Parse & Generate was clicked — Finalize Narration Audio (or start a fresh pass) to change it.' : undefined}>
+            <SelectTrigger className="bg-slate-700 border-slate-500 text-white h-8 text-sm" title={segments ? 'Set for this pass when Parse & Generate was clicked — Finalise Narration Audio (or start a fresh pass) to change it.' : undefined}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -1580,7 +1580,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
             </div>
           ) : (
             <Select value={selectedLanguage} onValueChange={setSelectedLanguage} disabled={!!segments}>
-              <SelectTrigger className="bg-slate-700 border-slate-500 text-white h-8 text-sm" title={segments ? 'Set for this pass when Parse & Generate was clicked — Finalize Narration Audio (or start a fresh pass) to change it.' : undefined}>
+              <SelectTrigger className="bg-slate-700 border-slate-500 text-white h-8 text-sm" title={segments ? 'Set for this pass when Parse & Generate was clicked — Finalise Narration Audio (or start a fresh pass) to change it.' : undefined}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1744,7 +1744,15 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                 </div>
               )}
 
-              {canMarkAsDone && (
+              {/* Per Enda's follow-up 167 answer: now that Narration & Simulate has its
+                  own "Test this subsegment" → "Mark segment as done" path (via
+                  WaypointPaceEditor), this button is redundant specifically there — so
+                  it's hidden wherever onTestSegment is provided (TourSimulator only).
+                  It stays exactly as before everywhere else (SegmentScriptEditor,
+                  DrivingTourWaypointEditor's Waypoints tab) — those have no
+                  "Test this segment" alternative, so this remains their only way to
+                  finalise a segment. */}
+              {canMarkAsDone && !onTestSegment && (
                 <div className="bg-emerald-900/20 border border-emerald-600/40 rounded-lg p-3 space-y-2 text-center">
                   <p className="text-sm text-emerald-300 flex items-center justify-center gap-1.5">
                     <CheckCircle2 className="w-4 h-4" /> You've listened all the way through — happy with it?
@@ -1764,7 +1772,9 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                     className="w-full bg-emerald-700/30 hover:bg-emerald-700/50 border border-emerald-600/50 text-emerald-300 hover:text-emerald-200 gap-2"
                   >
                     {generatingCombined ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                    {generatingCombined ? 'Finalizing…' : 'Finalize Narration Audio'}
+                    {/* Per Enda's follow-up 167 spelling correction: British English
+                        throughout this app — "Finalise", never the American "Finalize". */}
+                    {generatingCombined ? 'Finalising…' : 'Finalise Narration Audio'}
                   </Button>
                   <p className="text-xs text-emerald-400/70">Not happy yet? Just make your changes below instead.</p>
                 </div>
@@ -1959,7 +1969,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
             own script box; make your changes, then <strong>Save &amp; Listen Again</strong> to hear them
             together in context before you can edit further. Repeat as many times as you like — once
             you've listened straight through at least twice with nothing left unheard,{' '}
-            <strong>Finalize Narration Audio</strong> saves the new version. No need to leave this screen.
+            <strong>Finalise Narration Audio</strong> saves the new version. No need to leave this screen.
           </p>
           <p className="text-xs text-slate-500">
             This deliberately forces a listen between every round of edits — a script has to sound right

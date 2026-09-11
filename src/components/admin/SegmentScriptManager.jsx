@@ -183,7 +183,7 @@ export default function SegmentScriptManager({ waypoints, segmentScripts, onSegm
                   )}
                   {segScript?.status === 'finalized' && (
                     <span className="flex items-center gap-1 text-xs text-amber-400">
-                      <CheckCircle2 className="w-3 h-3" /> Finalized
+                      <CheckCircle2 className="w-3 h-3" /> Finalised
                     </span>
                   )}
                   {segScript?.combined_script && !segScript?.status && (
