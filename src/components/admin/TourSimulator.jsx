@@ -1549,12 +1549,29 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                   // before Finalise, that jumps straight to THIS one waypoint via
                   // testThisWaypoint (scoped exactly like WaypointPaceEditor's own
                   // "Test this subsegment" already is) — no other waypoint needs to be
-                  // touched first. Same primary_start exemption as WaypointPaceEditor's
-                  // own testDisabled — a static "welcome" point has no driving leg to
-                  // pace-match against.
+                  // touched first.
+                  //
+                  // Per Enda's follow-up 174 report: this button used to be disabled for
+                  // primary_start waypoints (the stationary "welcome" point, e.g.
+                  // BOR1a-PS) — mirroring WaypointPaceEditor's own testDisabled, which is
+                  // correct THERE since there's no driving leg to pace-match a static
+                  // point against. But follow-up 168 later hid NarrationTtsEditor's own
+                  // Finalize/Mark-as-done panel entirely whenever onTestSegment is
+                  // provided (i.e. always, in this tab), on the assumption a narrator
+                  // could always reach WaypointPaceEditor's own "Mark segment as done"
+                  // instead. Combined, a primary_start waypoint lost BOTH paths at
+                  // once — Finalize hidden here, and the only door to the other one
+                  // (this button) disabled — leaving no way to mark it done at all.
+                  // Traced directly from Enda finishing BOR1a-PS in the TestTour clone
+                  // and finding no "Mark as done" anywhere.
+                  //
+                  // Fix: this button is never disabled now — it always opens
+                  // WaypointPaceEditor, which still correctly disables its OWN internal
+                  // drive-test button for primary_start (with its own clear reason,
+                  // "heard while parked... pause timing above can still be tuned
+                  // normally") but always offers "Mark segment as done" regardless,
+                  // since that button was never gated on testDisabled to begin with.
                   onTestSegment={testThisWaypoint}
-                  testSegmentDisabled={selectedWp.waypoint_role === 'primary_start'}
-                  testSegmentDisabledReason="Not applicable here — this point is heard while parked, before any driving starts, so there's no driving speed to test its speech against."
                   onScriptChange={(val) => onWaypointUpdate(toRawIndex(selectedWpIndex), 'narration_script', val)}
                   onAudioChange={(val) => {
                     // Same atomic-update reasoning as follow-up 53 — see that entry in

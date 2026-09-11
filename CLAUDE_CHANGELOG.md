@@ -73,6 +73,138 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-11 (follow-up 174) — Primary-Start waypoints had no way to be marked done
+Scope: `src/components/admin/TourSimulator.jsx`, `src/components/admin/NarrationTtsEditor.jsx`.
+Frontend-only, no backend redeploy needed.
+
+**Per Enda:** working through the TestTour clone as a narrator, he finished
+BOR1a-PS (the stationary "welcome, get ready" point every driving tour opens
+with) and had no way to mark it done at all.
+
+**Investigated first, found by reading the actual gating code, not guessing:** two
+earlier, individually-correct changes combined into a dead end for this one waypoint
+type. Follow-up 168 hid NarrationTtsEditor's old "Finalise Narration Audio" panel
+completely in this tab, on the basis that WaypointPaceEditor's newer "Mark segment as
+done" (reached via a "Test this segment" button) always covers it instead. But that
+same "Test this segment" button was ALSO disabled for primary_start waypoints — a
+leftover from follow-up 163, back when it made sense because Finalize was still there
+as a fallback. Once follow-up 168 removed that fallback, a primary_start waypoint lost
+both doors to marking done at once: Finalize hidden, and the only other route blocked.
+Every ordinary driving waypoint was unaffected throughout — only the "parked, no
+driving leg" ones (Primary-Start) hit this.
+
+**Fix:** "Test this segment" is no longer disabled for Primary-Start waypoints — it
+always opens WaypointPaceEditor now. That panel's own drive-test button correctly
+stays disabled there (a stationary point genuinely has nothing to pace-match against,
+and it already explains this clearly), but "Mark segment as done" was never gated on
+that in the first place, so it's now reachable. Softened the entry button's wording
+so it reads correctly either way, instead of always implying a driving test.
+
+**Verified:** `npx eslint` on both files (0 new errors; cleaned up two now-unused
+props this fix made redundant, which had shown as new lint warnings, rather than
+leaving them behind). Full `npm run build` (exit 0, fresh `dist/assets/*.js`). New
+standalone test `/tmp/test_primary_start_mark_done_followup174.mjs` (11 checks:
+confirms "Test this segment" is now enabled for Primary-Start waypoints while its
+other gates — busy, an open per-line editor — are untouched; confirms WaypointPaceEditor's
+own drive-test button still correctly disables for Primary-Start only; confirms
+"Mark segment as done" was always independent of that and is now reachable; confirms
+ordinary waypoints are completely unaffected end-to-end). Full accumulated regression
+suite re-run (33 files, 332 checks, all passing).
+
+---
+
+## 2026-09-11 (follow-up 173) — TestTour's narration depository was empty
+Not a code change — a direct database data fix (via the Base44 data tools), same kind
+of action as follow-up 172 just above. No files touched, no redeploy. Battle of the
+Rivers (BOR) was only ever read from, never written to.
+
+**Per Enda:** after follow-up 172 fixed the missing trail path, TestTour still
+couldn't be used to practice on — "it can't find the depository with the language
+files." Asked for it to work 100%, exactly like a proper tour ready for translating
+and editing, without touching the real BOR tour.
+
+**Investigated first:** the shared narration depository (the app's replacement for
+emailing narrators .odt files by hand — see `manageTourImportFiles`) is keyed per
+waypoint, by a code like "BOR1a". TestTour's waypoints were copied from BOR's real
+content in follow-up 148, but the depository entries themselves were never copied —
+TestTour's `import_files` list was empty. Every one of TestTour's 17 waypoints was
+computing its own depository key correctly (confirmed by reading the exact function
+the app itself uses, `uniqueWaypointSegmentId`) — the keys just had nothing to match
+against, since nothing had ever been filed there under those keys.
+
+**Fix:** added 17 entries to TestTour's own `import_files` — one per waypoint,
+keyed exactly the way the app computes them for TestTour specifically ("TestTour1a"
+through "TestTour1g", "TestTour2a" through "TestTour2j") — each pointing at the SAME
+already-uploaded .odt file BOR itself uses for that equivalent waypoint (BOR1a's file
+for TestTour1a, and so on). This only ever reads from BOR's existing files and writes
+to TestTour's own record — BOR's own `import_files` list, and every other field on
+it, is untouched.
+
+**Verified:** re-read TestTour's `import_files` back from the database — all 17
+entries present, correctly keyed. Independently recomputed, in a standalone script,
+the exact depository key the app would generate for each of TestTour's 17 waypoints
+(matching both the master and Enda's existing English clone, since their waypoint
+lists are still identical) — every one matches an `import_files` entry exactly, so
+the automatic "fetch this waypoint's master script" check that runs the moment a
+narrator opens a waypoint should now find a real file every time. Could not click
+through the live app myself to watch it happen — worth Enda opening TestTour
+(English) as a narrator and confirming a waypoint's script now appears automatically.
+
+**Worth knowing, not acted on:** neither TestTour's nor BOR's waypoints currently
+carry a `waypoint_uid` (a newer, more robust way of linking a waypoint to its
+depository file, immune to waypoints being reordered later) — both still rely on the
+older position-based key, which is a supported, intended fallback in the code, not a
+defect. Nothing to do here; noted only because it's the reason the fix above uses
+plain position-based keys rather than uids.
+
+---
+
+## 2026-09-11 (follow-up 172) — TestTour had no trail path; narrators saw a blank screen
+Not a code change — a direct database data fix (via the Base44 data tools), same kind
+of action as follow-up 148's own "TestTour" rebuild. No files touched, no redeploy.
+
+**Per Enda:** the TestTour tour (built for new admins/narrators to practice on) "can't
+be seen by them" — he thought neither the route nor the waypoints had been copied over
+when it was rebuilt.
+
+**Investigated first, found by checking the real data, not guessing:** the 17
+waypoints WERE all there, complete with real coordinates, narration and audio (exactly
+as follow-up 148 recorded). What was actually missing was the trail path — the actual
+driving route line — which was empty on both the master TestTour record and on the
+English copy Enda had already made for himself. `TourSimulator.jsx`'s whole "Narration
+& Simulate" screen — the main practice tool, and the only one that really matters for
+a new narrator — refuses to show anything at all without a trail path: it just
+displays "No trail path available. Add a trail path in the 'Trail Path' tab." A
+narrator doesn't even have that tab (it's admin-only), so that message was doubly
+unhelpful. This fully explained "can't be seen" — it wasn't that the tab was hidden,
+it was empty.
+
+**Why the trail path was missing:** when TestTour was rebuilt in follow-up 148, only
+the waypoints, narration and audio were copied over from Battle of the Rivers (BOR) —
+the trail path itself was never pulled across. A gap in that earlier fix, not
+something that broke since.
+
+**Fix:** pulled the matching stretch of BOR's own real trail path (its first 345
+points, covering from BOR1a's car park through about 300m past BOR2j, with room to
+spare) and saved it onto both the TestTour master and Enda's existing TestTour
+(English) clone. Checked first that all 17 waypoints land within a few metres of this
+stretch of the real path, so triggering will behave correctly.
+
+**Worth knowing:** one of BOR's own waypoints (BOR2e, "Ignore all side roads") sits
+slightly earlier along the road than BOR2d before it — a real hairpin in that road
+means the two points are geographically close even though 2e is narrated after 2d.
+This exists identically in the live BOR tour itself (checked — same coordinates,
+same quirk), so it's not something introduced by this fix, and it's not touched here.
+Only worth a look if a trigger-radius test around that exact spot ever behaves oddly.
+
+**Verified:** queried both records back afterward — trail path now has 345 points on
+each, waypoints untouched at 17, and the path's start/end coordinates match what was
+intended. Not yet clicked through in the live app — worth Enda giving the "Narration &
+Simulate" tab a look on TestTour to confirm it now shows a real map and lets a test
+drive run.
+
+---
+
 ## 2026-09-11 (follow-up 171) — Correction: multi-segment test drives BACKWARD, not forward
 Scope: `src/components/admin/TourSimulator.jsx`, `src/components/admin/WaypointPaceEditor.jsx`.
 

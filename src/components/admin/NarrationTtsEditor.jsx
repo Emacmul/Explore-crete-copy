@@ -164,7 +164,7 @@ function deriveSubsections(segments, subsectionSizes) {
   return chunkIntoSubsections(segments);
 }
 
-export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, onAudioChange, onAutoSave, fixedLanguage, waypointSegmentId, waypointSegmentTitle, doneLocked = false, currentWalkId, onTestSegment, testSegmentDisabled = false, testSegmentDisabledReason }) {
+export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, onAudioChange, onAutoSave, fixedLanguage, waypointSegmentId, waypointSegmentTitle, doneLocked = false, currentWalkId, onTestSegment }) {
   const { keys: apiKeys } = useNarratorApiKeys();
   const [selectedVoice, setSelectedVoice] = useState('NEUTRAL');
   const [selectedLanguage, setSelectedLanguage] = useState(fixedLanguage || 'English');
@@ -1723,24 +1723,29 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                   available regardless of doneLocked. It IS gated by busy/an open
                   per-line editor (same as every other control here), since switching
                   panels out from under an in-flight save or an unsaved per-line draft
-                  would be confusing. */}
+                  would be confusing.
+
+                  Per Enda's follow-up 174 report: this is also the ONLY door to
+                  WaypointPaceEditor's "Mark segment as done" (Finalize is hidden right
+                  below, whenever onTestSegment is provided) — so this button is never
+                  disabled, even for a stationary primary_start point with no driving
+                  leg to pace-match. The wording below stays accurate either way:
+                  WaypointPaceEditor itself explains, right there, when pace-testing
+                  genuinely doesn't apply to the waypoint you've landed on. */}
               {onTestSegment && (
                 <div className="bg-blue-900/20 border border-blue-600/40 rounded-lg p-3 space-y-2 text-center">
                   <p className="text-sm text-blue-300">
-                    Want to check the pace against real driving/walking speed before finalising?
+                    Check the pacing (where possible) and mark this segment as done.
                   </p>
                   <Button
                     type="button"
                     onClick={onTestSegment}
-                    disabled={busy || editingSegmentId !== null || testSegmentDisabled}
-                    title={testSegmentDisabled ? testSegmentDisabledReason : 'Jump straight to this waypoint and test its pause timing and trigger radius against a real drive — no need to finish every other waypoint in this location first.'}
+                    disabled={busy || editingSegmentId !== null}
+                    title="Open the pacing panel for this waypoint — test it against real driving/walking speed if it has one, and mark it done from there. No need to finish every other waypoint in this location first."
                     className="w-full bg-blue-700/30 hover:bg-blue-700/50 border border-blue-600/50 text-blue-300 hover:text-blue-200 gap-2"
                   >
                     <Gauge className="w-4 h-4" /> Test this segment
                   </Button>
-                  {testSegmentDisabled && testSegmentDisabledReason && (
-                    <p className="text-xs text-blue-400/70">{testSegmentDisabledReason}</p>
-                  )}
                 </div>
               )}
 
