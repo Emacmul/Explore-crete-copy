@@ -767,7 +767,12 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
       )}
 
       {segments && segments.length > 0 && (
-        <div className="flex items-center gap-3 pt-1 flex-wrap">
+        // Per Enda's follow-up report: "Mark segment as done" sitting right next to
+        // "Test this subsegment" made it easy to mis-click one for the other. Split
+        // into two groups with justify-between so Test stays on the left and Mark-as-
+        // done (with its save-status readout) sits on the far right of the block —
+        // physically apart, not just visually distinct.
+        <div className="flex items-center justify-between gap-3 pt-1 flex-wrap">
           <Button
             size="sm"
             onClick={handleTest}
@@ -779,57 +784,59 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
             Test this subsegment
           </Button>
 
-          {/* Per Enda's report ("no way to...finalize the segment from here"): testing
-              alone never edits anything, so runAutoSave (which is what actually sets
-              waypoint_done: true) was never being called from this panel unless the
-              narrator also happened to change some text. This button calls that same
-              save pipeline directly, so listening back and confirming it's good is
-              enough on its own to finalize — no throwaway edit needed first. Hidden
-              once doneLocked is already true since there's nothing left to finalize. */}
-          {!doneLocked && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => runAutoSave()}
-              disabled={loading || saving || testing}
-              title="Save this wording and pacing as the finished version for this waypoint"
-              className="bg-blue-700/30 hover:bg-blue-700/50 border-blue-600/50 text-amber-400 hover:text-amber-300 gap-2"
-            >
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-              Mark segment as done
-            </Button>
-          )}
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Follow-up 129: replaces the old manual "Save changes" button — edits save
+                on their own now (see runAutoSave above), this just shows where that
+                stands. doneLocked hides it entirely since no edits are possible there. */}
+            {!doneLocked && autoSaveStatus !== 'idle' && (
+              <div className="text-xs">
+                {autoSaveStatus === 'pending' && (
+                  <span className="flex items-center gap-1.5 text-amber-400">
+                    <Clock className="w-3.5 h-3.5" /> Unsaved changes — saving automatically…
+                  </span>
+                )}
+                {autoSaveStatus === 'saving' && (
+                  <span className="flex items-center gap-1.5 text-slate-400">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…
+                  </span>
+                )}
+                {autoSaveStatus === 'saved' && (
+                  <span className="flex items-center gap-1.5 text-emerald-400">
+                    <Check className="w-3.5 h-3.5" /> All changes saved
+                  </span>
+                )}
+                {autoSaveStatus === 'error' && (
+                  <span className="flex items-center gap-1.5 text-red-400">
+                    <AlertTriangle className="w-3.5 h-3.5" /> Not saved — see error above
+                    <button type="button" onClick={() => runAutoSave()} className="underline hover:text-red-300 ml-1">
+                      Retry now
+                    </button>
+                  </span>
+                )}
+              </div>
+            )}
 
-          {/* Follow-up 129: replaces the old manual "Save changes" button — edits save
-              on their own now (see runAutoSave above), this just shows where that
-              stands. doneLocked hides it entirely since no edits are possible there. */}
-          {!doneLocked && autoSaveStatus !== 'idle' && (
-            <div className="text-xs">
-              {autoSaveStatus === 'pending' && (
-                <span className="flex items-center gap-1.5 text-amber-400">
-                  <Clock className="w-3.5 h-3.5" /> Unsaved changes — saving automatically…
-                </span>
-              )}
-              {autoSaveStatus === 'saving' && (
-                <span className="flex items-center gap-1.5 text-slate-400">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…
-                </span>
-              )}
-              {autoSaveStatus === 'saved' && (
-                <span className="flex items-center gap-1.5 text-emerald-400">
-                  <Check className="w-3.5 h-3.5" /> All changes saved
-                </span>
-              )}
-              {autoSaveStatus === 'error' && (
-                <span className="flex items-center gap-1.5 text-red-400">
-                  <AlertTriangle className="w-3.5 h-3.5" /> Not saved — see error above
-                  <button type="button" onClick={() => runAutoSave()} className="underline hover:text-red-300 ml-1">
-                    Retry now
-                  </button>
-                </span>
-              )}
-            </div>
-          )}
+            {/* Per Enda's report ("no way to...finalize the segment from here"): testing
+                alone never edits anything, so runAutoSave (which is what actually sets
+                waypoint_done: true) was never being called from this panel unless the
+                narrator also happened to change some text. This button calls that same
+                save pipeline directly, so listening back and confirming it's good is
+                enough on its own to finalize — no throwaway edit needed first. Hidden
+                once doneLocked is already true since there's nothing left to finalize. */}
+            {!doneLocked && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => runAutoSave()}
+                disabled={loading || saving || testing}
+                title="Save this wording and pacing as the finished version for this waypoint"
+                className="bg-blue-700/30 hover:bg-blue-700/50 border-blue-600/50 text-amber-400 hover:text-amber-300 gap-2"
+              >
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                Mark segment as done
+              </Button>
+            )}
+          </div>
         </div>
       )}
     </div>

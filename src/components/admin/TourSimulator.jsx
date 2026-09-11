@@ -1436,13 +1436,14 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                   <button
                     type="button"
                     onClick={() => setSpeedMatchMode(false)}
-                    // Per Enda's report: the original text-slate-400 read as barely
-                    // visible against this panel's dark background — switched to the
-                    // same text-blue-300 already used for every other "back"/navigation
-                    // link in the admin area (e.g. WalkEditor's own Back button), for a
-                    // clearly readable, consistent colour rather than a near-white or
-                    // washed-out one.
-                    className="flex items-center gap-1 text-xs text-blue-300 hover:text-blue-200"
+                    // Per Enda's report: text-slate-400 read as barely visible against
+                    // this panel's dark background. First tried text-blue-300 (the
+                    // usual "back"/navigation link colour elsewhere in the admin area),
+                    // but Enda reported that still wasn't contrasting enough here — so
+                    // switched to the same amber (text-amber-400 / hover text-amber-300)
+                    // already used for this panel's own "Mark segment as done" button,
+                    // for a genuinely high-contrast colour against the dark background.
+                    className="flex items-center gap-1 text-xs text-amber-400 hover:text-amber-300"
                   >
                     <ArrowLeft className="w-3.5 h-3.5" /> Back to script editor
                   </button>

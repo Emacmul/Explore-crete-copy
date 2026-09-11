@@ -67,6 +67,41 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-11 (follow-up 167) — Follow-up 166 refinements: amber "Back" link, "Mark segment as done" moved away from "Test this subsegment"
+Scope: `src/components/admin/WaypointPaceEditor.jsx`, `src/components/admin/TourSimulator.jsx`.
+
+**Per Enda, after trying follow-up 166:**
+1. "Back to script editor" was still hard to see even in blue — switched to the same
+   amber (`text-amber-400`/hover `text-amber-300`) already used for "Mark segment as
+   done", which he asked for by name as a "really contrasting" colour.
+2. "Mark segment as done" sat right beside "Test this subsegment", risking a mis-click.
+   Moved it to the opposite side of the button row (`justify-between`), grouped with
+   the save-status readout, so the two buttons are now physically apart, not just
+   differently styled.
+
+Enda also said the separate "Finalize Narration Audio" button (in NarrationTtsEditor,
+shown after "Test this segment" there — a DIFFERENT, older button, not the new one
+above) looks surplus now that Narration & Simulate has its own "Mark segment as done".
+Checked before touching anything: `WaypointPaceEditor` (home of the new button) is only
+ever rendered from `TourSimulator.jsx`. `NarrationTtsEditor` — home of "Finalize
+Narration Audio" — is also embedded in `SegmentScriptEditor.jsx` and twice in
+`DrivingTourWaypointEditor.jsx`'s Waypoints tab, none of which pass the `onTestSegment`
+prop that "Test this segment" needs to render. Removing "Finalize Narration Audio"
+as-is would leave those three spots with no way to mark a segment done at all. Flagged
+this back to Enda rather than guessing at a fix — waiting on his answer before touching
+that button.
+
+No backend files touched — frontend-only, no redeploy dance needed.
+
+Tested: `npx eslint` on both files (0 errors, one pre-existing unrelated warning), full
+`npm run build` (exit 0, fresh `dist/assets/*.js`), new standalone test
+`/tmp/test_button_layout_followup167.mjs` (10 checks: back-link colour, no more
+slate/blue/white, matches Mark-as-done's amber, row layout puts Test and Mark-as-done
+in separate justify-between groups), full accumulated regression suite re-run (29
+files, 188 checks, all passing).
+
+---
+
 ## 2026-09-11 (follow-up 166) — Narration & Simulate panel: "Mark segment as done" button, and a more visible "Back to script editor" link
 Scope: `src/components/admin/WaypointPaceEditor.jsx`, `src/components/admin/TourSimulator.jsx`.
 
