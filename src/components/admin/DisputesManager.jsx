@@ -65,7 +65,7 @@ export default function DisputesManager({ isSuperAdmin = false }) {
     <div className="space-y-6 max-w-3xl mx-auto">
       <div>
         <h2 className="text-lg font-bold text-white mb-1 flex items-center gap-2"><AlertTriangle className="w-5 h-5 text-rose-400" /> Chargeback disputes</h2>
-        <p className="text-sm text-slate-400">Each row is a chargeback that revoked access. When Creem resolves the dispute in your favor, click <strong>Restore</strong> to put access back.</p>
+        <p className="text-sm text-slate-400">Each row is a chargeback that revoked access. When Creem resolves the dispute in your favour, click <strong>Restore</strong> to put access back.</p>
       </div>
 
       {revoked.length === 0 && restored.length === 0 ? (

@@ -30,7 +30,7 @@ export function cn(...inputs) {
 const KNOWN_FN_ERROR_PATTERNS = [
   /groq/i,
   /google/i,
-  /not authorized/i,
+  /not authori[sz]ed/i,
   /admin only/i,
   /no .*api key/i,
   /missing (entries|target language|audio data|text to translate|walkid)/i,
@@ -58,8 +58,8 @@ export function isRecognizedFnErrorMessage(raw) {
 export function humanizeFnError(raw) {
   const msg = String(raw || '').trim();
   if (!msg) return 'The app hit an unexpected snag, with no reason given. Try again — if it keeps happening, tell Enda.';
-  if (/^not authorized$/i.test(msg)) {
-    return 'Your Narr Studio login session has expired or wasn\'t recognized. Log out and back in, then try again.';
+  if (/^not authori[sz]ed$/i.test(msg)) {
+    return 'Your Narr Studio login session has expired or wasn\'t recognised. Log out and back in, then try again.';
   }
   // Google's OWN wording when ITS translation service has a brief hiccup — this is not
   // about your key, billing, or setup, but on its own ("The service is currently

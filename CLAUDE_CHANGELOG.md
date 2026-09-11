@@ -73,6 +73,53 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-11 (follow-up 169) — Full app-wide British spelling audit
+Scope: `src/components/admin/DisputesManager.jsx`, `src/lib/i18n/index.js`, `src/lib/utils.js`.
+
+**Per Enda:** "go through every label, banner, warning, whatever text appears in the app
+(front and back end)" and make sure none of it is American English, now or in future.
+
+Went through every frontend file (`src/pages`, `src/lib`, every `src/components`
+subfolder) and every backend file (`base44/functions/*/entry.ts`, `base44/shared/*.ts`)
+checking every string actually shown to a user — JSX text, title/placeholder/label/
+aria/error props, i18n dictionary values, API error text a user would read — against a
+full British-spelling reference list. Deliberately left alone: Tailwind/CSS class
+strings, inline styles, code identifiers, import paths, stored/compared data values,
+code comments, and the word "dialog" (component name risk) — none of that is text a
+person reads in the app.
+
+Found and fixed three genuine American spellings:
+- `DisputesManager.jsx`: "in your favor" → "in your favour" (chargeback dispute text)
+- `src/lib/i18n/index.js`: "travelers" → "travellers" (About page)
+- `src/lib/utils.js`: "wasn't recognized" → "wasn't recognised" (session-expired message)
+
+Also found: the exact string `'Not authorized'` is returned by ~19 backend functions,
+and is pattern-matched by two regexes in `src/lib/utils.js` to rewrite it into the
+friendly "your session expired" message. Made those two regexes spelling-agnostic
+(`/not authori[sz]ed/i`) so the friendly rewrite fires correctly whichever spelling a
+backend function returns, now or later — this needed no backend change and is safe
+immediately. Whether to also change the raw backend string to "Not authorised" (which
+would need redeploying ~19 functions) was left for Enda to decide — flagged separately
+in chat, not decided unilaterally.
+
+Two scope questions also flagged to Enda separately (not decided unilaterally): whether
+to include the third-party shadcn/ui component library files (`src/components/ui/`) and
+the internal Base44 entity schema `description` fields (`base44/entities/*.jsonc`, dev
+documentation, not shown to end users) in a future pass.
+
+No backend files were actually EDITED in this pass — the "Not authorized" question is
+still open — so no redeploy is needed for what's included in this delivery.
+
+Tested: `npx eslint` across all of `src/` (0 new errors — all pre-existing, unrelated to
+the 3 touched files, confirmed by cross-checking against each subagent's file list),
+full `npm run build` (exit 0, fresh `dist/assets/*.js`), new standalone test
+`/tmp/test_authorized_regex_spelling_followup169.mjs` (5 checks: both spellings of
+"not authorized" still trigger the friendly rewrite, case-insensitively, with no false
+positives), full accumulated regression suite re-run (31 files, 216 checks, all
+passing).
+
+---
+
 ## 2026-09-11 (follow-up 168) — "Finalise Narration Audio" hidden only where the new "Mark segment as done" replaces it, plus British spelling everywhere
 Scope: `src/components/admin/NarrationTtsEditor.jsx`, `src/components/admin/SegmentScriptEditor.jsx`, `src/components/admin/SegmentScriptManager.jsx`, `src/components/admin/WaypointPaceEditor.jsx`.
 
