@@ -73,6 +73,49 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-11 (follow-up 170) — Test 2 or 3 segments in a row, to check a trigger radius against the one before it
+Scope: `src/components/admin/TourSimulator.jsx`, `src/components/admin/WaypointPaceEditor.jsx`.
+
+**Per Enda:** having finished BOR1a, BOR1b and BOR1c, he had no way to test that BOR1c's
+own trigger correctly fires as soon as BOR1b's audio finishes — "Test this subsegment"
+only ever drove one waypoint's own leg in isolation. He already had this for whole
+LOCATIONS ("Jump to location…" can already play 2 or 3 complete locations back to
+back) and wanted the same "2 or 3 in a row" idea at the individual segment/waypoint
+level, available to admins and narrators alike.
+
+Checked first: `WaypointPaceEditor` (home of "Test this subsegment") is only ever
+rendered from `TourSimulator.jsx`'s "Narration & Simulate" tab, and per
+`WalkEditor.jsx`'s own tab list, narrators get that exact tab (it's one of only two
+tabs they have at all) — so this needed no separate narrator-specific wiring; whatever
+works for an admin here already works for a narrator too.
+
+Built by generalising the exact mechanism "Jump to location…" already uses for whole
+locations (`locationRangeBoundary`/`jumpSpan`), but at ONE-waypoint-at-a-time
+granularity instead of whole locations: `nextWaypointBoundary` now takes a `span`
+(1 = original behaviour, unchanged) so a test can drive through and auto-stop after 2
+or 3 consecutive waypoints instead of just the next one. A new selector next to "Test
+this subsegment" (in `WaypointPaceEditor`) lets you pick "Test 2 in a row" / "Test 3 in
+a row" — offered only up to however many of the FOLLOWING waypoints already have their
+own saved audio (`maxWaypointTestSpan`, computed in `TourSimulator`), so it's never
+possible to select a span that would just play silence. Unlike "Jump to location…",
+this has no "every waypoint must already be marked Done" gate — it's for checking a
+handoff as work is still in progress, exactly like the existing single-waypoint test.
+Reset/Replay correctly redo the same span rather than silently dropping back to 1.
+
+No backend files touched — frontend-only, no redeploy dance needed.
+
+Tested: `npx eslint` on both files (0 new errors — one pre-existing unrelated warning
+already flagged in earlier entries), full `npm run build` (exit 0, fresh
+`dist/assets/*.js`), new standalone test
+`/tmp/test_multi_segment_span_test_followup170.mjs` (11 checks: span 1/2/3 boundary
+calculation, the audio-availability cap in both directions — including from a waypoint
+with no saved audio of its own, and at the very last waypoint with nothing following —
+Reset/Replay correctly carrying the span through, and span-1 staying exactly the
+original default behaviour), full accumulated regression suite re-run (33 files, 232
+checks, all passing).
+
+---
+
 ## 2026-09-11 (follow-up 169) — Full app-wide British spelling audit
 Scope: `src/components/admin/DisputesManager.jsx`, `src/lib/i18n/index.js`, `src/lib/utils.js`.
 

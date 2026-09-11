@@ -353,10 +353,19 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // next one and seeing whether the audio has already finished, or is still going, once
   // it gets there — so this must be a real drive to a real next point, never a stop
   // triggered by the audio clip itself ending early.
-  const nextWaypointBoundary = (targetIndex) => {
-    const next = waypoints[targetIndex + 1];
+  // span (per Enda's follow-up 170 report — testing "2 or 3 segments one after the
+  // other" to check a trigger radius against the segment BEFORE it, not just the
+  // very next one): generalizes this the same way jumpSpan/locationRangeBoundary
+  // generalizes nextLocationBoundary for whole locations. span 1 is the original
+  // single-waypoint behaviour, unchanged. Still just ONE waypoint ahead per unit of
+  // span — never a whole location — so "Test this subsegment" can drive through 2 or
+  // 3 individual segments in a row and genuinely hear whether the next one's audio
+  // fires right as the previous one finishes, without needing every waypoint in the
+  // whole location to be done first (unlike "Jump to location…").
+  const nextWaypointBoundary = (targetIndex, span = 1) => {
+    const next = waypoints[targetIndex + span];
     if (!next) return null;
-    return { dist: cumDistForWaypoint(next), waypointIndex: targetIndex + 1 };
+    return { dist: cumDistForWaypoint(next), waypointIndex: targetIndex + span };
   };
 
   // Every primary_start location, with how far along the trail it sits — lets the narrator jump
@@ -568,7 +577,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // down) can redo a jump WITHOUT calling jumpToWaypoint itself, which would call
   // startSim again and recurse. Pure state-setting only; never touches isPlaying or the
   // tick interval — callers decide when to actually start ticking.
-  const resetToWaypoint = (targetIndex, { scopeToThisWaypoint = false, audioOverrideUrl = null, locationSpan = 1 } = {}) => {
+  const resetToWaypoint = (targetIndex, { scopeToThisWaypoint = false, audioOverrideUrl = null, locationSpan = 1, waypointSpan = 1 } = {}) => {
     const wp = waypoints[targetIndex];
     if (!wp) return false;
     const cumDist = cumDistForWaypoint(wp);
@@ -581,7 +590,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     audioQueueRef.current = [];
     activeAudioWpIndexRef.current = null;
     previewAudioOverrideRef.current = audioOverrideUrl ? { index: targetIndex, url: audioOverrideUrl } : null;
-    const boundary = scopeToThisWaypoint ? nextWaypointBoundary(targetIndex) : locationRangeBoundary(targetIndex, locationSpan);
+    const boundary = scopeToThisWaypoint ? nextWaypointBoundary(targetIndex, waypointSpan) : locationRangeBoundary(targetIndex, locationSpan);
     scopedTestRef.current = {
       segmentEndDist: boundary?.dist ?? null,
       excludeWaypointIndex: boundary?.waypointIndex ?? null,
@@ -599,13 +608,13 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     setHasPlayed(false);
     setAudioError(null);
     if (newPos) { setCurrentPos(newPos); prevPosRef.current = newPos; }
-    lastJumpRef.current = { targetIndex, scopeToThisWaypoint, hasOverride: !!audioOverrideUrl, locationSpan };
+    lastJumpRef.current = { targetIndex, scopeToThisWaypoint, hasOverride: !!audioOverrideUrl, locationSpan, waypointSpan };
     return true;
   };
 
-  const jumpToWaypoint = (targetIndex, { autoplay = false, scopeToThisWaypoint = false, audioOverrideUrl = null, locationSpan = 1 } = {}) => {
+  const jumpToWaypoint = (targetIndex, { autoplay = false, scopeToThisWaypoint = false, audioOverrideUrl = null, locationSpan = 1, waypointSpan = 1 } = {}) => {
     pauseSim();
-    if (!resetToWaypoint(targetIndex, { scopeToThisWaypoint, audioOverrideUrl, locationSpan })) return;
+    if (!resetToWaypoint(targetIndex, { scopeToThisWaypoint, audioOverrideUrl, locationSpan, waypointSpan })) return;
     if (autoplay) startSim();
   };
 
@@ -633,6 +642,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
       resetToWaypoint(lastJumpRef.current.targetIndex, {
         scopeToThisWaypoint: lastJumpRef.current.scopeToThisWaypoint,
         locationSpan: lastJumpRef.current.locationSpan,
+        waypointSpan: lastJumpRef.current.waypointSpan,
       });
       return;
     }
@@ -734,6 +744,25 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     jumpToWaypoint(selectedWpIndex, { scopeToThisWaypoint: true });
     setSpeedMatchMode(true);
   };
+
+  // Per Enda's follow-up 170 report: having done BOR1a, BOR1b and BOR1c, he had no way
+  // to test that BOR1c's trigger radius correctly fires as soon as BOR1b finishes —
+  // "Test this subsegment" only ever drove one waypoint's own leg. This caps how many
+  // of the waypoints AFTER selectedWpIndex are actually available to test in a row: a
+  // 2- or 3-in-a-row test genuinely plays each intermediate waypoint's own real, saved
+  // audio (see nextWaypointBoundary's span above), so offering a span whose
+  // intermediate waypoint has no audio yet would just be silence, not a real test.
+  // Capped at 3 to match the same "2 or 3 in a row" span Anoushka/Enda already asked
+  // for on the whole-location "Jump to location…" control (jumpSpan above) — same
+  // idea, just at individual-waypoint granularity instead of whole locations, and with
+  // no "every waypoint already marked Done" gate, since (like the single-waypoint test)
+  // this is for checking work AS it's being done, not just as a final whole-location
+  // pass.
+  const maxWaypointTestSpan = useMemo(() => {
+    let span = 1;
+    while (span < 3 && waypoints[selectedWpIndex + span]?.audio_clip_url) span++;
+    return span;
+  }, [waypoints, selectedWpIndex]);
 
   // Per Enda: while actually pace-testing one leg (speedMatchMode — the WaypointPaceEditor
   // panel), the map must stay zoomed to just the CURRENTLY selected waypoint's own leg —
@@ -941,7 +970,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
         // A whole-location "Jump to location…" run (or a plain "Test this waypoint"-
         // style jump with no live preview) — safe to redo exactly, since it only ever
         // plays each waypoint's own real, already-saved audio_clip_url.
-        resetToWaypoint(lastJumpRef.current.targetIndex, { scopeToThisWaypoint: lastJumpRef.current.scopeToThisWaypoint, locationSpan: lastJumpRef.current.locationSpan });
+        resetToWaypoint(lastJumpRef.current.targetIndex, { scopeToThisWaypoint: lastJumpRef.current.scopeToThisWaypoint, locationSpan: lastJumpRef.current.locationSpan, waypointSpan: lastJumpRef.current.waypointSpan });
       } else if (!lastJumpRef.current) {
         // The true end of the whole trail, reached by plain playback from the start —
         // rewind to the real beginning rather than doing nothing.
@@ -1453,9 +1482,10 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                     fixedLanguage={targetLanguage}
                     onSave={(updates) => onWaypointUpdate(toRawIndex(selectedWpIndex), updates)}
                     onAutoSave={onAutoSave}
-                    onTestSubsegment={(previewUrl) => jumpToWaypoint(selectedWpIndex, { autoplay: true, scopeToThisWaypoint: true, audioOverrideUrl: previewUrl })}
+                    onTestSubsegment={(previewUrl, span) => jumpToWaypoint(selectedWpIndex, { autoplay: true, scopeToThisWaypoint: true, audioOverrideUrl: previewUrl, waypointSpan: span })}
                     testDisabled={selectedWp.waypoint_role === 'primary_start'}
                     testDisabledReason="Not applicable here — this point is heard while parked, before any driving starts, so there's no driving speed to test its speech against. Its pause timing above can still be tuned normally."
+                    maxTestSpan={maxWaypointTestSpan}
                     doneLocked={doneLocked}
                   />
                 </div>

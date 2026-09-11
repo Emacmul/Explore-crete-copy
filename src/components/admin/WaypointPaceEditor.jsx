@@ -120,7 +120,7 @@ const VOICE = 'NEUTRAL';
  * in-browser preview and never saves anything, same reasoning as leaving read-only
  * actions like Download unlocked elsewhere in this codebase.
  */
-export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, onAutoSave, onTestSubsegment, testDisabled, testDisabledReason, doneLocked = false }) {
+export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, onAutoSave, onTestSubsegment, testDisabled, testDisabledReason, maxTestSpan = 1, doneLocked = false }) {
   // Per Enda's report (follow-up 59): this panel opened straight to "No Google TTS API
   // key found for your account yet" even with a real key saved. Follow-up 59 fixed the
   // FIRST cause (reading the key before its own async fetch had resolved at all — see
@@ -145,6 +145,16 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
   const [loading, setLoading] = useState(false);
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Per Enda's follow-up 170 report: having tested BOR1a, BOR1b and BOR1c one at a
+  // time, he had no way to check that BOR1c's own trigger radius fires correctly as
+  // soon as BOR1b finishes — driving each one separately never shows that handoff.
+  // testSpan picks how many CONSECUTIVE waypoints (starting here) "Test this
+  // subsegment" drives through in one continuous run before stopping — 1 is the
+  // original single-waypoint behaviour, unchanged. Capped by maxTestSpan (how many
+  // of the following waypoints actually have saved audio to play — see TourSimulator's
+  // maxWaypointTestSpan), so this can never be set higher than what's genuinely
+  // testable right now.
+  const [testSpan, setTestSpan] = useState(1);
   const [error, setError] = useState('');
   // True only for the "the key CHECK ITSELF failed" case above — distinct from a plain
   // "no key saved" error, since only this one can be fixed by simply trying again
@@ -497,7 +507,7 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
       const blobUrl = URL.createObjectURL(wavBlob);
       if (lastPreviewUrlRef.current) URL.revokeObjectURL(lastPreviewUrlRef.current);
       lastPreviewUrlRef.current = blobUrl;
-      onTestSubsegment(blobUrl);
+      onTestSubsegment(blobUrl, testSpan);
     } catch (err) {
       setError(`Could not build a preview: ${getFnErrorMessage(err)}`);
     }
@@ -773,16 +783,34 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
         // done (with its save-status readout) sits on the far right of the block —
         // physically apart, not just visually distinct.
         <div className="flex items-center justify-between gap-3 pt-1 flex-wrap">
-          <Button
-            size="sm"
-            onClick={handleTest}
-            disabled={loading || testing || saving || testDisabled}
-            title={testDisabled ? testDisabledReason : 'Drive from this waypoint to the next one, playing this exact wording and pause timing — click again any time, including after editing text or moving a slider, to re-test'}
-            className="bg-blue-700/30 hover:bg-blue-700/50 border border-blue-600/50 text-white gap-2"
-          >
-            {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-            Test this subsegment
-          </Button>
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Per Enda's follow-up 170 report: only offered when there's genuinely
+                more than one waypoint available to span (maxTestSpan > 1) — otherwise
+                this is just clutter for the ordinary one-at-a-time case. */}
+            {maxTestSpan > 1 && (
+              <select
+                value={testSpan}
+                onChange={(e) => setTestSpan(Number(e.target.value))}
+                disabled={loading || testing || saving || testDisabled}
+                title="How many segments in a row to drive through in one test — lets you hear whether the next segment's trigger fires right as this one finishes"
+                className="bg-slate-700 border border-slate-500 text-white text-sm rounded px-2 h-9 min-w-0"
+              >
+                <option value={1}>Test 1 segment</option>
+                {maxTestSpan >= 2 && <option value={2}>Test 2 in a row</option>}
+                {maxTestSpan >= 3 && <option value={3}>Test 3 in a row</option>}
+              </select>
+            )}
+            <Button
+              size="sm"
+              onClick={handleTest}
+              disabled={loading || testing || saving || testDisabled}
+              title={testDisabled ? testDisabledReason : testSpan > 1 ? `Drive from this waypoint through the next ${testSpan - 1 === 1 ? 'one' : `${testSpan - 1}`} more, back to back, playing this exact wording and pause timing — click again any time to re-test` : 'Drive from this waypoint to the next one, playing this exact wording and pause timing — click again any time, including after editing text or moving a slider, to re-test'}
+              className="bg-blue-700/30 hover:bg-blue-700/50 border border-blue-600/50 text-white gap-2"
+            >
+              {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+              {testSpan > 1 ? `Test ${testSpan} subsegments` : 'Test this subsegment'}
+            </Button>
+          </div>
 
           <div className="flex items-center gap-3 flex-wrap">
             {/* Follow-up 129: replaces the old manual "Save changes" button — edits save
