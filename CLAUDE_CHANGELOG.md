@@ -73,6 +73,58 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-11 (follow-up 171) — Correction: multi-segment test drives BACKWARD, not forward
+Scope: `src/components/admin/TourSimulator.jsx`, `src/components/admin/WaypointPaceEditor.jsx`.
+
+**Per Enda:** follow-up 170's "test 2 or 3 in a row" worked, but in the wrong
+direction. His own example: "If I'm at BOR1c, I need to test the transition from
+BOR1b to BOR1c, Not BOR1c to BOR1d because BOR1d is not properly edited at that
+stage... the car must return to BOR1b, run through the sequence and stop at BOR1d
+because I need to make sure the audio does stop before the trigger radius of BOR1d is
+reached." The audio must keep playing if it isn't finished yet (so he can see if it
+runs over schedule and by how much) — it doesn't need to stop exactly on arrival at
+BOR1c, it just must not run into BOR1d's trigger radius.
+
+Fixed the direction: picking "Test 2 in a row" (or 3) from the waypoint currently open
+now starts the car BACK at the waypoint(s) BEFORE it, drives straight through to the
+one actually open in the editor, and always stops at the very next waypoint after
+that — the boundary no longer moves with the span, only the start point does. The
+waypoint actually being edited keeps using its live, unsaved preview audio throughout
+(a new `audioOverrideIndex`, separate from where the drive starts, keeps this pinned
+correctly even though the car now starts moving from an earlier point). The span
+selector's cap (`maxWaypointTestSpan`) now checks how many of the PRECEDING waypoints
+have saved audio, the reverse of follow-up 170's version, so it still never offers a
+span that would just play silence.
+
+Checked directly against the tick loop's own code: reaching the auto-stop boundary
+only stops the simulated car and clears the interval — it never touches the
+currently-playing audio — so "the audio must keep playing if it isn't finished yet"
+was already true and needed no change. Also updated the map's zoom/framing for this
+test specifically, so it shows the whole stretch being driven (including the waypoint
+whose trigger radius is being checked), not just the last leg — without this, a
+2-or-3-span test would start the car off-screen.
+
+Not BOR1-specific: `TourSimulator.jsx`/`WaypointPaceEditor.jsx` contain no
+tour-specific code, so this works the same for every Driving Tour and WalkAbout tour.
+Plain Walking/Hiking tours don't use this screen at all (they use a different editor),
+so they're unaffected either way, same as follow-up 170.
+
+No backend files touched — frontend-only, no redeploy dance needed.
+
+Tested: `npx eslint` on both files (0 new errors — one pre-existing unrelated
+warning, already flagged in earlier entries), full `npm run build` (exit 0, fresh
+`dist/assets/*.js`), new standalone test
+`/tmp/test_multi_segment_span_test_followup171.mjs` (21 checks: the corrected
+backward start point and fixed boundary for span 1/2/3, clamping at the very first
+waypoint, the live-preview audio staying pinned to the waypoint actually being edited
+through a Reset/Replay redo, every other caller — Jump to location, a plain
+single-waypoint test — being unaffected by the new parameter, and confirming the
+boundary check never touches currently-playing audio) — replaces follow-up 170's own
+test file, which tested the direction now corrected. Full accumulated regression
+suite re-run (32 files, 321 checks, all passing).
+
+---
+
 ## 2026-09-11 (follow-up 170) — Test 2 or 3 segments in a row, to check a trigger radius against the one before it
 Scope: `src/components/admin/TourSimulator.jsx`, `src/components/admin/WaypointPaceEditor.jsx`.
 

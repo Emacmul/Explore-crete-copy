@@ -148,12 +148,18 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
   // Per Enda's follow-up 170 report: having tested BOR1a, BOR1b and BOR1c one at a
   // time, he had no way to check that BOR1c's own trigger radius fires correctly as
   // soon as BOR1b finishes — driving each one separately never shows that handoff.
-  // testSpan picks how many CONSECUTIVE waypoints (starting here) "Test this
+  // Per Enda's follow-up 171 correction: this must run BACKWARD from here, not
+  // forward — a span of 2 replays from the PREVIOUS waypoint through to this one
+  // (e.g. testing BOR1c means driving BOR1b → BOR1c), not this one through the next,
+  // because the next waypoint's own wording/audio may not be finished yet. Either
+  // way the run always stops just past THIS waypoint, at the very next one, so its
+  // trigger radius can be checked against this waypoint's audio finishing in time.
+  // testSpan picks how many CONSECUTIVE waypoints, ENDING here, "Test this
   // subsegment" drives through in one continuous run before stopping — 1 is the
   // original single-waypoint behaviour, unchanged. Capped by maxTestSpan (how many
-  // of the following waypoints actually have saved audio to play — see TourSimulator's
-  // maxWaypointTestSpan), so this can never be set higher than what's genuinely
-  // testable right now.
+  // of the PRECEDING waypoints actually have saved audio to play — see
+  // TourSimulator's maxWaypointTestSpan), so this can never be set higher than
+  // what's genuinely testable right now.
   const [testSpan, setTestSpan] = useState(1);
   const [error, setError] = useState('');
   // True only for the "the key CHECK ITSELF failed" case above — distinct from a plain
@@ -792,7 +798,7 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
                 value={testSpan}
                 onChange={(e) => setTestSpan(Number(e.target.value))}
                 disabled={loading || testing || saving || testDisabled}
-                title="How many segments in a row to drive through in one test — lets you hear whether the next segment's trigger fires right as this one finishes"
+                title="How many segments back to start the test from — the car returns to that earlier waypoint, drives through to this one, and stops just past it, so you can hear whether this segment's audio finishes before the next waypoint's trigger radius is reached"
                 className="bg-slate-700 border border-slate-500 text-white text-sm rounded px-2 h-9 min-w-0"
               >
                 <option value={1}>Test 1 segment</option>
@@ -804,7 +810,7 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
               size="sm"
               onClick={handleTest}
               disabled={loading || testing || saving || testDisabled}
-              title={testDisabled ? testDisabledReason : testSpan > 1 ? `Drive from this waypoint through the next ${testSpan - 1 === 1 ? 'one' : `${testSpan - 1}`} more, back to back, playing this exact wording and pause timing — click again any time to re-test` : 'Drive from this waypoint to the next one, playing this exact wording and pause timing — click again any time, including after editing text or moving a slider, to re-test'}
+              title={testDisabled ? testDisabledReason : testSpan > 1 ? `Drive from the waypoint ${testSpan - 1 === 1 ? 'just before this one' : `${testSpan - 1} segments before this one`}, straight through to this one, and stop just past it — playing this exact wording and pause timing — click again any time to re-test` : 'Drive from this waypoint to the next one, playing this exact wording and pause timing — click again any time, including after editing text or moving a slider, to re-test'}
               className="bg-blue-700/30 hover:bg-blue-700/50 border border-blue-600/50 text-white gap-2"
             >
               {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}

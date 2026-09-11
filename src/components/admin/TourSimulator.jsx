@@ -577,7 +577,14 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // down) can redo a jump WITHOUT calling jumpToWaypoint itself, which would call
   // startSim again and recurse. Pure state-setting only; never touches isPlaying or the
   // tick interval — callers decide when to actually start ticking.
-  const resetToWaypoint = (targetIndex, { scopeToThisWaypoint = false, audioOverrideUrl = null, locationSpan = 1, waypointSpan = 1 } = {}) => {
+  // audioOverrideIndex (per Enda's follow-up 171 correction): a multi-segment test now
+  // starts driving from BEFORE the waypoint actually being edited in WaypointPaceEditor
+  // — see maxWaypointTestSpan/onTestSubsegment below — so the freshly-combined LIVE
+  // preview WAV must still override that ONE waypoint's own audio specifically, not
+  // whichever earlier waypoint the drive happens to start from. Defaults to targetIndex
+  // when omitted, so every other caller (Jump to location, a plain single-waypoint
+  // re-test where the start IS the edited waypoint) is completely unaffected.
+  const resetToWaypoint = (targetIndex, { scopeToThisWaypoint = false, audioOverrideUrl = null, audioOverrideIndex = null, locationSpan = 1, waypointSpan = 1 } = {}) => {
     const wp = waypoints[targetIndex];
     if (!wp) return false;
     const cumDist = cumDistForWaypoint(wp);
@@ -589,7 +596,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     passedSegmentsRef.current = new Set();
     audioQueueRef.current = [];
     activeAudioWpIndexRef.current = null;
-    previewAudioOverrideRef.current = audioOverrideUrl ? { index: targetIndex, url: audioOverrideUrl } : null;
+    previewAudioOverrideRef.current = audioOverrideUrl ? { index: audioOverrideIndex ?? targetIndex, url: audioOverrideUrl } : null;
     const boundary = scopeToThisWaypoint ? nextWaypointBoundary(targetIndex, waypointSpan) : locationRangeBoundary(targetIndex, locationSpan);
     scopedTestRef.current = {
       segmentEndDist: boundary?.dist ?? null,
@@ -608,13 +615,13 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     setHasPlayed(false);
     setAudioError(null);
     if (newPos) { setCurrentPos(newPos); prevPosRef.current = newPos; }
-    lastJumpRef.current = { targetIndex, scopeToThisWaypoint, hasOverride: !!audioOverrideUrl, locationSpan, waypointSpan };
+    lastJumpRef.current = { targetIndex, scopeToThisWaypoint, hasOverride: !!audioOverrideUrl, audioOverrideIndex, locationSpan, waypointSpan };
     return true;
   };
 
-  const jumpToWaypoint = (targetIndex, { autoplay = false, scopeToThisWaypoint = false, audioOverrideUrl = null, locationSpan = 1, waypointSpan = 1 } = {}) => {
+  const jumpToWaypoint = (targetIndex, { autoplay = false, scopeToThisWaypoint = false, audioOverrideUrl = null, audioOverrideIndex = null, locationSpan = 1, waypointSpan = 1 } = {}) => {
     pauseSim();
-    if (!resetToWaypoint(targetIndex, { scopeToThisWaypoint, audioOverrideUrl, locationSpan, waypointSpan })) return;
+    if (!resetToWaypoint(targetIndex, { scopeToThisWaypoint, audioOverrideUrl, audioOverrideIndex, locationSpan, waypointSpan })) return;
     if (autoplay) startSim();
   };
 
@@ -745,22 +752,35 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     setSpeedMatchMode(true);
   };
 
-  // Per Enda's follow-up 170 report: having done BOR1a, BOR1b and BOR1c, he had no way
-  // to test that BOR1c's trigger radius correctly fires as soon as BOR1b finishes —
-  // "Test this subsegment" only ever drove one waypoint's own leg. This caps how many
-  // of the waypoints AFTER selectedWpIndex are actually available to test in a row: a
-  // 2- or 3-in-a-row test genuinely plays each intermediate waypoint's own real, saved
-  // audio (see nextWaypointBoundary's span above), so offering a span whose
-  // intermediate waypoint has no audio yet would just be silence, not a real test.
-  // Capped at 3 to match the same "2 or 3 in a row" span Anoushka/Enda already asked
-  // for on the whole-location "Jump to location…" control (jumpSpan above) — same
-  // idea, just at individual-waypoint granularity instead of whole locations, and with
-  // no "every waypoint already marked Done" gate, since (like the single-waypoint test)
-  // this is for checking work AS it's being done, not just as a final whole-location
-  // pass.
+  // Per Enda's follow-up 170/171 reports: having done BOR1a, BOR1b and BOR1c, he had no
+  // way to test that BOR1c's own trigger radius correctly fires as soon as BOR1b
+  // finishes — "Test this subsegment" only ever drove one waypoint's own leg. Follow-up
+  // 170 first built this the wrong way round (extending FORWARD into whatever comes
+  // after the waypoint being edited — often not written yet); Enda's correction: the
+  // drive must extend BACKWARD instead, starting `span - 1` waypoints BEFORE the one
+  // currently open, playing straight through it, and stopping at the very NEXT waypoint
+  // after it — same boundary as the plain single-waypoint test, completely unaffected
+  // by span. That boundary is the one that matters: it's where he needs this segment's
+  // own audio to have already finished, or to see by how much it overran, so he can
+  // widen that next waypoint's trigger radius or shorten this segment's wording.
+  //
+  // maxWaypointTestSpan caps how many of the waypoints BEFORE selectedWpIndex are
+  // actually available to test in a row: a 2- or 3-in-a-row test genuinely plays each
+  // earlier waypoint's own real, saved audio on the way in (see nextWaypointBoundary's
+  // span above), so offering a span whose earlier waypoint has no audio yet would just
+  // be silence, not a real test. Capped at 3 to match the same "2 or 3 in a row" span
+  // Anoushka/Enda already asked for on the whole-location "Jump to location…" control
+  // (jumpSpan above) — same idea, just at individual-waypoint granularity instead of
+  // whole locations, and with no "every waypoint already marked Done" gate, since (like
+  // the single-waypoint test) this is for checking work AS it's being done. Generic —
+  // nothing here is specific to any one tour, location, or waypoint naming, so this
+  // applies the same way to every driving tour and WalkAbout (WBT) that reaches this
+  // panel at all (Narration & Simulate isn't offered for plain Walking/Hiking Tours,
+  // which use a different segment-editing screen entirely — see SegmentScriptEditor.jsx
+  // — so there's nothing to extend it to there).
   const maxWaypointTestSpan = useMemo(() => {
     let span = 1;
-    while (span < 3 && waypoints[selectedWpIndex + span]?.audio_clip_url) span++;
+    while (span < 3 && waypoints[selectedWpIndex - span]?.audio_clip_url) span++;
     return span;
   }, [waypoints, selectedWpIndex]);
 
@@ -1482,7 +1502,33 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                     fixedLanguage={targetLanguage}
                     onSave={(updates) => onWaypointUpdate(toRawIndex(selectedWpIndex), updates)}
                     onAutoSave={onAutoSave}
-                    onTestSubsegment={(previewUrl, span) => jumpToWaypoint(selectedWpIndex, { autoplay: true, scopeToThisWaypoint: true, audioOverrideUrl: previewUrl, waypointSpan: span })}
+                    // Per Enda's follow-up 171 correction: the drive must start BEFORE
+                    // the waypoint being edited, not after it — startIndex steps back
+                    // (span - 1) waypoints (never past 0), plays straight through to
+                    // selectedWpIndex, and stops at the very next waypoint after THAT —
+                    // always selectedWpIndex + 1, regardless of span, which is exactly
+                    // nextWaypointBoundary(startIndex, effectiveSpan)'s own arithmetic
+                    // (startIndex + effectiveSpan). audioOverrideIndex keeps the live
+                    // preview WAV pinned to selectedWpIndex — the waypoint actually being
+                    // edited here — even though the car now starts moving from earlier.
+                    onTestSubsegment={(previewUrl, span) => {
+                      const startIndex = Math.max(0, selectedWpIndex - (span - 1));
+                      const effectiveSpan = selectedWpIndex - startIndex + 1;
+                      // Frame the WHOLE stretch this run actually drives — from the
+                      // earlier waypoint the car jumps back to, through to the boundary
+                      // waypoint just past the one being edited (so its trigger radius
+                      // is visible on screen too) — not just the last leg. The passive
+                      // "resting view" effect above only ever shows [selectedWpIndex,
+                      // selectedWpIndex + 1] and stops updating once isPlaying flips
+                      // true, so without this a multi-segment test would start the car
+                      // off-screen. Mirrors jumpToLocation's own explicit
+                      // setMapFocusBounds call above.
+                      const boundaryIndex = Math.min(waypoints.length - 1, selectedWpIndex + 1);
+                      const spanWaypoints = waypoints.slice(startIndex, boundaryIndex + 1);
+                      const bounds = spanWaypoints.filter(wp => wp.lat && wp.lng).map(wp => [wp.lat, wp.lng]);
+                      if (bounds.length > 0) setMapFocusBounds(bounds);
+                      jumpToWaypoint(startIndex, { autoplay: true, scopeToThisWaypoint: true, audioOverrideUrl: previewUrl, audioOverrideIndex: selectedWpIndex, waypointSpan: effectiveSpan });
+                    }}
                     testDisabled={selectedWp.waypoint_role === 'primary_start'}
                     testDisabledReason="Not applicable here — this point is heard while parked, before any driving starts, so there's no driving speed to test its speech against. Its pause timing above can still be tuned normally."
                     maxTestSpan={maxWaypointTestSpan}
