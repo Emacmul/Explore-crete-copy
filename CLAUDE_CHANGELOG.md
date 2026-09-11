@@ -73,6 +73,57 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-11 (follow-up 175) — First waypoint of first location: drop "Test this
+segment" entirely, use the ordinary Finalise flow instead
+Scope: `src/components/admin/TourSimulator.jsx`.
+Frontend-only, no backend redeploy needed.
+
+**Per Enda:** even after follow-up 174, the very FIRST waypoint of the very FIRST
+location in a tour/WalkAbout (e.g. BOR1a-PS — the one genuinely static "welcome, get
+ready" point) still gave narrators no clean way to finish it. "Test this segment"
+opened WaypointPaceEditor, but that panel's own drive-test button is correctly
+disabled there (nothing to pace-match — this point is heard while parked, before any
+driving starts), so the narrator landed on a disabled button before finding "Mark
+segment as done" underneath it. Enda was clear this is a pointless, confusing detour
+for this one specific waypoint and wanted it gone — just a plain way to mark it done,
+nothing else.
+
+**Investigated first, confirmed with real evidence before changing anything:**
+follow-up 174's fix was correct as far as it went (confirmed live in Enda's browser
+after ruling out a stale PWA cache — an uninstall/reinstall of the app fixed that
+separately and was NOT a code issue). The remaining problem was a genuine design gap:
+follow-up 174 made "Test this segment" clickable for EVERY primary_start waypoint,
+but only the very first one in the whole tour (index 0) is truly static — every other
+primary_start (e.g. BOR2a-PS) has a real driving leg after it and legitimately
+benefits from WaypointPaceEditor's pace-testing. Confirmed via the pre-existing
+`isFirstLocationInTour`/`dimWaypointIndex` logic already in this file (used for map
+focus) that index 0 is already treated as this one special case elsewhere in the
+codebase — this wasn't a new distinction, just one follow-up 174 didn't carry into
+its own fix. Also confirmed `jumpToLocation` already steps location 1's focus to
+index 1, never 0, so index 0 was never reachable via "Jump to location…" — the only
+route into WaypointPaceEditor for that waypoint was ever "Test this segment" itself.
+
+**Fix:** `onTestSegment` is no longer passed to NarrationTtsEditor at all when
+`selectedWpIndex === 0`. With no `onTestSegment`, NarrationTtsEditor automatically
+falls back to its own ordinary, pre-existing "listen all the way through twice, then
+Finalise Narration Audio" panel — the same flow already used everywhere else in the
+app (SegmentScriptEditor, DrivingTourWaypointEditor's Waypoints tab) — with no
+pace-testing button and no WaypointPaceEditor detour at all for this one waypoint.
+Every other waypoint, primary_start or not, is completely unchanged from follow-up
+174.
+
+**Verified:** `npx eslint` on the changed file (0 new errors/warnings — one
+pre-existing, unrelated warning elsewhere in the file, untouched by this change).
+Full `npm run build` (exit 0, fresh `dist/assets/*.js`). New standalone test
+`/tmp/test_first_waypoint_no_test_segment_followup175.mjs` (17 checks: confirms
+"Test this segment" is gone and the ordinary Finalise panel is reachable for waypoint
+0; confirms every other waypoint, including other primary_start ones, is unaffected;
+confirms "Jump to location…" still can't land on waypoint 0 in pace-testing mode
+either). Full accumulated regression suite re-run (34 files, 352 checks, all
+passing).
+
+---
+
 ## 2026-09-11 (follow-up 174) — Primary-Start waypoints had no way to be marked done
 Scope: `src/components/admin/TourSimulator.jsx`, `src/components/admin/NarrationTtsEditor.jsx`.
 Frontend-only, no backend redeploy needed.

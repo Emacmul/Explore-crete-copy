@@ -1565,13 +1565,30 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                   // Traced directly from Enda finishing BOR1a-PS in the TestTour clone
                   // and finding no "Mark as done" anywhere.
                   //
-                  // Fix: this button is never disabled now — it always opens
-                  // WaypointPaceEditor, which still correctly disables its OWN internal
-                  // drive-test button for primary_start (with its own clear reason,
-                  // "heard while parked... pause timing above can still be tuned
-                  // normally") but always offers "Mark segment as done" regardless,
-                  // since that button was never gated on testDisabled to begin with.
-                  onTestSegment={testThisWaypoint}
+                  // Follow-up 174's fix made the button clickable again for EVERY
+                  // primary_start waypoint, always routing into WaypointPaceEditor. But
+                  // per Enda's next report: for the very FIRST waypoint of the very
+                  // FIRST location in a tour/WalkAbout (index 0 — the one genuinely
+                  // static "welcome, get ready" point, distinct from every other
+                  // primary_start, which DOES have a real driving leg after it — see
+                  // isFirstLocationInTour in jumpToLocation above), landing in
+                  // WaypointPaceEditor is a dead-feeling detour: its own drive-test is
+                  // correctly disabled there (nothing to test), so all a narrator finds
+                  // is a disabled button before reaching "Mark segment as done". Enda
+                  // was clear he never wants that mental leap for this one waypoint —
+                  // just a plain way to mark it done.
+                  //
+                  // Fix: only THIS one waypoint (selectedWpIndex === 0) skips
+                  // onTestSegment entirely. With no onTestSegment, NarrationTtsEditor
+                  // falls back to its own ordinary built-in finish flow — the same
+                  // "listen all the way through, then Finalise Narration Audio" panel
+                  // already used everywhere else in the app (SegmentScriptEditor,
+                  // DrivingTourWaypointEditor's Waypoints tab) — no pace-testing button,
+                  // no WaypointPaceEditor detour, nothing to click that doesn't apply.
+                  // Every other primary_start waypoint (BOR2a-PS and so on) keeps the
+                  // follow-up 174 behaviour unchanged, since those genuinely do have a
+                  // driving leg worth testing.
+                  onTestSegment={selectedWpIndex === 0 ? undefined : testThisWaypoint}
                   onScriptChange={(val) => onWaypointUpdate(toRawIndex(selectedWpIndex), 'narration_script', val)}
                   onAudioChange={(val) => {
                     // Same atomic-update reasoning as follow-up 53 — see that entry in
