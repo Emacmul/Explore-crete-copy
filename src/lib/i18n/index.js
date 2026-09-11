@@ -279,7 +279,7 @@ export const translations = {
     'player.active': "Tour Active",
     'player.paused': "Paused",
     'player.triggersFired': "{done}/{total} triggers fired",
-    'player.startTour': "Start Tour",
+    'player.startTour': "Start the tour",
     'player.mustSaveFirst': "Tap \"Stay Safe Offline\" before starting — cellular signal can be weak in this area of Crete.",
     'player.pause': "Pause",
     'player.stop': "Stop",

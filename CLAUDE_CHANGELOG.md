@@ -67,6 +67,71 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-11 (follow-up 164) — Waypoints 1 & 2 no longer auto-play — "Start the tour" and a manual Play only
+Scope: `src/components/walks/DrivingTourPlayer.jsx`, `src/lib/i18n/index.js`.
+
+**Per Anoushka/Enda:** every tour's first waypoint is a static "welcome" point (plays
+"Stay Safe Offline" and other pointers). When it ends, the driver/walker isn't ready to
+move yet — laces, a child in a buggy, starting the car. So: waypoint 1 must only start
+from an explicit "Start the tour" tap (not a generic "Play"), and waypoint 2 (the first
+point where real movement begins) must always show a Play button and be started
+manually too — never automatically. Standard for every tour category with narrated
+audio.
+
+**Investigated first:** there's only ONE customer-facing player in the whole app —
+`DrivingTourPlayer.jsx` — and it already serves BOTH Driving Tours and WalkAbout tours
+identically (both share `route_type: 'driving_audio_tour'`; `WalkDetail.jsx` doesn't
+branch on `tour_category` at all). So one fix covers both. Walking/Hiking tours (WHT)
+have no narrated-audio system at all yet — just a manual "reached" checklist — so this
+specific request doesn't apply there; flagged to Enda before building, not silently
+skipped.
+
+Confirmed waypoint 1 and 2 both currently fire through the exact same GPS-proximity
+`evaluateTriggers` loop as every other waypoint, the instant `status` becomes
+`'running'` — no role-based special-casing existed anywhere. In practice waypoint 1
+fired almost instantly (the driver is standing right where it's placed when they tap
+Start), and waypoint 2 could even fire (and queue) at the same moment if co-located
+with waypoint 1 — there was no "wait for the user to actually start moving" concept.
+
+**What changed:**
+1. Added `manualOnlyWpKeys` — the first TWO entries of `triggerWaypoints`, in tour
+   order (order-based, not a new per-waypoint checkbox a narrator could forget to
+   tick — this is meant to be a fixed rule for every tour).
+2. `evaluateTriggers`'s per-fix loop now skips any waypoint in `manualOnlyWpKeys`
+   entirely, before any distance/accuracy/bearing check — they can never auto-fire from
+   GPS, however close or precise the fix is.
+3. "Start Tour" is renamed **"Start the tour"** (`player.startTour` in
+   `src/lib/i18n/index.js`) and now calls a new `handleStartTour()`: resets the
+   triggered-waypoints set for a fresh drive (same as before), THEN plays waypoint 1
+   directly via the existing manual-play path (`playWaypoint` — the same one the Tour
+   Stops list's own Play button already uses), marking it triggered. Order matters here
+   and is documented in the code: playing before the reset would have the reset wipe
+   the "already played" mark straight back out.
+4. Waypoint 2 needed NO new UI at all — once waypoint 1 is marked triggered, the
+   existing always-visible "Next stop" card (follow-up 162) and the per-stop Play
+   button (follow-up 155) already resolve to waypoint 2 automatically and offer a plain
+   "Play" tap, exactly as asked. Once waypoint 2 is played that way, ordinary
+   GPS-triggering for waypoint 3 onward is completely unaffected.
+
+**Why order-based, not a new entity field:** a fixed rule needs no admin/narrator
+action to apply correctly on every tour, old and new, with zero risk of a waypoint
+losing its manual-only status by mistake. No backend/schema change, no redeploy step.
+
+**Verified:** full production build (`npm run build`) succeeds with no errors, no new
+lint issues. New standalone test (`test_manual_start_waypoints_followup164.mjs`, 16
+checks) covers: waypoints 1 & 2 never auto-fire even with a perfect in-range fix;
+waypoint 3+ still auto-fires normally; the reset-then-play ordering in
+`handleStartTour` (including a sanity check proving the WRONG order really would lose
+the mark); the Next Stop card correctly resolving to waypoint 2 then waypoint 3 in
+turn; "Restart tour from here" (mid-route resume) is unaffected. Full accumulated
+regression suite (151 checks across 15 files) re-run and passing.
+
+**Not done — worth knowing:** Walking/Hiking (WHT) tours have no spoken-audio system in
+this codebase at all yet, so this change doesn't (and can't yet) apply there. No
+backend files touched — frontend only, no manual redeploy needed.
+
+---
+
 ## 2026-09-10 (follow-up 163) — "Test this segment" moved earlier — before Finalise, not only via "Jump to location"
 Scope: `src/components/admin/TourSimulator.jsx`, `src/components/admin/NarrationTtsEditor.jsx`.
 

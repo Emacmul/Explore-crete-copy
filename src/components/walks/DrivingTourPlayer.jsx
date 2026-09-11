@@ -265,6 +265,23 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
 
   // Trigger waypoints that have audio enabled
   const triggerWaypoints = (walk.waypoints || []).filter(wp => wp.trigger_audio && wp.lat && wp.lng);
+  // Per Enda/Anoushka's follow-up 164 report: waypoint 1 (the static "welcome, Stay
+  // Safe Offline" point every tour opens with) and waypoint 2 (the first point where
+  // real movement actually begins) must never auto-fire from GPS. When waypoint 1's
+  // audio ends, the driver/walker isn't ready to move yet — they still need to start
+  // the car, buckle a child into a buggy, tie their laces. Both are manual-only for
+  // good: waypoint 1 only ever plays the moment "Start the tour" is tapped (see
+  // handleStartTour below); waypoint 2 only ever plays from an explicit manual Play tap
+  // — the per-stop button in WalkDetail.jsx's Tour Stops list, or the always-visible
+  // "Next stop" card further down, both of which already exist and need no changes to
+  // surface it once waypoint 1 is done.
+  //
+  // Deliberately order-based — the first two entries of triggerWaypoints, in tour
+  // order — rather than a new per-waypoint flag on the Walk entity. This is meant to be
+  // a fixed rule for every tour, in every category that has narrated audio, not
+  // something a narrator could forget to tick on a specific waypoint. Recomputed every
+  // render straight off triggerWaypoints, so it can never drift out of sync with it.
+  const manualOnlyWpKeys = new Set(triggerWaypoints.slice(0, 2).map(wpKeyFor));
   // Every secondary waypoint on the route (not the segment start/stop markers) with a real
   // GPS position — the candidates for "last known position", tracked regardless of whether
   // that particular point has audio of its own.
@@ -342,6 +359,15 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
       : null;
 
     for (const wp of triggerWaypoints) {
+      const wpKey = wpKeyFor(wp);
+
+      // Per Enda/Anoushka's follow-up 164 report (see manualOnlyWpKeys above): waypoint
+      // 1 and 2 must never auto-fire from GPS, however close/precise the fix is — they
+      // only ever play from an explicit manual tap. Checked first, before any of the
+      // distance/accuracy/bearing work below, so a manual-only waypoint is never even
+      // logged as a GPS-driven "skip" — it simply isn't a candidate here at all.
+      if (manualOnlyWpKeys.has(wpKey)) continue;
+
       const distance = haversine(lat, lng, wp.lat, wp.lng);
       const radius = wp.trigger_radius_m || 150;
       const withinRadius = distance <= radius;
@@ -360,7 +386,6 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
         bearingInfo.ok = bearingOk;
       }
 
-      const wpKey = wpKeyFor(wp);
       const alreadyTriggered = triggeredRef.current.has(wpKey);
 
       // Accuracy is checked FIRST and on its own — a low-confidence fix that happens to
@@ -461,7 +486,7 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
     if (isFixUsable(accuracy, GPS_ACCURACY_HARD_CAP_M)) {
       prevPosRef.current = { lat, lng };
     }
-  }, [triggerWaypoints, secondaryWaypoints, persistPassedSecondary, isFixUsable, walk.trail_path, walk.trail_breaks, offRoute, clearQueuedNarration]);
+  }, [triggerWaypoints, manualOnlyWpKeys, secondaryWaypoints, persistPassedSecondary, isFixUsable, walk.trail_path, walk.trail_breaks, offRoute, clearQueuedNarration]);
 
   // Actually starts (or advances to) the next queued clip — called once at the top of
   // playTriggerAudio when nothing else is playing, and again from onEnded/a failed
@@ -607,6 +632,20 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
       },
       { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
     );
+  };
+
+  // Per Enda/Anoushka's follow-up 164 report: "Start the tour" (renamed from "Start
+  // Tour") is now the ONE thing that plays waypoint 1's welcome/safety audio — waypoint
+  // 1 is manual-only (see manualOnlyWpKeys above), so nothing else ever will. This
+  // calls handleStart() FIRST — which resets the triggered-waypoints set for a fresh
+  // drive — and only THEN plays waypoint 1 via the existing manual-play path
+  // (playWaypoint, same one the Tour Stops list's own Play button already uses, which
+  // marks it triggered). Doing this in the other order would have handleStart's own
+  // reset wipe out the "already played" mark the instant after this set it.
+  const handleStartTour = () => {
+    handleStart();
+    const firstWaypoint = triggerWaypoints[0];
+    if (firstWaypoint) playWaypoint(firstWaypoint);
   };
 
   // "Restart tour from here" — seeds every waypoint up to and including the last known
@@ -969,7 +1008,7 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
         <div className="flex items-center gap-2">
           {status === 'idle' && (
             <Button
-              onClick={() => handleStart()}
+              onClick={handleStartTour}
               disabled={!savedOffline}
               title={!savedOffline ? t('player.mustSaveFirst') : undefined}
               className="flex-1 gap-2 bg-green-600 hover:bg-green-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
