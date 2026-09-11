@@ -67,6 +67,51 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-11 (follow-up 165) — Waypoint 2's Play button now waits for waypoint 1's audio to actually finish
+Scope: `src/components/walks/DrivingTourPlayer.jsx`.
+
+**Per Enda:** asked how follow-up 164 behaves once waypoint 1's welcome audio ends —
+does waypoint 2 just sit there with nothing happening, or does its Play button appear?
+Checked precisely: the "Next stop" card DID already resolve to waypoint 2 and show its
+Play button, but earlier than expected — the instant "Start the tour" is tapped, not
+once waypoint 1's audio has actually finished (a waypoint counts as "triggered" the
+moment it starts, not when it ends). Enda asked for the card to wait for waypoint 1 to
+actually finish talking — and was explicit that this must be a ONE-OFF rule for the
+waypoint 1 → 2 handoff only, not a general "wait for the current clip to finish" rule
+applied to the rest of the tour.
+
+**What changed:**
+1. Added `waypoint1AudioFinished` state, false by default, reset at the top of every
+   `handleStart` (a fresh Start or a Restart never inherits a stale value).
+2. `playNextQueuedAudio`/`playTriggerAudio`/`playWaypoint` now accept an OPTIONAL
+   per-call `onFinished` callback, fired once that ONE specific queued clip is done —
+   whether it played to completion or failed to play at all (a broken waypoint 1 clip
+   can never permanently strand waypoint 2's button). Every existing caller (GPS
+   auto-trigger, the Tour Stops list's own manual Play button) passes nothing and is
+   completely unaffected.
+3. `handleStartTour` now passes `() => setWaypoint1AudioFinished(true)` as that
+   callback specifically for waypoint 1's own playback.
+4. The "Next stop" card's visibility now also checks `isWaitingOnWaypoint1Audio` — true
+   ONLY when the next stop to show is literally waypoint 2 AND waypoint 1 hasn't
+   finished yet. The instant waypoint 2 itself gets triggered (its own manual Play tap),
+   `nextStop` moves on to waypoint 3 and this check no longer matches anything — every
+   later waypoint in the tour keeps showing its card immediately, exactly like before
+   this follow-up (follow-up 162's original design, unchanged).
+
+**Verified:** full production build (`npm run build`) succeeds with no errors, no new
+lint issues. New standalone test
+(`test_wp2_waits_for_wp1_audio_followup164b.mjs`, 13 checks) covers: the card is held
+back right after "Start the tour" is tapped (waypoint 1 triggered but not yet
+finished); it appears once waypoint 1 genuinely finishes; waypoint 3 and 4 show
+immediately regardless of `waypoint1AudioFinished`'s value, proving the rule never
+propagates past the one handoff it's meant for; a playback error still unblocks
+waypoint 2; an empty tour and the pre-Start state don't crash or misbehave. Full
+accumulated regression suite (164 checks across 16 files) re-run and passing.
+
+No backend files touched — frontend only, no manual redeploy needed.
+
+---
+
 ## 2026-09-11 (follow-up 164) — Waypoints 1 & 2 no longer auto-play — "Start the tour" and a manual Play only
 Scope: `src/components/walks/DrivingTourPlayer.jsx`, `src/lib/i18n/index.js`.
 

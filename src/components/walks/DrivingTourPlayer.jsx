@@ -200,6 +200,16 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
   const [currentPos, setCurrentPos] = useState(null);
   const [triggeredWpIds, setTriggeredWpIds] = useState(new Set());
   const [lastTriggered, setLastTriggered] = useState(null);
+  // Per Enda's follow-up 164 clarification: waypoint 2's "Next stop" card must not
+  // appear until waypoint 1's welcome audio has ACTUALLY finished playing (not just
+  // been started) — but this is a ONE-OFF rule for the waypoint 1 → 2 handoff only.
+  // Every other waypoint in the tour keeps the ordinary "Next stop" behaviour from
+  // follow-up 162 (shows the next untriggered stop immediately, even while the
+  // current clip is still playing) — see isWaitingOnWaypoint1Audio further down,
+  // which is the ONLY place this flag is read, and only ever compares against
+  // waypoint 2 specifically. Reset to false at the top of every fresh handleStart, so
+  // a second drive (or a restart) never inherits a stale "finished" from before.
+  const [waypoint1AudioFinished, setWaypoint1AudioFinished] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
   const [gpsAccuracy, setGpsAccuracy] = useState(null);
   // Non-null while GPS has sustained-failed OR sustained-stayed-too-imprecise-to-use (see
@@ -498,7 +508,15 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
       currentlyPlayingWpRef.current = null;
       return;
     }
-    const { wp, wpKey } = next;
+    // onFinished (per Enda's follow-up 164 clarification): an OPTIONAL, per-call
+    // callback — not a general "clip finished" broadcast — fired once this ONE
+    // specific queued clip is done, whether it played to completion or failed to
+    // play at all (both branches below call it). Only ever supplied today by
+    // handleStartTour, to know exactly when waypoint 1's own audio is done so
+    // waypoint 2's "Next stop" card can wait for it — every other caller (GPS
+    // auto-trigger, the Tour Stops list's own manual Play button) passes nothing
+    // here and this is a complete no-op for them, unchanged from before.
+    const { wp, wpKey, onFinished } = next;
     currentlyPlayingWpRef.current = wp;
 
     const player = audioService.createPlayer(wp.audio_clip_url);
@@ -506,6 +524,7 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
 
     player.onEnded(() => {
       tourLogService.logAudioPlay(wp, wp.audio_clip_url);
+      onFinished?.();
       playNextQueuedAudio();
     });
 
@@ -516,12 +535,15 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
       tourLogService.logAudioSkip(wp, `playback_error: ${err?.message || 'unknown'}`);
       // A clip that fails to load/play must not jam every trigger queued behind it —
       // move straight on to whatever's next, exactly as if this one had played and
-      // ended normally.
+      // ended normally. onFinished fires here too — a failed clip still counts as
+      // "done" for whatever was waiting on it, so a broken waypoint 1 clip can never
+      // permanently strand waypoint 2's Play button from ever appearing.
+      onFinished?.();
       playNextQueuedAudio();
     });
   }, []);
 
-  const playTriggerAudio = useCallback((wp, wpKey) => {
+  const playTriggerAudio = useCallback((wp, wpKey, onFinished) => {
     // Per the comment on audioQueueRef/currentlyPlayingWpRef above: queue this behind
     // whatever's currently playing rather than stopping it — this is what lets BOR1a's
     // full introduction actually be heard even though BOR1b sits at the identical spot
@@ -529,7 +551,7 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
     if (currentlyPlayingWpRef.current) {
       tourLogService.logAudioQueued(wp, currentlyPlayingWpRef.current);
     }
-    audioQueueRef.current.push({ wp, wpKey });
+    audioQueueRef.current.push({ wp, wpKey, onFinished });
     if (!currentlyPlayingWpRef.current) {
       playNextQueuedAudio();
     }
@@ -541,16 +563,18 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
   }, [playNextQueuedAudio]);
 
   // Manual "Play" — called from WalkDetail.jsx's Tour Stops list via the imperative handle
-  // below. Reuses playTriggerAudio exactly as GPS-triggered playback does (same queueing so
-  // it doesn't interrupt whatever's already playing, same "mark as triggered" so GPS won't
-  // also fire this stop again later if it recovers). Unlike an automatic trigger, this
-  // always plays when tapped — it doesn't check whether the stop was already triggered, so
-  // a driver can also use it to simply hear a clip again.
-  const playWaypoint = useCallback((wp) => {
+  // below, and from handleStartTour for waypoint 1. Reuses playTriggerAudio exactly as
+  // GPS-triggered playback does (same queueing so it doesn't interrupt whatever's already
+  // playing, same "mark as triggered" so GPS won't also fire this stop again later if it
+  // recovers). Unlike an automatic trigger, this always plays when tapped — it doesn't
+  // check whether the stop was already triggered, so a driver can also use it to simply
+  // hear a clip again. onFinished is optional and passed straight through — see
+  // playNextQueuedAudio's own comment; WalkDetail.jsx's call site doesn't pass one.
+  const playWaypoint = useCallback((wp, onFinished) => {
     if (!wp || !wp.audio_clip_url) return;
     const wpKey = wpKeyFor(wp);
     tourLogService.logManualPlay(wp);
-    playTriggerAudio(wp, wpKey);
+    playTriggerAudio(wp, wpKey, onFinished);
   }, [playTriggerAudio]);
 
   useImperativeHandle(ref, () => ({ playWaypoint }), [playWaypoint]);
@@ -573,6 +597,10 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
     prevPosRef.current = null;
     audioQueueRef.current = [];
     currentlyPlayingWpRef.current = null;
+    // A fresh drive (a plain Start, or a Restart) never inherits a stale "waypoint 1
+    // audio finished" from a previous session — see the state declaration's own
+    // comment for the exact, narrow scope this drives.
+    setWaypoint1AudioFinished(false);
     narrationDuckCountRef.current = 0;
     gpsErrorStreakRef.current = 0;
     gpsAccuracyStreakRef.current = 0;
@@ -642,10 +670,23 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
   // (playWaypoint, same one the Tour Stops list's own Play button already uses, which
   // marks it triggered). Doing this in the other order would have handleStart's own
   // reset wipe out the "already played" mark the instant after this set it.
+  //
+  // Per Enda's follow-up 164 clarification: passes an onFinished callback into
+  // playWaypoint so waypoint1AudioFinished only flips true once waypoint 1's clip has
+  // genuinely finished (or failed) — NOT the instant it's marked triggered, which
+  // happens synchronously, before a single second of it has played. This is what lets
+  // the "Next stop" card hold off showing waypoint 2 until waypoint 1 is actually done
+  // talking (see isWaitingOnWaypoint1Audio further down) — a one-off wiring for this
+  // ONE handoff, nothing generalised. If there's no waypoint 1 at all (a tour with no
+  // audio yet), there's nothing to wait for, so the flag is set true immediately.
   const handleStartTour = () => {
     handleStart();
     const firstWaypoint = triggerWaypoints[0];
-    if (firstWaypoint) playWaypoint(firstWaypoint);
+    if (firstWaypoint) {
+      playWaypoint(firstWaypoint, () => setWaypoint1AudioFinished(true));
+    } else {
+      setWaypoint1AudioFinished(true);
+    }
   };
 
   // "Restart tour from here" — seeds every waypoint up to and including the last known
@@ -850,7 +891,21 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
   // so it marks the stop as triggered — GPS won't also fire it again later if it
   // recovers, and ordinary auto-triggering just continues on from there.
   const nextStop = triggerWaypoints.find(wp => wp.audio_clip_url && !triggeredWpIds.has(wpKeyFor(wp)));
-  const nextStopActive = status === 'running' && !!nextStop;
+
+  // Per Enda's follow-up 164 clarification: "this should ONLY happen with waypoint 1,
+  // nowhere else" — so this check is deliberately narrow. It only ever compares
+  // nextStop against triggerWaypoints[1] (waypoint 2) by name — for every OTHER
+  // waypoint in the tour (3, 4, 5…), nextStopActive below behaves exactly as it did
+  // before this follow-up: the card shows the next untriggered stop immediately, even
+  // while the current clip is still playing (follow-up 162's original, unchanged
+  // behaviour). The moment waypoint 2 itself gets triggered (by its own manual Play
+  // tap), nextStop moves on to waypoint 3 and this stops matching — nothing past the
+  // waypoint 1 → 2 handoff is ever held back.
+  const secondWaypoint = triggerWaypoints[1];
+  const isWaitingOnWaypoint1Audio = !!nextStop && !!secondWaypoint
+    && wpKeyFor(nextStop) === wpKeyFor(secondWaypoint)
+    && !waypoint1AudioFinished;
+  const nextStopActive = status === 'running' && !!nextStop && !isWaitingOnWaypoint1Audio;
 
   return (
     <div className="bg-slate-800 rounded-xl border border-slate-600 overflow-hidden">
