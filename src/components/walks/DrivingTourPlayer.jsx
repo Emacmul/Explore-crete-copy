@@ -275,6 +275,12 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
 
   // Trigger waypoints that have audio enabled
   const triggerWaypoints = (walk.waypoints || []).filter(wp => wp.trigger_audio && wp.lat && wp.lng);
+  // Per Enda's report: some WalkAbouts happen somewhere GPS genuinely doesn't work —
+  // inside a monastery, the Fortezza, Aptera — not just weak signal. walk.manual_only_tour
+  // (set on the tour itself, WalkAbouts only — see WalkEditor.jsx's "Manual only (GPS
+  // unreliable)" toggle) makes EVERY trigger waypoint manual-only, not just the first two
+  // below, so the tour never waits on a GPS fix that will never come.
+  const manualOnlyTour = !!walk.manual_only_tour;
   // Per Enda/Anoushka's follow-up 164 report: waypoint 1 (the static "welcome, Stay
   // Safe Offline" point every tour opens with) and waypoint 2 (the first point where
   // real movement actually begins) must never auto-fire from GPS. When waypoint 1's
@@ -291,10 +297,21 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
   // a fixed rule for every tour, in every category that has narrated audio, not
   // something a narrator could forget to tick on a specific waypoint. Recomputed every
   // render straight off triggerWaypoints, so it can never drift out of sync with it.
-  const manualOnlyWpKeys = new Set(triggerWaypoints.slice(0, 2).map(wpKeyFor));
+  //
+  // manualOnlyTour above extends this same set to cover every waypoint, not just the
+  // first two, for a flagged WalkAbout — the rest of this component (the audio queue,
+  // the "Next stop" card, the Tour Stops list's own Play button) already treats a
+  // manual-only waypoint identically regardless of why it's manual-only, so nothing
+  // else needs to change to make a fully-manual tour work.
+  const manualOnlyWpKeys = manualOnlyTour
+    ? new Set(triggerWaypoints.map(wpKeyFor))
+    : new Set(triggerWaypoints.slice(0, 2).map(wpKeyFor));
   // Every secondary waypoint on the route (not the segment start/stop markers) with a real
   // GPS position — the candidates for "last known position", tracked regardless of whether
-  // that particular point has audio of its own.
+  // that particular point has audio of its own. Naturally never populates for a
+  // manual-only tour (GPS tracking never starts — see manualOnlyTour/handleStart above),
+  // so "Restart tour from here" simply never appears there, which is correct: there's no
+  // GPS position to have "last known" in the first place.
   const secondaryWaypoints = (walk.waypoints || []).filter(wp => wp.waypoint_role === 'secondary' && wp.lat && wp.lng);
   // The furthest-along secondary waypoint reached so far — same "keep the last one in route
   // order" approach as the walk/hike version of this feature.
@@ -584,7 +601,13 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
   // every earlier segment's audio again — a normal Start Tour click passes nothing, so it
   // begins from a genuinely clean slate exactly as before.
   const handleStart = (seedKeys) => {
-    if (!gpsService.isSupported()) {
+    // A manual-only tour (see manualOnlyTour above) never asks the device for a GPS fix
+    // at all — not just "ignores bad ones". Per Enda: GPS genuinely won't work inside a
+    // monastery or the Fortezza, so a device with no location support at all (or one
+    // where the visitor has denied the permission) must still be able to run this tour;
+    // requiring gpsService.isSupported() here would needlessly block it for no reason,
+    // since nothing below ever reads a position for a manual-only tour anyway.
+    if (!manualOnlyTour && !gpsService.isSupported()) {
       tourLogService.logWarning('Geolocation not supported on this device');
       setStartError(t('player.gpsNotSupported'));
       return;
@@ -609,6 +632,15 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
     offRouteAnnouncedRef.current = false;
     setOffRoute(false);
     setStatus('running');
+
+    // A manual-only tour never starts GPS tracking at all — no permission prompt, no
+    // battery use, and critically no GPS-accuracy/off-route warnings that would only
+    // ever misfire indoors (see manualOnlyTour above). Every waypoint is already in
+    // manualOnlyWpKeys for this tour, so evaluateTriggers would never fire anything
+    // even if it did run — this just avoids asking the device for a fix it can't use
+    // in the first place. currentPos/gpsAccuracy simply stay null, which already
+    // correctly hides the position readout and every GPS-related banner below.
+    if (manualOnlyTour) return;
 
     watchIdRef.current = gpsService.watchPosition(
       (pos) => {

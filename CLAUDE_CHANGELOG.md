@@ -73,6 +73,68 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-12 (follow-up 176) — WalkAbouts: a "Manual only (GPS unreliable)" tour switch
+Scope: `base44/entities/Walk.jsonc`, `src/components/admin/WalkEditor.jsx`,
+`src/components/walks/DrivingTourPlayer.jsx`, `src/lib/i18n/index.js`.
+Frontend + entity schema only, no backend function redeploy needed.
+
+**Per Enda:** some WalkAbouts happen somewhere GPS simply won't work — inside Arkadi or
+Agia Triada monastery, the Fortezza in Rethymno, Aptera. Not weak signal, genuinely
+unreliable. These need to fall back to manual activation of the next point only, and
+still count as WalkAbouts. Confirmed with Enda this is always a WHOLE-tour setting
+(never mixed within one WalkAbout).
+
+**Investigated first, and corrected a mistake along the way:** started from the
+assumption that WalkAbouts had no real-time playback at all for customers (based on
+plain Walk/Hike data), and said so to Enda — that was wrong, caught by re-checking
+against real data before writing any code. `WalkEditor.jsx`'s own comments and a real
+WalkAbout in the database ("WalkAbout Rethymno Old Town", tour_category WBT) both
+confirm WalkAbouts already use `route_type: 'driving_audio_tour'` — the exact same
+customer player as a real Driving Tour, GPS trigger, "Stay Safe Offline" preloading,
+manual Play fallback and all. Corrected that with Enda before proceeding. That player
+(`DrivingTourPlayer.jsx`) already makes a tour's first two waypoints manual-only, always
+(follow-up 164) — the "welcome, get ready" intro and the first moving step never
+auto-fire from GPS. The only real gap was extending that same idea to every waypoint,
+for a specific WalkAbout, when GPS won't work there at all.
+
+While in this code, also found (and fixed) a real pre-existing bug this same
+investigation surfaced: three GPS-warning messages said "pull over safely" / "as you
+keep driving" — driving-only wording that a WalkAbout on foot was already showing today,
+since it shares this exact player and these exact strings with Driving Tours.
+
+**Fix:**
+- New `Walk.manual_only_tour` boolean (WalkAbouts only, default false).
+- New "Manual only (GPS unreliable)" toggle in the Walk editor, shown only for
+  WalkAbouts (tour_category WBT) — never for a real Driving Tour (DDV, GPS works fine on
+  roads) or a plain Walk/Hike (WHT, doesn't use this player at all).
+- `DrivingTourPlayer.jsx`: when a tour has this flag set, EVERY trigger waypoint joins
+  the existing manual-only set (not just the first two), and GPS tracking is never even
+  started for it — no permission prompt, no battery use, and no GPS-accuracy/off-route
+  warning that would otherwise misfire indoors. A device with no GPS support at all can
+  still run a manual-only tour, since nothing in it ever needed a fix. Every waypoint is
+  reachable via the existing "Next stop" card (always visible while the tour is running)
+  and the Tour Stops list's own per-stop Play button — both already exist, neither
+  needed to change to support this.
+- A translated clone of a manual-only WalkAbout inherits the flag automatically
+  (`cloneWalkForBackend` already spreads the whole original record through) — the
+  physical GPS conditions don't change with narration language.
+- Softened `player.gpsUnavailable`, `player.gpsPermissionDenied`, `player.gpsAccuracyWeak`
+  (English only — `nl`/`cs` don't override these, they fall back to English) to read
+  correctly for someone on foot, not just driving.
+
+**Verified:** `npx eslint` on every changed JS/JSX file (0 new errors — 4 pre-existing,
+unrelated unused-import errors in `WalkEditor.jsx` untouched by this change). `Walk.jsonc`
+checked for valid structure. Full `npm run build` (exit 0, fresh `dist/assets/*.js`). New
+standalone test `/tmp/test_walkabout_manual_only_followup176.mjs` (20 checks: an ordinary
+tour still only manual-locks its first two waypoints; a flagged WalkAbout manual-locks
+every one; GPS tracking is skipped only for a flagged tour; a device with no GPS support
+can still start a manual-only tour but is still correctly blocked for an ordinary one;
+confirms WBT and DDV share route_type so the player needs no separate wiring, and that
+the new toggle is WBT-only). Full accumulated regression suite re-run (35 files, 372
+checks, all passing).
+
+---
+
 ## 2026-09-11 (follow-up 175) — First waypoint of first location: drop "Test this
 segment" entirely, use the ordinary Finalise flow instead
 Scope: `src/components/admin/TourSimulator.jsx`.

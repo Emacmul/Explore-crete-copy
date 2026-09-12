@@ -34,6 +34,7 @@ const EMPTY_WALK = {
   difficulty: 'moderate',
   is_sample_walk: false,
   buggy_friendly: false,
+  manual_only_tour: false,
   distance_km: '',
   duration_hours: '',
   elevation_gain_m: '',
@@ -1533,6 +1534,40 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
               </div>
             </div>
             </>
+            )}
+
+            {/* Per Enda's report: some WalkAbouts happen somewhere GPS simply doesn't work
+                (inside Arkadi or Agia Triada monastery, the Fortezza in Rethymno, Aptera) —
+                not just weak signal, genuinely unreliable. WalkAbouts already reuse the same
+                engine as a Driving Tour (see isDrivingAudioTour above/DrivingTourPlayer.jsx),
+                which already has a manual Play fallback for exactly this — but only the
+                tour's first two waypoints are ever manual-only by default (the "get ready"
+                intro and the first moving step, per follow-up 164). This toggle extends that
+                to EVERY waypoint for a specific WalkAbout: no GPS watch is started at all, so
+                there's no GPS/off-route warning that would otherwise misfire indoors, and
+                every stop plays only from an explicit tap (the "Next stop" card or the Tour
+                Stops list). WalkAbout only — a real Driving Tour (DDV) has working roads and
+                never needs this; an ordinary Walk/Hike (WHT) doesn't use this engine at all.
+                Confirmed with Enda: this is a whole-tour switch, never a per-waypoint one. */}
+            {form.tour_category === 'WBT' && (
+              <div>
+                <Label className="text-slate-300 mb-1.5 block">Manual only (GPS unreliable)</Label>
+                <div className="flex items-center gap-3 h-9 bg-slate-700 border border-slate-600 rounded-md px-3">
+                  <button
+                    type="button"
+                    onClick={() => set('manual_only_tour', !form.manual_only_tour)}
+                    className={`w-10 h-5 rounded-full transition-colors relative ${form.manual_only_tour ? 'bg-amber-500' : 'bg-slate-500'}`}
+                  >
+                    <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${form.manual_only_tour ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                  </button>
+                  <span className="text-slate-300 text-sm">{form.manual_only_tour ? 'Yes' : 'No'}</span>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  Turn this on for a WalkAbout inside a building or site where GPS won't get a
+                  fix (a monastery, the Fortezza, Aptera). Every waypoint then needs a manual
+                  tap to play — the app never waits on GPS for this tour.
+                </p>
+              </div>
             )}
 
             {/* Main Interests — tour categorisation/discovery metadata, admin-only. Walks

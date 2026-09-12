@@ -289,11 +289,17 @@ export const translations = {
     'player.restartFromHere': "Restart tour from here",
     'player.nextStopLabel': "Next stop",
     'player.gpsIssueTitle': "GPS signal lost",
-    'player.gpsUnavailable': "Directions and narration may be delayed or missing until signal returns. If you're unsure of the route, pull over safely.",
-    'player.gpsPermissionDenied': "This app no longer has permission to use your location. Directions and narration have stopped. Pull over safely, then re-enable location for this app.",
+    // Per Enda: WalkAbouts already share this exact player/wording with Driving Tours
+    // (both use route_type 'driving_audio_tour' — see DrivingTourPlayer.jsx), so "pull
+    // over safely" and "as you keep driving" were already being shown to someone on
+    // foot, not just a future risk. Softened to read correctly either way, the same
+    // approach already used elsewhere in this app for wording shared between a driving
+    // and a walking context, rather than adding parallel translated strings.
+    'player.gpsUnavailable': "Directions and narration may be delayed or missing until signal returns. If you're unsure of the route, stop somewhere safe and check your map.",
+    'player.gpsPermissionDenied': "This app no longer has permission to use your location. Directions and narration have stopped. Stop somewhere safe, then re-enable location for this app.",
     'player.gpsWeakSignal': "weak signal",
     'player.gpsAccuracyIssueTitle': "GPS too imprecise to use",
-    'player.gpsAccuracyWeak': "Your location signal is on but not precise enough right now, so directions and narration may not trigger. This is common in mountainous areas — it should improve as you keep driving. If you're unsure of the route, pull over safely.",
+    'player.gpsAccuracyWeak': "Your location signal is on but not precise enough right now, so directions and narration may not trigger. This is common in mountainous areas — it should improve as you keep moving. If you're unsure of the route, stop somewhere safe and check your map.",
     'player.gpsNotSupported': "This device or browser doesn't support location tracking, so this tour can't start. Try a different browser, or a phone with GPS.",
     // Off-route warning — per Anoushka/Enda (follow-up 156): different from the GPS-issue
     // warnings above. Those mean the GPS fix itself can't be trusted; this means the fix

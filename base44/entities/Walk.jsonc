@@ -52,6 +52,11 @@
       "default": false,
       "description": "Walks and Hikes (WHT) only: true if this route works with an ordinary buggy/stroller, no off-road/4x4-style buggy needed. Shown to customers as a quick filter and a badge on the walk's card, per Enda/Anoushka's request (follow-up 144) so young-family-suitable walks don't get lost in the general list."
     },
+    "manual_only_tour": {
+      "type": "boolean",
+      "default": false,
+      "description": "WalkAbouts (WBT) only: true when GPS does not work reliably at this location (inside a monastery, the Fortezza, Aptera, etc.), not just weak signal. The customer player skips GPS entirely for this tour — no auto-trigger, no GPS/off-route warnings — and every waypoint needs an explicit manual tap to play instead. Never used for a real Driving Tour (DDV), which relies on GPS working on the road."
+    },
     "distance_km": {
       "type": "number",
       "description": "Total distance in kilometres"
