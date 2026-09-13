@@ -85,6 +85,40 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-13 (follow-up 183) — Selecting a walk on phone now auto-scrolls to its details
+**Scope:** `src/pages/Home.jsx`. Frontend-only, no backend redeploy needed.
+
+**Per Enda:** testing on his phone — where customers will actually use the app — selecting
+a walk from the list did open its details, but he had to scroll down manually to see them.
+Asked for it to jump straight there.
+
+**Investigated first:** the list and the map/detail panel sit side by side as two columns
+on a wide (desktop) screen, so the details are already fully visible the instant they open
+— nothing to fix there. On a narrow (phone) screen those same two columns stack vertically
+instead: the list is on top, the map/detail panel is below it, further down the page. The
+panel already switches from map to details correctly — it just wasn't bringing the phone's
+screen down to meet it.
+
+**Fixed:** added a ref on the map/detail panel and an effect that scrolls it smoothly into
+view the moment a walk's details are actually showing — covers selecting from the list,
+switching straight to a different walk while one is already open, and any other way a
+walk's details can appear. Also added a little breathing room (`scroll-mt-32`) so the
+panel doesn't end up tucked half-behind the sticky header bar at the top of the screen once
+scrolled to. On desktop this effect does nothing noticeable, since the panel is already
+fully in view there.
+
+**Verified:** `npx eslint` (0 new issues; the same 2 pre-existing, unrelated issues in this
+file — unused `getTourCategory` import, unused `tapLocation` state — confirmed already
+there, untouched). Full `npm run build` (exit 0). New standalone test
+`/tmp/test_auto_scroll_to_detail_followup183.mjs` (10 checks: scrolls when a walk's
+details are shown; does not scroll for the plain map view; does not scroll for a map-tap
+that only highlights a marker without opening details; still scrolls when switching to a
+different walk while one is already open; doesn't throw if the ref isn't attached yet; the
+wiring and the sticky-header offset are actually present in the source). Full accumulated
+regression suite re-run (42 files, 482 checks, all passing).
+
+---
+
 ## 2026-09-13 (follow-up 182) — Login screen: "Forgot your password?" link added
 **Scope:** `src/pages/Login.jsx`, `src/lib/i18n/index.js`. Frontend-only, no backend
 redeploy needed.

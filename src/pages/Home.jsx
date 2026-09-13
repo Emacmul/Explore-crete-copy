@@ -41,6 +41,14 @@ export default function Home() {
   const [userRole, setUserRole] = useState(null); // 'admin' | 'narrator' | null — which back-end button (Admin or Narr) to show
 
   const updatingRef = useRef(false);
+  // Per Enda (testing on phone): on a narrow screen the walk list and the map/detail panel
+  // stack vertically instead of sitting side by side — selecting a walk from the list
+  // opened its details, but they rendered further down the page, out of view, so the
+  // customer had to notice and scroll down manually to see them. This ref/effect scrolls
+  // that panel into view automatically the moment a walk's details are shown. On a wide
+  // (desktop) screen the panel already sits fully in view beside the list, so this has
+  // nothing to do there.
+  const detailSectionRef = useRef(null);
 
   useEffect(() => {
     const checkRegistration = async () => {
@@ -160,6 +168,15 @@ export default function Home() {
     setSelectedWalk(walk);
     setShowDetail(true);
   };
+
+  // Scrolls the map/detail panel into view the moment its details are actually showing —
+  // covers every way a walk can become selected (the list, a map tap, jumping straight to
+  // a different walk while one is already open), not just the one call site above.
+  useEffect(() => {
+    if (showDetail && selectedWalk && detailSectionRef.current) {
+      detailSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [showDetail, selectedWalk?.id]);
 
   // Per Enda's report: ticking Buggy-Friendly (or narrowing by any other filter/search
   // in WalkList) left the previously-selected walk showing in the detail panel even once
@@ -361,7 +378,7 @@ export default function Home() {
             />
           </div>
 
-          <div className="lg:col-span-2 h-full relative">
+          <div className="lg:col-span-2 h-full relative scroll-mt-32" ref={detailSectionRef}>
             <AnimatePresence mode="wait">
               {showDetail && selectedWalk ? (
                 <motion.div
