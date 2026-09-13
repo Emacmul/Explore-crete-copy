@@ -248,6 +248,11 @@ export const translations = {
     'detail.draftPreviewMessage': "This tour isn't published yet. You're seeing it because you're an admin — customers can't see or buy it until it's published.",
     'detail.startWalk': "Start Walk",
     'detail.defaultSafetyNotes': "Essential equipment: sun hat, sturdy walking shoes or boots, walking poles, and a minimum of 2 litres of water per person.\n\nMobile signal may be unreliable. Tap \"Stay Safe Offline\" before departure so the route and narration work without a connection.\n\nGPS signal can also be weak in Crete's mountains — this is separate from your phone signal, and downloading the tour doesn't fix it. If GPS drops out, narration may be delayed until it returns. If you're ever unsure of the route, stop safely and wait.\n\nUnder Greek law, the cost of any search and rescue operation is charged to the individual. Do not attempt any walk unprepared.",
+    // Per Enda (follow-up 184): "Before You Set Off" is easy to scroll past without
+    // reading — this makes reading it a deliberate, logged action instead.
+    'detail.confirmSafety': "I've Read This — Confirm",
+    'detail.safetyConfirmed': "Confirmed — thanks for reading this",
+    'detail.mustConfirmSafetyFirst': "Please confirm you've read \"Before You Set Off\" above before starting.",
     'detail.aboutThisWalk': "About this walk",
     'detail.tourStops': "Tour Stops",
     'detail.keyPoints': "Key Points",
@@ -284,6 +289,7 @@ export const translations = {
     'player.triggersFired': "{done}/{total} triggers fired",
     'player.startTour': "Start the tour",
     'player.mustSaveFirst': "Tap \"Stay Safe Offline\" before starting — cellular signal can be weak in this area of Crete.",
+    'player.mustConfirmSafetyFirst': "Please confirm you've read \"Before You Set Off\" in the tour details above before starting.",
     'player.pause': "Pause",
     'player.stop': "Stop",
     'player.resume': "Resume",

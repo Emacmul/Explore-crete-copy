@@ -1,0 +1,62 @@
+{
+  "name": "SafetyConfirmation",
+  "type": "object",
+  "properties": {
+    "buyer_email": {
+      "type": "string",
+      "description": "Email of the customer who tapped Confirm on the walk's \"Before You Set Off\" safety notes (lowercased)."
+    },
+    "walk_id": {
+      "type": "string",
+      "description": "The stable tour-family id this confirmation is for (matches getWalkCatalog's _family_id/out.id, not any one language clone's own id)."
+    },
+    "walk_code": {
+      "type": "string",
+      "description": "Snapshot of the walk's code at confirmation time, for support lookups."
+    },
+    "walk_name": {
+      "type": "string",
+      "description": "Snapshot of the walk's name at confirmation time, for support lookups."
+    },
+    "safety_notes_snapshot": {
+      "type": "string",
+      "description": "Snapshot of the exact safety_notes text shown to the customer at the moment they confirmed, so a later edit to the tour's safety notes can never be mistaken for what this specific customer actually saw and confirmed."
+    },
+    "confirmed_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the customer tapped Confirm."
+    },
+    "device_id": {
+      "type": "string",
+      "description": "Device id this confirmation happened on, for support lookups."
+    }
+  },
+  "required": [
+    "buyer_email",
+    "walk_id",
+    "confirmed_at"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

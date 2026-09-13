@@ -85,6 +85,78 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-13 (follow-up 184) — "About this walk" before "Before You Set Off"; safety
+notes now need a logged Confirm before Start Walk/Start Tour activates
+**Scope:** `base44/functions/logSafetyConfirmation/entry.ts` (NEW — BACKEND FUNCTION, needs
+a manual redeploy in Base44, see the standing rule at the top of this file), a new
+`SafetyConfirmation` entity, `src/components/walks/WalkDetail.jsx`,
+`src/components/walks/DrivingTourPlayer.jsx`, `src/lib/i18n/index.js`.
+
+**Per Enda:** "About this walk" should show before "Before You Set Off" (currently the
+other way round); the customer should have to tap a Confirm button at the end of "Before
+You Set Off," because it's the kind of thing people scroll past without reading until
+something goes wrong; every confirm must be logged in the database; and Start Walk/Start
+Tour must stay where it is but only become active once "Stay Safe Offline" has been
+activated.
+
+**Investigated first, then confirmed the design with Enda before building (three genuine
+open questions, not guessed at):**
+- The offline-save gate on Start Walk/Start Tour already existed exactly as described —
+  nothing to build there. The open questions were: (1) should the new Confirm ALSO be
+  required before Start works, or just logged without blocking anything — Enda said block
+  it too; (2) should confirming be remembered per person per walk, or asked again every
+  time the walk is opened — Enda said every time; (3) WalkAbouts/Driving Tours use a
+  completely different "Start Tour" button, inside the live tour player
+  (`DrivingTourPlayer.jsx`), not the one in `WalkDetail.jsx` — Enda asked for the same gate
+  built into both now, even though those tour types aren't loaded yet, so nothing needs
+  revisiting once they are.
+
+**Fixed:**
+- `WalkDetail.jsx`: "About this walk" now renders before "Before You Set Off". A Confirm
+  button sits at the end of the safety-notes box; tapping it calls the new
+  `logSafetyConfirmation` backend function (identifies the customer from their WordPress
+  token, the same way `getWalkCatalog`/`sessionHeartbeat` do — never trusts a client-typed
+  email) and writes a `SafetyConfirmation` row: who, which walk, when, and a **snapshot of
+  the exact safety_notes text they were shown** — so if Enda edits the safety notes later,
+  an old confirmation can never be mistaken for having covered the new wording. Confirmed
+  state is local to that one open of the walk (`useState(false)`, reset on `walk?.id`
+  change) — closing and reopening, or switching straight to a different walk while one is
+  already open, always asks again, per Enda's answer.
+- Start Walk (`WalkDetail.jsx`) and Start Tour (`DrivingTourPlayer.jsx`, used by both
+  WalkAbouts and Driving Tours) now both require `savedOffline && safetyConfirmed`, not
+  just the offline save. The "Restart tour from here" shortcut in the driving player is
+  gated the same way, so it can't bypass the same requirement. Each button shows a
+  specific hint ("save offline first" vs "confirm the safety notes first") depending on
+  which part is still missing.
+- **If the log write itself fails** (e.g. no signal) — best-effort, same principle as
+  `sessionHeartbeat`/`sessionEnd` elsewhere in this app: the confirmation still counts
+  locally and Start unlocks anyway. Someone reading this at a remote trailhead may have no
+  connection at all — exactly why "Stay Safe Offline" exists — so a failed database write
+  must never trap them unable to start their already-downloaded tour. Only the database
+  record itself is at risk in that specific case, not the customer's ability to proceed.
+- New `SafetyConfirmation` entity (admin-only read/write via the dashboard; the real writes
+  all go through the service role inside `logSafetyConfirmation`, never directly from a
+  customer's browser).
+
+**Verified:** `npx eslint` on all three changed frontend files (0 new issues — the 5
+pre-existing, unrelated issues already in `WalkDetail.jsx`, confirmed against the file's
+last committed version, untouched). Full `npm run build` (exit 0). New standalone test
+`/tmp/test_safety_confirm_gate_followup184.mjs` (29 checks): the combined gate logic;
+resetting on a walk switch; the reordering; the button's wiring to `logSafetyConfirmation`
+with the right walk identity and safety-notes snapshot; the best-effort failure handling;
+both Start buttons (Walks and WalkAbouts/Driving Tours) requiring both conditions; the
+"restart from here" shortcut also gated; the backend function identifying the caller from
+their token and writing via the service role. Full accumulated regression suite re-run (43
+files, 511 checks, all passing).
+
+**Needs a manual redeploy:** `logSafetyConfirmation` is a new backend function — per the
+standing rule at the top of this file, Enda needs to do the blank-line-and-redeploy step
+for it in Base44 before Confirm taps actually get logged (the button and the gate work
+either way — a failed log write is best-effort and never blocks Start, but the confirmation
+won't be recorded in the database until this is deployed).
+
+---
+
 ## 2026-09-13 (follow-up 183) — Selecting a walk on phone now auto-scrolls to its details
 **Scope:** `src/pages/Home.jsx`. Frontend-only, no backend redeploy needed.
 

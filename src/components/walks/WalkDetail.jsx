@@ -18,6 +18,9 @@ import { getWaypointImages } from '@/lib/waypointImages';
 import WalkPaywall from './WalkPaywall';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { useOfflineWalks } from '../offline/useOfflineWalks';
+import { useAuth } from '@/lib/AuthContext';
+import { base44 } from '@/api/base44Client';
+import { getDeviceId } from '@/lib/deviceId';
 
 const difficultyColors = {
   easy: 'bg-green-100 text-green-700',
@@ -78,8 +81,53 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
   const [followGps, setFollowGps] = React.useState(false);
   const [started, setStarted] = React.useState(false);
   const { t } = useLanguage();
+  const { token } = useAuth();
   const { isDownloaded } = useOfflineWalks();
   const savedOffline = isDownloaded(walk.id);
+
+  // Per Enda (follow-up 184): "Before You Set Off" is easy to scroll past without reading
+  // — until something goes wrong. The customer must tap Confirm before Start Walk/Start
+  // Tour becomes active, and every tap is logged to the database (logSafetyConfirmation),
+  // snapshotting the exact safety_notes text they saw. Deliberately asked fresh every time
+  // a walk's details are opened, not remembered — so it resets both on a genuine fresh
+  // mount AND when switching directly from one open walk to a different one without
+  // closing first (the list stays visible beside the detail panel on a wide screen, so
+  // that direct switch is a real path, not just a remount).
+  const [safetyConfirmed, setSafetyConfirmed] = React.useState(false);
+  const [confirmSubmitting, setConfirmSubmitting] = React.useState(false);
+  React.useEffect(() => {
+    setSafetyConfirmed(false);
+  }, [walk?.id]);
+
+  const handleConfirmSafety = async () => {
+    if (safetyConfirmed || confirmSubmitting) return;
+    setConfirmSubmitting(true);
+    try {
+      await base44.functions.invoke('logSafetyConfirmation', {
+        token,
+        walk_id: walk.id,
+        walk_code: walk.code,
+        walk_name: walk.name,
+        safety_notes: walk.safety_notes || t('detail.defaultSafetyNotes'),
+        device_id: getDeviceId(),
+      });
+    } catch (err) {
+      // Best-effort, same principle as sessionHeartbeat/sessionEnd elsewhere in this app:
+      // someone reading this at a remote trailhead may have no signal at all — exactly why
+      // "Stay Safe Offline" exists — so a failed log write must never trap them here,
+      // unable to start their tour. The confirmation itself still counts locally; only the
+      // database record is at risk if this one request never reaches the server.
+      console.error('Failed to log safety confirmation (proceeding anyway):', err);
+    } finally {
+      setConfirmSubmitting(false);
+      setSafetyConfirmed(true);
+    }
+  };
+
+  // Start Walk/Start Tour needs BOTH: the tour saved offline (so it keeps working with no
+  // signal) AND the safety notes actively confirmed (so it's a genuine, logged read, not
+  // just something scrolled past).
+  const canStart = savedOffline && safetyConfirmed;
 
   // Handle onto DrivingTourPlayer's playWaypoint, so the manual "Play" button on each Tour
   // Stop below can trigger that stop's narration directly — see the comment on
@@ -321,7 +369,7 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
             )}
 
             {walk.route_type === 'driving_audio_tour' && (
-              <DrivingTourPlayer ref={driverPlayerRef} walk={walk} />
+              <DrivingTourPlayer ref={driverPlayerRef} walk={walk} safetyConfirmed={safetyConfirmed} />
             )}
 
             {/* Legal/safety compliance banner — required every time this tour is opened,
@@ -351,17 +399,8 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
               )}
             </div>
 
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <ShieldAlert className="w-5 h-5 text-red-600 shrink-0" />
-                <h3 className="font-bold text-red-700">{t('detail.beforeYouSetOff')}</h3>
-              </div>
-
-              <p className="text-red-700 text-sm leading-relaxed whitespace-pre-line">
-                {walk.safety_notes || t('detail.defaultSafetyNotes')}
-              </p>
-            </div>
-
+            {/* Per Enda (follow-up 184): "About this walk" now comes BEFORE "Before You Set
+                Off" — read the walk, then the safety notes, then confirm them. */}
             {walk.description && (
               <div>
                 <h3 className="font-semibold text-gray-900 mb-2">{t('detail.aboutThisWalk')}</h3>
@@ -371,20 +410,54 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
               </div>
             )}
 
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <ShieldAlert className="w-5 h-5 text-red-600 shrink-0" />
+                <h3 className="font-bold text-red-700">{t('detail.beforeYouSetOff')}</h3>
+              </div>
+
+              <p className="text-red-700 text-sm leading-relaxed whitespace-pre-line">
+                {walk.safety_notes || t('detail.defaultSafetyNotes')}
+              </p>
+
+              {/* This is the deliberate forcing function: Start Walk/Start Tour won't
+                  activate until this is tapped (see canStart above), and every tap is
+                  logged to the database via logSafetyConfirmation. */}
+              {safetyConfirmed ? (
+                <div className="mt-3 flex items-center gap-2 text-emerald-700 text-sm font-medium">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  {t('detail.safetyConfirmed')}
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  onClick={handleConfirmSafety}
+                  disabled={confirmSubmitting}
+                  className="mt-3 w-full sm:w-auto gap-2 bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
+                >
+                  <CheckCircle2 className="w-4 h-4" /> {t('detail.confirmSafety')}
+                </Button>
+              )}
+            </div>
+
             {/* Walk/Hike and WalkAbout tours have no equivalent of the driving tour's
                 explicit "Start Tour" button — the interactive part of the tour is now
-                gated behind a real Start action here too, disabled until saved offline.
-                Removing the offline copy (e.g. from My Library) resets `started` via the
-                effect above, so re-downloading later correctly requires going through
-                this same gate again, not a one-time unlock. */}
+                gated behind a real Start action here too, disabled until BOTH saved
+                offline AND the safety notes are confirmed (canStart, above). Removing the
+                offline copy (e.g. from My Library) resets `started` via the effect above,
+                so re-downloading later correctly requires going through this same gate
+                again, not a one-time unlock. */}
             {!isDrivingTour && !started ? (
               <div className="bg-white border-2 border-dashed border-gray-300 rounded-xl p-5 text-center space-y-3">
                 {!savedOffline && (
                   <p className="text-xs text-amber-700">{t('player.mustSaveFirst')}</p>
                 )}
+                {savedOffline && !safetyConfirmed && (
+                  <p className="text-xs text-amber-700">{t('detail.mustConfirmSafetyFirst')}</p>
+                )}
                 <button
-                  onClick={() => savedOffline && setStarted(true)}
-                  disabled={!savedOffline}
+                  onClick={() => canStart && setStarted(true)}
+                  disabled={!canStart}
                   className="w-full sm:w-auto px-6 py-3 rounded-xl bg-blue-600 text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors"
                 >
                   {t('detail.startWalk')}

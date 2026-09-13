@@ -182,10 +182,18 @@ function loadPassedSecondaryIds(walkId) {
 // should never leave a driver stuck with no way to hear a clip that failed to auto-trigger,
 // and the driver shouldn't have to look at the screen to find out something's wrong in the
 // first place (see the spoken GPS alert below), just to recover from it once they notice.
-const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
+// safetyConfirmed: per Enda (follow-up 184), Start Tour must not activate until the
+// customer has confirmed reading "Before You Set Off" — that section and its Confirm
+// button live in WalkDetail.jsx (the parent), so this is passed down rather than owned
+// here. Defaults to false (fail closed) so a caller that forgets to pass it never
+// accidentally unlocks the gate.
+const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyConfirmed = false }, ref) {
   const { t } = useLanguage();
   const { isDownloaded } = useOfflineWalks();
   const savedOffline = isDownloaded(walk.id);
+  // Start Tour (and "Restart from here") need BOTH: saved offline (works with no signal)
+  // AND the safety notes actively confirmed (a genuine, logged read, not scrolled past).
+  const canStart = savedOffline && safetyConfirmed;
   const STATUS = {
     idle: { label: t('player.ready'), color: 'text-slate-400' },
     running: { label: t('player.active'), color: 'text-green-400' },
@@ -1043,8 +1051,8 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
               size="sm"
               variant="outline"
               onClick={handleRestartFromLastKnown}
-              disabled={!savedOffline}
-              title={!savedOffline ? t('player.mustSaveFirst') : undefined}
+              disabled={!canStart}
+              title={!canStart ? (!savedOffline ? t('player.mustSaveFirst') : t('player.mustConfirmSafetyFirst')) : undefined}
               className="shrink-0 border-blue-500 text-blue-300 hover:bg-blue-900/40 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {t('player.restartFromHere')}
@@ -1092,12 +1100,17 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk }, ref) {
             {t('player.mustSaveFirst')}
           </p>
         )}
+        {status === 'idle' && savedOffline && !safetyConfirmed && (
+          <p className="text-xs text-amber-400 text-center">
+            {t('player.mustConfirmSafetyFirst')}
+          </p>
+        )}
         <div className="flex items-center gap-2">
           {status === 'idle' && (
             <Button
               onClick={handleStartTour}
-              disabled={!savedOffline}
-              title={!savedOffline ? t('player.mustSaveFirst') : undefined}
+              disabled={!canStart}
+              title={!canStart ? (!savedOffline ? t('player.mustSaveFirst') : t('player.mustConfirmSafetyFirst')) : undefined}
               className="flex-1 gap-2 bg-green-600 hover:bg-green-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Play className="w-4 h-4" /> {t('player.startTour')}
