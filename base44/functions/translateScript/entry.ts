@@ -41,7 +41,22 @@ Deno.serve(async (req) => {
     const base44 = wrapClientWithRetry(createClientFromRequest(req));
 
     const body = await req.json();
-    const { text, target_language, apiKey, apiKey2, googleApiKey, target_lang_code, walkId, titleOnly } = body;
+    const { text, target_language, apiKey, apiKey2, googleApiKey, target_lang_code, walkId, titleOnly, field } = body;
+
+    // Per Enda: "About this walk" (Walk.description) and "Before You Set Off"
+    // (Walk.safety_notes) needed the same one-click "Translate" convenience the Tour
+    // Name box already has (see the titleOnly branch below, follow-up 124) — a narrator
+    // opening a clone shouldn't have to hand-translate customer-facing app copy any more
+    // than they should the title. `field` generalizes that same idea to these two Walk
+    // fields: fetch the TRUE master's current text for that field server-side (never
+    // trust the client's own copy — by the time someone clicks Translate, their clone's
+    // box may already hold a half-finished translation, exactly the same risk titleOnly
+    // was built to avoid for the title).
+    const TRANSLATABLE_FIELDS = ['description', 'safety_notes'];
+    const FIELD_LABELS = { description: 'description ("About this walk")', safety_notes: 'safety notes ("Before You Set Off")' };
+    if (field && !TRANSLATABLE_FIELDS.includes(field)) {
+      return Response.json({ error: 'Unknown field to translate' }, { status: 400 });
+    }
 
     // Admin, or narrator via email+narrToken — without this, this function was reachable
     // by anyone at all, with no restriction on who could trigger a Groq call.
@@ -50,7 +65,7 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'Not authorized' }, { status: 403 });
     }
 
-    if (!titleOnly && (!text || !text.trim())) {
+    if (!titleOnly && !field && (!text || !text.trim())) {
       return Response.json({ error: 'Missing text to translate' }, { status: 400 });
     }
     if (!target_language) {
@@ -97,6 +112,12 @@ Deno.serve(async (req) => {
         return Response.json({ error: 'Could not find the original tour to translate its title from — is this actually a clone?' }, { status: 400 });
       }
       sourceText = masterTitle;
+    } else if (field) {
+      const masterFieldText = (masterWalk?.[field] || '').trim();
+      if (!masterFieldText) {
+        return Response.json({ error: `Could not find the original tour's ${FIELD_LABELS[field]} to translate from — is this actually a clone, and does the original have it filled in?` }, { status: 400 });
+      }
+      sourceText = masterFieldText;
     } else {
       sourceText = text;
     }
@@ -115,7 +136,7 @@ Deno.serve(async (req) => {
     let promptText = brandProtectedText;
     let restoreTitle = (s: string) => s;
     let titleSubstituted = false;
-    if (!titleOnly && masterWalk?.name && cloneWalk?.name) {
+    if (!titleOnly && !field && masterWalk?.name && cloneWalk?.name) {
       const masterTitle = String(masterWalk.name).trim();
       const cloneTitle = String(cloneWalk.name).trim();
       if (masterTitle && cloneTitle && !cloneTitle.includes(masterTitle)) {
@@ -136,6 +157,13 @@ Deno.serve(async (req) => {
 Return ONLY the translated title. No quotes, no explanations, no markdown.
 
 Title:
+${promptText}`
+      : field
+      ? `Translate the following customer-facing text into ${target_language}. This is ${field === 'safety_notes' ? 'a safety notice a customer reads before setting off on the tour' : 'a short description of the tour, shown to a customer browsing the app'}. Keep it natural and clear in ${target_language}, in the same tone as the original, rather than a stiff word-for-word translation. Keep the same paragraph breaks as the original.${markersPresent ? ' The text may contain a token like xxbrandphrase0xx — copy it through EXACTLY as written, never translate or explain it.' : ''}
+
+Return ONLY the translated text. No quotes, no explanations, no markdown.
+
+Text:
 ${promptText}`
       : `Translate the following narration script into ${target_language}.
 
@@ -164,6 +192,8 @@ ${promptText}`;
           role: 'system',
           content: titleOnly
             ? `You are a professional translator producing short, natural tour titles for an audio tour app. You always return a fitting, idiomatic title in the target language rather than a stiff literal translation${markersPresent ? ', and you always copy any xxbrandphraseNxx marker token through completely unchanged' : ''}.`
+            : field
+            ? `You are a professional translator producing clear, natural customer-facing app copy for a tour company. You always return natural, idiomatic text in the target language rather than a stiff literal translation, and you always preserve paragraph breaks${markersPresent ? ', and you always copy any xxbrandphraseNxx marker token through completely unchanged' : ''}.`
             : 'You are a professional translator for audio narration scripts. You always preserve SSML <break> tags exactly as written, you always leave any inline word or name already written in a non-English script (Greek, Cyrillic, Turkish, Italian, Arabic) completely untouched, in its original script and spelling, rather than translating or transliterating it — those words drive a pronunciation dictionary that only matches an exact original spelling — and you always copy any xxbrandphraseNxx or xxtitlephraseNxx marker token through completely unchanged.',
         },
         { role: 'user', content: prompt },
@@ -180,7 +210,7 @@ ${promptText}`;
       // times that much headroom while comfortably fitting under an 8000 TPM ceiling
       // alongside the prompt/instruction overhead. A title is at most a handful of
       // words, so 200 is ample and keeps a title request cheap against the same budget.
-      max_tokens: titleOnly ? 200 : 4000,
+      max_tokens: titleOnly ? 200 : field ? 1200 : 4000,
     });
 
     let finalText: string;
@@ -201,7 +231,7 @@ ${promptText}`;
       // by instruction. Foreign-script name preservation (rule 2) has no equivalent
       // structural guarantee here, so the same best-effort check below still applies. A
       // title has no <break> tags to worry about, so plain 'text' format is used for it.
-      const googleResult = await translateWithGoogle([promptText], target_lang_code, googleApiKey, titleOnly ? 'text' : 'html');
+      const googleResult = await translateWithGoogle([promptText], target_lang_code, googleApiKey, (titleOnly || field) ? 'text' : 'html');
       if (!googleResult.ok || !googleResult.translations?.[0]) {
         const groqWaitHint = result.retryAfterMs
           ? ` Groq says to wait about ${Math.ceil(result.retryAfterMs / 1000)}s before trying again${apiKeys.length > 1 ? ' (both configured keys are currently rate-limited)' : ''}.`

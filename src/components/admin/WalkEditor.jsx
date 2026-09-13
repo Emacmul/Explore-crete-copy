@@ -56,7 +56,7 @@ function SaveButton({ onSave, saving, canSave }) {
         Save Route
       </Button>
       {!canSave && !saving && (
-        <p className="text-xs text-slate-500">Fill in Code, Name, Route Type, Region, Difficulty (where shown), and the Starting Point coordinates to enable saving.</p>
+        <p className="text-xs text-slate-500">Fill in Code, Name, Route Type, Region, Difficulty (where shown), Description, Safety Notes, and the Starting Point coordinates to enable saving.</p>
       )}
     </div>
   );
@@ -168,6 +168,84 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
     </div>
   );
 
+  // Per Enda: "About this walk" and "Before You Set Off" (Description/Safety Notes) live
+  // on the General tab, which — same as the Tour Name field used to be (follow-up 126) —
+  // is hidden from narrators entirely (follow-up 46). The backend has always allowed a
+  // narrator to read and save both fields on their own clone (see
+  // NARRATOR_WALK_WRITE_FIELDS/NARRATOR_WALK_READ_FIELDS in narratorWalkFields.ts — this
+  // was never actually blocked server-side), but hiding the whole tab left no screen for a
+  // narrator to actually reach them. Fixed the same way the title box was: built once here,
+  // rendered on the Preview tab instead (the one tab every narrator has, regardless of tour
+  // type — Narration & Simulate only exists for a driving-audio tour). Each "Translate"
+  // button calls translateScript with a `field` param (new — see that function's own
+  // comment) so it always translates the TRUE master's current text, not whatever this
+  // clone's box currently holds (which may already be a half-finished translation).
+  const [translatingField, setTranslatingField] = useState(null); // 'description' | 'safety_notes' | null
+  const [fieldTranslateError, setFieldTranslateError] = useState({});
+  const handleTranslateField = async (field) => {
+    if (!form.id || !form.clone_of || !form.target_language) return;
+    setFieldTranslateError(prev => ({ ...prev, [field]: '' }));
+    if (!titleTranslateApiKeys.groq_api_key) {
+      setFieldTranslateError(prev => ({ ...prev, [field]: 'No Groq API key found for your account yet. Add your own key via "API Keys" in the header.' }));
+      return;
+    }
+    setTranslatingField(field);
+    try {
+      const response = await base44.functions.invoke('translateScript', {
+        field,
+        walkId: form.id,
+        target_language: form.target_language,
+        apiKey: titleTranslateApiKeys.groq_api_key,
+        apiKey2: titleTranslateApiKeys.groq_api_key_2,
+        googleApiKey: titleTranslateApiKeys.google_tts_api_key || undefined,
+        target_lang_code: getGoogleTranslateCode(LANGUAGE_CODE_BY_NAME[form.target_language] || ''),
+        ...getNarratorAuthPayload(),
+      });
+      if (response?.data?.error) throw new Error(response.data.error);
+      if (response?.data?.translated_text) {
+        set(field, response.data.translated_text);
+      } else {
+        setFieldTranslateError(prev => ({ ...prev, [field]: 'Translation returned no text.' }));
+      }
+    } catch (err) {
+      setFieldTranslateError(prev => ({ ...prev, [field]: getFnErrorMessage(err, 'Could not translate this text.') }));
+    }
+    setTranslatingField(null);
+  };
+
+  function fieldEditor(field, label, rows) {
+    if (!form.clone_of) return null;
+    return (
+      <div className="bg-slate-800/60 border border-amber-600/30 rounded-lg px-3 py-2 space-y-1.5">
+        <div className="flex items-center gap-2">
+          <Languages className="w-4 h-4 text-amber-400 shrink-0" />
+          <span className="text-xs text-slate-400 shrink-0">{label}:</span>
+          {form.target_language && (
+            <Button
+              type="button" size="sm" variant="outline"
+              onClick={() => handleTranslateField(field)}
+              disabled={translatingField === field}
+              title={`Translate the original tour's ${label.toLowerCase()} into ${form.target_language} and fill this box with it.`}
+              className="bg-blue-700/30 hover:bg-blue-700/50 border-blue-600/50 text-amber-400 hover:text-amber-300 shrink-0 gap-1.5 h-8"
+            >
+              {translatingField === field ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Languages className="w-3.5 h-3.5" />}
+              Translate
+            </Button>
+          )}
+        </div>
+        <Textarea
+          value={form[field] || ''}
+          onChange={e => set(field, e.target.value)}
+          rows={rows}
+          className="bg-slate-700 border-slate-600 text-white text-sm resize-none"
+        />
+        {fieldTranslateError[field] && <p className="text-xs text-red-400">{fieldTranslateError[field]}</p>}
+      </div>
+    );
+  }
+  const tourDescriptionEditor = fieldEditor('description', 'About this walk', 4);
+  const tourSafetyNotesEditor = fieldEditor('safety_notes', 'Before You Set Off', 5);
+
   // Per Enda: once a tour has been cloned for translation, opening it should land
   // straight on "Narration & Simulate" — that's the working screen for the whole
   // translation job — rather than anywhere else. Only applies to a driving tour clone;
@@ -258,7 +336,14 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
     form.start_lat !== '' && form.start_lat != null && !isNaN(Number(form.start_lat)) &&
     form.start_lng !== '' && form.start_lng != null && !isNaN(Number(form.start_lng)) &&
     form.region?.trim() &&
-    (isDrivingAudioTourForGate || !!form.difficulty)
+    (isDrivingAudioTourForGate || !!form.difficulty) &&
+    // Per Enda: "About this walk" and "Before You Set Off" are customer-facing texts a
+    // customer reads on every single tour before setting off — required now, the same way
+    // Tour Name/Code/Region already are, rather than something that can silently stay blank
+    // (Description previously could; Safety Notes previously wasn't even shown as a field
+    // for a WalkAbout or Driving Tour at all — see the field itself, below).
+    form.description?.trim() &&
+    form.safety_notes?.trim()
   );
 
   // Shared helper: compute distance + elevation from a trailPath array + elevations array
@@ -1429,32 +1514,36 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
             )}
 
             <div>
-              <Label className="text-slate-300 mb-1.5 block">Description</Label>
+              <Label className="text-slate-300 mb-1.5 block">Description *</Label>
               <Textarea
                 value={form.description}
                 onChange={e => set('description', e.target.value)}
                 placeholder="Describe the route, experience, highlights, and what to expect..."
                 rows={5}
-                className="bg-slate-700 border-slate-600 text-white resize-none"
+                className={`bg-slate-700 text-white resize-none ${!form.description?.trim() ? 'border-amber-500/70 focus-visible:ring-amber-500' : 'border-slate-600'}`}
               />
             </div>
 
-            {!isDrivingAudioTour && (
+            {/* Per Enda: this used to only show for a Walk/Hike (isDrivingAudioTour false) —
+                a WalkAbout or a real Driving Tour had no Safety Notes field at all anywhere in
+                this editor, so a customer opening one of those always saw the generic default
+                safety text (WalkDetail.jsx's `walk.safety_notes || t('detail.defaultSafetyNotes')`)
+                with no way for an admin/narrator to write a tour-specific one. Now shown — and
+                required — for every tour category, since every tour type sends someone out with
+                the same "Before You Set Off" box on the customer side. */}
             <div>
               <Label className="text-slate-300 mb-1.5 block">
-                ⚠️ Safety Notes
-                <span className="ml-2 text-xs text-slate-500 font-normal">Shown prominently to users before they set off</span>
+                ⚠️ Safety Notes *
+                <span className="ml-2 text-xs text-slate-500 font-normal">Shown to customers as "Before You Set Off"</span>
               </Label>
               <Textarea
                 value={form.safety_notes || ''}
                 onChange={e => set('safety_notes', e.target.value)}
                 placeholder={`e.g. This route passes through unmarked terrain and maquis. You must download the GPX file and load it into a navigation app before departure.\n\nEssential equipment: sun hat, sturdy walking shoes or boots, walking poles, and a minimum of 2 litres of water per person. Mobile signal is unreliable on this route.\n\nNote: Under Greek law, the cost of any search and rescue operation is charged to the individual. Do not attempt this walk unprepared.`}
                 rows={6}
-                className="bg-slate-700 border-slate-600 text-white resize-none text-sm"
+                className={`bg-slate-700 text-white resize-none text-sm ${!form.safety_notes?.trim() ? 'border-amber-500/70 focus-visible:ring-amber-500' : 'border-slate-600'}`}
               />
             </div>
-
-            )}
 
             {/* Region/Province and Difficulty are structural/factual — shouldn't change
                 between language versions of the same tour, so admin-only. */}
@@ -1859,6 +1948,8 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
 
         {activeTab === 'preview' && (
           <div className="space-y-4">
+            {tourDescriptionEditor}
+            {tourSafetyNotesEditor}
             <AdminPreviewMap walk={form} />
             {/* Backup export is an Admin-only action — narrators can view/test the
                 preview and simulator, but never generate a GPX/KML backup file. This

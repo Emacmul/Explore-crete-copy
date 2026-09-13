@@ -73,6 +73,63 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-13 (follow-up 178) — "About this walk"/"Before You Set Off" reachable by
+narrators, and required in the General tab
+Scope: `src/components/admin/WalkEditor.jsx`, `base44/functions/translateScript/entry.ts`.
+**translateScript is a backend function — needs its own manual redeploy in Base44
+(add a blank line, remove it, redeploy) after pushing this code. Nothing else in this
+delivery needs a redeploy.**
+
+**Per Enda:** wanted (1) the "Stay Safe Offline" warning double-checked against reality
+— answered in chat, not a code change, see below; (2) "About this walk"
+(`Walk.description`) and "Before You Set Off" (`Walk.safety_notes`) made available to
+narrators as translatable text; (3) both made required fields in the General tab.
+
+**Investigated first, and found a real gap while doing it:** the General tab (where
+Description/Safety Notes live) has been completely hidden from narrators since follow-up
+46 — but the backend (`narratorWalkFields.ts`) already lists both fields as things a
+narrator is allowed to read AND save on their own clone. Nothing was ever blocking this
+server-side; the tab being hidden just left no screen to reach them from — the exact same
+shape of bug follow-up 126 already found and fixed for the Tour Name box. Also found:
+Safety Notes had NO field at all in the editor for a WalkAbout or a real Driving Tour
+(only for a plain Walk/Hike) — so those tour types could only ever show customers the
+generic default safety text, with no way to write one specific to that tour.
+
+**Fix:**
+- Safety Notes now shows (and is required) for every tour category, not just Walks/Hikes.
+- Description and Safety Notes are both now required to save at all (same red-asterisk /
+  amber-border treatment as Code, Name, Region, etc.) — `canSave` now includes both.
+  Worth knowing: this also blocks re-saving any EXISTING tour that doesn't already have
+  both filled in, until they are — flagging this in case any older tours need a quick
+  backfill before their next edit.
+- Both fields are now also editable on the Preview tab (the one tab every narrator has,
+  regardless of tour type), each with its own one-click "Translate" button — mirrors the
+  Tour Name box exactly, including translating the TRUE master's current text (fetched
+  fresh from the server) rather than whatever the clone's own box currently holds.
+- `translateScript/entry.ts`: new `field` parameter (`'description'` or `'safety_notes'`)
+  alongside the existing `titleOnly`, with its own prompt suited to app copy rather than a
+  title or a narration script.
+
+**Left for chat, not code:** the "Stay Safe Offline" wording itself — investigated what it
+actually does (narration audio + full walk data always cached before it counts as saved;
+map tiles best-effort; GPS itself is never fixed by downloading, already corrected in
+follow-up 154) and didn't find a fresh inaccuracy in the CURRENT wording beyond what that
+follow-up already fixed. Flagging the one candidate found and asking Enda directly what
+he noticed, rather than guessing and rewriting text that may not be the actual problem.
+
+**Verified:** `npx eslint` on both changed files (WalkEditor.jsx: same 4 pre-existing,
+unrelated unused-import errors as follow-up 176, untouched by this change; translateScript
+checked by hand — brace/paren balance confirmed, no Deno toolchain available here to
+type-check). Full `npm run build` (exit 0). New standalone test
+`/tmp/test_translate_field_and_narrator_texts_followup178.mjs` (17 checks: field-mode
+pulls from the master walk not the client; unknown fields rejected; empty master field
+errors instead of silently translating nothing; titleOnly/plain-text modes unaffected;
+Description/Safety Notes now block saving when blank, including for WBT/DDV where Safety
+Notes didn't exist as a field before; every pre-existing required-field rule left intact).
+Full accumulated regression suite re-run (43 files, 425 checks, all passing).
+
+---
+
 ## 2026-09-13 (follow-up 177) — "All walks" list: split into pages of 5
 Scope: `src/components/walks/WalkList.jsx`, `src/lib/i18n/index.js`.
 Frontend-only, no backend redeploy needed.
