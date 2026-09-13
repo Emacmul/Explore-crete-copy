@@ -23,6 +23,7 @@ export default async function (req: Request): Promise<Response> {
       return Response.json({ error: "walk_id is required" }, { status: 400 });
     }
 
+
     const email = await verifyEmailFromToken(token, Deno.env.get('WC_SITE_URL'));
     if (!email) {
       return Response.json({ error: "Not authorized" }, { status: 403 });
