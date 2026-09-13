@@ -73,6 +73,52 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-13 (follow-up 179) — Filters (Buggy-Friendly and every other one) now update
+the map and drop a stale selection back to it
+Scope: `src/components/walks/WalkList.jsx`, `src/pages/Home.jsx`.
+Frontend-only, no backend redeploy needed.
+
+**Per Enda:** ticking "Buggy-Friendly" narrowed the list on the left, but a walk already
+open in the detail panel on the right stayed open even though it no longer matched — and
+this had to change, "even if there is only 1 buggy friendly walk": the main screen must
+drop back to the map, showing only the filtered walks.
+
+**Investigated first:** the detail panel and the map both live in `Home.jsx`, which has
+no idea WalkList's filters (region, difficulty, distance, duration, search,
+Buggy-Friendly, Route of Faith) even exist — they're all local state inside
+`WalkList.jsx`. Confirmed a second, related bug in the same investigation: the map was
+never filtered by ANY of these at all — it always showed every walk in the current tour
+type, filtered or not, which is why "show only the buggy-friendly walks on the map" also
+needed a real fix, not just closing the detail panel.
+
+**Fix:**
+- `WalkList.jsx` now reports its own current filtered set up to `Home.jsx` after every
+  render where that set actually changes (compared by the walks' ids, not the array
+  itself, which is a fresh reference every render regardless — comparing by ids is what
+  stops this from looping forever between the two components).
+- `Home.jsx` now uses that reported set to drive the map directly (replacing the
+  unfiltered whole-category list it used before), and — the actual reported bug — checks
+  whether the currently open walk is still in it. If not, the detail panel closes and the
+  view drops back to the map, which is already showing only the walks that still match.
+- This isn't specific to Buggy-Friendly — it now applies to every filter and the search
+  box the same way, since they all narrow the same underlying list Home.jsx is now
+  watching.
+- Switching pages (follow-up 177) or tour-type tabs is unaffected: a page change doesn't
+  alter the filtered set at all, and switching tabs already reset the selection before
+  this change.
+
+**Verified:** `npx eslint` on both changed files (0 new issues — Home.jsx's 2
+pre-existing, unrelated issues, `getTourCategory` unused import and `tapLocation` unused
+state, both untouched by this change). Full `npm run build` (exit 0). New standalone test
+`/tmp/test_filter_reset_map_sync_followup179.mjs` (15 checks: repeated renders with
+identical content report only once, avoiding an infinite loop; a real narrowing reports
+the new set; a selected walk that falls out of the filtered set drops the view back to
+the map and the walk still in it does not; zero matches correctly clears both; pagination
+still reports the FULL filtered set, not just the current page). Full accumulated
+regression suite re-run (44 files, 440 checks, all passing).
+
+---
+
 ## 2026-09-13 (follow-up 178) — "About this walk"/"Before You Set Off" reachable by
 narrators, and required in the General tab
 Scope: `src/components/admin/WalkEditor.jsx`, `base44/functions/translateScript/entry.ts`.

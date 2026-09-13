@@ -26,6 +26,13 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedWalk, setSelectedWalk] = useState(null);
   const [showDetail, setShowDetail] = useState(false);
+  // The set of walks WalkList's own filters (region, difficulty, distance, duration,
+  // Buggy-Friendly, Route of Faith, search) currently match — reported up by WalkList
+  // itself (see its own comment) since this component owns both the map and the detail
+  // panel, and needs to know when a filter change leaves the walk currently open no
+  // longer matching. Starts as an empty array; WalkList reports the real set the moment
+  // it first renders, before anyone can interact with a filter.
+  const [visibleWalks, setVisibleWalks] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [tapLocation, setTapLocation] = useState(null);
   const [updatingWalkName, setUpdatingWalkName] = useState(null);
@@ -154,6 +161,20 @@ export default function Home() {
     setShowDetail(true);
   };
 
+  // Per Enda's report: ticking Buggy-Friendly (or narrowing by any other filter/search
+  // in WalkList) left the previously-selected walk showing in the detail panel even once
+  // it no longer matched — and the map never showed only the filtered walks at all, even
+  // with nobody selected. Fixed by having WalkList report its own current filtered set up
+  // here: it always drives the map now, and if the walk currently open has fallen out of
+  // it, the view drops back to the map instead of leaving a stale selection on screen.
+  const handleFilteredWalksChange = (visible) => {
+    setVisibleWalks(visible);
+    if (selectedWalk && !visible.some(w => w.id === selectedWalk.id)) {
+      setSelectedWalk(null);
+      setShowDetail(false);
+    }
+  };
+
   const handleMapClick = (latlng) => {
     setTapLocation(latlng);
 
@@ -180,6 +201,10 @@ export default function Home() {
     setSelectedTourCategory(code);
     setSelectedWalk(null);
     setShowDetail(false);
+    // Cleared here rather than waiting for WalkList to report the new category's filtered
+    // set — avoids a brief flash of the OLD category's walks on the map before that report
+    // arrives.
+    setVisibleWalks([]);
   };
 
   // A draft tour an admin is previewing (w._is_draft_preview) has approved: false, but it
@@ -327,6 +352,7 @@ export default function Home() {
               onRefresh={refetchWalks}
               refreshing={walksRefreshing}
               tourCategoryCode={selectedTourCategory}
+              onFilteredChange={handleFilteredWalksChange}
             />
           </div>
 
@@ -361,7 +387,7 @@ export default function Home() {
                       </div>
                     ) : (
                       <CreteMap
-                        walks={categoryWalks}
+                        walks={visibleWalks}
                         selectedWalk={selectedWalk}
                         onWalkSelect={handleWalkSelect}
                         onMapClick={handleMapClick}

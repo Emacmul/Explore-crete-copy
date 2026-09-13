@@ -17,7 +17,7 @@ const DIFFICULTIES = ['easy', 'moderate', 'challenging', 'difficult'];
 // there's more than one page.
 const PAGE_SIZE = 5;
 
-export default function WalkList({ walks, selectedWalk, onWalkSelect, searchQuery, onSearchChange, onRefresh, refreshing, tourCategoryCode }) {
+export default function WalkList({ walks, selectedWalk, onWalkSelect, searchQuery, onSearchChange, onRefresh, refreshing, tourCategoryCode, onFilteredChange }) {
   const { t, lang } = useLanguage();
   const uiLangName = LANGUAGE_NAME_BY_CODE[lang] || 'English';
   const pluralLabel = t('tour.' + getTourCategory(tourCategoryCode).code + '.plural');
@@ -82,6 +82,27 @@ export default function WalkList({ walks, selectedWalk, onWalkSelect, searchQuer
       }
       return (a.name || '').localeCompare(b.name || '');
     });
+
+  // Per Enda's report: toggling Buggy-Friendly (or any other filter/search) narrowed
+  // THIS list, but a walk already open in the detail panel on the right — or shown on
+  // the map — stayed there even once it no longer matched the filter, and the map
+  // itself never respected these filters at all (it always showed the whole category).
+  // Home.jsx owns the detail panel and the map, and has no visibility into this
+  // component's own filter state, so it's reported up here: whenever the actual SET of
+  // matching walks changes, the parent finds out and can drop a now-filtered-out
+  // selection back to the map, and show only these walks there.
+  //
+  // Compared by a joined-ids STRING, not the `filteredWalks` array itself, because that
+  // array is a brand new reference every render (this component isn't memoized) even
+  // when its contents haven't actually changed — using the array reference as the
+  // effect's dependency would fire this on every render, and since the parent's own
+  // state update triggers a re-render here too, that would loop forever. The string is
+  // only a different VALUE when the actual matching set changes, so the effect (and the
+  // parent update it causes) only ever fires when something real changed.
+  const filteredIds = filteredWalks.map(w => w.id).join(',');
+  useEffect(() => {
+    onFilteredChange?.(filteredWalks);
+  }, [filteredIds]);
 
   // Jump back to page 1 whenever the tour type, search text, or any filter changes —
   // otherwise switching filters could leave you stranded on a page number that no
