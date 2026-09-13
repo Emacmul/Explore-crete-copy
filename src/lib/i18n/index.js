@@ -151,7 +151,7 @@ export const translations = {
     'tour.WBT.plural': "WalkAbouts",
     'tour.WBT.description': "Guided walking experience in a village or town, 3-4 hours max",
     'tour.DDV.label': "Driving Tour",
-    'tour.DDV.plural': "Tours",
+    'tour.DDV.plural': "Driving Tours",
     'tour.DDV.description': "Full-day driving route with audio narration, up to 8 hours",
     'lang.en': "English",
     'lang.nl': "Dutch",

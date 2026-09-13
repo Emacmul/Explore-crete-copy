@@ -33,7 +33,7 @@ export const TOUR_CATEGORIES = [
     code: 'DDV',
     label: 'Driving Tour',
     shortLabel: 'Driving',
-    pluralLabel: 'Tours',
+    pluralLabel: 'Driving Tours',
     route_type: 'driving_audio_tour',
     description: 'Full-day driving route with audio narration, up to 8 hours',
     icon: 'Car',

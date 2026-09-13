@@ -55,6 +55,18 @@ export default function CreteMap({ walks, selectedWalk, onWalkSelect, onMapClick
   // Center of Crete
   const creteCenter = [35.24, 24.9];
 
+  // Per Enda's report: markers "moved around at will, in a different position every
+  // time". Several tours can legitimately start from the same real spot (e.g. more than
+  // one driving tour beginning at the same Rethymno car park) — their markers sit right
+  // on top of each other on a whole-island view, so only the TOPMOST one is actually
+  // visible/clickable at any moment. Which one that was used to depend on whatever order
+  // the server happened to return that batch of walks in — not guaranteed to be the same
+  // order every time — so the visible marker in a tight cluster could silently swap
+  // between reloads, looking exactly like it had "moved". Sorting by id (a walk's stable,
+  // never-changing identity) before drawing means the same marker is always drawn in the
+  // same position in the stack, so the one on top is always the same one, every time.
+  const orderedWalks = [...walks].sort((a, b) => String(a.id).localeCompare(String(b.id)));
+
   return (
     <MapContainer
       center={creteCenter}
@@ -69,7 +81,7 @@ export default function CreteMap({ walks, selectedWalk, onWalkSelect, onMapClick
       <MapBoundsController />
       <MapClickHandler onMapClick={onMapClick} />
       
-      {walks.map((walk) => (
+      {orderedWalks.map((walk) => (
         <Marker
           key={walk.id}
           position={[walk.start_lat, walk.start_lng]}

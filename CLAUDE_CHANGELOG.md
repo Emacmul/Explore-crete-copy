@@ -73,6 +73,66 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-13 (follow-up 180) — Map markers no longer "shuffle" between reloads; "All
+Tours" renamed "All Driving Tours"; the WP1-vs-start-point question left for Enda
+Scope: `src/components/map/CreteMap.jsx`, `src/lib/i18n/index.js`,
+`src/lib/tourCategories.js`. Frontend-only, no backend redeploy needed.
+
+**Per Enda:** map icons "moved around at will, in a different position every time"; the
+amber (selected) icon showed the walk "in a totally wrong position"; every icon should
+sit at WP1 of the walk it represents, one per walk; and "All Tours" reads as if there are
+only 3 sections total, so it should say "All Driving Tours".
+
+**Investigated first — found a real cause for the "shuffling", and a real conflict with
+one of Enda's own standing rules on the WP1 request:**
+- Pulled the actual driving/WalkAbout tours from the database: two test tours (a master
+  and its Dutch clone) and a real one ("The Battle of the Rivers") all start from
+  practically the same spot in Rethymno — a real, legitimate case of several tours
+  sharing a start point, not bad data. On a whole-island map, that puts 3 markers on
+  literally the same few pixels, so only the TOPMOST one is visible/clickable at a time —
+  and which one was on top depended on the order the server happened to return that batch
+  in, which isn't guaranteed to stay the same between reloads. That's what looked like an
+  icon "moving": it wasn't moving, a different one of several stacked markers was ending
+  up on top each time.
+- The request to source each marker's position from the walk's own first waypoint (WP1)
+  instead of `start_lat`/`start_lng` runs straight into the paywall: `getWalkCatalog`
+  deletes `waypoints` and `trail_path` ENTIRELY from any tour the browsing customer
+  hasn't bought yet — that's deliberate, the same protection behind Enda's standing "no
+  GPX export, ever" rule. `start_lat`/`start_lng` are the one geo field kept unprotected
+  specifically so an unpurchased tour can still show roughly where it starts. Reading WP1
+  directly on this screen would either show nothing for any tour a customer hasn't
+  bought, or require exposing waypoint data before purchase — not done without checking
+  first. Flagged to Enda in chat rather than guessed at.
+
+**Fixed now:**
+- `CreteMap.jsx`: markers are sorted by the walk's own id (a stable identity that never
+  changes) before drawing, so the same marker always lands in the same stacking position
+  — the one on top of a tight cluster is now always the same one, reload after reload.
+  "One icon per walk" was already true (one `<Marker>` per array entry, keyed by id) —
+  confirmed, not changed.
+- `tour.DDV.plural` (English) — "Tours" → "Driving Tours", so the customer-facing header
+  now reads "All Driving Tours" instead of the ambiguous "All Tours". Also fixed the same
+  dead (unused, but stale) `pluralLabel` copy in `tourCategories.js` for consistency.
+  Dutch/Czech weren't touched — their existing translations ("Rondritten"/"Autotúry")
+  already read as "driving tours" specifically, not the generic ambiguity English had.
+
+**Left for Enda's decision, not built:** whether to (a) keep reading `start_lat`/
+`start_lng` for the map but make sure they can never drift from the tour's true starting
+point (found at least one real gap: "Retry routing" regenerates the road-following path
+from the current waypoints but never re-syncs `start_lat`/`start_lng` to match, unlike a
+fresh GPX import, which already does), or (b) something else. Not implemented without
+his say-so, since it touches the exact field the paywall protection relies on.
+
+**Verified:** `npx eslint` on all three changed files (0 new issues — `CreteMap.jsx`'s
+one pre-existing, unrelated `Mountain` unused-import error was already there, untouched).
+Full `npm run build` (exit 0). New standalone test
+`/tmp/test_map_marker_order_and_wording_followup180.mjs` (10 checks: the same walks in a
+different server-returned order always draw in the same order; nothing is dropped or
+duplicated; empty/single-walk lists don't break; the wording fix reads correctly). Full
+accumulated regression suite re-run (45 files, 450 checks, all passing).
+
+---
+
 ## 2026-09-13 (follow-up 179) — Filters (Buggy-Friendly and every other one) now update
 the map and drop a stale selection back to it
 Scope: `src/components/walks/WalkList.jsx`, `src/pages/Home.jsx`.
