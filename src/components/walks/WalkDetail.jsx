@@ -6,7 +6,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   X, Clock, Route, TrendingUp, MapPin, AlertTriangle,
   Eye, Droplets, TreePine, Navigation, Crosshair, ShieldAlert,
-  CheckCircle2, Circle, RotateCcw, Mountain, Play, FlaskConical
+  CheckCircle2, Circle, RotateCcw, Mountain, Play, FlaskConical, Home
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import WalkDetailMap from '../map/WalkDetailMap';
@@ -478,7 +478,7 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
               </div>
             ) : !isDrivingTour ? (
               <div ref={progressSectionRef} className="space-y-4">
-                <WalkProgressBar walk={walk} onClose={onClose} />
+                <WalkProgressBar walk={walk} />
 
                 <div className="h-64 rounded-xl overflow-hidden border">
                   <WalkDetailMap
@@ -638,6 +638,22 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
                     );
                   })}
                 </div>
+
+                {/* Per Enda (follow-up 187): don't gate "Return to Home" behind every point
+                    being ticked/triggered — for a driving tour that means asking someone to
+                    watch the screen for a full tick-count while driving, which isn't safe,
+                    and (seen on the Genna walk) the ticks and the GPS-based progress bar
+                    above can disagree anyway, so the button might never appear. Simplest and
+                    safest fix: always show it here, right after the last stop's own
+                    description, in all three tour types — no condition to satisfy at all. */}
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={onClose}
+                  className="mt-4 w-full gap-2"
+                >
+                  <Home className="w-4 h-4" /> {t('detail.returnHome')}
+                </Button>
               </div>
             )}
             </>

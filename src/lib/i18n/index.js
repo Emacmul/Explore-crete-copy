@@ -253,6 +253,7 @@ export const translations = {
     'detail.confirmSafety': "I've Read This — Confirm",
     'detail.safetyConfirmed': "Confirmed — thanks for reading this",
     'detail.mustConfirmSafetyFirst': "Please confirm you've read \"Before You Set Off\" above before starting.",
+    'detail.returnHome': "Return to Home",
     'detail.aboutThisWalk': "About this walk",
     'detail.tourStops': "Tour Stops",
     'detail.keyPoints': "Key Points",
@@ -272,7 +273,6 @@ export const translations = {
     'progress.gettingLocation': "Getting GPS location…",
     'progress.yourProgress': "Your progress",
     'progress.complete': "🎉 Walk complete!",
-    'progress.returnHome': "Return to Home",
 
     'drivingNotice.activeShort': "Driving Mode active — keep this app in the foreground.",
     'drivingNotice.viewAgain': "View again",

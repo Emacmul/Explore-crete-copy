@@ -311,6 +311,12 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
 
   // Trigger waypoints that have audio enabled
   const triggerWaypoints = (walk.waypoints || []).filter(wp => wp.trigger_audio && wp.lat && wp.lng);
+  // Per Enda (follow-up 187): the tour is "done" when its own last piece of narration has
+  // actually finished playing — not when every stop happens to have been ticked/triggered.
+  // Used by playTriggerAudio below, which is the one place all three ways a stop's audio
+  // can start (GPS auto-trigger, the Tour Stops list's own Play button, the "Next stop"
+  // card) already funnel through.
+  const lastTriggerWaypoint = triggerWaypoints.length > 0 ? triggerWaypoints[triggerWaypoints.length - 1] : null;
   // Per Enda's report: some WalkAbouts happen somewhere GPS genuinely doesn't work —
   // inside a monastery, the Fortezza, Aptera — not just weak signal. walk.manual_only_tour
   // (set on the tour itself, WalkAbouts only — see WalkEditor.jsx's "Manual only (GPS
@@ -604,7 +610,21 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
     if (currentlyPlayingWpRef.current) {
       tourLogService.logAudioQueued(wp, currentlyPlayingWpRef.current);
     }
-    audioQueueRef.current.push({ wp, wpKey, onFinished });
+    // Per Enda (follow-up 187): the tour counts as complete once the LAST trigger
+    // waypoint's own audio genuinely finishes — whether it played to completion or failed
+    // to play at all (playNextQueuedAudio's onFinished comment explains why both count).
+    // This runs no matter which of the three ways this stop's audio got started (GPS
+    // auto-trigger, the manual per-stop Play button, or the "Next stop" card), since they
+    // all call this same function.
+    const isFinalStop = !!lastTriggerWaypoint && wpKeyFor(wp) === wpKeyFor(lastTriggerWaypoint);
+    audioQueueRef.current.push({
+      wp,
+      wpKey,
+      onFinished: () => {
+        onFinished?.();
+        if (isFinalStop) setTourComplete(true);
+      },
+    });
     if (!currentlyPlayingWpRef.current) {
       playNextQueuedAudio();
     }
@@ -613,7 +633,7 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
       triggeredRef.current.add(wpKey);
       setTriggeredWpIds(new Set(triggeredRef.current));
     }
-  }, [playNextQueuedAudio]);
+  }, [playNextQueuedAudio, lastTriggerWaypoint]);
 
   // Manual "Play" — called from WalkDetail.jsx's Tour Stops list via the imperative handle
   // below, and from handleStartTour for waypoint 1. Reuses playTriggerAudio exactly as
@@ -814,25 +834,21 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
   // Per Enda: "the app just stops and doesn't give the user the opportunity to go back to
   // the home screen" once a WalkAbout/Driving Tour finishes — previously there was no
   // completion detection at all here, only the same manual Stop used to end a tour early.
-  // Mirrors the Walks-side isComplete (pct >= 95) in WalkProgressBar.jsx: once every trigger
-  // waypoint has fired while the tour is still running, treat that as done, call handleStop()
-  // to end GPS/audio/logging cleanly at the actual moment of completion (rather than leaving
-  // the session open until the panel is eventually closed), and show a "Return to Home"
-  // button in place of the ordinary idle controls (see the render below).
+  // tourComplete itself is set by playTriggerAudio, above, the moment the LAST trigger
+  // waypoint's own audio genuinely finishes (follow-up 187 — NOT a tally of triggered
+  // stops, which would ask a driver to watch the screen for a tick-count while driving).
+  // This effect's only job is to end GPS/audio/logging cleanly the moment that happens,
+  // the same way the manual Stop button does, rather than leaving the session open until
+  // the panel is eventually closed — and to show a "Return to Home" button in place of the
+  // ordinary idle controls (see the render below).
   // Placed textually after handleStop's own definition — this closure calls it, and JS
   // requires a const to already be initialised wherever it's evaluated, which for a
   // dependency array happens at render time, not just when the effect callback later runs.
   useEffect(() => {
-    if (
-      status === 'running' &&
-      triggerWaypoints.length > 0 &&
-      triggeredWpIds.size >= triggerWaypoints.length &&
-      !tourComplete
-    ) {
-      setTourComplete(true);
+    if (tourComplete) {
       handleStop();
     }
-  }, [status, triggerWaypoints.length, triggeredWpIds, tourComplete]);
+  }, [tourComplete]);
 
   // Pauses (never stops/destroys) the currently loaded narration clip, if any, so it can
   // resume exactly where it left off. Safe to call with nothing loaded/playing — pausing an

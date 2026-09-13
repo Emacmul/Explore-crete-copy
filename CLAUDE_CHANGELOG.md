@@ -85,6 +85,64 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-13 (follow-up 187) — Correction to 186: "Return to Home" must not depend on
+every point being ticked/triggered
+**Scope:** `src/components/walks/WalkDetail.jsx`, `src/components/walks/WalkProgressBar.jsx`,
+`src/components/walks/DrivingTourPlayer.jsx`, `src/lib/i18n/index.js`. Frontend-only, no
+backend redeploy needed.
+
+**Per Enda:** tested follow-up 186 on the Genna walk — every Key Point was ticked, but
+"Return to Home" still didn't appear. He also flagged a safety concern: requiring every
+point to be ticked/triggered before showing the button is a bad idea for a Driving Tour,
+since it would mean the driver needs to watch the screen for a tick-count while driving —
+not safe. His instruction: don't gate the button on that at all; make it visible at the
+bottom of the last waypoint's description, or trigger it when the final audio finishes;
+must work the same way in all three tour types.
+
+**Investigated first:** queried the Genna walk's actual data. It's a Walk (not a driving
+tour) with 34 waypoints and NO audio on any of them (`trigger_audio: false`,
+`audio_clip_url: null` throughout). Two separate, unrelated systems track progress on a
+Walk: the Key Points list's tick marks (`reachedIds`, tapped/GPS-marked per point) and
+`WalkProgressBar.jsx`'s GPS-based trail-percentage bar (`pct >= 95`, from follow-up 186).
+Ticking every Key Point does not guarantee the trail-percentage bar also crosses 95% —
+they're computed completely differently — so 186's button, tied only to the percentage
+bar, correctly matched what it was built to do, but that condition itself was the wrong
+one for what Enda actually wants. Confirmed the same root problem exists on the Driving
+Tour side: 186 tied the button to "every trigger waypoint has fired", which has the exact
+screen-watching safety issue Enda describes.
+
+**Fixed — dropped the conditions entirely:**
+- `WalkDetail.jsx`: added one plain "Return to Home" button right after the waypoints list
+  (Key Points for Walks, Tour Stops for WalkAbouts/Driving Tours — the same shared list
+  markup for all three tour types), calling the same `onClose` the header's own close
+  button uses. Not conditional on anything — ticks, GPS percentage, or triggered stops —
+  so it's always there once that list is showing.
+- `WalkProgressBar.jsx`: reverted 186's conditional button — the "🎉 Walk complete!"
+  message stays, but the button that depended on `pct >= 95` is gone (superseded by the
+  unconditional one above).
+- `DrivingTourPlayer.jsx`: reworked what marks a tour "complete" for its own banner. It no
+  longer counts triggered stops. Instead, `playTriggerAudio` (the one function all three
+  ways a stop's narration can start — GPS auto-trigger, the per-stop manual Play button,
+  the "Next stop" card — already call) now checks whether the stop it's about to queue is
+  the LAST trigger waypoint in the tour, and marks the tour complete once THAT one clip
+  actually finishes (or fails to play — a broken final clip can't strand the driver either).
+  This needs no screen-watching at all — it's driven by the tour's own narration ending,
+  the same experience a driver already has. The completion banner and its own "Return to
+  Home" button (both added in 186) are unchanged; only what triggers them changed.
+
+**Verified:** `npx eslint` on all four changed files (0 new issues — the same 5
+pre-existing, unrelated issues already in `WalkDetail.jsx`, untouched). Full `npm run build`
+(exit 0). Replaced the follow-up 186 test file with a new standalone test
+`/tmp/test_return_home_unconditional_followup187.mjs` (22 checks): the new last-stop-audio
+completion logic (completes on the last stop regardless of what order earlier stops fired
+in; a middle stop never completes it; a tour with no audio at all never auto-completes);
+confirms the old triggered-count condition is gone from the source; confirms the new
+unconditional button's placement and wiring in the shared waypoints list; confirms
+`WalkProgressBar.jsx`'s button was removed; i18n keys. Full accumulated regression suite
+re-run (45 files, 541 checks, all passing).
+
+---
+
 ## 2026-09-13 (follow-up 186) — Finishing a walk/WalkAbout/Driving Tour now offers a way
 back to the home screen
 **Scope:** `src/components/walks/WalkProgressBar.jsx`, `src/components/walks/WalkDetail.jsx`,
