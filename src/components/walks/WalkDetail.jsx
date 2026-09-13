@@ -99,6 +99,19 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
     setSafetyConfirmed(false);
   }, [walk?.id]);
 
+  // Per Enda: tapping "Start Walk" should scroll straight to the progress view (map +
+  // Key Points) that replaces the button — it didn't, leaving the screen sitting on the
+  // now-gone Start Walk button with the new content rendered below, out of view. The
+  // progress section doesn't exist in the DOM until `started` actually flips true and
+  // React re-renders with it, so this has to be an effect (fires right after that render)
+  // rather than something done inline in the button's own click handler.
+  const progressSectionRef = React.useRef(null);
+  React.useEffect(() => {
+    if (started && progressSectionRef.current) {
+      progressSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [started]);
+
   const handleConfirmSafety = async () => {
     if (safetyConfirmed || confirmSubmitting) return;
     setConfirmSubmitting(true);
@@ -464,7 +477,7 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
                 </button>
               </div>
             ) : !isDrivingTour ? (
-              <>
+              <div ref={progressSectionRef} className="space-y-4">
                 <WalkProgressBar walk={walk} />
 
                 <div className="h-64 rounded-xl overflow-hidden border">
@@ -473,7 +486,7 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
                     followGps={followGps}
                   />
                 </div>
-              </>
+              </div>
             ) : null}
 
             {waypoints.length > 0 && (isDrivingTour || started) && (

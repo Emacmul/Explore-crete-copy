@@ -194,12 +194,28 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
   // Start Tour (and "Restart from here") need BOTH: saved offline (works with no signal)
   // AND the safety notes actively confirmed (a genuine, logged read, not scrolled past).
   const canStart = savedOffline && safetyConfirmed;
+
+  // Per Enda: tapping Start (Walks, WalkAbouts and Driving Tours alike) should scroll the
+  // screen straight to the live tour view instead of leaving it sitting on the button.
+  // Walks' own fix lives in WalkDetail.jsx; this is the matching one for WalkAbouts/Driving
+  // Tours, which use this player instead. Only fires on a genuine idle -> running
+  // transition (a real Start or Restart-from-here tap) — not on paused -> running (Resume),
+  // which shouldn't yank the screen back to the top of a tour someone deliberately paused
+  // to read something.
+  const playerRootRef = useRef(null);
+  const prevStatusRef = useRef('idle');
   const STATUS = {
     idle: { label: t('player.ready'), color: 'text-slate-400' },
     running: { label: t('player.active'), color: 'text-green-400' },
     paused: { label: t('player.paused'), color: 'text-amber-400' },
   };
   const [status, setStatus] = useState('idle');
+  useEffect(() => {
+    if (prevStatusRef.current === 'idle' && status === 'running' && playerRootRef.current) {
+      playerRootRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    prevStatusRef.current = status;
+  }, [status]);
   // Non-null when Start Tour was clicked but couldn't actually start (e.g. this device/
   // browser has no GPS support at all). Was previously just a debug-log entry with nothing
   // shown on screen — clicking Start looked like it silently did nothing (audit re-check,
@@ -948,7 +964,7 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
   const nextStopActive = status === 'running' && !!nextStop && !isWaitingOnWaypoint1Audio;
 
   return (
-    <div className="bg-slate-800 rounded-xl border border-slate-600 overflow-hidden">
+    <div ref={playerRootRef} className="bg-slate-800 rounded-xl border border-slate-600 overflow-hidden">
       {/* Status bar */}
       <div className="flex items-center gap-3 px-4 py-3">
         <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${

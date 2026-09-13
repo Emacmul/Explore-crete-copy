@@ -85,6 +85,41 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-13 (follow-up 185) — Tapping Start now scrolls straight to the progress/live
+tour view instead of staying on the button
+**Scope:** `src/components/walks/WalkDetail.jsx`, `src/components/walks/DrivingTourPlayer.jsx`.
+Frontend-only, no backend redeploy needed.
+
+**Per Enda:** tapping "Start Walk"/"Start Tour" replaces that button with the progress bar,
+map and Key Points list (screenshot showed this exact view), but the screen stayed
+scrolled at the button's old position — the new content rendered below, out of sight,
+needing a manual scroll to find.
+
+**Investigated first:** same root cause as follow-up 183's map-selection fix, one level
+down — the progress view doesn't exist in the page until `started` (Walks) or `status`
+(WalkAbouts/Driving Tours, inside `DrivingTourPlayer.jsx`) actually changes and React
+re-renders with it, so nothing can scroll to it from inside the button's own click handler;
+it has to happen in an effect that runs right after that render.
+
+**Fixed:**
+- `WalkDetail.jsx`: a ref on the progress-bar-and-map section, scrolled into view the
+  moment `started` becomes true.
+- `DrivingTourPlayer.jsx` (WalkAbouts and Driving Tours): a ref on the player's own outer
+  box, scrolled into view the moment its status genuinely goes from idle to running (a real
+  Start Tour or Restart-from-here tap). Deliberately does NOT re-scroll on Resume (paused
+  -> running) — someone who paused on purpose to read something shouldn't have the screen
+  yanked back to the top of the tour.
+
+**Verified:** `npx eslint` on both files (0 new issues — the same 5 pre-existing,
+unrelated issues already in `WalkDetail.jsx`, untouched). Full `npm run build` (exit 0).
+New standalone test `/tmp/test_auto_scroll_on_start_followup185.mjs` (16 checks): no
+scroll while still on the button; scrolls once Start is tapped; doesn't throw if the
+target isn't mounted yet; the driving-player version distinguishes a genuine Start from a
+Resume or a Pause; the actual wiring is present in both files. Full accumulated regression
+suite re-run (44 files, 527 checks, all passing).
+
+---
+
 ## 2026-09-13 (follow-up 184) — "About this walk" before "Before You Set Off"; safety
 notes now need a logged Confirm before Start Walk/Start Tour activates
 **Scope:** `base44/functions/logSafetyConfirmation/entry.ts` (NEW — BACKEND FUNCTION, needs
