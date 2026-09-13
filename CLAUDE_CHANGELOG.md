@@ -55,6 +55,18 @@ Pulled: 2026-08-03
   proposed) would let a customer get a walk's GPX file out of the app, or
   bring their own route data in, it's out — flag it to Enda rather than
   building or leaving it in place.
+  **Named, deliberate exception (follow-up 181):** `getWalkCatalog` computes
+  and exposes ONE point — `marker_lat`/`marker_lng`, sourced from the
+  walk's own WP1 (first waypoint) — for every walk regardless of purchase
+  status, so the browsing map's icon always sits at the tour's real start.
+  This is Enda's own explicit, reasoned call: a single start-point
+  coordinate reveals nothing about the actual route, and a wrong/stale
+  marker confuses and repels people who know the island, which he judged
+  worse than the theoretical exposure. This does NOT reopen the rule
+  above — `waypoints`/`trail_path` (the full route) are still deleted
+  entirely for any non-purchased, non-sample walk; only this one derived
+  point is deliberately left unprotected. Don't "fix" this back without
+  checking with Enda first.
 - STANDING RULE — Enda writes master narration for the ear, not the page:
   when Enda hand-edits a tour's English narration (e.g. Battle of the
   Rivers / BOR1), he does it in both the live master file and his own
@@ -70,6 +82,63 @@ Pulled: 2026-08-03
   something to build — just context for why a narration-focused test
   clone of a tour exists alongside its master, and why the master file's
   writing style may look conversational rather than formal on purpose.
+
+---
+
+## 2026-09-13 (follow-up 181) — Map markers now sit at WP1, not start_lat/start_lng
+(explicit exception to the route-protection rule, per Enda)
+**Scope:** `base44/functions/getWalkCatalog/entry.ts` (BACKEND FUNCTION — needs a manual
+redeploy in Base44, see the standing rule at the top of this file), `src/components/map/
+CreteMap.jsx`, `src/pages/Home.jsx`.
+
+**Per Enda:** follow-up 180 left the WP1-vs-start_lat/start_lng question open because of
+the paywall conflict (see that entry). Enda then sent screenshots of "Kria Vrisi Flower
+Walk" (a Sample Walk, so already unpaywalled) with its amber marker sitting on completely
+the wrong side of the island from where the walk actually is — proving the bug isn't just
+markers stacking on each other, `start_lat`/`start_lng` itself can be genuinely wrong. His
+own words: "Using the coordinates of WP1 as the marker coordinates avoids crap like this
+and doesn't give away anything about the actual route... make this an exception to the
+rule and use WP1 coordinates of each walk, walkabout, driving tour as the icon location on
+the map." Explicit, reasoned authorisation to override the "no route data before
+purchase" rule for this one derived point.
+
+**Fixed:**
+- `getWalkCatalog/entry.ts`: computes `marker_lat`/`marker_lng` from `waypoints[0]`
+  (falling back to `trail_path[0]`, then to `start_lat`/`start_lng` if a tour has neither —
+  same fallback order already used client-side in `WalkEditor.jsx`'s GPX import). Computed
+  BEFORE the paywall gate and deliberately left off `PROTECTED_FIELDS`, so this one point
+  survives for every walk regardless of purchase status — the full `waypoints`/
+  `trail_path` arrays are still stripped exactly as before for anyone who hasn't bought
+  the tour. Added a new standing-rule note (see "no GPX export" rule above) documenting
+  this as a deliberate, named exception so a future session doesn't "fix" it back.
+- `CreteMap.jsx`: marker `position` now reads `marker_lat`/`marker_lng` (falling back to
+  `start_lat`/`start_lng` only for a stale cached response from before this field
+  existed).
+- `Home.jsx`: tap-to-select-a-walk-on-the-map (`handleMapClick`) now measures distance
+  against the same `marker_lat`/`marker_lng` the icon is actually drawn at, not
+  `start_lat`/`start_lng` — otherwise a tap directly on a visible icon could miss it, or
+  false-match empty space at the walk's old stale coordinates.
+
+**Note:** `start_lat`/`start_lng` themselves are untouched by this fix — they can still
+drift (the `handleRetryRouting` sync gap found in follow-up 180 still exists). That's fine
+for the marker now, but anything else in the app still reading `start_lat`/`start_lng`
+directly should be treated with the same caution.
+
+**Verified:** `npx eslint` on all three changed files (0 new issues; `Home.jsx`'s 2
+pre-existing, unrelated issues — unused `getTourCategory` import, unused `tapLocation`
+state — confirmed already there, untouched). Full `npm run build` (exit 0). New standalone
+test `/tmp/test_marker_wp1_followup180b.mjs` (16 checks: WP1 used over stale
+start_lat/start_lng; fallback chain to trail_path[0] then to start_lat/start_lng; the
+paywall guarantee — marker point survives, full waypoints/trail_path/trail_breaks/
+segment_scripts still stripped for a non-owned walk; accessible walks keep everything;
+frontend fallback for a stale cached response; tap-to-select matches the real marker
+position instead of the old stale spot). Updated the header comment in follow-up 180's own
+test file, which had said this was "left for Enda" — now stale. Full accumulated
+regression suite re-run (46 files, 466 checks, all passing).
+
+**Needs a manual redeploy:** `getWalkCatalog` is a backend function — per the standing
+rule at the top of this file, Enda needs to do the blank-line-and-redeploy step for it in
+Base44 before this takes effect.
 
 ---
 

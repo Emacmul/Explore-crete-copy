@@ -178,10 +178,15 @@ export default function Home() {
   const handleMapClick = (latlng) => {
     setTapLocation(latlng);
 
+    // Match against the walk's actual marker position (WP1, per follow-up 180) — not
+    // start_lat/start_lng — so a tap near the icon the user actually SEES always finds it,
+    // even for a walk whose start_lat/start_lng has drifted from its real route.
     const nearbyWalks = walks.filter(walk => {
+      const markerLat = walk.marker_lat ?? walk.start_lat;
+      const markerLng = walk.marker_lng ?? walk.start_lng;
       const distance = Math.sqrt(
-        Math.pow(walk.start_lat - latlng.lat, 2) +
-        Math.pow(walk.start_lng - latlng.lng, 2)
+        Math.pow(markerLat - latlng.lat, 2) +
+        Math.pow(markerLng - latlng.lng, 2)
       );
 
       return distance < 0.2;

@@ -153,6 +153,24 @@ export default async function(req) {
       const isDraftPreview = isAdmin && !passesNormalGate;
       out._is_draft_preview = isDraftPreview;
 
+      // Per Enda (follow-up 180): the map "icon"/marker for a walk must sit at WP1 (the
+      // walk's own first waypoint), not at the free-typed/auto-derived start_lat/start_lng.
+      // Those two fields can drift out of sync with the real route — handleRetryRouting
+      // regenerates trail_path from the waypoints but never re-syncs start_lat/start_lng,
+      // and the General tab also lets an admin free-type start_lat/start_lng directly — and
+      // a stale value can put the marker on completely the wrong side of the island (the
+      // concrete case that prompted this: "Kria Vrisi Flower Walk"). Enda judged that as
+      // worse than the theoretical risk of a single start-point coordinate, and made this a
+      // deliberate, explicit exception to the "no route data before purchase" rule: expose
+      // ONLY this one computed point — never the full waypoints/trail_path arrays — for
+      // every walk regardless of purchase status. Computed here, BEFORE the accessible gate
+      // below, and deliberately kept off PROTECTED_FIELDS so it always survives that gate.
+      const wp1 = (Array.isArray(out.waypoints) && out.waypoints[0])
+        || (Array.isArray(out.trail_path) && out.trail_path[0])
+        || null;
+      out.marker_lat = wp1 ? wp1.lat : out.start_lat;
+      out.marker_lng = wp1 ? wp1.lng : out.start_lng;
+
       // A draft never has a real Purchase record (nothing to buy yet), so without this an
       // admin previewing their own unpublished tour would hit the paywall and lose
       // trail_path/waypoints — exactly the content they need to actually test it.

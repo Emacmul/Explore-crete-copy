@@ -1,6 +1,5 @@
 import React, { useEffect } from 'react';
 import { MapContainer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
-import { Mountain } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import OfflineTileLayer from './OfflineTileLayer';
@@ -84,7 +83,12 @@ export default function CreteMap({ walks, selectedWalk, onWalkSelect, onMapClick
       {orderedWalks.map((walk) => (
         <Marker
           key={walk.id}
-          position={[walk.start_lat, walk.start_lng]}
+          // Per Enda (follow-up 180): the marker sits at WP1 (the walk's first waypoint),
+          // computed server-side in getWalkCatalog — never the free-typed/auto-derived
+          // start_lat/start_lng, which can drift and show a marker on the wrong side of the
+          // island. Falls back to start_lat/start_lng only for a stale cached response from
+          // before this field existed.
+          position={[walk.marker_lat ?? walk.start_lat, walk.marker_lng ?? walk.start_lng]}
           icon={createWalkIcon(selectedWalk?.id === walk.id)}
           eventHandlers={{
             click: () => onWalkSelect(walk),
