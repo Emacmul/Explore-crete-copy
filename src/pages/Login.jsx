@@ -203,6 +203,16 @@ export default function Login() {
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
+              <div className="text-right">
+                <a
+                  href="https://magicalcrete.com/wp-login.php?action=lostpassword"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-teal-700 font-medium hover:underline"
+                >
+                  {t('login.forgotPassword')}
+                </a>
+              </div>
             </div>
 
             {error && (

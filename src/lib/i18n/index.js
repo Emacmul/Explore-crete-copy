@@ -213,6 +213,7 @@ export const translations = {
     'login.failedDefault': "Login failed. Please try again.",
     'login.signingIn': "Signing in...",
     'login.signIn': "Sign In",
+    'login.forgotPassword': "Forgot your password?",
     'login.noAccount': "Don't have an account?",
     'login.createAccount': "Create your Free Magical Crete Account",
     'login.newDeviceTitle': "Check your email",

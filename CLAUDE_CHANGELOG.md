@@ -85,6 +85,40 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-13 (follow-up 182) — Login screen: "Forgot your password?" link added
+**Scope:** `src/pages/Login.jsx`, `src/lib/i18n/index.js`. Frontend-only, no backend
+redeploy needed.
+
+**Per Enda:** a front-end test account (apptester@magicalcrete.com) suddenly couldn't log
+in. Investigated first — traced the actual login path end to end: the app never checks a
+password itself, it sends it straight to WordPress's own login check
+(`loginWithDeviceCheck` → `fetchWpToken` → WordPress's `jwt-auth` endpoint), and nothing on
+the app's side (its own copy of the account, device records, session locks) was blocking
+anything. Confirmed with Enda that wp-admin login with the same details also failed —
+proving it wasn't the app at all. Turned out to be a typo in the password itself. While
+chasing this, Enda noticed the login screen has no way to recover a forgotten password at
+all, and asked for one.
+
+**Fixed:** added a "Forgot your password?" link under the password field, opened in a new
+tab, going to WordPress's own built-in password-reset page
+(`wp-login.php?action=lostpassword`) — the exact same pattern already used by this screen's
+existing "Create your Free Magical Crete Account" link, which already sends people to
+WordPress directly (`wp-login.php?action=register`). No new backend logic: WordPress is
+already the sole identity provider for this app, and already owns the reset flow — this
+just gives customers a door to it. New i18n key `login.forgotPassword` added to the English
+baseline only, matching every other `login.*` string on this screen (none of which have
+Dutch/Czech translations yet; the i18n system automatically falls back to English for a
+missing key in any language).
+
+**Verified:** `npx eslint` on both changed files (0 issues). Full `npm run build` (exit 0).
+New standalone test `/tmp/test_forgot_password_link_followup182.mjs` (6 checks: the link
+points at WordPress's real lost-password URL; opens in a new tab with `rel="noopener
+noreferrer"`, matching the Create Account link; sits on the credentials step, not the
+device-code step; label comes from the i18n system, and the key exists). Full accumulated
+regression suite re-run (41 files, 472 checks, all passing).
+
+---
+
 ## 2026-09-13 (follow-up 181) — Map markers now sit at WP1, not start_lat/start_lng
 (explicit exception to the route-protection rule, per Enda)
 **Scope:** `base44/functions/getWalkCatalog/entry.ts` (BACKEND FUNCTION — needs a manual
