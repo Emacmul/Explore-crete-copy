@@ -382,7 +382,7 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
             )}
 
             {walk.route_type === 'driving_audio_tour' && (
-              <DrivingTourPlayer ref={driverPlayerRef} walk={walk} safetyConfirmed={safetyConfirmed} />
+              <DrivingTourPlayer ref={driverPlayerRef} walk={walk} safetyConfirmed={safetyConfirmed} onClose={onClose} />
             )}
 
             {/* Legal/safety compliance banner — required every time this tour is opened,
@@ -478,7 +478,7 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
               </div>
             ) : !isDrivingTour ? (
               <div ref={progressSectionRef} className="space-y-4">
-                <WalkProgressBar walk={walk} />
+                <WalkProgressBar walk={walk} onClose={onClose} />
 
                 <div className="h-64 rounded-xl overflow-hidden border">
                   <WalkDetailMap

@@ -85,6 +85,57 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-13 (follow-up 186) — Finishing a walk/WalkAbout/Driving Tour now offers a way
+back to the home screen
+**Scope:** `src/components/walks/WalkProgressBar.jsx`, `src/components/walks/WalkDetail.jsx`,
+`src/components/walks/DrivingTourPlayer.jsx`, `src/lib/i18n/index.js`. Frontend-only, no
+backend redeploy needed.
+
+**Per Enda:** "When a user reaches the end of a walk/walkabout/tour the app just stops and
+doesn't give the user the opportunity to go back to the home screen."
+
+**Investigated first, and found two genuinely different gaps, one per tour type:**
+- Walks (`WalkProgressBar.jsx`): already detects completion (`pct >= 95`, GPS-based
+  distance-along-trail) but only ever showed a static "🎉 Walk complete!" message — no
+  button, no action.
+- WalkAbouts/Driving Tours (`DrivingTourPlayer.jsx`): had NO completion detection at all.
+  The tour just kept running forever until the customer manually tapped "Stop", which
+  silently reset the screen to the "Start Tour" button with no messaging.
+
+Also confirmed `WalkDetail.jsx` already receives an `onClose` prop from `Home.jsx` (the
+same one its own header close button uses) — the natural, already-wired "return to home
+screen" action, needing only to be threaded down to both places.
+
+**Fixed:**
+- `WalkProgressBar.jsx`: takes a new `onClose` prop; the existing complete message now sits
+  above a "Return to Home" button that calls it.
+- `WalkDetail.jsx`: passes its own `onClose` down to both `<WalkProgressBar>` and
+  `<DrivingTourPlayer>`.
+- `DrivingTourPlayer.jsx`: takes the new `onClose` prop; a new `tourComplete` state is set
+  once every trigger waypoint on the tour has fired while it's running (mirrors the Walks
+  side's threshold check), at which point it also calls the same `handleStop()` the manual
+  Stop button uses, so GPS/audio/logging end cleanly at the actual moment of completion
+  rather than staying open until the panel is eventually closed. Once complete, the ordinary
+  "Start Tour" button, its hint text, and the "Restart tour from here" shortcut are replaced
+  by a "🎉 Tour complete!" banner and a "Return to Home" button. `tourComplete` resets on a
+  genuine fresh Start/Restart, and also on switching directly to a different walk without
+  this component unmounting (same pattern as follow-up 184's `safetyConfirmed`, needed for
+  a wide-screen user clicking straight from one open walk to another). The always-visible
+  "Toggle audit log" button is untouched.
+- Two new i18n keys added (English only, matching the existing pattern for this file):
+  `progress.returnHome`, `player.tourComplete`, `player.returnHome`.
+
+**Verified:** `npx eslint` on all three changed files (0 new issues — the same 5
+pre-existing, unrelated issues already in `WalkDetail.jsx`, untouched). Full `npm run build`
+(exit 0). New standalone test `/tmp/test_return_home_on_complete_followup186.mjs` (30
+checks): the completion-detection logic itself (fires once, only while running, only when
+there's at least one trigger waypoint, never re-fires); both files' prop-wiring; the
+Walks-side button and its i18n key; the Driving-Tour-side banner, button, state resets, and
+that the debug toggle is untouched; the i18n keys exist. Full accumulated regression suite
+re-run (45 files, 549 checks, all passing).
+
+---
+
 ## 2026-09-13 (follow-up 185) — Tapping Start now scrolls straight to the progress/live
 tour view instead of staying on the button
 **Scope:** `src/components/walks/WalkDetail.jsx`, `src/components/walks/DrivingTourPlayer.jsx`.

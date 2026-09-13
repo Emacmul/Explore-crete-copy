@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Navigation2 } from 'lucide-react';
+import { Navigation2, Home } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 // Haversine distance between two {lat,lng} points in km
@@ -49,7 +50,7 @@ function trailLength(trail, breaks) {
   return total;
 }
 
-export default function WalkProgressBar({ walk }) {
+export default function WalkProgressBar({ walk, onClose }) {
   const { t } = useLanguage();
   const [progress, setProgress] = useState(null); // { walkedKm, totalKm, pct }
   const [gpsError, setGpsError] = useState(false);
@@ -114,7 +115,19 @@ export default function WalkProgressBar({ walk }) {
         />
       </div>
       {isComplete && (
-        <p className="text-xs text-emerald-600 font-medium text-center">{t('progress.complete')}</p>
+        <div className="text-center space-y-2">
+          <p className="text-xs text-emerald-600 font-medium">{t('progress.complete')}</p>
+          {onClose && (
+            <Button
+              type="button"
+              onClick={onClose}
+              size="sm"
+              className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              <Home className="w-4 h-4" /> {t('progress.returnHome')}
+            </Button>
+          )}
+        </div>
       )}
     </div>
   );

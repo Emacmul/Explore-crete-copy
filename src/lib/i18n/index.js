@@ -272,6 +272,7 @@ export const translations = {
     'progress.gettingLocation': "Getting GPS location…",
     'progress.yourProgress': "Your progress",
     'progress.complete': "🎉 Walk complete!",
+    'progress.returnHome': "Return to Home",
 
     'drivingNotice.activeShort': "Driving Mode active — keep this app in the foreground.",
     'drivingNotice.viewAgain': "View again",
@@ -294,6 +295,8 @@ export const translations = {
     'player.stop': "Stop",
     'player.resume': "Resume",
     'player.toggleLog': "Toggle audit log",
+    'player.tourComplete': "🎉 Tour complete!",
+    'player.returnHome': "Return to Home",
     'player.lastKnownPosition': "This was your last known position",
     'player.restartFromHere': "Restart tour from here",
     'player.nextStopLabel': "Next stop",

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useImperativeHandle, forwardRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { Play, Pause, Square, Bug, AlertTriangle } from 'lucide-react';
+import { Play, Pause, Square, Bug, AlertTriangle, Home, CheckCircle2 } from 'lucide-react';
 import * as gpsService from '@/lib/gpsService';
 import * as audioService from '@/lib/audioService';
 import * as tourLogService from '@/lib/tourLogService';
@@ -187,7 +187,7 @@ function loadPassedSecondaryIds(walkId) {
 // button live in WalkDetail.jsx (the parent), so this is passed down rather than owned
 // here. Defaults to false (fail closed) so a caller that forgets to pass it never
 // accidentally unlocks the gate.
-const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyConfirmed = false }, ref) {
+const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyConfirmed = false, onClose }, ref) {
   const { t } = useLanguage();
   const { isDownloaded } = useOfflineWalks();
   const savedOffline = isDownloaded(walk.id);
@@ -210,12 +210,24 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
     paused: { label: t('player.paused'), color: 'text-amber-400' },
   };
   const [status, setStatus] = useState('idle');
+  // Per Enda: reaching the end of a tour used to just sit there with no way back to the
+  // home screen — set true once every trigger waypoint has fired (see the completion
+  // effect further down, placed after handleStop is defined). Reset on a genuine fresh
+  // Start/Restart below, and on switching directly to a different walk while this
+  // component stays mounted (see the [walk?.id] effect a little further down — same
+  // pattern as safetyConfirmed in WalkDetail.jsx, needed because a wide-screen user can
+  // click straight from one open walk to another without this component ever unmounting).
+  const [tourComplete, setTourComplete] = useState(false);
   useEffect(() => {
     if (prevStatusRef.current === 'idle' && status === 'running' && playerRootRef.current) {
       playerRootRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setTourComplete(false);
     }
     prevStatusRef.current = status;
   }, [status]);
+  useEffect(() => {
+    setTourComplete(false);
+  }, [walk?.id]);
   // Non-null when Start Tour was clicked but couldn't actually start (e.g. this device/
   // browser has no GPS support at all). Was previously just a debug-log entry with nothing
   // shown on screen — clicking Start looked like it silently did nothing (audit re-check,
@@ -799,6 +811,29 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
     gpsAccuracyStreakRef.current = 0;
   };
 
+  // Per Enda: "the app just stops and doesn't give the user the opportunity to go back to
+  // the home screen" once a WalkAbout/Driving Tour finishes — previously there was no
+  // completion detection at all here, only the same manual Stop used to end a tour early.
+  // Mirrors the Walks-side isComplete (pct >= 95) in WalkProgressBar.jsx: once every trigger
+  // waypoint has fired while the tour is still running, treat that as done, call handleStop()
+  // to end GPS/audio/logging cleanly at the actual moment of completion (rather than leaving
+  // the session open until the panel is eventually closed), and show a "Return to Home"
+  // button in place of the ordinary idle controls (see the render below).
+  // Placed textually after handleStop's own definition — this closure calls it, and JS
+  // requires a const to already be initialised wherever it's evaluated, which for a
+  // dependency array happens at render time, not just when the effect callback later runs.
+  useEffect(() => {
+    if (
+      status === 'running' &&
+      triggerWaypoints.length > 0 &&
+      triggeredWpIds.size >= triggerWaypoints.length &&
+      !tourComplete
+    ) {
+      setTourComplete(true);
+      handleStop();
+    }
+  }, [status, triggerWaypoints.length, triggeredWpIds, tourComplete]);
+
   // Pauses (never stops/destroys) the currently loaded narration clip, if any, so it can
   // resume exactly where it left off. Safe to call with nothing loaded/playing — pausing an
   // Audio element with no source is a harmless no-op. Per Enda (follow-up 157): the spoken
@@ -1061,7 +1096,7 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
               {lastKnownWaypoint.segment_title || lastKnownWaypoint.name}
             </p>
           </div>
-          {status === 'idle' && (
+          {status === 'idle' && !tourComplete && (
             <Button
               type="button"
               size="sm"
@@ -1105,24 +1140,30 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
         {/* Clicking Start Tour on a device/browser with no GPS support at all used to do
             nothing visible — see startError above (audit re-check, 2026-09-09 — third
             pass, finding U-07 refinement). */}
-        {status === 'idle' && startError && (
+        {tourComplete && (
+          <div className="flex items-start gap-2 bg-emerald-900/30 border border-emerald-600 rounded-lg px-3 py-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+            <p className="text-sm text-emerald-300">{t('player.tourComplete')}</p>
+          </div>
+        )}
+        {status === 'idle' && !tourComplete && startError && (
           <div className="flex items-start gap-2 bg-red-900/30 border border-red-600 rounded-lg px-3 py-2">
             <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
             <p className="text-xs text-red-300">{startError}</p>
           </div>
         )}
-        {status === 'idle' && !savedOffline && (
+        {status === 'idle' && !tourComplete && !savedOffline && (
           <p className="text-xs text-amber-400 text-center">
             {t('player.mustSaveFirst')}
           </p>
         )}
-        {status === 'idle' && savedOffline && !safetyConfirmed && (
+        {status === 'idle' && !tourComplete && savedOffline && !safetyConfirmed && (
           <p className="text-xs text-amber-400 text-center">
             {t('player.mustConfirmSafetyFirst')}
           </p>
         )}
         <div className="flex items-center gap-2">
-          {status === 'idle' && (
+          {status === 'idle' && !tourComplete && (
             <Button
               onClick={handleStartTour}
               disabled={!canStart}
@@ -1130,6 +1171,14 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
               className="flex-1 gap-2 bg-green-600 hover:bg-green-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Play className="w-4 h-4" /> {t('player.startTour')}
+            </Button>
+          )}
+          {tourComplete && (
+            <Button
+              onClick={onClose}
+              className="flex-1 gap-2 bg-teal-600 hover:bg-teal-700 text-white"
+            >
+              <Home className="w-4 h-4" /> {t('player.returnHome')}
             </Button>
           )}
         {status === 'running' && (
