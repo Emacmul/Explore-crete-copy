@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Search, Mountain, SlidersHorizontal, X, RefreshCw, Baby, Church } from 'lucide-react';
+import { Search, Mountain, SlidersHorizontal, X, RefreshCw, Baby, Church, ChevronLeft, ChevronRight } from 'lucide-react';
 import WalkCard from './WalkCard';
 import OfflineWalksBanner from '../offline/OfflineWalksBanner';
 import { getTourCategory } from '../../lib/tourCategories';
@@ -12,6 +12,10 @@ import { LANGUAGE_NAME_BY_CODE, getTourLanguage } from '@/lib/i18n';
 
 const REGIONS = ['Chania', 'Rethymno', 'Heraklion', 'Lasithi'];
 const DIFFICULTIES = ['easy', 'moderate', 'challenging', 'difficult'];
+// Per Enda (follow-up 177): the "All walks" list used to just keep growing in one long
+// scroll. Now it's split into pages of 5, with Previous/Next controls appearing once
+// there's more than one page.
+const PAGE_SIZE = 5;
 
 export default function WalkList({ walks, selectedWalk, onWalkSelect, searchQuery, onSearchChange, onRefresh, refreshing, tourCategoryCode }) {
   const { t, lang } = useLanguage();
@@ -23,6 +27,7 @@ export default function WalkList({ walks, selectedWalk, onWalkSelect, searchQuer
   const [maxDistance, setMaxDistance] = useState('all');
   const [maxDuration, setMaxDuration] = useState('all');
   const [sortBy, setSortBy] = useState('name');
+  const [page, setPage] = useState(1);
   // Per Enda/Anoushka (follow-up 144): Walks and Hikes (WHT) only — a dedicated,
   // always-visible toggle rather than something buried in the Filters panel, so a
   // parent looking for a buggy-suitable route doesn't have to go hunting for it.
@@ -77,6 +82,19 @@ export default function WalkList({ walks, selectedWalk, onWalkSelect, searchQuer
       }
       return (a.name || '').localeCompare(b.name || '');
     });
+
+  // Jump back to page 1 whenever the tour type, search text, or any filter changes —
+  // otherwise switching filters could leave you stranded on a page number that no
+  // longer makes sense for the new, shorter or reordered result set.
+  useEffect(() => {
+    setPage(1);
+  }, [tourCategoryCode, searchQuery, region, difficulty, maxDistance, maxDuration, sortBy, buggyFriendlyOnly, routeOfFaithOnly]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredWalks.length / PAGE_SIZE));
+  // Guard against being left on a page that no longer exists (e.g. a walk was removed
+  // by an admin and the list shrank), without needing an extra render just to correct it.
+  const currentPage = Math.min(page, totalPages);
+  const pagedWalks = filteredWalks.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   return (
     <div className="h-full flex flex-col bg-white rounded-2xl shadow-lg overflow-hidden">
@@ -245,8 +263,8 @@ export default function WalkList({ walks, selectedWalk, onWalkSelect, searchQuer
         <div className="p-3 space-y-2">
           <OfflineWalksBanner onWalkSelect={onWalkSelect} selectedWalk={selectedWalk} />
 
-          {filteredWalks.length > 0 ? (
-            filteredWalks.map(walk => (
+          {pagedWalks.length > 0 ? (
+            pagedWalks.map(walk => (
               <WalkCard
                 key={walk.id}
                 walk={walk}
@@ -264,6 +282,36 @@ export default function WalkList({ walks, selectedWalk, onWalkSelect, searchQuer
           )}
         </div>
       </ScrollArea>
+
+      {/* Previous/Next paging — only appears once there's more than one page. On page 1
+          only "Next page" shows; on the last page only "Previous" shows; any page in
+          between shows both. Per Enda (follow-up 177). */}
+      {totalPages > 1 && (
+        <div className={`flex items-center border-t bg-white px-4 py-2 ${currentPage > 1 ? 'justify-between' : 'justify-end'}`}>
+          {currentPage > 1 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setPage(currentPage - 1)}
+              className="text-xs gap-1 text-slate-600 hover:text-slate-900"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              {t('list.previousPage')}
+            </Button>
+          )}
+          {currentPage < totalPages && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setPage(currentPage + 1)}
+              className="text-xs gap-1 text-slate-600 hover:text-slate-900"
+            >
+              {t('list.nextPage')}
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

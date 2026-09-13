@@ -73,6 +73,47 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-13 (follow-up 177) — "All walks" list: split into pages of 5
+Scope: `src/components/walks/WalkList.jsx`, `src/lib/i18n/index.js`.
+Frontend-only, no backend redeploy needed.
+
+**Per Enda:** the "All walks" browsing list (Walks / WalkAbouts / Driving Tours tabs on
+the Home screen) just kept growing in one long scroll as more tours were added, instead
+of splitting into pages. Wanted: 5 per page; once there are more than 5, a page control
+appears; with only 2 pages it just needs a "next page" way forward; once there are more
+pages than that, both "previous" and "next" should be available, automatically, every
+time the count crosses a multiple of 5 — no manual page-size setting involved.
+
+**Investigated first:** found the actual rendering code in `WalkList.jsx` (used for every
+tour-type tab via the `tourCategoryCode` prop from `Home.jsx`) — it mapped over the full
+filtered/sorted list inside one scrolling area with no page slicing at all, confirming
+Enda's report exactly.
+
+**Fix:**
+- New page size constant of 5. The filtered/sorted list is now sliced to the current
+  page before rendering.
+- A Previous/Next bar appears under the list only once there's more than one page: page 1
+  shows only "Next page"; the last page shows only "Previous"; any page in between shows
+  both — so the control always only offers directions that actually go somewhere.
+- Switching tour type tabs, typing a search, or changing any filter (region, difficulty,
+  distance, duration, sort, Buggy-Friendly, Route of Faith) jumps back to page 1
+  automatically, so a filter change never strands you on a page number that no longer
+  makes sense for the new result set.
+- If the current page no longer exists (e.g. a walk was deleted while further along),
+  the list falls back to the last real page instead of showing nothing.
+- New `list.previousPage` / `list.nextPage` labels added to all three languages
+  (en/nl/cs) alongside this list's other existing labels.
+
+**Verified:** `npx eslint` on both changed files (0 issues). Full `npm run build` (exit
+0). New standalone test `/tmp/test_all_walks_pagination_followup177.mjs` (36 checks:
+5-or-fewer walks show no page control; 6 walks show only "Next page" on page 1 and only
+"Previous" on page 2; 13 walks show both on the middle page; exact multiples of 5 split
+cleanly with a full last page; a stale/out-of-range page number clamps back to the last
+real page). Full accumulated regression suite re-run (42 files, 408 checks, all
+passing).
+
+---
+
 ## 2026-09-12 (follow-up 176) — WalkAbouts: a "Manual only (GPS unreliable)" tour switch
 Scope: `base44/entities/Walk.jsonc`, `src/components/admin/WalkEditor.jsx`,
 `src/components/walks/DrivingTourPlayer.jsx`, `src/lib/i18n/index.js`.
