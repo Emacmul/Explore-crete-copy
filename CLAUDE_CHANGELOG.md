@@ -85,6 +85,66 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-14 (follow-up 189) — "Driving Tours" renamed to "DriveAbouts" everywhere it's
+## shown to a customer or admin
+**Scope:** `src/lib/i18n/index.js`, `src/lib/tourCategories.js`,
+`src/components/admin/WalkEditor.jsx`, `public/manifest.json`, `base44/entities/Walk.jsonc`.
+Frontend-only, except the `Walk.jsonc` description-text changes — no function redeploy
+needed, just the usual hard refresh + republish.
+
+**Per Enda:** "Anoushka does it again... Why don't we change 'Driving tours' to
+'DriveAbouts', keep it in line with 'WalkAbouts'... every mention of Driving tours
+throughout the whole app should be changed to 'DriveAbouts' written with a capital A on
+Abouts... make sure that change doesn't break anything in the code!"
+
+**Investigated first:** grepped the whole codebase (56 raw matches for "driving tour"),
+then classified every one by hand into three groups — genuinely rendered text (change it),
+internal identifiers (leave alone, or it breaks things), and code comments (not user-facing,
+left alone to keep the change tightly scoped to what Enda actually sees). Internal bits
+deliberately left untouched: the `route_type: 'driving_audio_tour'` data value (shared with
+WalkAbouts — renaming it would've silently broken both), the `DDV` category code itself,
+component/file names (`DrivingTourPlayer.jsx`, `DrivingTourWaypointEditor.jsx`), the
+`isDrivingAudioTour` variable name, and every code comment (developer-only, never shown to
+anyone using the app). Followed the exact naming pattern already used for "WalkAbout":
+formal label "DriveAbout Tour", plural/list-header form "DriveAbouts" (capital A), admin
+dropdown bare form "DriveAbout".
+
+**Fixed:**
+- `i18n/index.js`: `tour.DDV.label` ("Driving Tour" → "DriveAbout Tour"), `tour.DDV.plural`
+  ("Driving Tours" → "DriveAbouts"), and the Contact page's intro line. Left
+  `tour.DDV.description` alone (doesn't say "Driving Tour") and the separate "Driving Mode"
+  in-tour safety feature strings alone (different concept entirely — nothing to do with the
+  tour category name).
+- `tourCategories.js`: the DDV entry's `label`, `shortLabel`, `pluralLabel` fields.
+- `WalkEditor.jsx`: the admin "Route Type" dropdown option and its helper paragraph.
+- `manifest.json`: the app description shown in browser/OS install prompts.
+- `Walk.jsonc`: eight schema field-description strings (category legend, buggy-friendly,
+  manual-tap-only, default price, and four GPX waypoint/segment field descriptions) —
+  documentation only, no shape/RLS change.
+
+**Dutch/Czech translations — follow-up:** flagged to Enda that Dutch and Czech translate
+"Driving Tour" natively rather than repeating the English phrase, so it wasn't clear whether
+"DriveAbout" should be injected there too. Enda's answer: yes — "It's up to the narrators to
+either translate it or keep it, but they can't make that decision if they don't see it."
+Added "(DriveAbout)"/"(DriveAbouts)" alongside the existing native translation in both
+`tour.DDV.label` and `tour.DDV.plural` for `nl` and `cs`, so a narrator translating the app
+sees the brand term in context and can choose to keep or translate it themselves. Left the
+description fields (`tour.DDV.description`) untouched in both languages — they describe the
+tour, not the term.
+
+**Verified:** `npx eslint` on all changed files (0 new issues — same 4 pre-existing,
+unrelated issues already in `WalkEditor.jsx`, untouched). `npm run build` (exit 0),
+confirmed the compiled bundle actually contains "DriveAbout". Confirmed by grep that every
+remaining "Driving Tour" mention left in the codebase is inside a `//` code comment, never a
+live string. Confirmed `driving_audio_tour`, the `DDV` code, and the `DrivingTourPlayer.jsx`
+etc. file names are all still intact. New standalone test
+`/tmp/test_driveabouts_rename_followup189.mjs` (37 checks, including the Dutch/Czech
+injection). Updated one now-stale assertion in the follow-up 188 test file to match the
+renamed schema text. Full accumulated regression suite re-run (47 files, 597 checks, all
+passing).
+
+---
+
 ## 2026-09-14 (follow-up 188) — Buggy-Friendly now markable on WalkAbouts too
 **Scope:** `src/components/admin/WalkEditor.jsx`, `src/components/walks/WalkList.jsx`,
 `base44/entities/Walk.jsonc`. Frontend-only, except the `Walk.jsonc` description-text

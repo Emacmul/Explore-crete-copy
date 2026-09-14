@@ -1402,11 +1402,11 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 <SelectContent>
                   <SelectItem value="WHT">Walk/Hike</SelectItem>
                   <SelectItem value="WBT">WalkAbout</SelectItem>
-                  <SelectItem value="DDV">Driving Tour</SelectItem>
+                  <SelectItem value="DDV">DriveAbout</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-xs text-slate-500 mt-1">
-                Walk/Hike uses the existing walking-app workflow. WalkAbout and Driving Tour prepare GPX data for the Speech/Speed Route Checker.
+                Walk/Hike uses the existing walking-app workflow. WalkAbout and DriveAbout prepare GPX data for the Speech/Speed Route Checker.
               </p>
             </div>
 
