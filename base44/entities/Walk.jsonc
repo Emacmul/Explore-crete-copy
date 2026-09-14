@@ -50,7 +50,7 @@
     "buggy_friendly": {
       "type": "boolean",
       "default": false,
-      "description": "Walks and Hikes (WHT) only: true if this route works with an ordinary buggy/stroller, no off-road/4x4-style buggy needed. Shown to customers as a quick filter and a badge on the walk's card, per Enda/Anoushka's request (follow-up 144) so young-family-suitable walks don't get lost in the general list."
+      "description": "Walks/Hikes (WHT) and WalkAbouts (WBT): true if this route works with an ordinary buggy/stroller, no off-road/4x4-style buggy needed. Not applicable to Driving Tours (DDV). Shown to customers as a quick filter and a badge on the walk's card, per Enda/Anoushka's request (follow-up 144, widened to WalkAbouts 2026-09-14) so young-family-suitable walks don't get lost in the general list."
     },
     "manual_only_tour": {
       "type": "boolean",

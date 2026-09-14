@@ -28,11 +28,14 @@ export default function WalkList({ walks, selectedWalk, onWalkSelect, searchQuer
   const [maxDuration, setMaxDuration] = useState('all');
   const [sortBy, setSortBy] = useState('name');
   const [page, setPage] = useState(1);
-  // Per Enda/Anoushka (follow-up 144): Walks and Hikes (WHT) only — a dedicated,
-  // always-visible toggle rather than something buried in the Filters panel, so a
-  // parent looking for a buggy-suitable route doesn't have to go hunting for it.
+  // Per Enda/Anoushka (follow-up 144): a dedicated, always-visible toggle rather than
+  // something buried in the Filters panel, so a parent looking for a buggy-suitable
+  // route doesn't have to go hunting for it. Originally Walks and Hikes (WHT) only;
+  // widened to WalkAbouts (WBT) too (2026-09-14) — a WalkAbout is still done on foot,
+  // so the same need applies there. Driving Tours (DDV) don't get this — you're not
+  // pushing a buggy from a car.
   const [buggyFriendlyOnly, setBuggyFriendlyOnly] = useState(false);
-  const showBuggyFriendlyToggle = tourCategoryCode === 'WHT';
+  const showBuggyFriendlyToggle = tourCategoryCode === 'WHT' || tourCategoryCode === 'WBT';
   // Per Enda (follow-up 145): WalkAbouts (WBT) only. main_interest is a comma-separated
   // string of up to 3 tags (see the admin editor's "Main Interests" picker) — "Routes of
   // Faith" is one of the existing tag options, now surfaced to customers as its own chip.
@@ -169,8 +172,9 @@ export default function WalkList({ walks, selectedWalk, onWalkSelect, searchQuer
           />
         </div>
 
-        {/* Buggy-Friendly quick toggle — Walks and Hikes only, always visible (not tucked
-            inside the Filters panel) so it's never something a parent has to go looking for. */}
+        {/* Buggy-Friendly quick toggle — Walks/Hikes and WalkAbouts, always visible (not
+            tucked inside the Filters panel) so it's never something a parent has to go
+            looking for. */}
         {showBuggyFriendlyToggle && (
           <button
             type="button"

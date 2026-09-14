@@ -85,6 +85,46 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-14 (follow-up 188) — Buggy-Friendly now markable on WalkAbouts too
+**Scope:** `src/components/admin/WalkEditor.jsx`, `src/components/walks/WalkList.jsx`,
+`base44/entities/Walk.jsonc`. Frontend-only, except the `Walk.jsonc` description-text
+change — no function redeploy needed, just the usual hard refresh + republish.
+
+**Per Enda:** "I need the 'Buggy friendly' tag to be markable as applicable to the
+Walkabout tours as well." Originally (follow-up 144) this was built Walks/Hikes (WHT)
+only.
+
+**Investigated first:** found the tag touches three places — the admin toggle in
+`WalkEditor.jsx` (was wrapped inside a `!isDrivingAudioTour` block, which covers BOTH
+WalkAbouts and Driving Tours, since both share `route_type: 'driving_audio_tour'` — so it
+was hidden for WalkAbouts too, not just Driving Tours), the customer quick-filter in
+`WalkList.jsx` (`showBuggyFriendlyToggle`, WHT-only), and the badge on `WalkCard.jsx`
+(already renders off `walk.buggy_friendly` alone with no category check — nothing to
+change there). Confirmed `getWalkCatalog` doesn't filter this field by category either, so
+no backend change needed.
+
+**Fixed:**
+- `WalkEditor.jsx`: split the Buggy-Friendly toggle out from the "Free sample" toggle it
+  was grouped with, and widened its own gate to `!isDrivingAudioTour || form.tour_category
+  === 'WBT'` — the same pattern already used for follow-up 145's Main Interests widening.
+  Free sample stays Walks/Hikes only (not asked to widen). Driving Tours (DDV) stay
+  excluded from Buggy-Friendly — you're not pushing a buggy from a car.
+- `WalkList.jsx`: `showBuggyFriendlyToggle` now also matches `WBT`, so the quick-filter
+  chip appears when browsing WalkAbouts too. The actual filtering logic underneath was
+  already generic and needed no change.
+- `Walk.jsonc`: updated the field's description text to match (WHT + WBT, not WHT only) —
+  documentation only, no shape/RLS change.
+
+**Verified:** `npx eslint` on all three changed files (0 new issues — the same 5
+pre-existing, unrelated issues already in `WalkEditor.jsx`, untouched). Full `npm run
+build` (exit 0). New standalone test `/tmp/test_buggy_friendly_walkabouts_followup188.mjs`
+(11 checks): the toggle-visibility rule for all three categories: shows for WHT and WBT,
+excluded for DDV; the admin editor's Free-sample-stays-narrow / Buggy-Friendly-widens
+split; the badge needed no change; the schema description update. Full accumulated
+regression suite re-run (46 files, 552 checks, all passing).
+
+---
+
 ## 2026-09-13 (follow-up 187) — Correction to 186: "Return to Home" must not depend on
 every point being ticked/triggered
 **Scope:** `src/components/walks/WalkDetail.jsx`, `src/components/walks/WalkProgressBar.jsx`,

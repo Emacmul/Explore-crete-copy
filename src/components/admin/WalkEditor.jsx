@@ -1582,15 +1582,21 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
 
             {/* Per Enda/Anoushka (follow-up 145): Main Interests now also opens up for
                 WalkAbouts (WBT) — see the narrower `!isDrivingAudioTour` check further
-                below for the Free sample / Buggy-Friendly toggles, which stay Walks and
-                Hikes only; only Main Interests needed to widen. Driving Tours (DDV) are
-                untouched either way, exactly as asked. */}
+                below for the Free sample toggle, which stays Walks and Hikes only; only
+                Main Interests needed to widen there. Driving Tours (DDV) are untouched
+                either way, exactly as asked.
+                Follow-up (2026-09-14): Buggy-Friendly now ALSO widens to WalkAbouts, same
+                as Main Interests did — a WalkAbout is still done on foot, so "does this
+                work with an ordinary buggy" is just as relevant there as on a Walk/Hike.
+                Driving Tours stay excluded (you're not pushing a buggy from a car). Free
+                sample stays Walks/Hikes only — not asked to widen. */}
             {(!isDrivingAudioTour || form.tour_category === 'WBT') && !isNarrator && (
             <>
-            {!isDrivingAudioTour && (
+            {(!isDrivingAudioTour || form.tour_category === 'WBT') && (
             <>
             {/* Walk access — pricing/publishing configuration, admin-only */}
             <div className="grid grid-cols-2 gap-4">
+              {!isDrivingAudioTour && (
               <div>
                 <Label className="text-slate-300 mb-1.5 block">Free sample</Label>
                 <div className="flex items-center gap-3 h-9 bg-slate-700 border border-slate-600 rounded-md px-3">
@@ -1604,10 +1610,12 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                   <span className="text-slate-300 text-sm">{form.is_sample_walk ? 'Yes' : 'No'}</span>
                 </div>
               </div>
+              )}
               {/* Per Enda/Anoushka (follow-up 144): a young parent needs to know a route
                   works with an ordinary buggy — no off-road/4x4-style buggy required —
                   before they set off, not find out halfway up a rocky path. Tick this and
-                  the walk gets a quick filter + a badge on its card for customers. */}
+                  the walk gets a quick filter + a badge on its card for customers. Widened
+                  to WalkAbouts 2026-09-14 — see the comment above this block. */}
               <div>
                 <Label className="text-slate-300 mb-1.5 block">Buggy-Friendly</Label>
                 <div className="flex items-center gap-3 h-9 bg-slate-700 border border-slate-600 rounded-md px-3">
