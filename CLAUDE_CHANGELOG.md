@@ -85,6 +85,169 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-16 (follow-up 191) — Tours admin list: split into In Progress / Published
+## tabs, grouped by category (Walks / WalkAbouts / DriveAbouts)
+**Scope:** `src/components/admin/WalkAdminList.jsx` only. Frontend-only — no backend
+function touched, so no manual redeploy needed, just the usual hard refresh + republish.
+
+**Per Enda:** the Tours admin list was one long undifferentiated list mixing every tour
+category together, with finished/published tours sitting alongside ones still being
+worked on — "asking for errors to be made". Wanted tours grouped into their three
+categories with clearly titled/separated blocks, and finished/published tours moved to
+a separate section so the main view only shows what's still in progress.
+
+**Clarified first (per Enda's answers):** (1) "finished and published" uses the exact
+same Published/Draft badge each tour card already shows (`walk.approved !== false`) —
+no new status invented; (2) the published tours live in a second tab on this same
+screen, not a separate menu item.
+
+**Fixed:**
+- Added two tabs, "In Progress" and "Published" (with live counts), defaulting to In
+  Progress so the screen opens on what still needs attention. Uses the same
+  `approved !== false` rule the existing badge already used — nothing new to learn.
+- Within each tab, tours are grouped into three titled, separated blocks — Walks,
+  WalkAbouts, DriveAbouts — using the same names/order as `tourCategories.js`
+  (`TOUR_CATEGORIES`) everywhere else in the app. A group with nothing in it on the
+  current tab is hidden rather than shown empty. A tour with no category recorded
+  defaults to Walks (WHT), matching the existing badge fallback.
+- Every existing action per tour (Edit, Free/Paid toggle, Push back, Was Checked,
+  Delete, and their confirmation dialogs) is unchanged — only how tours are grouped and
+  which ones show by default has changed.
+
+**Verified:** `npx eslint` on the changed file (0 issues). `npm run build` (exit 0).
+New render test (`@testing-library/react` + `vitest --environment jsdom`, run against
+the real component, not a mock) using the exact 13-tour dataset from Enda's own
+screenshot: confirmed the In Progress tab defaults on and shows only the two Draft
+TestTours grouped under DriveAbouts; confirmed switching to Published shows all 10
+published tours correctly split into Walks and WalkAbouts blocks with correct counts;
+confirmed drafts never leak into Published and vice versa; confirmed a tour with no
+category defaults into Walks; confirmed the empty-tab message shows instead of a blank
+block; confirmed all existing per-tour action buttons (e.g. Delete) still render inside
+the grouped cards. Deliberately broke the tab-filter logic mid-check to confirm the
+test suite actually fails on a real regression (it did, on 2 of 3 checks), then
+restored the fix and re-confirmed all 3 pass — so this wasn't just tests that happen to
+pass either way. Full accumulated regression suite re-run separately (48 files, 633
+checks, all still passing — this change didn't touch any file those cover).
+
+**Not done / worth knowing for next time:** not tested live in the Base44 app itself —
+same caveat as always, worth a quick look after publishing to confirm the tabs and
+grouping look right on Enda's own screen, especially with narrator translation clones
+present (none exist in the live data right now, so that path is untested against real
+data, though the code treats a clone the same as any other tour for this screen).
+
+---
+
+## 2026-09-14 (follow-up 190) — General safety list rewritten and auto-filled everywhere,
+## Start-button gate double-checked (and one real gap closed), clone-time safety-notes
+## auto-translation with a per-narrator per-language reuse cache
+**Scope:** `src/lib/defaultSafetyNotes.js` (new), `src/lib/i18n/index.js`,
+`src/components/admin/WalkEditor.jsx`, `src/components/walks/WalkDetail.jsx`,
+`src/components/admin/BackendShell.jsx`, `base44/entities/NarratorSafetyNotes.jsonc` (new),
+`base44/shared/backendActor.ts`, `base44/functions/cloneWalkForBackend/entry.ts`,
+`base44/functions/translateScript/entry.ts`, `base44/functions/saveWalkForBackend/entry.ts`.
+**Three backend functions need their own manual redeploy in Base44 (add a blank line,
+remove it, redeploy) after pushing this code: `cloneWalkForBackend`, `translateScript`,
+`saveWalkForBackend`.** The new entity (`NarratorSafetyNotes`) needs no redeploy, just the
+usual hard refresh + republish.
+
+**Per Enda, across several follow-up messages:** (1) wanted a short general safety list for
+all tours, with tour-specific measures still added by hand per tour; (2) wanted the
+download-first requirement made compulsory, not just advised, and wanted the code
+double-checked to confirm the Start button really can't be pressed until both the tour is
+downloaded AND safety notes are confirmed; (3) after finding one real gap in that check,
+asked for it closed, for the new list to also backfill every existing tour (not just new
+ones), for a narrator's polished translation to be reused in full on every future clone into
+that language, and for cloning to be flatly refused unless a narrator has both a Google and
+a Groq API key set up.
+
+**Investigated first:**
+- The Start button gate itself (`canStart = savedOffline && safetyConfirmed`) was already
+  correct, in both `WalkDetail.jsx` (Walk/Hike) and `DrivingTourPlayer.jsx` (WalkAbout/
+  DriveAbout) — built in a past follow-up, still intact.
+- Found a real gap next to it: on WalkAbouts/DriveAbouts, each Tour Stop has its own manual
+  "Play" button (a GPS-failure backup), and it was reachable — and worked — before Start was
+  ever pressed, bypassing both the download and safety-confirmation requirements entirely.
+- Queried the live Walk data directly (13 records) before touching anything and found five
+  **already-published, customer-facing tours showing literal "Lorem ipsum dolor sit amet…"
+  placeholder text** as their safety notes (Walkabout Meronas, WalkAbout Heraklion, Walkabout
+  Chania, Agios Antonis Walk, and the free sample tour Genna Route of Faith) — leftover
+  filler typed in just to satisfy the Safety Notes required-field check added in follow-up
+  178, never replaced with real content. A further four live, published tours (Plakias Walk,
+  Spili Koules Walk, Spili Walk, WalkAbout Rethymno Old Town) had a blank Safety Notes field
+  and were silently falling back to the old generic JS text. Only one tour (Kria Vrisi Flower
+  Walk) had genuine hand-written content — and it was, in substance, the same general
+  boilerplate now being standardised, with no real tour-specific content of its own.
+- Confirmed the narrator-facing Narr Studio UI already hard-locks behind a non-dismissable
+  "set both your API keys" dialog (`BackendShell.jsx`'s `needsApiKeySetup`) — but this was
+  client-side only; nothing stopped a hand-crafted API call from cloning without either key.
+- Confirmed `translateScript.ts` already had a one-click "Translate" button for Safety Notes
+  (follow-up 178) using the narrator's own Groq/Google keys — the missing piece was doing it
+  automatically at clone time, and remembering a narrator's own polished result per language.
+
+**Fixed:**
+- `defaultSafetyNotes.js` (new): the general safety list, single source of truth. Rewritten
+  to make downloading compulsory ("You must download the tour before you go… the tour will
+  not start without it"), while keeping the GPS-vs-signal distinction and the Greek
+  search-and-rescue liability line from the old text.
+- `WalkEditor.jsx`: `EMPTY_WALK` now pre-fills Safety Notes with this text for every brand-
+  new tour, so it's real, visible, editable content from the start — not an empty required
+  field, and not an invisible fallback nobody could see or edit.
+- `i18n/index.js`: `detail.defaultSafetyNotes` now points at the same shared text (last-
+  resort fallback only, for the rare tour that's still somehow blank).
+- `WalkDetail.jsx`: the manual per-stop Play button on WalkAbouts/DriveAbouts now requires
+  `started` (Start Tour actually pressed) — closes the bypass. The Tour Stops list itself
+  stays visible before Start, so a stop can still be previewed, just not played.
+- **Live data (not code — updated directly via the Base44 API, not through this zip):** all
+  13 Walk records' Safety Notes field replaced with the new general list — the five lorem-
+  ipsum tours, the four blank ones, the one with old boilerplate, and the two draft/test
+  tours all now show the same real, correct text.
+- `backendActor.ts`: a narrator's resolved identity now also carries `hasGoogleKey`/
+  `hasGroqKey` (both booleans, read off their own AppUser record), so any function can
+  enforce the "both keys set" rule server-side, not just trust the frontend's lock.
+- `cloneWalkForBackend/entry.ts`: refuses cloning outright (403) for a narrator missing
+  either key — the real, unbypassable gate behind the frontend's existing dialog. Admins are
+  unaffected (same exemption as every other check in this function).
+- `translateScript/entry.ts`: for `field: 'safety_notes'` specifically, checks a new
+  `NarratorSafetyNotes` cache (keyed by the clone's assigned narrator + target language)
+  before calling Groq/Google at all — a hit returns that narrator's own saved text instantly,
+  a miss falls through to a fresh AI translation exactly as before. `description` translation
+  is untouched.
+- `saveWalkForBackend.ts`: whenever a narrator saves Safety Notes on their own clone, the
+  exact text they just saved is written into that same cache (create or update, keyed by
+  narrator email + the clone's language) — best-effort, never blocks the actual tour save.
+- `BackendShell.jsx`: `handleCloneTour` now calls `translateScript` for Safety Notes
+  immediately after a clone is created (using the cache if one exists, otherwise a fresh
+  translation via the narrator's own keys), then saves the result onto the clone — so it
+  arrives already translated, not left in English until someone remembers to click
+  Translate. Skipped when cloning into English. Best-effort: any failure here leaves the
+  clone exactly as it works today (English text, translatable by hand).
+- `NarratorSafetyNotes.jsonc` (new entity): `narrator_email` + `language` +
+  `safety_notes_text`. RLS is admin-only, same backstop-only pattern as `Walk.jsonc` — the
+  real enforcement is in the three functions above, via `asServiceRole`.
+
+**Left as Enda's own decision, not guessed on:** if a narrator's saved translation is reused
+in full on a tour that also has tour-specific Safety Notes content beyond the general list,
+the tour-specific part won't automatically be translated — Enda chose this ("whole text"
+reuse) over a more complex "general list only" split, on the understanding that a narrator
+would add that tour-specific translation themselves when needed.
+
+**Verified:** `npx eslint` on every changed frontend file (0 new issues — same pre-existing,
+unrelated issues in `WalkEditor.jsx`/`WalkDetail.jsx` as prior follow-ups, untouched). `npm
+run build` (exit 0), confirmed the compiled bundle contains the new safety text. Backend
+`.ts` files checked by hand — brace/paren balance confirmed for all four changed files, no
+Deno toolchain available here to type-check. New standalone test
+`/tmp/test_safety_notes_overhaul_followup190.mjs` (36 checks): the new text's wording and
+compulsory phrasing, the i18n fallback and EMPTY_WALK both sourcing from it, the Play-button
+gate, `resolveActor`'s new key flags (narrator branch only, admin branch untouched), the
+clone-time key enforcement (narrator-only), the translation cache's read (before any AI
+call, keyed off the clone's narrator) and write (best-effort, doesn't block the real save),
+and the new entity's required fields and RLS. Queried live Walk data after the backfill to
+confirm all 13 records show the new text correctly, with no encoding issues in the em dashes
+or curly quotes. Full accumulated regression suite re-run (48 files, 633 checks, all
+passing).
+
+---
+
 ## 2026-09-14 (follow-up 189) — "Driving Tours" renamed to "DriveAbouts" everywhere it's
 ## shown to a customer or admin
 **Scope:** `src/lib/i18n/index.js`, `src/lib/tourCategories.js`,

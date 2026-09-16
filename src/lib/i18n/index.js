@@ -4,6 +4,8 @@
 // on a Walk (e.g. "Dutch"); originals have none and read as English. The UI language here
 // only changes chrome strings (buttons, labels, hints) and the order tours appear in.
 
+import { DEFAULT_SAFETY_NOTES } from '../defaultSafetyNotes';
+
 // The full target language set for both the UI and tour narration. `rtl` marks the two
 // right-to-left languages so the layout can flip when those UI translations ship.
 export const UI_LANGUAGES = [
@@ -247,7 +249,11 @@ export const translations = {
     'detail.draftPreviewTitle': "Draft — Admin Preview Only",
     'detail.draftPreviewMessage': "This tour isn't published yet. You're seeing it because you're an admin — customers can't see or buy it until it's published.",
     'detail.startWalk': "Start Walk",
-    'detail.defaultSafetyNotes': "Essential equipment: sun hat, sturdy walking shoes or boots, walking poles, and a minimum of 2 litres of water per person.\n\nMobile signal may be unreliable. Tap \"Stay Safe Offline\" before departure so the route and narration work without a connection.\n\nGPS signal can also be weak in Crete's mountains — this is separate from your phone signal, and downloading the tour doesn't fix it. If GPS drops out, narration may be delayed until it returns. If you're ever unsure of the route, stop safely and wait.\n\nUnder Greek law, the cost of any search and rescue operation is charged to the individual. Do not attempt any walk unprepared.",
+    // Per Enda (follow-up 190): this is now only a last-resort fallback for the rare tour
+    // that somehow still has a blank Safety Notes field — every real tour's own field is
+    // pre-filled with this same text (see EMPTY_WALK in WalkEditor.jsx) so it's normally
+    // visible and editable there instead, never invisible like this fallback used to be.
+    'detail.defaultSafetyNotes': DEFAULT_SAFETY_NOTES,
     // Per Enda (follow-up 184): "Before You Set Off" is easy to scroll past without
     // reading — this makes reading it a deliberate, logged action instead.
     'detail.confirmSafety': "I've Read This — Confirm",

@@ -589,8 +589,14 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
                             {/* Manual "Play" — lets the driver hear this stop's narration on
                                 demand, so a GPS problem (weak signal, wrong angle, a missed
                                 trigger) never leaves them stuck with no way to continue. Only
-                                shown for driving-tour stops that actually have narration. */}
-                            {isDrivingTour && waypoint.trigger_audio && waypoint.audio_clip_url && (
+                                shown for driving-tour stops that actually have narration.
+                                Per Enda (follow-up 190): this must stay off until Start Tour
+                                has actually been pressed — the Tour Stops list itself is
+                                visible before that (so someone can preview the stops), but
+                                letting them play real narration audio before downloading and
+                                confirming safety was a genuine gap, since `canStart`'s gate on
+                                the Start button did nothing to stop this separate button. */}
+                            {isDrivingTour && started && waypoint.trigger_audio && waypoint.audio_clip_url && (
                               <Button
                                 type="button"
                                 size="sm"

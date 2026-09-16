@@ -22,6 +22,7 @@ import { getRouteTypeForCategory, defaultPriceForCategory } from '@/lib/tourCate
 import { MAX_WAYPOINT_IMAGES } from '@/lib/waypointImages';
 import { toast } from '@/components/ui/use-toast';
 import { buildTourBackupZip } from '@/lib/tourBackupZip';
+import { DEFAULT_SAFETY_NOTES } from '@/lib/defaultSafetyNotes';
 
 const DEFAULT_INTERESTS = ['Wild Flowers', 'History', 'Mythology', 'Archaeology', 'Photography', 'Routes of Faith'];
 
@@ -31,6 +32,12 @@ const EMPTY_WALK = {
   code: '',
   name: '',
   description: '',
+  // Per Enda (follow-up 190): a brand-new tour now starts with the general safety list
+  // already in the box — real, visible, editable content from the start, not an empty
+  // required field an admin has to type from scratch (or, as happened before this, fill
+  // with placeholder text just to get past the required-field check). Tour-specific
+  // measures are then added on top of this by hand, same as always.
+  safety_notes: DEFAULT_SAFETY_NOTES,
   difficulty: 'moderate',
   is_sample_walk: false,
   buggy_friendly: false,

@@ -7,6 +7,12 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Trash2, Mountain, Loader2, MapPin, Pencil, CalendarCheck, AlertTriangle, RefreshCw, Undo2, Languages } from 'lucide-react';
 import { toast } from '@/components/ui/use-toast';
+// Per Enda (2026-09-16): this screen was one long undifferentiated list of every tour
+// ever created, mixing Walks/Hikes, WalkAbouts and DriveAbouts together, with finished,
+// published tours sitting alongside ones still being actively worked on — an easy way to
+// lose track of what actually still needs attention. TOUR_CATEGORIES gives the three
+// group titles/order to use below, in the same wording used everywhere else in the app.
+import { TOUR_CATEGORIES } from '@/lib/tourCategories';
 
 const difficultyColors = {
   easy: 'bg-green-900 text-green-300',
@@ -47,6 +53,11 @@ export default function WalkAdminList({ walks, isLoading, onEdit, onDelete, onMa
   const [pushBackReason, setPushBackReason] = React.useState('');
   const [pushingBack, setPushingBack] = React.useState(false);
   const isAdmin = userRole === 'admin';
+  // Per Enda (2026-09-16): "finished and published" uses the exact same Published/Draft
+  // badge each card already shows (walk.approved !== false) — no new status invented.
+  // Defaults to "In Progress" so this screen opens on what still needs attention, not on
+  // a long list of tours nobody needs to touch again.
+  const [activeTab, setActiveTab] = React.useState('in_progress');
 
   const handleDelete = (walk) => {
     setConfirmDelete(walk);
@@ -128,44 +139,27 @@ export default function WalkAdminList({ walks, isLoading, onEdit, onDelete, onMa
     setPushingBack(false);
   };
 
-  return (
-    <div>
-      <div className="mb-6 mt-2 flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-bold text-white">Tours</h2>
-          <p className="text-slate-400 text-sm">{walks.length} tours in database</p>
-        </div>
-        {onRefresh && (
-          <button
-            onClick={onRefresh}
-            disabled={isLoading}
-            title="Reload the list from the server, to check what's actually saved"
-            className="flex items-center gap-2 text-sm text-white font-semibold bg-blue-600 hover:bg-blue-500 border border-blue-400 rounded-lg px-3 py-1.5 transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
-        )}
-      </div>
+  // Same predicate the "Published"/"Draft" badge below has always used — kept in one
+  // place now that it also decides which tab a tour falls into.
+  const isPublished = (walk) => walk.approved !== false;
+  const publishedCount = walks.filter(isPublished).length;
+  const inProgressCount = walks.length - publishedCount;
+  const visibleWalks = walks.filter(w => (activeTab === 'published') === isPublished(w));
 
-      {isLoading ? (
-        <div className="flex justify-center py-16">
-          <Loader2 className="w-8 h-8 animate-spin text-amber-400" />
-        </div>
-      ) : walks.length === 0 ? (
-        <div className="text-center py-16 text-slate-500">
-          <Mountain className="w-16 h-16 mx-auto mb-4 opacity-30" />
-          <p className="text-lg font-medium">No walks yet</p>
-          <p className="text-sm">Go to Start → New Tour to create the first one</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {walks.map(walk => {
-            const importDate = formatDate(walk.created_date);
-            const lastCheckedDate = walk.announced_at || walk.created_date;
-            const daysOverdue = daysSince(lastCheckedDate);
-            const needsCheck = daysOverdue !== null && daysOverdue > CHECK_INTERVAL_DAYS;
-            return (
+  // Grouped into the three tour categories, in the same fixed order/wording used
+  // everywhere else in the app (Walks, WalkAbouts, DriveAbouts). A tour with no
+  // category recorded defaults to WHT, matching the badge fallback further down.
+  const groupedWalks = TOUR_CATEGORIES.map(cat => ({
+    ...cat,
+    tours: visibleWalks.filter(w => (w.tour_category || 'WHT') === cat.code),
+  })).filter(group => group.tours.length > 0);
+
+  const renderTourCard = (walk) => {
+    const importDate = formatDate(walk.created_date);
+    const lastCheckedDate = walk.announced_at || walk.created_date;
+    const daysOverdue = daysSince(lastCheckedDate);
+    const needsCheck = daysOverdue !== null && daysOverdue > CHECK_INTERVAL_DAYS;
+    return (
             <div key={walk.id} className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
               {needsCheck && (
                 <div className="flex items-center gap-2 bg-red-900/30 border-b border-red-700/50 px-4 py-1.5 text-xs text-red-300">
@@ -276,8 +270,81 @@ export default function WalkAdminList({ walks, isLoading, onEdit, onDelete, onMa
               )}
               </div>
             </div>
-            );
-          })}
+    );
+  };
+
+  return (
+    <div>
+      <div className="mb-6 mt-2 flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-white">Tours</h2>
+          <p className="text-slate-400 text-sm">{walks.length} tours in database</p>
+        </div>
+        {onRefresh && (
+          <button
+            onClick={onRefresh}
+            disabled={isLoading}
+            title="Reload the list from the server, to check what's actually saved"
+            className="flex items-center gap-2 text-sm text-white font-semibold bg-blue-600 hover:bg-blue-500 border border-blue-400 rounded-lg px-3 py-1.5 transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        )}
+      </div>
+
+      {/* Per Enda (2026-09-16): two tabs so this screen opens on what still needs work,
+          not on every tour ever finished. The split uses the exact same Published/Draft
+          badge each card already shows — see isPublished() above. */}
+      <div className="flex gap-2 mb-6 border-b border-slate-700">
+        <button
+          onClick={() => setActiveTab('in_progress')}
+          className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${
+            activeTab === 'in_progress' ? 'border-amber-400 text-amber-300' : 'border-transparent text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          In Progress ({inProgressCount})
+        </button>
+        <button
+          onClick={() => setActiveTab('published')}
+          className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${
+            activeTab === 'published' ? 'border-amber-400 text-amber-300' : 'border-transparent text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          Published ({publishedCount})
+        </button>
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center py-16">
+          <Loader2 className="w-8 h-8 animate-spin text-amber-400" />
+        </div>
+      ) : walks.length === 0 ? (
+        <div className="text-center py-16 text-slate-500">
+          <Mountain className="w-16 h-16 mx-auto mb-4 opacity-30" />
+          <p className="text-lg font-medium">No walks yet</p>
+          <p className="text-sm">Go to Start → New Tour to create the first one</p>
+        </div>
+      ) : visibleWalks.length === 0 ? (
+        <div className="text-center py-16 text-slate-500">
+          <Mountain className="w-16 h-16 mx-auto mb-4 opacity-30" />
+          <p className="text-lg font-medium">
+            {activeTab === 'published' ? 'Nothing published yet' : 'Nothing currently in progress'}
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-8">
+          {groupedWalks.map(group => (
+            <div key={group.code}>
+              <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-3 flex items-center gap-2">
+                {group.pluralLabel}
+                <span className="text-slate-500 font-normal normal-case">({group.tours.length})</span>
+              </h3>
+              <div className="space-y-3">
+                {group.tours.map(renderTourCard)}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
