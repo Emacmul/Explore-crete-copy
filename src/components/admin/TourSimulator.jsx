@@ -476,6 +476,27 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     return { startIndex: current.index, endIndex: current.endIndex, label: current.label };
   }, [locationStatus, selectedWpIndex]);
 
+  // The SAME primary_start location's own done/not-done breakdown locationStatus already
+  // computes for the "Jump to location…" dropdown, matched to whichever location
+  // currentLocationRange says selectedWpIndex is sitting in right now. Per Enda's own
+  // choice: the new "Test Location" button (last waypoint of a location, next to "Test N
+  // subsegments" — see the WaypointPaceEditor render below) must require every waypoint in
+  // the location to already be marked Done first, exactly the same gate "Jump to
+  // location…" already enforces — not a looser one, even though that means it can't be
+  // used until the whole location is finished.
+  const currentLocationStatus = useMemo(
+    () => locationStatus.find(loc => loc.index === currentLocationRange?.startIndex) || null,
+    [locationStatus, currentLocationRange]
+  );
+
+  // True only on a location's own LAST waypoint — never anywhere else in it. Per Enda's
+  // exact request: "the 'test location' button should only appear in the last waypoint of
+  // a location... not in on any other waypoint level." currentLocationRange.endIndex is
+  // one past this location's own last waypoint (either the NEXT location's own
+  // primary_start, or waypoints.length for the tour's final location), so endIndex - 1 is
+  // this location's own last waypoint.
+  const isLastWaypointOfLocation = !!currentLocationRange && selectedWpIndex === currentLocationRange.endIndex - 1;
+
   // Per Enda: the tour's very first location is always built the same way — its
   // Primary-Start waypoint (e.g. BOR1a) is a static point where nothing moves (the
   // narrator welcomes people and gives them a moment to get ready), and the very next
@@ -729,6 +750,26 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     const locationWaypoints = waypoints.slice(targetIndex, endIndex);
     const bounds = locationWaypoints.filter(wp => wp.lat && wp.lng).map(wp => [wp.lat, wp.lng]);
     if (bounds.length > 0) setMapFocusBounds(bounds);
+  };
+
+  // Per Enda's report while finishing BOR1's waypoints: "Jump to location…" above already
+  // drives through a whole finished location's real saved audio, start to finish — exactly
+  // what's needed to check "does the audio work properly throughout the location" — but
+  // it's a separate control at the top of the screen, and re-picking your own current
+  // location out of its dropdown while already sitting in WaypointPaceEditor, editing that
+  // location's own last waypoint, is an unnecessary detour. This is the exact same drive,
+  // through the SAME "Jump to location…" gate (currentLocationStatus above — deliberately
+  // NOT relaxed, per Enda's own choice), just triggered straight from that last waypoint's
+  // own panel (see the onTestLocation prop passed to WaypointPaceEditor below). Unlike
+  // jumpToLocation, this deliberately leaves selectedWpIndex alone — the editor stays right
+  // where it is (the last waypoint just being worked on) instead of jumping the editing
+  // focus back to the location's own start.
+  const testCurrentLocation = () => {
+    if (!currentLocationRange) return;
+    const locationWaypoints = waypoints.slice(currentLocationRange.startIndex, currentLocationRange.endIndex);
+    const bounds = locationWaypoints.filter(wp => wp.lat && wp.lng).map(wp => [wp.lat, wp.lng]);
+    if (bounds.length > 0) setMapFocusBounds(bounds);
+    jumpToWaypoint(currentLocationRange.startIndex, { locationSpan: 1, autoplay: true });
   };
 
   // Per Enda/Anoushka's follow-up 163 report: pace-testing one waypoint's own speech
@@ -1533,6 +1574,13 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                     testDisabledReason="Not applicable here — this point is heard while parked, before any driving starts, so there's no driving speed to test its speech against. Its pause timing above can still be tuned normally."
                     maxTestSpan={maxWaypointTestSpan}
                     doneLocked={doneLocked}
+                    onTestLocation={isLastWaypointOfLocation ? testCurrentLocation : undefined}
+                    testLocationDisabled={!currentLocationStatus?.isComplete}
+                    testLocationDisabledReason={
+                      currentLocationStatus && !currentLocationStatus.isComplete
+                        ? `${currentLocationStatus.notDoneCount} of ${currentLocationStatus.total} waypoint${currentLocationStatus.total === 1 ? '' : 's'} in ${currentLocationStatus.label} still ${currentLocationStatus.notDoneCount === 1 ? "needs" : "need"} to be marked Done before you can test the whole location.`
+                        : undefined
+                    }
                   />
                 </div>
               ) : (

@@ -85,6 +85,67 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-16 (follow-up 192) — New "Test Location" button, last waypoint of a location
+## only, next to "Test N subsegments"
+**Scope:** `src/components/admin/TourSimulator.jsx`,
+`src/components/admin/WaypointPaceEditor.jsx`. Frontend-only — no backend function
+touched, so no manual redeploy needed, just the usual hard refresh + republish.
+
+**Per Enda:** while finishing BOR1's waypoints, he'd tested up to 3 segments in a row
+via the existing "Test N subsegments" button, but had no way to hear the WHOLE
+location's audio play through, start to finish, to know it genuinely works throughout.
+Wanted a "Test Location" button, only on a location's own last waypoint, next to the
+existing "Test N subsegments" button — not on any other waypoint in the location.
+
+**Found first (before writing anything):** the app already has a "Jump to location…"
+feature (top of the Narrate & Simulate tab) that drives an entire location's real saved
+audio, start to finish — but it's a separate toolbar control, and it only ever offers a
+location once EVERY waypoint in it is marked Done. Asked Enda whether the new button
+should keep that same "must be Done first" requirement or work anytime, mid-edit — his
+choice: keep the same requirement "Jump to location…" already uses.
+
+**Built:**
+- `TourSimulator.jsx`: `isLastWaypointOfLocation` — true only when the currently open
+  waypoint is the last one in its own location (works out to the same location-boundary
+  logic `locationStatus`/`currentLocationRange` already used elsewhere in this file, so
+  it can never disagree with "Jump to location…" about where a location ends).
+  `currentLocationStatus` looks up that same location's own done/not-done breakdown.
+  `testCurrentLocation()` plays the whole thing — same real drive, same boundary-stop,
+  same completeness gate as "Jump to location…" — but leaves the editing focus on the
+  waypoint you're already on, rather than jumping it back to the location's start.
+- `WaypointPaceEditor.jsx`: new "Test Location" button (purple, matching this app's
+  existing TTS/build-and-play buttons), rendered only when a new `onTestLocation` prop
+  is passed — which `TourSimulator.jsx` only ever does on a location's last waypoint.
+  Disabled with an explanatory tooltip (e.g. "4 of 4 waypoints in BOR1a still need to be
+  marked Done before you can test the whole location.") until every waypoint in that
+  location is marked Done, exactly mirroring "Jump to location…"'s own rule.
+
+**Verified:** `npx eslint` (0 errors, 1 pre-existing unrelated warning elsewhere in
+`TourSimulator.jsx`, unchanged by this work). `npm run build` (exit 0). New
+`@testing-library/react` + `vitest --environment jsdom` test against the real
+`WaypointPaceEditor` component: button absent on every waypoint level except when
+`onTestLocation` is passed; present-but-disabled with the correct tooltip text when the
+location isn't complete; present-and-enabled, and actually calls `onTestLocation` on
+click, once it is; the pre-existing "Test this subsegment" button's own disabled/reason
+behaviour is untouched. Deliberately broke the new disabled-logic line to confirm the
+test genuinely fails on a real regression (it did, cleanly, only on the one relevant
+check), then restored the fix and reconfirmed all pass. Separate standalone script
+verified the location-boundary/last-waypoint/reason-text logic itself (copied verbatim
+from the real code) against synthetic multi-location data: correctly picks out only the
+true last waypoint of each location (including a single-waypoint location, where that
+one waypoint is both first and last); never leaks one location's done/not-done count or
+name into a neighbouring location's disabled reason; correctly re-enables once every
+waypoint in that specific location is marked Done, independent of any other location's
+own state — 14 checks, all passing. Full accumulated regression suite re-run separately
+(56 files, 700+ checks, all still passing — this change didn't touch any file those
+cover).
+
+**Not done / worth knowing for next time:** not tested live in the Base44 app itself —
+worth a quick real click-through on BOR1 after publishing, once BOR1's waypoints are all
+marked Done, to hear the whole location play back start to finish.
+
+---
+
 ## 2026-09-16 (follow-up 191) — Tours admin list: split into In Progress / Published
 ## tabs, grouped by category (Walks / WalkAbouts / DriveAbouts)
 **Scope:** `src/components/admin/WalkAdminList.jsx` only. Frontend-only — no backend

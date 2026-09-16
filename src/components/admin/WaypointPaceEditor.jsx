@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Slider } from '@/components/ui/slider';
-import { Loader2, Play, AlertTriangle, Clock, Trash2, X, Check, BookOpen, CheckCircle2 } from 'lucide-react';
+import { Loader2, Play, AlertTriangle, Clock, Trash2, X, Check, BookOpen, CheckCircle2, Route } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { getNarratorAuthPayload, useNarratorApiKeys } from '@/lib/useNarratorApiKeys';
 import { parseScript, rebuildScript } from '@/lib/ttsParser';
@@ -120,7 +120,7 @@ const VOICE = 'NEUTRAL';
  * in-browser preview and never saves anything, same reasoning as leaving read-only
  * actions like Download unlocked elsewhere in this codebase.
  */
-export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, onAutoSave, onTestSubsegment, testDisabled, testDisabledReason, maxTestSpan = 1, doneLocked = false }) {
+export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, onAutoSave, onTestSubsegment, testDisabled, testDisabledReason, maxTestSpan = 1, doneLocked = false, onTestLocation, testLocationDisabled = false, testLocationDisabledReason }) {
   // Per Enda's report (follow-up 59): this panel opened straight to "No Google TTS API
   // key found for your account yet" even with a real key saved. Follow-up 59 fixed the
   // FIRST cause (reading the key before its own async fetch had resolved at all — see
@@ -816,6 +816,27 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
               {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
               {testSpan > 1 ? `Test ${testSpan} subsegments` : 'Test this subsegment'}
             </Button>
+            {/* Per Enda's report while finishing BOR1: testing 1-3 segments at a time here
+                never told him whether the audio actually works properly all the way through
+                a whole location, start to finish. Only rendered on a location's own LAST
+                waypoint (onTestLocation is only ever passed then — see TourSimulator.jsx's
+                isLastWaypointOfLocation) — never anywhere else in it, exactly as he asked.
+                Per his own choice: this uses the SAME "every waypoint in the location must
+                already be marked Done" gate "Jump to location…" already enforces, not a
+                looser one — testLocationDisabled/testLocationDisabledReason are computed
+                from that same rule in the parent. */}
+            {onTestLocation && (
+              <Button
+                size="sm"
+                onClick={onTestLocation}
+                disabled={loading || testing || saving || testLocationDisabled}
+                title={testLocationDisabled ? testLocationDisabledReason : "Drive through this entire location, from its own start to its end, playing every waypoint's real saved audio — the full listen-through check that everything flows properly."}
+                className="bg-purple-700/30 hover:bg-purple-700/50 border border-purple-600/50 text-white gap-2"
+              >
+                <Route className="w-4 h-4" />
+                Test Location
+              </Button>
+            )}
           </div>
 
           <div className="flex items-center gap-3 flex-wrap">
