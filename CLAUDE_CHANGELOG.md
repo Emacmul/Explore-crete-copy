@@ -85,6 +85,66 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-16 (follow-up 193) — New "Play Tour So Far" button, location 2 onwards
+**Scope:** `src/components/admin/TourSimulator.jsx`,
+`src/components/admin/WaypointPaceEditor.jsx`. Frontend-only — no backend function
+touched, so no manual redeploy needed, just the usual hard refresh + republish.
+
+**Per Anoushka (relayed by Enda):** wanted a button, available from the end of
+location 2 onwards, that plays the FULL tour from location 1's own WP1 straight through
+to wherever the button is clicked — not just one location in isolation. Her reasoning:
+that's when audio problems (and whether a fix actually helped) become most apparent —
+hearing the whole thing flow together, not one leg at a time.
+
+**Checked with Enda first:** whether every earlier location needs to already be marked
+Done, same as the brand-new "Test Location" button (follow-up 192), or just the current
+one. His choice: every location from 1 through the current one — an unfinished earlier
+location would otherwise just play silently mid-drive, hiding a real problem instead of
+revealing one.
+
+**Built:**
+- `TourSimulator.jsx`: `currentLocationPosition` — where the open location sits in the
+  tour's own order (0 for location 1, 1 for location 2, etc.), reusing the same
+  `locationStatus` list "Jump to location…" already relies on. The button is only ever
+  offered from position 1 onwards (location 2's last waypoint and later) — never on
+  location 1, where it would be identical to "Test Location" alone.
+  `testTourSoFar()` drives from waypoint 0 through this location's own end, reusing
+  `locationRangeBoundary` exactly as "Jump to location…" already does for a
+  multi-location span — the span is just worked out fresh each time
+  (`currentLocationPosition + 1`) instead of a fixed 1/2/3 dropdown choice. The map is
+  framed to the whole span driven, so the car's full journey so far is visible, not one
+  zoomed-in leg.
+- `WaypointPaceEditor.jsx`: new "Play Tour So Far" button (same purple as "Test
+  Location", distinct icon), next to it, shown only when a new `onTestTourSoFar` prop is
+  passed. Disabled with an explanatory tooltip (e.g. "2 of the 3 locations from the
+  start of the tour through here are not fully marked Done yet — starting with BOR1a.")
+  until every location up to and including the current one is fully marked Done.
+
+**Verified:** `npx eslint` (0 errors, same one pre-existing unrelated warning elsewhere
+in `TourSimulator.jsx`). `npm run build` (exit 0). New
+`@testing-library/react` + `vitest --environment jsdom` test against the real
+`WaypointPaceEditor` component (5 checks): button absent with no prop passed; absent
+even when "Test Location" IS shown (location 1's own last waypoint); present-but-
+disabled with the correct tooltip when an earlier location isn't complete; present-and-
+enabled, and actually calls the handler on click, once every earlier location is done;
+renders correctly alongside "Test Location" without disturbing it. Deliberately broke
+the new disabled-logic line to confirm 2 of the 5 checks genuinely fail on a real
+regression, then restored the fix and reconfirmed all 5 pass. Separate standalone
+script verified the location-position/visibility/gate/reason-text logic itself (copied
+verbatim from the real code) against a synthetic 3-location tour: correctly hides the
+button on location 1 and on every non-last waypoint; correctly shows it from location
+2's last waypoint onward; correctly stays disabled until EVERY earlier location (not
+just the current one) is marked Done, with the reason naming the first incomplete one;
+correctly computes the right drive span/end-point once enabled — 15 checks, all
+passing. Full accumulated regression suite re-run separately (57 files, 700+ checks,
+all still passing).
+
+**Not done / worth knowing for next time:** not tested live in the Base44 app itself —
+worth trying on BOR once at least 2 locations are fully marked Done, to confirm the car
+genuinely drives the whole span on the map and the audio flows as expected.
+
+---
+
 ## 2026-09-16 (follow-up 192) — New "Test Location" button, last waypoint of a location
 ## only, next to "Test N subsegments"
 **Scope:** `src/components/admin/TourSimulator.jsx`,

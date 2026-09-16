@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Slider } from '@/components/ui/slider';
-import { Loader2, Play, AlertTriangle, Clock, Trash2, X, Check, BookOpen, CheckCircle2, Route } from 'lucide-react';
+import { Loader2, Play, AlertTriangle, Clock, Trash2, X, Check, BookOpen, CheckCircle2, Route, History } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { getNarratorAuthPayload, useNarratorApiKeys } from '@/lib/useNarratorApiKeys';
 import { parseScript, rebuildScript } from '@/lib/ttsParser';
@@ -120,7 +120,7 @@ const VOICE = 'NEUTRAL';
  * in-browser preview and never saves anything, same reasoning as leaving read-only
  * actions like Download unlocked elsewhere in this codebase.
  */
-export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, onAutoSave, onTestSubsegment, testDisabled, testDisabledReason, maxTestSpan = 1, doneLocked = false, onTestLocation, testLocationDisabled = false, testLocationDisabledReason }) {
+export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, onAutoSave, onTestSubsegment, testDisabled, testDisabledReason, maxTestSpan = 1, doneLocked = false, onTestLocation, testLocationDisabled = false, testLocationDisabledReason, onTestTourSoFar, testTourSoFarDisabled = false, testTourSoFarDisabledReason }) {
   // Per Enda's report (follow-up 59): this panel opened straight to "No Google TTS API
   // key found for your account yet" even with a real key saved. Follow-up 59 fixed the
   // FIRST cause (reading the key before its own async fetch had resolved at all — see
@@ -835,6 +835,27 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
               >
                 <Route className="w-4 h-4" />
                 Test Location
+              </Button>
+            )}
+            {/* Per Anoushka (relayed by Enda): audio problems become most apparent when
+                hearing the WHOLE tour drive through, not just one location in isolation.
+                Only rendered from location 2's own last waypoint onwards (onTestTourSoFar
+                is only ever passed then — see TourSimulator.jsx's currentLocationPosition)
+                — on location 1 it would be identical to "Test Location" above, so it's
+                left out there entirely. Same "every location up to and including this one
+                must already be marked Done" gate as "Test Location", per Enda's own
+                choice — an unfinished earlier location would otherwise just play silently
+                mid-drive. */}
+            {onTestTourSoFar && (
+              <Button
+                size="sm"
+                onClick={onTestTourSoFar}
+                disabled={loading || testing || saving || testTourSoFarDisabled}
+                title={testTourSoFarDisabled ? testTourSoFarDisabledReason : "Drive the whole tour from its very first waypoint, straight through every finished location, all the way to here — the full listen-through check for how everything flows together so far."}
+                className="bg-purple-700/30 hover:bg-purple-700/50 border border-purple-600/50 text-white gap-2"
+              >
+                <History className="w-4 h-4" />
+                Play Tour So Far
               </Button>
             )}
           </div>

@@ -497,6 +497,33 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // this location's own last waypoint.
   const isLastWaypointOfLocation = !!currentLocationRange && selectedWpIndex === currentLocationRange.endIndex - 1;
 
+  // Where the currently open location sits in the tour's own running order — 0 for
+  // location 1, 1 for location 2, and so on. Per Anoushka (relayed by Enda): a new "Play
+  // Tour So Far" button should only appear "from the end of location 2 onwards" — testing
+  // the whole tour so far is meaningless on location 1's own last waypoint, since that's
+  // identical to just testing location 1 alone (the existing "Test Location" button
+  // already covers that). -1 when there's no current location at all (nothing loaded yet).
+  const currentLocationPosition = useMemo(
+    () => locationStatus.findIndex(loc => loc.index === currentLocationRange?.startIndex),
+    [locationStatus, currentLocationRange]
+  );
+
+  // Per Anoushka: hearing the WHOLE tour drive through, from location 1's own WP1 up to
+  // wherever she's currently checking, is what actually reveals whether an audio fix
+  // improved things — a single location's own test in isolation doesn't show that. Per
+  // Enda's own choice (echoing his "Test Location" decision): every location from 1
+  // through the one currently open must ALREADY be marked Done — an unfinished earlier
+  // location would otherwise just play silently mid-drive, hiding a real problem instead
+  // of revealing one, defeating the whole point of this button.
+  const locationsUpToCurrent = useMemo(
+    () => (currentLocationPosition >= 0 ? locationStatus.slice(0, currentLocationPosition + 1) : []),
+    [locationStatus, currentLocationPosition]
+  );
+  const incompleteLocationsUpToCurrent = useMemo(
+    () => locationsUpToCurrent.filter(loc => !loc.isComplete),
+    [locationsUpToCurrent]
+  );
+
   // Per Enda: the tour's very first location is always built the same way — its
   // Primary-Start waypoint (e.g. BOR1a) is a static point where nothing moves (the
   // narrator welcomes people and gives them a moment to get ready), and the very next
@@ -770,6 +797,21 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     const bounds = locationWaypoints.filter(wp => wp.lat && wp.lng).map(wp => [wp.lat, wp.lng]);
     if (bounds.length > 0) setMapFocusBounds(bounds);
     jumpToWaypoint(currentLocationRange.startIndex, { locationSpan: 1, autoplay: true });
+  };
+
+  // Per Anoushka (relayed by Enda): "Play Tour So Far" — drives from the very first
+  // waypoint of the whole tour (location 1's own start) straight through to wherever
+  // THIS button was clicked, so the map shows the car's whole journey so far, not just
+  // one location's own leg. Reuses locationRangeBoundary exactly as "Jump to location…"
+  // already does for a multi-location span — the only difference is the span is however
+  // many locations sit between location 1 and the current one, worked out fresh every
+  // time (currentLocationPosition + 1), not a fixed 1/2/3 choice from a dropdown.
+  const testTourSoFar = () => {
+    if (!currentLocationRange || currentLocationPosition < 0) return;
+    const soFarWaypoints = waypoints.slice(0, currentLocationRange.endIndex);
+    const bounds = soFarWaypoints.filter(wp => wp.lat && wp.lng).map(wp => [wp.lat, wp.lng]);
+    if (bounds.length > 0) setMapFocusBounds(bounds);
+    jumpToWaypoint(0, { locationSpan: currentLocationPosition + 1, autoplay: true });
   };
 
   // Per Enda/Anoushka's follow-up 163 report: pace-testing one waypoint's own speech
@@ -1579,6 +1621,13 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                     testLocationDisabledReason={
                       currentLocationStatus && !currentLocationStatus.isComplete
                         ? `${currentLocationStatus.notDoneCount} of ${currentLocationStatus.total} waypoint${currentLocationStatus.total === 1 ? '' : 's'} in ${currentLocationStatus.label} still ${currentLocationStatus.notDoneCount === 1 ? "needs" : "need"} to be marked Done before you can test the whole location.`
+                        : undefined
+                    }
+                    onTestTourSoFar={isLastWaypointOfLocation && currentLocationPosition >= 1 ? testTourSoFar : undefined}
+                    testTourSoFarDisabled={incompleteLocationsUpToCurrent.length > 0}
+                    testTourSoFarDisabledReason={
+                      incompleteLocationsUpToCurrent.length > 0
+                        ? `${incompleteLocationsUpToCurrent.length} of the ${locationsUpToCurrent.length} locations from the start of the tour through here ${incompleteLocationsUpToCurrent.length === 1 ? 'is' : 'are'} not fully marked Done yet — starting with ${incompleteLocationsUpToCurrent[0].label}.`
                         : undefined
                     }
                   />
