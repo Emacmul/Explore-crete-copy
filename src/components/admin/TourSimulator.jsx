@@ -104,6 +104,13 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // button click). speedMatchMode starts false every time (a fresh tab, or a fresh trail
   // path), flips true the moment jumpToLocation actually runs, and flips back false on
   // Reset — same "back to the start state" moment stopSim already represents.
+  // Per Enda's later, explicit correction: "They should land in the pace testing
+  // section, because they can edit text there as well... stop switching to and fro,
+  // all in one place." So jumpToLocation (see its own comment, below) always switches
+  // into this mode — it's not just for Anoushka's deliberate whole-location pace-test,
+  // it's the one place a narrator now does BOTH wording edits and pace-testing for
+  // whichever waypoint they've jumped to, without being bounced back to the plain
+  // script editor first.
   const [speedMatchMode, setSpeedMatchMode] = useState(false);
 
   // Per Enda: the "Waypoint Audio & Break Tags" dropdown below must be worked through
@@ -940,24 +947,27 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // downstream piece (the playback boundary, the map's zoom bounds) uses the same
   // locationRangeBoundary so a 2/3-location jump genuinely plays and frames all of
   // them, not just the first.
+  // Per Enda's later correction: "They should land in the pace testing section,
+  // because they can edit text there as well. Stop switching to and fro, all in one
+  // place." The narrator comes back after a break, checks the Progress row above for
+  // which locations are already finished, and jumps straight to wherever work needs
+  // to resume — wording as much as pace — so this must ALWAYS switch into
+  // WaypointPaceEditor (speedMatchMode), landing exactly on that location's own WP1,
+  // with no separate "go to the ordinary editor first, then Test this segment" detour.
   const jumpToLocation = (targetIndex, span = 1) => {
     jumpToWaypoint(targetIndex, { locationSpan: span });
-    // This is the actual moment a narrator has said "I want to test/tune this location
+    // This is the actual moment a narrator has said "I want to work on this location
     // now" — see the speedMatchMode comment above its declaration. Also snaps the
     // waypoint dropdown to this location's own start point, so the panel that's about to
     // switch in opens already showing the location just jumped to, not whatever was
     // selected before.
     setSpeedMatchMode(true);
-    // Per Enda: location 1 is the one exception — its Primary-Start (index 0) is a
-    // static "welcome, get ready" point that never moves, so there's no driving leg
-    // to speed-match its speech against, and it sits at the exact same coordinates
-    // as index 1 (see dimWaypointIndex above). Editing focus after "Jump to
-    // location…" should land on index 1 instead for location 1 specifically — every
-    // other location's Primary-Start is the point that actually needs focus, since
-    // only location 1 has this static-then-moving pair.
-    const isFirstLocationInTour = targetIndex === 0;
-    const focusIndex = (isFirstLocationInTour && waypoints.length > 1) ? targetIndex + 1 : targetIndex;
-    setSelectedWpIndex(focusIndex);
+    // Per Enda: every location's own Primary-Start point IS its own WP1 — including
+    // location 1's — so this lands directly on targetIndex itself, no +1 special case.
+    // (Location 1's Primary-Start has no driving leg to pace-test against, same as
+    // before — WaypointPaceEditor's own testDisabled already covers that; it does not
+    // stop text editing from working exactly the same way it does everywhere else.)
+    setSelectedWpIndex(targetIndex);
     const boundary = locationRangeBoundary(targetIndex, span);
     const endIndex = boundary ? boundary.waypointIndex : waypoints.length;
     const locationWaypoints = waypoints.slice(targetIndex, endIndex);
@@ -1904,8 +1914,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                   // per Enda's next report: for the very FIRST waypoint of the very
                   // FIRST location in a tour/WalkAbout (index 0 — the one genuinely
                   // static "welcome, get ready" point, distinct from every other
-                  // primary_start, which DOES have a real driving leg after it — see
-                  // isFirstLocationInTour in jumpToLocation above), landing in
+                  // primary_start, which DOES have a real driving leg after it), landing in
                   // WaypointPaceEditor is a dead-feeling detour: its own drive-test is
                   // correctly disabled there (nothing to test), so all a narrator finds
                   // is a disabled button before reaching "Mark segment as done". Enda

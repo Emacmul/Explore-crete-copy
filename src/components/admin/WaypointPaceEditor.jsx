@@ -21,13 +21,6 @@ const LANG_TO_CODE = {
 };
 
 const TTS_CALL_TIMEOUT_MS = 30000;
-// How long an edit waits, with no further edits, before it auto-saves (follow-up 129) —
-// covers both a text edit (waits out a run of typing) and a pause-duration nudge (waits
-// out a run of arrow-key presses — see handleDurationCommit's own comment for why a
-// single key press can't just save immediately). Long enough that neither fires a save
-// after every keystroke, short enough that a pause to think doesn't feel like changes
-// are being left unsaved.
-const AUTOSAVE_DEBOUNCE_MS = 1400;
 // Voice is fixed rather than offered as a picker — per Enda, this screen is scoped to
 // wording and pause timing (see the file comment below), nothing about voice/language.
 // Nothing about a waypoint's originally-chosen voice/gender is persisted anywhere once
@@ -68,7 +61,7 @@ const VOICE = 'NEUTRAL';
  * Editing a segment's text immediately clears ITS OWN cached audio (handleTextChange
  * below) — that cached clip was generated for whatever the wording used to be, and
  * combining it against the new text on screen would produce a real mismatch between
- * what's heard and what's written, completely silently. handleTest/runAutoSave both
+ * what's heard and what's written, completely silently. handleTest/runSave both
  * run through ensureFreshSegmentAudio first, which regenerates real TTS audio for
  * every text segment missing from segmentAudios (precisely the ones just edited, and
  * only those) before ever combining anything, so a stale clip can never be used by
@@ -94,34 +87,35 @@ const VOICE = 'NEUTRAL';
  * saved by testing — repeatable as many times as it takes, including after editing
  * text.
  *
- * Saving itself is automatic (follow-up 129, per Enda: "any changes made to be saved
- * automatically... I don't like making people click buttons when that can be
- * avoided."). A pause slider saves as soon as it's released; a text edit saves a
- * moment after typing pauses; removing a pause saves immediately. All three run the
- * same pipeline the old manual "Save changes" button used to run — render the combined
- * file again, upload it for real (uploadNarrationAudio — the exact same call
- * finalizeAndSave uses), then call onSave with the real, uploaded URL plus the updated
- * script text (so the new wording and pause durations are both reflected in
- * narration_script, not just the audio) — followed immediately by onAutoSave(), so this
- * is a real save, not something sitting only in memory until Save Route happens to be
- * clicked separately. See runAutoSave below for how overlapping edits are handled
- * without ever dropping one.
+ * Saving is manual (follow-up 129 made it automatic; per Enda's later, much stronger
+ * correction: "I said, it should not happen. Saving is the choice of the narrator, not
+ * the system." — reverting that design entirely). A text edit, a pause-slider nudge, or
+ * removing a pause all just update what's on screen and mark it unsaved (see saveStatus
+ * below) — nothing is written anywhere until the narrator clicks "Save" (or "Mark
+ * segment as done", which saves AND finalizes in one click). Save runs the same pipeline
+ * either way — render the combined file again, upload it for real (uploadNarrationAudio
+ * — the exact same call finalizeAndSave uses), then call onSave with the real, uploaded
+ * URL plus the updated script text (so the new wording and pause durations are both
+ * reflected in narration_script, not just the audio) — followed immediately by
+ * onAutoSave(), the same "tell the parent a save happened" signal WalkEditor's own Save
+ * Route button relies on elsewhere. See runSave below for how overlapping clicks are
+ * handled without ever dropping one.
  *
- * Per Enda's later report: this automatic save used to also mark the waypoint Done
- * every single time it ran, whether or not "Test this subsegment" had ever been
- * clicked — an edit left alone for a couple of seconds was enough, on its own, to mark
- * it finished. runAutoSave now takes an optional { markDone } — false for every one of
- * the automatic triggers above (a slider release, a paused edit, a removal), true ONLY
- * for an explicit "Mark segment as done" click, and that click is itself disabled until
- * this exact content has been tested and that test has actually finished playing (see
- * readyToMarkDone, further down).
+ * Per Enda's earlier report (back when saving was still automatic): a save used to also
+ * mark the waypoint Done every single time it ran, whether or not "Test this
+ * subsegment" had ever been clicked — an edit left alone for a couple of seconds was
+ * enough, on its own, to mark it finished. runSave still takes an optional { markDone }
+ * for this reason — false for a plain "Save" click, true ONLY for an explicit "Mark
+ * segment as done" click, and that click is itself disabled until this exact content
+ * has been tested and that test has actually finished playing (see readyToMarkDone,
+ * further down).
  *
  * doneLocked (per Enda's report): true whenever this waypoint is marked Done — the
  * same wp.waypoint_done the Waypoints tab already locks on. Before this, nothing here
  * checked it at all, so a "finished" waypoint's wording, pause timing, and audio could
  * still be silently rewritten from this screen with no unlock step. Disables every
- * mutating control below (text/pause edits, and auto-save itself — see runAutoSave's
- * own doneLocked check) the same way TourSimulator.jsx
+ * mutating control below (text/pause edits, and saving itself — see runSave's own
+ * doneLocked check) the same way TourSimulator.jsx
  * (this component's only caller) already disables the Waypoints tab's own fields —
  * the actual unlock action (persisted untick of waypoint_done) lives up there, shared
  * with NarrationTtsEditor, since both editors sit under the same waypoint picker.
@@ -197,51 +191,42 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
   // never delete one by accident — only one segment's confirm is ever open at a time.
   const [confirmRemoveId, setConfirmRemoveId] = useState(null);
 
-  // Per Enda (follow-up 129): "any changes made to be saved automatically... I don't
-  // like making people click buttons when that can be avoided." Replaces the old
-  // manual "Save changes" button with a small status readout instead:
+  // Per Enda's later, explicit correction reverting follow-up 129's automatic saving:
+  // "Saving is the choice of the narrator, not the system." A small status readout,
+  // shown alongside the manual "Save" button below:
   //   'idle'    — nothing edited yet this visit to this waypoint.
-  //   'pending' — an edit just happened; a save is scheduled (debounced for text, or
-  //               waiting for the pause slider to be released) but hasn't started yet.
+  //   'pending' — an edit just happened; nothing will save until Save (or Mark segment
+  //               as done) is actually clicked.
   //   'saving'  — the real save pipeline (regen audio / combine / upload) is running.
   //   'saved'   — the last save attempt finished with no error.
   //   'error'   — the last save attempt failed; the error banner above says why.
-  const [autoSaveStatus, setAutoSaveStatus] = useState('idle');
+  const [saveStatus, setSaveStatus] = useState('idle');
 
   // segmentsRef/segmentAudiosRef mirror the segments/segmentAudios state above, kept in
-  // sync EXPLICITLY at every point those are set (not via a separate useEffect) —
-  // runAutoSave below is often called from outside the normal render flow (a debounce
-  // timer, the unmount-flush effect, a slider's onValueCommit firing right after its
-  // own onValueChange), so it reads these refs rather than the segments/segmentAudios
-  // React state variables, which would otherwise hand it a stale, pre-edit snapshot
-  // from whenever that particular closure happened to be created.
+  // sync EXPLICITLY at every point those are set (not via a separate useEffect) — a
+  // Save (or Mark segment as done) click reads these refs rather than the
+  // segments/segmentAudios React state variables directly, so it always saves exactly
+  // what's on screen right now, not a stale snapshot from whenever the click handler's
+  // closure happened to be created.
   const segmentsRef = useRef(null);
   const segmentAudiosRef = useRef({});
 
-  // Same in-flight/pending pair WalkEditor.jsx's own triggerSave already uses for its
-  // Save Route button: if an edit arrives while a save is already running, it doesn't
-  // start a second, overlapping save — it flags that the just-started save is already
   // out of date, so THAT run loops once more on completion and picks up whatever is
-  // newest, rather than the later edit being silently dropped.
-  const autoSaveInFlightRef = useRef(false);
-  const autoSavePendingRef = useRef(false);
+  // newest, rather than the later click being silently dropped.
+  const saveInFlightRef = useRef(false);
+  const savePendingRef = useRef(false);
   // Per Enda: only an explicit "Mark segment as done" click may ever set
-  // waypoint_done: true — a routine background save after an ordinary edit must not.
-  // If a markDone request (the button) arrives while a plain background save is
-  // already mid-upload, that intent can't just be dropped — this OR's it into whatever
-  // the NEXT queued save iteration will run with, so it's never silently downgraded to
-  // a plain save by a later, unrelated edit's own save request arriving behind it.
+  // waypoint_done: true — a plain "Save" click must not. If a markDone request (the
+  // button) arrives while a plain save is already mid-upload, that intent can't just
+  // be dropped — this OR's it into whatever the NEXT queued save iteration will run
+  // with, so it's never silently downgraded to a plain save by a Save click that was
+  // already queued behind it.
   const pendingMarkDoneRef = useRef(false);
   // Whichever markDone value the most recent save ATTEMPT actually ran with (set right
   // before that attempt, success or failure) — "Retry now" (below, on a failed save)
   // replays this exact intent rather than silently always retrying as a plain save,
   // which would quietly drop a failed "Mark segment as done" click down to just saving.
-  const lastAutoSaveMarkDoneRef = useRef(false);
-  const autoSaveTimerRef = useRef(null);
-  // Always holds the latest runAutoSave closure (defined further down, re-assigned every
-  // render) — see the unmount-flush effect near it for why a ref is used here rather
-  // than calling runAutoSave directly from that effect's cleanup.
-  const runAutoSaveRef = useRef(() => {});
+  const lastSaveMarkDoneRef = useRef(false);
 
   // Per Enda: the same LinguaGloss pronunciation-dictionary pop-up as TtsSegmentCard.jsx
   // (see that file's own comment), offered here too since this screen has its own,
@@ -358,17 +343,14 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
   }, []);
 
   // onValueChange fires on every pause-slider movement (in practice, per Enda, an
-  // arrow-key nudge — see handleDurationCommit's own comment below for why dragging
-  // isn't the real workflow here) — this only updates local state for live visual
-  // feedback as the number moves. The actual auto-save is scheduled separately by
-  // handleDurationCommit (onValueCommit) below runAutoSave — see that comment for why
-  // it's debounced rather than saved immediately.
+  // arrow-key nudge, 0.1s at a time) — just updates local state and marks the change
+  // unsaved; nothing is saved until "Save" is actually clicked.
   const handleDurationChange = (segmentId, newDuration) => {
     if (!segments) return;
     const next = segments.map((seg) => (seg.id === segmentId ? { ...seg, duration: newDuration } : seg));
     segmentsRef.current = next;
     setSegments(next);
-    setAutoSaveStatus('pending');
+    setSaveStatus('pending');
   };
 
   // Per Anoushka/Enda (follow-up 77) — see the file header comment above. Updates
@@ -384,16 +366,15 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
     const nextSegments = segments.map((seg) => (seg.id === segmentId ? { ...seg, content: newContent } : seg));
     segmentsRef.current = nextSegments;
     setSegments(nextSegments);
-    setAutoSaveStatus('pending');
+    setSaveStatus('pending');
     if (segmentId in segmentAudios) {
       const nextAudios = { ...segmentAudios };
       delete nextAudios[segmentId];
       segmentAudiosRef.current = nextAudios;
       setSegmentAudios(nextAudios);
     }
-    // Follow-up 129: auto-save this edit a moment after typing pauses — see
-    // scheduleAutoSave (below runAutoSave) for the debounce itself.
-    scheduleAutoSave();
+    // Per Enda: saving is manual now — this just marks the edit unsaved (setSaveStatus
+    // above). Nothing saves until "Save" (or "Mark segment as done") is clicked.
   };
 
   // Per Anoushka/Enda — see confirmRemoveId above. Deletes the pause segment entirely
@@ -412,11 +393,10 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
       setSegmentAudios(nextAudios);
     }
     setConfirmRemoveId(null);
-    setAutoSaveStatus('pending');
-    // Follow-up 129: a removal is already a deliberate, discrete action (behind its own
-    // two-step confirm above) — no need to debounce it the way a run of keystrokes is;
-    // save it right away.
-    runAutoSaveRef.current();
+    // Per Enda: saving is manual now, same as a text or duration edit — a removal is
+    // already a deliberate, discrete action (behind its own two-step confirm above),
+    // but it still just marks the change unsaved rather than saving itself.
+    setSaveStatus('pending');
   };
 
   // Per Enda's follow-up 35 report (same reasoning as NarrationTtsEditor's own
@@ -471,7 +451,7 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
   // be saved empty") — this screen has no equivalent of that file's larger script box
   // to delete a line through, so an emptied-out line here has no way to become a real,
   // intentional removal; it can only ever be a stray edit. Shared by handleTest and
-  // runAutoSave so testing catches this exactly as early as saving does, rather than
+  // runSave so testing catches this exactly as early as saving does, rather than
   // building a preview around a blank line only for the auto-save to refuse it later.
   const findEmptyTextSegment = (segs) => segs.find((seg) => seg.type === 'text' && !seg.content.trim());
 
@@ -556,41 +536,39 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
     setTesting(false);
   };
 
-  // Follow-up 129 — the actual save pipeline. Same steps the old manual "Save changes"
-  // button used to run (see this file's header comment above); it just no longer needs
-  // a click to start. Safe to call from more than one place in quick succession — a
-  // slider release, the text debounce timer, a pause removal, the unmount-flush effect
-  // — because of the in-flight/pending refs above: a call that arrives while one is
-  // already running doesn't start a second, overlapping upload, it just makes the
-  // running one loop once more afterwards so the latest edit is never the one left
-  // unsaved.
+  // The actual save pipeline — runs ONLY on an explicit click now (a plain "Save", or
+  // "Mark segment as done" — see below), never on its own. Safe to call from more than
+  // one place in quick succession — a fast double-click, or Mark-as-done clicked right
+  // after Save — because of the in-flight/pending refs above: a call that arrives while
+  // one is already running doesn't start a second, overlapping upload, it just makes
+  // the running one loop once more afterwards so the latest click is never the one
+  // silently dropped.
   // markDone: true ONLY on an explicit "Mark segment as done" click (or a "Retry now"
-  // replaying one — see lastAutoSaveMarkDoneRef) — every other caller (the text-edit
-  // debounce timer, a pause-duration commit, a pause removal, the unmount-flush effect)
-  // calls this with no argument, so it defaults to false. Per Enda's report: this used
-  // to set waypoint_done: true unconditionally, every single time it ran — including
-  // the routine background save that fires a couple of seconds after ANY edit, with no
-  // click and no test ever required. That's the actual bug: editing a waypoint and
-  // leaving it alone for a moment was enough, on its own, to mark it Done.
-  const runAutoSave = async ({ markDone = false } = {}) => {
+  // replaying one — see lastSaveMarkDoneRef) — a plain "Save" click calls this with no
+  // argument, so it defaults to false. Per Enda's earlier report (back when saving was
+  // still automatic): this used to set waypoint_done: true unconditionally, every
+  // single time it ran — including a routine background save that fired a couple of
+  // seconds after ANY edit, with no click and no test ever required. That's the actual
+  // bug that led to markDone existing as its own separate flag in the first place.
+  const runSave = async ({ markDone = false } = {}) => {
     if (doneLocked) return;
-    if (autoSaveInFlightRef.current) {
-      autoSavePendingRef.current = true;
+    if (saveInFlightRef.current) {
+      savePendingRef.current = true;
       pendingMarkDoneRef.current = pendingMarkDoneRef.current || markDone;
       return;
     }
-    autoSaveInFlightRef.current = true;
+    saveInFlightRef.current = true;
     setSaving(true);
-    setAutoSaveStatus('saving');
+    setSaveStatus('saving');
     let hadError = false;
     let nextMarkDone = markDone;
     try {
       let keepGoing = true;
       while (keepGoing) {
-        autoSavePendingRef.current = false;
+        savePendingRef.current = false;
         const thisMarkDone = nextMarkDone;
         pendingMarkDoneRef.current = false;
-        lastAutoSaveMarkDoneRef.current = thisMarkDone;
+        lastSaveMarkDoneRef.current = thisMarkDone;
         const currentSegments = segmentsRef.current;
         if (!currentSegments) break;
 
@@ -622,7 +600,7 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
             ...getNarratorAuthPayload(),
           }),
           TTS_CALL_TIMEOUT_MS * 2,
-          'Saving the updated audio took too long (check your connection) — it will try again the next time you make an edit here.'
+          'Saving the updated audio took too long (check your connection) — click Save again to retry.'
         );
         if (!response.data?.url) throw new Error('Upload did not return a file URL.');
         // One atomic update — per follow-up 53's own fix (see CLAUDE_CHANGELOG.md), three
@@ -643,75 +621,28 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
         onSave(payload);
         onAutoSave?.();
 
-        keepGoing = autoSavePendingRef.current;
+        keepGoing = savePendingRef.current;
         nextMarkDone = pendingMarkDoneRef.current;
       }
     } catch (err) {
-      setError(`Could not save automatically: ${getFnErrorMessage(err)}`);
+      setError(`Could not save: ${getFnErrorMessage(err)}`);
       hadError = true;
     } finally {
-      autoSaveInFlightRef.current = false;
+      saveInFlightRef.current = false;
       setSaving(false);
-      setAutoSaveStatus(hadError ? 'error' : 'saved');
+      setSaveStatus(hadError ? 'error' : 'saved');
     }
   };
 
-  // Always keep a ref pointed at the latest runAutoSave closure — used by the
-  // unmount-flush effect below (whose own cleanup is fixed at mount time, so calling
-  // runAutoSave directly there would forever use the very first render's copy) and by
-  // handleRemoveSegment above (called from the same synchronous handler as the state
-  // update it needs to see, before this render's own runAutoSave would otherwise be in
-  // scope).
-  useEffect(() => {
-    runAutoSaveRef.current = runAutoSave;
-  });
-
-  // Per Enda: the pause slider is never actually dragged — it's too sensitive for that
-  // — it's adjusted with the keyboard's left/right arrow keys, 0.1s at a time. Checked
-  // directly in Radix's own Slider source (node_modules/@radix-ui/react-slider) rather
-  // than assumed: EVERY arrow-key press calls onValueCommit, not just a drag's final
-  // release — Radix treats each keyboard step as its own complete "interaction",
-  // unlike a mouse drag (which only commits once, on release). So saving immediately
-  // on commit — fine for a drag — would instead try to save after every single 0.1s
-  // nudge here, and since a save briefly disables the slider (see the `disabled` prop
-  // below) while it runs, that would lock the control mid-adjustment, exactly the
-  // opposite of what "automatic" is supposed to feel like. Debounced the same way a
-  // text edit already is (scheduleAutoSave below) instead of saving on every commit —
-  // a quick run of arrow-key presses coalesces into one save once they stop.
-  const handleDurationCommit = () => {
-    scheduleAutoSave();
-  };
-
-  // Shared debounce for both a text edit (handleTextChange above) and a pause-duration
-  // nudge (handleDurationCommit above) — restarted on every one of either, so the save
-  // only actually starts once edits have paused for a moment. Both end up saving the
-  // SAME combined file regardless of which kind of edit it was, so one shared timer is
-  // enough — there's never a need to save "just the text" or "just the duration"
-  // separately.
-  const scheduleAutoSave = () => {
-    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-    autoSaveTimerRef.current = setTimeout(() => {
-      autoSaveTimerRef.current = null;
-      runAutoSave();
-    }, AUTOSAVE_DEBOUNCE_MS);
-  };
-
-  // If this waypoint is switched away from (the dropdown, or the "Back 1 Waypoint"
-  // button) while an edit is still sitting in its debounce window, that edit must not
-  // just evaporate along with the rest of this component's state when it unmounts —
-  // flush it right now instead. Goes through runAutoSaveRef (always current — see
-  // above) rather than calling runAutoSave directly, since this effect's own cleanup
-  // closure is fixed at the very first render (empty deps) and would otherwise be
-  // stuck using that render's now-stale copy.
-  useEffect(() => {
-    return () => {
-      if (autoSaveTimerRef.current) {
-        clearTimeout(autoSaveTimerRef.current);
-        autoSaveTimerRef.current = null;
-        runAutoSaveRef.current();
-      }
-    };
-  }, []);
+  // Per Enda's explicit correction: nothing here saves on its own any more (see the
+  // file header comment above), so switching to a different waypoint (the dropdown, or
+  // "Back 1 Waypoint") while saveStatus is 'pending' now leaves that edit unsaved — the
+  // same risk WalkEditor.jsx's own "Save Route" button already carries for the whole
+  // route, surfaced the same way it already is there: a plain, visible "Unsaved
+  // changes — click Save" indicator (below), not a blocking confirm dialog. There used
+  // to be a flush-on-unmount safety net here for the old debounced auto-save; it's
+  // removed along with the debounce itself, since saving is now the narrator's own
+  // decision to make, not something to force on their way out.
 
   // Per Enda: "Mark segment as done" must require the CURRENT wording/pause content to
   // have already been tested, and that test to have actually finished playing — not
@@ -841,7 +772,6 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
                     max={120}
                     step={0.1}
                     onValueChange={(val) => handleDurationChange(seg.id, val[0])}
-                    onValueCommit={handleDurationCommit}
                     disabled={loading || saving || testing || doneLocked}
                   />
                 )}
@@ -930,34 +860,35 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
           </div>
 
           <div className="flex items-center gap-3 flex-wrap">
-            {/* Follow-up 129: replaces the old manual "Save changes" button — edits save
-                on their own now (see runAutoSave above), this just shows where that
-                stands. doneLocked hides it entirely since no edits are possible there. */}
-            {!doneLocked && autoSaveStatus !== 'idle' && (
+            {/* Per Enda's explicit correction: saving is the narrator's own decision,
+                never the system's — so this status readout no longer describes an
+                automatic save in progress, only what's actually happened so far.
+                doneLocked hides it entirely since no edits are possible there. */}
+            {!doneLocked && saveStatus !== 'idle' && (
               <div className="text-xs">
-                {autoSaveStatus === 'pending' && (
+                {saveStatus === 'pending' && (
                   <span className="flex items-center gap-1.5 text-amber-400">
-                    <Clock className="w-3.5 h-3.5" /> Unsaved changes — saving automatically…
+                    <Clock className="w-3.5 h-3.5" /> Unsaved changes — click Save
                   </span>
                 )}
-                {autoSaveStatus === 'saving' && (
+                {saveStatus === 'saving' && (
                   <span className="flex items-center gap-1.5 text-slate-400">
                     <Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…
                   </span>
                 )}
-                {autoSaveStatus === 'saved' && (
+                {saveStatus === 'saved' && (
                   <span className="flex items-center gap-1.5 text-emerald-400">
                     <Check className="w-3.5 h-3.5" /> All changes saved
                   </span>
                 )}
-                {autoSaveStatus === 'error' && (
+                {saveStatus === 'error' && (
                   <span className="flex items-center gap-1.5 text-red-400">
                     <AlertTriangle className="w-3.5 h-3.5" /> Not saved — see error above
                     {/* Replays whatever this LAST failed attempt actually was — a plain
                         save stays a plain save, but a failed "Mark segment as done"
                         click retries as a markDone attempt too, not silently downgraded
-                        to just saving (see lastAutoSaveMarkDoneRef above). */}
-                    <button type="button" onClick={() => runAutoSave({ markDone: lastAutoSaveMarkDoneRef.current })} className="underline hover:text-red-300 ml-1">
+                        to just saving (see lastSaveMarkDoneRef above). */}
+                    <button type="button" onClick={() => runSave({ markDone: lastSaveMarkDoneRef.current })} className="underline hover:text-red-300 ml-1">
                       Retry now
                     </button>
                   </span>
@@ -965,36 +896,56 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
               </div>
             )}
 
+            {/* Per Enda's explicit correction reverting follow-up 129's automatic
+                saving: an explicit "Save" click, matching WalkEditor.jsx's own "Save
+                Route" button/banner convention. Only enabled while there's actually
+                something unsaved (saveStatus === 'pending') — once it's saved, or
+                nothing has been touched yet, there's nothing for this click to do. A
+                failed save is retried via "Retry now" above instead (it preserves
+                whether that failed attempt was a plain save or a Mark-as-done one —
+                see lastSaveMarkDoneRef — which a second plain Save click here would
+                not), so this button is disabled on 'error' too rather than offering a
+                second, weaker way to retry. */}
+            {!doneLocked && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => runSave()}
+                disabled={loading || testing || saveStatus !== 'pending'}
+                title={saveStatus === 'pending' ? 'Save this wording and pause timing' : 'No unsaved changes to save'}
+                className="bg-emerald-700/30 hover:bg-emerald-700/50 border-emerald-600/50 text-emerald-300 hover:text-emerald-200 gap-2"
+              >
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                Save
+              </Button>
+            )}
+
             {/* Per Enda's report ("no way to...finalize the segment from here"): testing
-                alone never edits anything, so runAutoSave (which is what actually sets
+                alone never edits anything, so runSave (which is what actually sets
                 waypoint_done: true) was never being called from this panel unless the
                 narrator also happened to change some text. This button calls that same
                 save pipeline directly, so listening back and confirming it's good is
-                enough on its own to finalise — no throwaway edit needed first. Hidden
-                once doneLocked is already true since there's nothing left to finalise.
-                Per Enda's later report: this — and the routine background save, fixed
-                above — used to let a waypoint be marked Done without "Test this
-                subsegment" ever having been run at all. Disabled until readyToMarkDone
-                (see its own comment above) — the tooltip explains exactly why whenever
-                it's blocked, rather than the button just quietly not working.
-                Per Enda's later report: this used to ALSO disable while `saving` was
-                true — but `saving` goes true for ANY background save this panel runs,
-                not just one this button started. A routine autosave left over from an
-                edit made just before clicking "Test this subsegment" (its own debounce
-                timer isn't cancelled by starting a test) could fire mid-test or right
-                after it finishes, briefly disabling this button — for no real reason,
-                since nothing about readiness had actually changed. Per Enda: the
-                narrator often didn't click fast enough, saw it go gray again, and
-                assumed the test no longer counted, re-testing needlessly. Dropped
-                `saving` from this condition — a click that arrives while some other
-                save is still running is already handled safely (see pendingMarkDoneRef
+                enough on its own to finalise — no throwaway edit needed first, and it
+                saves whatever's currently on screen at the same time, same as Save
+                above but also marking done. Hidden once doneLocked is already true
+                since there's nothing left to finalise.
+                Per Enda's later report: this — and the automatic background save that
+                used to run after every edit — used to let a waypoint be marked Done
+                without "Test this subsegment" ever having been run at all. Disabled
+                until readyToMarkDone (see its own comment above) — the tooltip
+                explains exactly why whenever it's blocked, rather than the button just
+                quietly not working.
+                Per Enda's later report: this must NOT also disable while `saving` is
+                true — `saving` goes true for ANY save this panel runs, not just one
+                this button started. A click that arrives while some other save is
+                still running is already handled safely (see pendingMarkDoneRef
                 above): it queues rather than starting a second, overlapping upload, so
                 there's no correctness reason for it to be disabled during one. */}
             {!doneLocked && (
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => runAutoSave({ markDone: true })}
+                onClick={() => runSave({ markDone: true })}
                 disabled={loading || testing || !readyToMarkDone}
                 title={readyToMarkDone ? 'Save this wording and pacing as the finished version for this waypoint' : 'Test this subsegment first, and let it finish, before marking it done — so every change is actually heard before it\'s marked as finished.'}
                 className="bg-blue-700/30 hover:bg-blue-700/50 border-blue-600/50 text-amber-400 hover:text-amber-300 gap-2"

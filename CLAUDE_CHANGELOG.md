@@ -85,6 +85,69 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-17 (follow-up 198) — Saving is now fully manual in the pace-testing editor;
+## "Jump to location…" always lands there too, on the target location's own WP1
+**Scope:** `src/components/admin/WaypointPaceEditor.jsx` and
+`src/components/admin/TourSimulator.jsx`. Frontend-only — no backend function touched,
+so no manual redeploy needed, just the usual hard refresh + republish.
+
+**Per Enda (two reports in the same conversation):**
+1. "Saving is the choice of the narrator, not the system." Autosave firing while
+   actively typing locked the text box for the duration of the save — this should
+   never happen at all; saving must be a manual action.
+2. "When a narrator... finishes, for example, at location 9. 2 days later they come
+   back... they use 'Jump to' to go to the last location... but the Waypoint and Audio
+   tags section on the right doesn't go to the location jumped to." Then, after seeing
+   a proposed fix that landed the jump in the ordinary script editor instead:
+   "They should land in the pace testing section, because they can edit text there as
+   well... stop switching to and fro, all in one place." Also: the old autosave, and
+   "Mark segment as done" flickering unavailable, both broke the rhythm of the work.
+
+**Fixed — manual saving (WaypointPaceEditor.jsx):** removed every automatic save
+trigger — the 1.4-second debounce after a text edit, the debounce after a pause-slider
+release, and the immediate save on removing a pause. A text edit, a pause-duration
+change, or a pause removal now only mark the change unsaved (a small amber "Unsaved
+changes — click Save" readout appears, the same style WalkEditor.jsx's own "Save Route"
+banner already uses). Nothing is written anywhere — and the text boxes are never
+disabled for a save — until the narrator explicitly clicks the new "Save" button, or
+"Mark segment as done" (which saves and finalises in one click, unchanged from before).
+Removed the now-dead debounce timer, its ref, and the unmount "flush the pending save"
+safety net that only existed to cover that debounce window — none of it is reachable
+any more. The in-flight/pending queueing that makes overlapping saves safe (from
+follow-up 194) is unchanged and still fully in effect for the new manual clicks.
+
+**Fixed — "Jump to location…" (TourSimulator.jsx):** always switches into the
+pace-testing/text-editing panel (WaypointPaceEditor) on the location just jumped to, at
+that location's own first waypoint (WP1) — including location 1, where an old special
+case used to skip ahead to WP2 instead; that's removed, since text editing at location
+1's own WP1 works the same as anywhere else now. This was actually already close to
+working (the waypoint selection itself was updating correctly); the one confirmed bug
+was that location-1 special case, and the fix also removes any chance of the jump
+landing anywhere other than the intended pace-testing view.
+
+**Verified:** `npx eslint` on both files (0 errors; 1 pre-existing, unrelated warning
+on an unused eslint-disable comment already present before this change). `npm run
+build` (exit 0, whole app, only pre-existing unrelated warnings). Two new standalone
+scripts: one confirms, directly against the real source, that no automatic save trigger
+remains anywhere in WaypointPaceEditor.jsx and that the save pipeline is only ever
+called from the three explicit click handlers (Save, Mark segment as done, Retry now);
+the other confirms, directly against the real source, that "Jump to location…" always
+sets speedMatchMode true and lands on the target index itself with no special case.
+Also re-checked follow-up 197's own fix (the queueing behaviour behind dropping
+`saving` from "Mark segment as done"'s disabled condition) still holds under the new
+names. All checks pass.
+
+**Not done / worth knowing for next time:** the older accumulated regression scripts
+from earlier follow-ups were lost when this working environment was reset partway
+through this conversation, so only the two new scripts above (plus the 197 re-check)
+ran this time — not the full historical suite. Not tested live in the Base44 app
+itself: worth confirming (a) typing in a pace-testing text box no longer locks up or
+saves on its own, only on clicking Save, and (b) jumping to a finished location (e.g.
+your own location 9 example) lands directly in that pace-testing view, on its own WP1,
+every time — including right after a break of a day or more.
+
+---
+
 ## 2026-09-17 (follow-up 197) — "Mark segment as done" no longer goes disabled on its own
 ## a few seconds after becoming available
 **Scope:** `src/components/admin/WaypointPaceEditor.jsx` only. Frontend-only — no backend
