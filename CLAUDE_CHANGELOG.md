@@ -85,6 +85,59 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-17 (follow-up 195) — Single-waypoint test now starts the car at the real
+## trigger-radius entry point, not the waypoint's own pin
+**Scope:** `src/components/admin/TourSimulator.jsx` only. Frontend-only — no backend
+function touched, so no manual redeploy needed, just the usual hard refresh + republish.
+
+**Per Enda:** when testing a single waypoint's audio, the car on the map should start
+from where it enters that waypoint's trigger radius, coming from the previous waypoint —
+and if the previous waypoint's trigger radius overlaps the one being edited, the car
+should start where the previous waypoint's radius ends instead, since that's later along
+the route.
+
+**Investigated first:** confirmed "Test this subsegment" (the default single-waypoint
+test) was starting the car exactly at the waypoint's own pin — not approaching from the
+previous waypoint's direction at all, and taking no account of either waypoint's actual
+trigger radius. Asked Enda whether this should also apply to "Test 2/3 in a row" —
+confirmed single-waypoint only; multi-segment tests are unchanged, still starting exactly
+at their own first waypoint's pin.
+
+**Built:**
+- New geometry (`singleWaypointTestStartDist` and helpers) walks the real route forward
+  from the previous waypoint, using each waypoint's own `trigger_radius_m` (defaulting to
+  30m, matching the real drive-time trigger logic) to find where the car actually enters
+  the waypoint being tested. If the previous waypoint's radius reaches further along the
+  route than that entry point, the car starts where the previous waypoint's radius ends
+  instead — as long as that point is still within the current waypoint's own radius.
+- Sensible fallback to today's original behaviour (start exactly at the waypoint's own
+  pin) whenever the geometry can't be trusted: missing coordinates, waypoints out of
+  order along the route, or the route never actually coming within the waypoint's own
+  radius at all.
+- The map camera framing was adjusted to include the previous waypoint too, so the car
+  isn't left stranded off-screen at the new, earlier starting point.
+- The custom starting point is correctly remembered by "Reset"/Replay, not just the
+  initial test click.
+
+**Verified:** `npx eslint` (0 errors, same one pre-existing unrelated warning, confirmed
+present before this change and unrelated to it). `npm run build` (exit 0). New standalone
+script against a synthetic 300m route where exact crossing points can be worked out by
+hand — 8 scenarios: no overlap, overlap, radii exactly touching (not overlapping), deep
+overlap (previous waypoint's radius reaching past the current waypoint's own pin),
+missing previous waypoint, waypoints out of order, the route never reaching the current
+waypoint's radius at all, and both radii left unset (defaulting to 30m). First run caught
+a genuine bug in the deep-overlap case — the search was stopping exactly at the current
+waypoint's pin and missing an exit point that fell past it but was still inside the
+current waypoint's own radius. Fixed, then all 8 scenarios passed. Full accumulated
+regression suite re-run separately (56 files, all still passing, no regressions).
+
+**Not done / worth knowing for next time:** not tested live in the Base44 app itself —
+worth trying on a real waypoint after publishing, ideally one where the previous
+waypoint's trigger radius visibly overlaps the one being edited, to confirm the car
+starts at the expected spot on the map.
+
+---
+
 ## 2026-09-17 (follow-up 194) — A waypoint can no longer be marked Done without being
 ## tested first
 **Scope:** `src/components/admin/TourSimulator.jsx`,
