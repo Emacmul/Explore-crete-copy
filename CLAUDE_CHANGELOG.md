@@ -85,6 +85,65 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-17 (follow-up 196) — Test runs now also STOP at the real trigger-radius entry
+## point, and this applies to "Test 2/3 in a row" too, not just single-waypoint tests
+**Scope:** `src/components/admin/TourSimulator.jsx` only. Frontend-only — no backend
+function touched, so no manual redeploy needed, just the usual hard refresh + republish.
+
+**Per Anoushka (relayed by Enda), following on from follow-up 195:** the STOP point for
+a test run needs the same real-world grounding the start point just got — a test used to
+drive all the way to the next waypoint's own exact pin before pausing, when the real
+usable "space" for the waypoint being tested actually ends the moment the car enters the
+NEXT waypoint's own trigger radius. Enda also corrected the scope from follow-up 195:
+both the start and stop fix must apply to "Test 2/3 in a row" as well, not just a
+single-waypoint test — the whole point of testing several waypoints in a row is hearing
+the real drive through them, so both outer edges of that run need to be grounded in real
+trigger radii, not just a single-waypoint test's.
+
+**Built:**
+- New stop-side geometry (`testSpanEndDist`), mirroring the start-side one from
+  follow-up 195: walks the route forward from the last waypoint in the run being tested,
+  using the very next waypoint's own `trigger_radius_m` (defaulting to 30m) to find where
+  the car actually enters that next waypoint's radius, and stops there instead of driving
+  on to its exact pin.
+- The follow-up 195 start-side fix, and this new stop-side fix, now both apply to "Test
+  2/3 in a row" as well as a single-waypoint test — using the FIRST waypoint of whichever
+  run is being tested for the start, and the LAST waypoint of that run for the stop, not
+  every waypoint in between (those are unaffected, still driven through normally).
+- Renamed the follow-up 195 function (`singleWaypointTestStartDist` →
+  `testSpanStartDist`) to match, since it's no longer single-waypoint-only.
+- Safety check: if an unusually large trigger radius on the next waypoint would push the
+  computed stop point to before the run's own (possibly overlap-adjusted) start point —
+  an unrealistic waypoint layout — falls back to the next waypoint's own exact pin
+  instead of a nonsensical or reversed window.
+- "Reset"/Replay correctly remembers both the custom start AND stop point from the test
+  that was last run, not just the start.
+
+**Verified:** `npx eslint` (0 errors, same one pre-existing unrelated warning). `npm run
+build` (exit 0). New standalone script, 13 scenarios against a synthetic route: all 6
+stop-side cases mirroring follow-up 195's start-side ones (no overlap, radius reaching
+back past the current waypoint, radius never reached, waypoints out of order, default
+30m radius), a dedicated multi-waypoint-run check confirming the start/stop maths uses
+the run's own first/last waypoints and correctly ignores waypoints in between, and two
+checks against a deliberately extreme/unrealistic waypoint layout confirming the safety
+fallback actually engages when it should. First run of the safety-fallback scenario
+exposed that my own test waypoint layout wasn't actually pathological enough to trigger
+it — fixed the test scenario itself (not the code) so it genuinely exercises the
+fallback, then confirmed it passes. Separately, first draft of the whole script placed a
+synthetic waypoint at longitude exactly 0, which tripped a pre-existing "is this
+coordinate missing" check used consistently everywhere in this file (0 is treated as
+"falsy"/missing in JavaScript) — confirmed this is a long-standing, deliberate pattern
+used in 8+ other places in this same file already, and not something a real Crete
+waypoint could ever trigger (Crete's coordinates are never at longitude 0), so fixed the
+test's synthetic route instead of touching that established pattern. Full accumulated
+regression suite re-run separately (58 files, all still passing, no regressions).
+
+**Not done / worth knowing for next time:** not tested live in the Base44 app itself —
+worth trying "Test 2/3 in a row" on a real stretch after publishing to confirm the car
+now starts and stops where expected.
+
+---
+
 ## 2026-09-17 (follow-up 195) — Single-waypoint test now starts the car at the real
 ## trigger-radius entry point, not the waypoint's own pin
 **Scope:** `src/components/admin/TourSimulator.jsx` only. Frontend-only — no backend
