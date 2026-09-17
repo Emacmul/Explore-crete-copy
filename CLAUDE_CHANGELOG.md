@@ -85,6 +85,58 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-17 (follow-up 197) — "Mark segment as done" no longer goes disabled on its own
+## a few seconds after becoming available
+**Scope:** `src/components/admin/WaypointPaceEditor.jsx` only. Frontend-only — no backend
+function touched, so no manual redeploy needed, just the usual hard refresh + republish.
+
+**Per Enda:** "Mark segment as done" was only available for a few seconds after
+becoming enabled. If missed, it looked like the whole "Test this subsegment" routine
+had to be redone before it could be marked done again. Whenever "Save Route" is clicked,
+or the green "All changes saved" notification appears, the button should stay visible
+and active until the narrator actually clicks it.
+
+**Investigated first:** the button's own `disabled` condition included `saving` — a
+flag that goes true for ANY background save this panel runs, not just one this button
+started. The most common real trigger: editing text starts a 1.4-second debounce timer
+before it auto-saves; clicking "Test this subsegment" before that timer fires doesn't
+cancel it, so that leftover save can fire mid-test or right after it finishes — briefly
+setting `saving` true and disabling the button for its duration, even though nothing
+about whether the segment was actually ready to be marked done had changed. Checked
+"Save Route" itself (WalkEditor.jsx's own top-level save) separately: confirmed it does
+NOT reach this button at all — its own `saving` state only disables the Save Route
+button itself, never anything inside this panel. The observed symptom traces entirely to
+this panel's own internal autosave.
+
+**Fixed:** dropped `saving` from "Mark segment as done"'s disabled condition — it's now
+only disabled while the waypoint's own audio is loading, a test is running, or the
+current test/segment content genuinely isn't ready to be marked done (readyToMarkDone),
+never because some unrelated background save happens to be in flight. Confirmed this is
+safe, not just visually convenient: a "Mark segment as done" click that arrives while
+another save is already running was already being queued correctly (pendingMarkDoneRef,
+from follow-up 194) rather than starting a second, overlapping upload — so nothing about
+removing the disabled state changes what actually gets saved or when.
+
+**Verified:** `npx eslint` (0 errors, 0 warnings on this file). `npm run build` (exit 0).
+New standalone script: confirmed the disabled formula no longer takes a `saving`
+parameter at all, checked it against loading/testing/readiness combinations, and
+separately replicated the actual save-queueing mechanism the fix leans on — confirmed a
+"Mark segment as done" click arriving mid-upload of an unrelated background save is
+queued (not dropped, not run as a second overlapping save) and that the queued re-run
+correctly carries `waypoint_done: true` rather than being silently downgraded to a plain
+save. Full accumulated regression suite re-run separately (56 files, all still passing,
+no regressions).
+
+**Not done / worth knowing for next time:** not tested live in the Base44 app itself —
+worth editing a waypoint's text, testing it, waiting a few seconds without clicking Mark
+as Done, and confirming the button stays clickable throughout. Also still open: Enda's
+separate report (same conversation) that autosave firing while actively typing locks the
+text box for the duration of the save, which he wants changed to a manual Save action —
+that is a bigger change to this same file's core save design and is intentionally NOT
+part of this fix; still waiting on his direction on its exact scope before touching it.
+
+---
+
 ## 2026-09-17 (follow-up 196) — Test runs now also STOP at the real trigger-radius entry
 ## point, and this applies to "Test 2/3 in a row" too, not just single-waypoint tests
 **Scope:** `src/components/admin/TourSimulator.jsx` only. Frontend-only — no backend

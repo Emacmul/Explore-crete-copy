@@ -976,13 +976,26 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
                 above — used to let a waypoint be marked Done without "Test this
                 subsegment" ever having been run at all. Disabled until readyToMarkDone
                 (see its own comment above) — the tooltip explains exactly why whenever
-                it's blocked, rather than the button just quietly not working. */}
+                it's blocked, rather than the button just quietly not working.
+                Per Enda's later report: this used to ALSO disable while `saving` was
+                true — but `saving` goes true for ANY background save this panel runs,
+                not just one this button started. A routine autosave left over from an
+                edit made just before clicking "Test this subsegment" (its own debounce
+                timer isn't cancelled by starting a test) could fire mid-test or right
+                after it finishes, briefly disabling this button — for no real reason,
+                since nothing about readiness had actually changed. Per Enda: the
+                narrator often didn't click fast enough, saw it go gray again, and
+                assumed the test no longer counted, re-testing needlessly. Dropped
+                `saving` from this condition — a click that arrives while some other
+                save is still running is already handled safely (see pendingMarkDoneRef
+                above): it queues rather than starting a second, overlapping upload, so
+                there's no correctness reason for it to be disabled during one. */}
             {!doneLocked && (
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() => runAutoSave({ markDone: true })}
-                disabled={loading || saving || testing || !readyToMarkDone}
+                disabled={loading || testing || !readyToMarkDone}
                 title={readyToMarkDone ? 'Save this wording and pacing as the finished version for this waypoint' : 'Test this subsegment first, and let it finish, before marking it done — so every change is actually heard before it\'s marked as finished.'}
                 className="bg-blue-700/30 hover:bg-blue-700/50 border-blue-600/50 text-amber-400 hover:text-amber-300 gap-2"
               >
