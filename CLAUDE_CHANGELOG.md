@@ -85,6 +85,73 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-17 (follow-up 194) — A waypoint can no longer be marked Done without being
+## tested first
+**Scope:** `src/components/admin/TourSimulator.jsx`,
+`src/components/admin/WaypointPaceEditor.jsx`. Frontend-only — no backend function
+touched, so no manual redeploy needed, just the usual hard refresh + republish.
+
+**Per Enda:** in Narration & Simulate, a waypoint could be edited and saved as "done"
+before its audio was ever tested.
+
+**Investigated first (before writing anything):** the actual cause was worse than just
+the "Mark segment as done" button being clickable early. That button and the ROUTINE
+background auto-save (the one that silently fires a couple of seconds after ANY edit,
+so work isn't lost) were the exact same function, and it set `waypoint_done: true`
+every single time it ran — meaning just typing a change and pausing for a moment was
+enough, on its own, to mark a waypoint Done, with no click and no test involved at all.
+Checked every other place in the app that can set a waypoint Done: NarrationTtsEditor's
+own "Finalize Narration Audio" flow (used only for the tour's very first waypoint in
+this tab) already requires two full listens with no edits since — genuinely safe,
+untouched. The Waypoints tab's own "Mark Waypoint as Done" is a different screen, out
+of scope for this request.
+
+**Fixed:**
+- `runAutoSave` now takes an explicit `{ markDone }` — false for every automatic
+  trigger (a pause-slider release, a paused text edit, a pause removal, the
+  leave-the-waypoint flush), true ONLY for a deliberate "Mark segment as done" click.
+  `waypoint_done` is only ever included in the save when that click made it true —
+  otherwise it's left out entirely, which correctly leaves the waypoint's existing
+  Done state untouched rather than resetting it.
+- "Mark segment as done" is now disabled until "Test this subsegment" (or "Test N
+  subsegments") has been run against this EXACT wording/pause content, and that test
+  has actually finished playing — not just started. Edit anything afterwards — even one
+  character, or nudge a pause slider — and it goes back to requiring a fresh test,
+  automatically, with no separate bookkeeping needed at each edit site. The one
+  deliberate exception: a Primary-Start waypoint (a static point with no driving leg to
+  test against) is unaffected, same as before — there's genuinely nothing to test there.
+- If a "Mark segment as done" click happens to fail (a network hiccup) and Enda clicks
+  "Retry now", it retries as a markDone attempt too — not silently downgraded to a plain
+  save.
+
+**Verified:** `npx eslint` (0 errors, same one pre-existing unrelated warning). `npm run
+build` (exit 0). New `@testing-library/react` + `vitest --environment jsdom` test
+against the real `WaypointPaceEditor` component, exercising the actual save pipeline
+(TTS/combine/upload calls mocked, everything else real) rather than just checking props:
+disabled on open before anything is tested; stays disabled right after clicking Test,
+before the parent confirms the drive finished; becomes enabled once it does, and the
+resulting save genuinely includes `waypoint_done: true`; goes back to disabled the
+moment the text is edited again, even though the parent's own signal is still saying
+the earlier test finished; a routine background save from a plain edit never includes
+`waypoint_done` at all, checked across every save it made in a 4-second debounce
+window — 6 checks. Deliberately broke both halves of the fix separately (the button's
+own disabled condition, then the payload's `waypoint_done` gate) to confirm exactly the
+relevant checks fail each time, cleanly, then restored both and reconfirmed all 6 pass.
+Separate standalone script verified the `testCompleted` signal itself (copied verbatim
+from `TourSimulator.jsx`) against 8 scenarios — confirmed it's true only for a finished,
+scoped, live-preview-overridden test of the CURRENTLY selected waypoint, and stays false
+for "Jump to location…"/"Test Location"/"Play Tour So Far" finishing, a real-audio (no
+preview) single-waypoint test, a still-in-progress run, or a finished run that was for a
+different waypoint. Full accumulated regression suite re-run separately (57 files, 700+
+checks, all still passing).
+
+**Not done / worth knowing for next time:** not tested live in the Base44 app itself —
+worth trying on a real waypoint after publishing: edit its wording, wait a few seconds
+(confirm it's NOT marked Done), then Test and confirm marking Done only becomes
+available once the drive finishes.
+
+---
+
 ## 2026-09-16 (follow-up 193) — New "Play Tour So Far" button, location 2 onwards
 **Scope:** `src/components/admin/TourSimulator.jsx`,
 `src/components/admin/WaypointPaceEditor.jsx`. Frontend-only — no backend function

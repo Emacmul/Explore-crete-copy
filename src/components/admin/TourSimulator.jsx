@@ -1616,6 +1616,27 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                     testDisabledReason="Not applicable here — this point is heard while parked, before any driving starts, so there's no driving speed to test its speech against. Its pause timing above can still be tuned normally."
                     maxTestSpan={maxWaypointTestSpan}
                     doneLocked={doneLocked}
+                    // Per Enda's report: a waypoint could be edited and marked Done
+                    // without ever being tested — the routine auto-save (which fires a
+                    // couple of seconds after ANY edit, silently, so work isn't lost)
+                    // was setting waypoint_done: true every single time it ran, whether
+                    // or not "Test this subsegment" had ever been clicked. True only
+                    // once the LAST test run that was scoped to THIS exact waypoint (via
+                    // "Test this subsegment"'s own live-preview override — see
+                    // onTestSubsegment above; "Jump to location…"/"Test Location"/"Play
+                    // Tour So Far" don't set this, since none of them are scoped +
+                    // overridden to selectedWpIndex specifically) has actually finished
+                    // playing (tourComplete) — not merely started. WaypointPaceEditor
+                    // itself still checks this against its OWN current text/pause
+                    // content before allowing "Mark segment as done" — an edit made
+                    // after a successful test correctly requires testing again, even
+                    // though this prop alone would still read true.
+                    testCompleted={
+                      tourComplete
+                      && !!lastJumpRef.current?.scopeToThisWaypoint
+                      && !!lastJumpRef.current?.hasOverride
+                      && lastJumpRef.current?.audioOverrideIndex === selectedWpIndex
+                    }
                     onTestLocation={isLastWaypointOfLocation ? testCurrentLocation : undefined}
                     testLocationDisabled={!currentLocationStatus?.isComplete}
                     testLocationDisabledReason={

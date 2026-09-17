@@ -107,6 +107,15 @@ const VOICE = 'NEUTRAL';
  * clicked separately. See runAutoSave below for how overlapping edits are handled
  * without ever dropping one.
  *
+ * Per Enda's later report: this automatic save used to also mark the waypoint Done
+ * every single time it ran, whether or not "Test this subsegment" had ever been
+ * clicked — an edit left alone for a couple of seconds was enough, on its own, to mark
+ * it finished. runAutoSave now takes an optional { markDone } — false for every one of
+ * the automatic triggers above (a slider release, a paused edit, a removal), true ONLY
+ * for an explicit "Mark segment as done" click, and that click is itself disabled until
+ * this exact content has been tested and that test has actually finished playing (see
+ * readyToMarkDone, further down).
+ *
  * doneLocked (per Enda's report): true whenever this waypoint is marked Done — the
  * same wp.waypoint_done the Waypoints tab already locks on. Before this, nothing here
  * checked it at all, so a "finished" waypoint's wording, pause timing, and audio could
@@ -120,7 +129,7 @@ const VOICE = 'NEUTRAL';
  * in-browser preview and never saves anything, same reasoning as leaving read-only
  * actions like Download unlocked elsewhere in this codebase.
  */
-export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, onAutoSave, onTestSubsegment, testDisabled, testDisabledReason, maxTestSpan = 1, doneLocked = false, onTestLocation, testLocationDisabled = false, testLocationDisabledReason, onTestTourSoFar, testTourSoFarDisabled = false, testTourSoFarDisabledReason }) {
+export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, onAutoSave, onTestSubsegment, testDisabled, testDisabledReason, maxTestSpan = 1, doneLocked = false, onTestLocation, testLocationDisabled = false, testLocationDisabledReason, onTestTourSoFar, testTourSoFarDisabled = false, testTourSoFarDisabledReason, testCompleted = false }) {
   // Per Enda's report (follow-up 59): this panel opened straight to "No Google TTS API
   // key found for your account yet" even with a real key saved. Follow-up 59 fixed the
   // FIRST cause (reading the key before its own async fetch had resolved at all — see
@@ -145,6 +154,16 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
   const [loading, setLoading] = useState(false);
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Per Enda: "Mark segment as done" must require this exact wording/pause content to
+  // have been tested first. Holds a snapshot (JSON) of the segments as they were the
+  // moment the last successful "Test this subsegment" run was kicked off — compared
+  // against the CURRENT segments below (readyToMarkDone) on every render, so ANY edit
+  // made since — text, a pause duration, a removed pause — automatically invalidates
+  // it again with no separate "mark stale" step to remember at each edit site. null
+  // means nothing has been tested yet this time the panel was opened (see
+  // key={selectedWpIndex} in TourSimulator.jsx — a fresh mount per waypoint, so this
+  // never carries over from a different waypoint).
+  const [testedSnapshot, setTestedSnapshot] = useState(null);
   // Per Enda's follow-up 170 report: having tested BOR1a, BOR1b and BOR1c one at a
   // time, he had no way to check that BOR1c's own trigger radius fires correctly as
   // soon as BOR1b finishes — driving each one separately never shows that handoff.
@@ -206,6 +225,18 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
   // newest, rather than the later edit being silently dropped.
   const autoSaveInFlightRef = useRef(false);
   const autoSavePendingRef = useRef(false);
+  // Per Enda: only an explicit "Mark segment as done" click may ever set
+  // waypoint_done: true — a routine background save after an ordinary edit must not.
+  // If a markDone request (the button) arrives while a plain background save is
+  // already mid-upload, that intent can't just be dropped — this OR's it into whatever
+  // the NEXT queued save iteration will run with, so it's never silently downgraded to
+  // a plain save by a later, unrelated edit's own save request arriving behind it.
+  const pendingMarkDoneRef = useRef(false);
+  // Whichever markDone value the most recent save ATTEMPT actually ran with (set right
+  // before that attempt, success or failure) — "Retry now" (below, on a failed save)
+  // replays this exact intent rather than silently always retrying as a plain save,
+  // which would quietly drop a failed "Mark segment as done" click down to just saving.
+  const lastAutoSaveMarkDoneRef = useRef(false);
   const autoSaveTimerRef = useRef(null);
   // Always holds the latest runAutoSave closure (defined further down, re-assigned every
   // render) — see the unmount-flush effect near it for why a ref is used here rather
@@ -513,6 +544,11 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
       const blobUrl = URL.createObjectURL(wavBlob);
       if (lastPreviewUrlRef.current) URL.revokeObjectURL(lastPreviewUrlRef.current);
       lastPreviewUrlRef.current = blobUrl;
+      // Snapshot the NORMALIZED content this run is actually built from (see
+      // testedSnapshot's own comment above) — read alongside the parent's own
+      // testCompleted prop (true once this run has actually finished playing, not
+      // merely started) to gate "Mark segment as done" below.
+      setTestedSnapshot(JSON.stringify(normalized));
       onTestSubsegment(blobUrl, testSpan);
     } catch (err) {
       setError(`Could not build a preview: ${getFnErrorMessage(err)}`);
@@ -528,20 +564,33 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
   // already running doesn't start a second, overlapping upload, it just makes the
   // running one loop once more afterwards so the latest edit is never the one left
   // unsaved.
-  const runAutoSave = async () => {
+  // markDone: true ONLY on an explicit "Mark segment as done" click (or a "Retry now"
+  // replaying one — see lastAutoSaveMarkDoneRef) — every other caller (the text-edit
+  // debounce timer, a pause-duration commit, a pause removal, the unmount-flush effect)
+  // calls this with no argument, so it defaults to false. Per Enda's report: this used
+  // to set waypoint_done: true unconditionally, every single time it ran — including
+  // the routine background save that fires a couple of seconds after ANY edit, with no
+  // click and no test ever required. That's the actual bug: editing a waypoint and
+  // leaving it alone for a moment was enough, on its own, to mark it Done.
+  const runAutoSave = async ({ markDone = false } = {}) => {
     if (doneLocked) return;
     if (autoSaveInFlightRef.current) {
       autoSavePendingRef.current = true;
+      pendingMarkDoneRef.current = pendingMarkDoneRef.current || markDone;
       return;
     }
     autoSaveInFlightRef.current = true;
     setSaving(true);
     setAutoSaveStatus('saving');
     let hadError = false;
+    let nextMarkDone = markDone;
     try {
       let keepGoing = true;
       while (keepGoing) {
         autoSavePendingRef.current = false;
+        const thisMarkDone = nextMarkDone;
+        pendingMarkDoneRef.current = false;
+        lastAutoSaveMarkDoneRef.current = thisMarkDone;
         const currentSegments = segmentsRef.current;
         if (!currentSegments) break;
 
@@ -579,16 +628,23 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
         // One atomic update — per follow-up 53's own fix (see CLAUDE_CHANGELOG.md), three
         // separate onWaypointUpdate calls for audio_clip_url/trigger_audio/waypoint_done
         // in a row silently raced each other and only the LAST one survived. Still done
-        // here as one single call, same as before.
-        onSave({
+        // here as one single call, same as before. waypoint_done is only ever included
+        // when THIS specific attempt was an explicit markDone one (see thisMarkDone
+        // above) — WalkEditor.jsx's onWaypointUpdate merges this object shallowly over
+        // the existing waypoint (`{ ...wp, ...fields }`), so leaving the key out
+        // entirely here correctly leaves whatever waypoint_done already was untouched,
+        // rather than this silently resetting it to some default.
+        const payload = {
           narration_script: rebuildScript(normalized),
           audio_clip_url: response.data.url,
           trigger_audio: true,
-          waypoint_done: true,
-        });
+        };
+        if (thisMarkDone) payload.waypoint_done = true;
+        onSave(payload);
         onAutoSave?.();
 
         keepGoing = autoSavePendingRef.current;
+        nextMarkDone = pendingMarkDoneRef.current;
       }
     } catch (err) {
       setError(`Could not save automatically: ${getFnErrorMessage(err)}`);
@@ -656,6 +712,19 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
       }
     };
   }, []);
+
+  // Per Enda: "Mark segment as done" must require the CURRENT wording/pause content to
+  // have already been tested, and that test to have actually finished playing — not
+  // just started. testDisabled (primary_start — a static point with no driving leg to
+  // pace-test against) is the one deliberate exception, unchanged from before: there is
+  // genuinely nothing to test there, so it was never gated on testing in the first
+  // place and still isn't. Otherwise both halves must hold: the parent's testCompleted
+  // prop (the last scoped test run for THIS waypoint actually reached its boundary),
+  // AND testedSnapshot still matches the CURRENT segments (recomputed fresh every
+  // render, so any edit made since that test — even a single character, or nudging one
+  // pause slider — correctly requires testing again).
+  const testedSnapshotMatchesCurrent = testedSnapshot !== null && segments !== null && testedSnapshot === JSON.stringify(segments);
+  const readyToMarkDone = testDisabled || (testCompleted && testedSnapshotMatchesCurrent);
 
   return (
     <div className="space-y-3">
@@ -884,7 +953,11 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
                 {autoSaveStatus === 'error' && (
                   <span className="flex items-center gap-1.5 text-red-400">
                     <AlertTriangle className="w-3.5 h-3.5" /> Not saved — see error above
-                    <button type="button" onClick={() => runAutoSave()} className="underline hover:text-red-300 ml-1">
+                    {/* Replays whatever this LAST failed attempt actually was — a plain
+                        save stays a plain save, but a failed "Mark segment as done"
+                        click retries as a markDone attempt too, not silently downgraded
+                        to just saving (see lastAutoSaveMarkDoneRef above). */}
+                    <button type="button" onClick={() => runAutoSave({ markDone: lastAutoSaveMarkDoneRef.current })} className="underline hover:text-red-300 ml-1">
                       Retry now
                     </button>
                   </span>
@@ -898,14 +971,19 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
                 narrator also happened to change some text. This button calls that same
                 save pipeline directly, so listening back and confirming it's good is
                 enough on its own to finalise — no throwaway edit needed first. Hidden
-                once doneLocked is already true since there's nothing left to finalise. */}
+                once doneLocked is already true since there's nothing left to finalise.
+                Per Enda's later report: this — and the routine background save, fixed
+                above — used to let a waypoint be marked Done without "Test this
+                subsegment" ever having been run at all. Disabled until readyToMarkDone
+                (see its own comment above) — the tooltip explains exactly why whenever
+                it's blocked, rather than the button just quietly not working. */}
             {!doneLocked && (
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => runAutoSave()}
-                disabled={loading || saving || testing}
-                title="Save this wording and pacing as the finished version for this waypoint"
+                onClick={() => runAutoSave({ markDone: true })}
+                disabled={loading || saving || testing || !readyToMarkDone}
+                title={readyToMarkDone ? 'Save this wording and pacing as the finished version for this waypoint' : 'Test this subsegment first, and let it finish, before marking it done — so every change is actually heard before it\'s marked as finished.'}
                 className="bg-blue-700/30 hover:bg-blue-700/50 border-blue-600/50 text-amber-400 hover:text-amber-300 gap-2"
               >
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
