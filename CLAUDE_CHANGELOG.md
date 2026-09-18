@@ -85,6 +85,47 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-18 (follow-up 205) — "Test this segment" now scrolls straight to the actual
+## test button, instead of leaving the narrator to find it themselves
+**Scope:** `WaypointPaceEditor.jsx` and `TourSimulator.jsx`. Frontend-only — no backend
+function touched, so no separate redeploy step, just the usual build/deploy.
+
+**Per Enda:** "After editing a WP, the 'Test this segment' button appears on top of the
+text boxes and pause sliders. Clicking this should bring the narrator to the bottom
+where the actual 'test this segment' button is. It doesn't. It requires the narrator to
+manually scroll down, which is just an annoying waste of time."
+
+**Investigated:** "Test this segment" (in NarrationTtsEditor) switches the whole panel
+over to WaypointPaceEditor (`testThisWaypoint`), which is a genuinely fresh mount every
+time — landing back at the very top of the page, with the real "Test this
+subsegment"/"Test N subsegments" button, below this waypoint's own text boxes and pause
+sliders, off-screen below the fold. This exact "narrator has to go find the button
+themselves" problem was already solved once before in NarrationTtsEditor.jsx itself
+(follow-up 34, for "Parse & Generate") — same fix, applied here.
+
+**Fixed:** WaypointPaceEditor now scrolls its own test-controls row into view
+automatically the moment it's opened specifically via "Test this segment" — but NOT
+when opened via "Jump to location…", which deliberately still lands at the top, since
+editing wording is usually the first thing to do there (per Enda's own follow-up 198
+design). TourSimulator now tracks which of the two doors was used (`autoScrollToTest`),
+resetting it explicitly on "Jump to location…" so a previous "Test this segment" click
+can never leave it stuck on for a later, different visit.
+
+**Verified:** `npx eslint` and a full `npx vite build`, both clean (same one
+pre-existing, unrelated warning seen throughout this session). New standalone script
+checks the real source (the prop, the ref, the scroll effect, both entry points setting
+the flag correctly) and a logic replica of both doors, plus the specific stale-state
+case (testing one waypoint, going back, then jumping to a different location) —
+confirming that later jump correctly does NOT inherit the earlier true value. 12
+checks, all passing. Re-ran all 9 other existing verification scripts (follow-ups 197
+through 204) — all still pass, no regressions (117 checks total, all passing).
+
+**Not done / worth knowing for next time:** not yet tested live — worth confirming that
+clicking "Test this segment" now lands you right on the "Test this subsegment" button,
+with a smooth scroll, exactly as described.
+
+---
+
 ## 2026-09-18 (follow-up 204) — The app now keeps the screen from going black while
 ## it's open, using the browser's own Screen Wake Lock
 **Scope:** new file `src/components/ScreenWakeLock.jsx`, mounted globally in `App.jsx`

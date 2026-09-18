@@ -113,6 +113,17 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // script editor first.
   const [speedMatchMode, setSpeedMatchMode] = useState(false);
 
+  // Per Enda's report: "After editing a WP, the 'Test this segment' button appears on
+  // top of the text boxes and pause sliders. Clicking this should bring the narrator to
+  // the bottom where the actual 'test this segment' button is. It doesn't. It requires
+  // the narrator to manually scroll down." Only testThisWaypoint (below) ever sets this
+  // true — jumpToLocation deliberately leaves it false (and explicitly resets it, in
+  // case a PRIOR testThisWaypoint click left it true), since landing at the top to edit
+  // wording first is exactly what that path is for (see jumpToLocation's own comment).
+  // Passed straight through as WaypointPaceEditor's own autoScrollToTest prop — see
+  // that component's testControlsRef/autoScrollToTest comment for the rest of this.
+  const [autoScrollToTest, setAutoScrollToTest] = useState(false);
+
   // Per Enda: the "Waypoint Audio & Break Tags" dropdown below must be worked through
   // top to bottom — a waypoint can't be opened here until every waypoint before it in
   // the trail is marked done. lockedWpIndexes[i] is true the moment ANY earlier
@@ -962,6 +973,11 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     // switch in opens already showing the location just jumped to, not whatever was
     // selected before.
     setSpeedMatchMode(true);
+    // Per Enda's follow-up 205 report: this path lands at the TOP of WaypointPaceEditor
+    // (to edit wording first), never auto-scrolled to the test button — see
+    // autoScrollToTest's own comment above. Explicitly reset here (not just left alone)
+    // in case a PRIOR "Test this segment" click left it true.
+    setAutoScrollToTest(false);
     // Per Enda: every location's own Primary-Start point IS its own WP1 — including
     // location 1's — so this lands directly on targetIndex itself, no +1 special case.
     // (Location 1's Primary-Start has no driving leg to pace-test against, same as
@@ -1029,6 +1045,12 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   const testThisWaypoint = () => {
     jumpToWaypoint(selectedWpIndex, { scopeToThisWaypoint: true });
     setSpeedMatchMode(true);
+    // Per Enda's follow-up 205 report: "Test this segment" used to switch this panel in
+    // at the very top, leaving the actual "Test this subsegment" button (below this
+    // waypoint's own text boxes and pause sliders) off-screen — "It requires the
+    // narrator to manually scroll down." This is the one path that sets it true — see
+    // autoScrollToTest's own comment above for why jumpToLocation deliberately does not.
+    setAutoScrollToTest(true);
   };
 
   // Per Enda's follow-up 170/171 reports: having done BOR1a, BOR1b and BOR1c, he had no
@@ -1812,6 +1834,9 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                     fixedLanguage={targetLanguage}
                     onSave={(updates) => onWaypointUpdate(toRawIndex(selectedWpIndex), updates)}
                     onAutoSave={onAutoSave}
+                    // Per Enda's follow-up 205 report — see autoScrollToTest's own
+                    // declaration comment above for the full reasoning.
+                    autoScrollToTest={autoScrollToTest}
                     // Per Enda's follow-up 171 correction: the drive must start BEFORE
                     // the waypoint being edited, not after it — startIndex steps back
                     // (span - 1) waypoints (never past 0), plays straight through to

@@ -123,7 +123,7 @@ const VOICE = 'NEUTRAL';
  * in-browser preview and never saves anything, same reasoning as leaving read-only
  * actions like Download unlocked elsewhere in this codebase.
  */
-export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, onAutoSave, onTestSubsegment, testDisabled, testDisabledReason, maxTestSpan = 1, doneLocked = false, onTestLocation, testLocationDisabled = false, testLocationDisabledReason, onTestTourSoFar, testTourSoFarDisabled = false, testTourSoFarDisabledReason, testCompleted = false }) {
+export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, onAutoSave, onTestSubsegment, testDisabled, testDisabledReason, maxTestSpan = 1, doneLocked = false, onTestLocation, testLocationDisabled = false, testLocationDisabledReason, onTestTourSoFar, testTourSoFarDisabled = false, testTourSoFarDisabledReason, testCompleted = false, autoScrollToTest = false }) {
   // Per Enda's report (follow-up 59): this panel opened straight to "No Google TTS API
   // key found for your account yet" even with a real key saved. Follow-up 59 fixed the
   // FIRST cause (reading the key before its own async fetch had resolved at all — see
@@ -262,6 +262,31 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
   // must also re-run the instant keysLoading flips from true to false, or when a retry
   // (see handleRetryKeyCheck below) resets it back to false deliberately.
   const startedRef = useRef(false);
+
+  // Per Enda's report: "After editing a WP, the 'Test this segment' button appears on
+  // top of the text boxes and pause sliders. Clicking this should bring the narrator to
+  // the bottom where the actual 'test this segment' button is. It doesn't. It requires
+  // the narrator to manually scroll down." "Test this segment" (in NarrationTtsEditor)
+  // switches this whole panel in fresh (this component always fully remounts when that
+  // happens — see the parent's own key={selectedWpIndex} comment above), landing back
+  // at the very top of the page, with the actual "Test this subsegment" button (below
+  // this waypoint's own text boxes and pause sliders) off-screen below the fold —
+  // exactly the same "narrator has to go find the button themselves" problem
+  // NarrationTtsEditor.jsx already solved for "Parse & Generate" (see that file's own
+  // parseGenerateRef/justImportedTick). testControlsRef/autoScrollToTest below is the
+  // same fix, here: TourSimulator.jsx only passes autoScrollToTest as true when this
+  // panel was opened specifically via "Test this segment" (testThisWaypoint) — never
+  // when opened via "Jump to location…", which deliberately lands at the TOP instead,
+  // since editing wording is usually the first thing to do there (see that function's
+  // own comment). Read once on mount — an empty dep array is correct and sufficient
+  // here (rather than needing a "tick" counter like justImportedTick) because this
+  // component always fully remounts fresh every time it's opened at all.
+  const testControlsRef = useRef(null);
+  useEffect(() => {
+    if (autoScrollToTest) {
+      testControlsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, []);
 
   const script = waypoint?.narration_script || '';
 
@@ -789,7 +814,7 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
         // into two groups with justify-between so Test stays on the left and Mark-as-
         // done (with its save-status readout) sits on the far right of the block —
         // physically apart, not just visually distinct.
-        <div className="flex items-center justify-between gap-3 pt-1 flex-wrap">
+        <div ref={testControlsRef} className="flex items-center justify-between gap-3 pt-1 flex-wrap">
           <div className="flex items-center gap-2 flex-wrap">
             {/* Per Enda's follow-up 170 report: only offered when there's genuinely
                 more than one waypoint available to span (maxTestSpan > 1) — otherwise
