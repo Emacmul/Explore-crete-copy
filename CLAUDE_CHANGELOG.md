@@ -85,6 +85,57 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-18 (follow-up 200) — The "new version available" pop-up now fires on every
+## code deploy automatically, not just ones where someone remembered to bump it by hand
+**Scope:** `vite.config.js` (new build plugin) and `public/sw.js` (comment only — the
+plugin now owns CACHE_VERSION's value; the constant itself is rewritten automatically
+on every build, so its current committed value doesn't matter). This changes what a
+production BUILD does, not any backend function, so the usual Base44 build/deploy step
+is all that's needed — nothing extra to redeploy separately.
+
+**Per Enda:** asked whether a code push updates an already-open narrator's cloned tour
+automatically, or whether they need to restart it — and if the latter, whether there
+should be a pop-up telling them to save, close, and reopen. Told him that pop-up already
+exists (UpdateAvailableToast.jsx), and that a plain reload is always enough (no Ctrl+F5
+needed, by design) — but that the pop-up only fires when `public/sw.js`'s own bytes
+change as part of a deploy, which wasn't automatic for an ordinary code fix. His
+response: "It needs to fire for every code change... narrator or customer feedback
+might result in a code change, and they need to know instead of just left working in a
+stale tour version."
+
+**Fixed:** added a small Vite build plugin (`bumpSwVersion` in `vite.config.js`) that
+rewrites `public/sw.js`'s `CACHE_VERSION` constant to a fresh, unique value (the exact
+build timestamp) at the start of every production build, automatically — before this
+file gets copied into the deploy output. There is no longer a manual step to remember:
+every single build now changes this file's bytes, so the "new version available"
+pop-up will show up for anyone already using the app, every time, without needing
+Ctrl+F5 or a restart — one click on "Update" reloads them onto the new build safely,
+on their own timing (it's a dismissible banner, not a forced interruption, so someone
+mid-recording can finish first). The plugin only runs during a real build
+(`apply: 'build'`) — it never touches this file while running the local dev server.
+
+**Note for Enda:** `public/sw.js` will now show as "changed" in git / GitHub Desktop
+after every build you run locally, even if you didn't touch it yourself — that's this
+plugin doing its job, not a mistake. Said this plainly in the file's own comment too,
+so a future look at that diff doesn't cause confusion.
+
+**Verified:** `npx eslint vite.config.js` (0 errors). Ran two real, complete production
+builds back to back and read the actual output file both times: confirmed
+`dist/sw.js` got a different `CACHE_VERSION` value each build, in the correct
+`explore-crete-build-<timestamp>` shape, proving the plugin runs at the right point in
+Vite's build process (before the public folder is copied into `dist`), not just that
+the source code looks right. New standalone script covers both the source-level checks
+and this real-build check. Re-ran follow-up 199's, 198's, and 197's own verification
+scripts — all still pass, no regressions.
+
+**Not done / worth knowing for next time:** not tested against a real Base44 deploy —
+worth confirming, after your next push, that a tab left open beforehand actually shows
+the "A new version is available" banner. This only affects deploys that go through a
+real `vite build` (i.e. the normal Base44 build/deploy step) — it won't do anything
+during local `npm run dev`.
+
+---
+
 ## 2026-09-18 (follow-up 199) — "Test this subsegment" was wrongly disabled on every
 ## location's own opening waypoint, not just the very first one in the whole tour
 **Scope:** `src/components/admin/TourSimulator.jsx` only. Frontend-only — no backend

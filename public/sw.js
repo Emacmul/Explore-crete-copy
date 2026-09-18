@@ -1,23 +1,29 @@
 /**
  * Explore Crete — Service Worker
  *
- * Version bump (v3) to force-evict all caches from previous versions.
  * Uses network-first for navigations so users always get the latest UI.
  * Stale-while-revalidate for static assets (JS/CSS/images).
  *
- * IMPORTANT — read this before every deploy: the browser only detects a new service
- * worker by comparing this file's raw bytes to what it already has cached. Someone who
- * opens the app fresh (closed-then-reopened) always gets the latest code regardless —
- * navigation requests are network-first below, and Vite content-hashes every JS/CSS
- * filename, so a stale cache can't serve old code on a real reload. But UpdateAvailable-
- * Toast.jsx (the "a new version is available" banner shown to anyone who leaves the app
- * open) only fires when THIS file's bytes actually change. Bump CACHE_VERSION below on
- * any deploy that should show that banner to already-open sessions — if this file is
- * untouched, the deploy still reaches everyone on their next open, just without the banner
- * for people already using it.
+ * IMPORTANT: the browser only detects a new service worker by comparing this file's raw
+ * bytes to what it already has cached. Someone who opens the app fresh (closed-then-
+ * reopened) always gets the latest code regardless — navigation requests are
+ * network-first below, and Vite content-hashes every JS/CSS filename, so a stale cache
+ * can't serve old code on a real reload. But UpdateAvailableToast.jsx (the "a new
+ * version is available" banner shown to anyone who leaves the app open) only fires when
+ * THIS file's bytes actually change.
+ *
+ * Per Enda: this must fire for every code change, not just ones someone remembers to
+ * bump by hand — testing/narrator/customer feedback can lead to a fix at any time, and
+ * anyone already working in the app needs to know instead of being left in a stale
+ * version. CACHE_VERSION below is no longer a hand-edited number — the bumpSwVersion
+ * plugin in vite.config.js rewrites it to a fresh, unique value on every single
+ * production build, automatically, before this file is copied into the deploy. Don't
+ * hand-edit the value itself; it gets overwritten on the next build anyway. (This also
+ * means this file will show as "changed" in git/GitHub Desktop after every build — that
+ * is expected, not a sign something else touched it.)
  */
 
-const CACHE_VERSION = 'explore-crete-v10';
+const CACHE_VERSION = 'explore-crete-build-1789709528257';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 
 // Install: cache the app shell FIRST, then activate immediately.
