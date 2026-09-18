@@ -646,10 +646,12 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
 
   // Per Enda: "Mark segment as done" must require the CURRENT wording/pause content to
   // have already been tested, and that test to have actually finished playing — not
-  // just started. testDisabled (primary_start — a static point with no driving leg to
-  // pace-test against) is the one deliberate exception, unchanged from before: there is
-  // genuinely nothing to test there, so it was never gated on testing in the first
-  // place and still isn't. Otherwise both halves must hold: the parent's testCompleted
+  // just started. testDisabled (the tour's very own first waypoint — the one genuinely
+  // static "welcome, get ready" point heard before any driving has started at all; see
+  // TourSimulator.jsx's own comment on this prop for why that's index 0 only, not every
+  // location's own primary_start) is the one deliberate exception: there is genuinely
+  // nothing to test there, so it was never gated on testing in the first place and
+  // still isn't. Otherwise both halves must hold: the parent's testCompleted
   // prop (the last scoped test run for THIS waypoint actually reached its boundary),
   // AND testedSnapshot still matches the CURRENT segments (recomputed fresh every
   // render, so any edit made since that test — even a single character, or nudging one

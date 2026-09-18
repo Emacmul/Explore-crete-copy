@@ -85,6 +85,56 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-18 (follow-up 199) — "Test this subsegment" was wrongly disabled on every
+## location's own opening waypoint, not just the very first one in the whole tour
+**Scope:** `src/components/admin/TourSimulator.jsx` only. Frontend-only — no backend
+function touched, so no manual redeploy needed, just the usual hard refresh + republish.
+
+**Per Enda:** jumped to BOR2 in the Battle of the Rivers tour as Admin. It correctly
+opened BOR2a-PS (follow-up 198 working as intended), but he couldn't test or play it —
+"Test this subsegment" was grayed out, with no working way to check the audio at all.
+When told this looked like expected behaviour for a "parked, no driving leg" point, he
+corrected that firmly and specifically: that reasoning is ONLY true for waypoint 1 of
+location 1 — nowhere else.
+
+**Investigated:** WaypointPaceEditor's `testDisabled` prop was being set from
+`selectedWp.waypoint_role === 'primary_start'` — true for EVERY location's own opening
+waypoint (BOR1a-PS, BOR2a-PS, BOR3a-PS, and so on), not just the tour's very first one.
+That's wrong: every location's own primary_start except the tour's first is reached BY
+a real drive (the end of the previous location's own drive brings the car there), so it
+has a real driving leg to pace-test against, exactly like any other waypoint — only the
+tour's actual first waypoint (index 0) is genuinely static, heard before any driving has
+started at all. Confirmed this was a genuine inconsistency already documented elsewhere
+in the same file: NarrationTtsEditor's own equivalent "Test this segment" button
+already correctly used `selectedWpIndex === 0` for this exact distinction (follow-up
+174) — `testDisabled` alone had drifted from that and used the broader role check
+instead.
+
+**Fixed:** `testDisabled` now checks `selectedWpIndex === 0` — the same rule
+NarrationTtsEditor's own "Test this segment" already uses — so it's only ever disabled
+for the tour's actual first waypoint. Every other location's own opening waypoint can
+now be tested and, once tested, marked done, the same as any other waypoint. Updated
+the tooltip text and nearby comments to match (they previously described this as
+applying to "primary_start" generally).
+
+**Verified:** `npx eslint` (0 errors; same 1 pre-existing, unrelated warning as before).
+`npm run build` (exit 0, whole app). New standalone script: confirms directly against
+the real source that `testDisabled` no longer references `waypoint_role` at all and is
+keyed to `selectedWpIndex === 0` only, and checks the semantics against a multi-location
+example matching BOR2a-PS (index 0 disabled, every later location's own opening
+waypoint enabled). Re-ran follow-up 198's own two scripts and follow-up 197's queueing
+re-check — all still pass, no regressions.
+
+**Not done / worth knowing for next time:** not tested live. Please re-check BOR2a-PS
+(or any other location's opening waypoint): "Test this subsegment" should now work
+normally there. Separately — you also mentioned not being able to edit the wording
+text box itself; that's a different control, not affected by this same bug as far as
+the code shows. If it's still not typeable after this fix, let me know exactly what
+happens when you try (nothing happens? greyed out? an error message?) so I can trace
+that one properly rather than guess.
+
+---
+
 ## 2026-09-17 (follow-up 198) — Saving is now fully manual in the pace-testing editor;
 ## "Jump to location…" always lands there too, on the target location's own WP1
 **Scope:** `src/components/admin/WaypointPaceEditor.jsx` and

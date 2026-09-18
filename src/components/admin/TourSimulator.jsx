@@ -1838,8 +1838,22 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                       if (bounds.length > 0) setMapFocusBounds(bounds);
                       jumpToWaypoint(startIndex, { autoplay: true, scopeToThisWaypoint: true, audioOverrideUrl: previewUrl, audioOverrideIndex: selectedWpIndex, waypointSpan: effectiveSpan, startDistOverride, endDistOverride });
                     }}
-                    testDisabled={selectedWp.waypoint_role === 'primary_start'}
-                    testDisabledReason="Not applicable here — this point is heard while parked, before any driving starts, so there's no driving speed to test its speech against. Its pause timing above can still be tuned normally."
+                    // Per Enda's direct correction: "the car is still parked" is ONLY
+                    // true for waypoint 1 of location 1 — the one genuinely static
+                    // "welcome, get ready" point that plays before the tour's own
+                    // first drive has even started. EVERY other location's own
+                    // primary_start (BOR2a-PS, BOR3a-PS, etc.) is reached BY a real
+                    // drive — the end of the previous location's own drive brings the
+                    // car there — so it has a real driving leg both before it (the
+                    // approach) and after it (the leg to this location's next
+                    // waypoint), exactly like any other waypoint. This used to check
+                    // `waypoint_role === 'primary_start'`, which wrongly disabled
+                    // pace-testing for EVERY location's opening point, not just the
+                    // tour's very first one — the same index-0-only distinction
+                    // NarrationTtsEditor's own onTestSegment prop below already gets
+                    // right (selectedWpIndex === 0), mirrored here instead.
+                    testDisabled={selectedWpIndex === 0}
+                    testDisabledReason="Not applicable here — this is the very start of the tour, heard while parked before any driving has begun, so there's no driving speed yet to test its speech against. Its pause timing above can still be tuned normally."
                     maxTestSpan={maxWaypointTestSpan}
                     doneLocked={doneLocked}
                     // Per Enda's report: a waypoint could be edited and marked Done
@@ -1897,9 +1911,12 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                   //
                   // Per Enda's follow-up 174 report: this button used to be disabled for
                   // primary_start waypoints (the stationary "welcome" point, e.g.
-                  // BOR1a-PS) — mirroring WaypointPaceEditor's own testDisabled, which is
-                  // correct THERE since there's no driving leg to pace-match a static
-                  // point against. But follow-up 168 later hid NarrationTtsEditor's own
+                  // BOR1a-PS) — mirroring WaypointPaceEditor's own testDisabled prop,
+                  // which is only correct for the tour's very first waypoint (index 0),
+                  // not every primary_start (see that prop's own comment, further down,
+                  // for the bug where it briefly checked the broader waypoint_role
+                  // instead and wrongly disabled pace-testing for every location's own
+                  // opening point). But follow-up 168 later hid NarrationTtsEditor's own
                   // Finalize/Mark-as-done panel entirely whenever onTestSegment is
                   // provided (i.e. always, in this tab), on the assumption a narrator
                   // could always reach WaypointPaceEditor's own "Mark segment as done"
