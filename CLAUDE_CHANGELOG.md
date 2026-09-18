@@ -85,6 +85,49 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-18 (follow-up 201) — The waypoint dropdown now only lists the CURRENT
+## location's own waypoints, not the whole tour
+**Scope:** `TourSimulator.jsx` only. Frontend-only change — no backend function touched,
+so no separate redeploy step, just the usual build/deploy.
+
+**Per Enda:** "I have done BOR1 completely and save it. I shut down, come back a few
+hours later to edit BOR2. I go to 'Jump to', enter BOR2, and click jump. The dropdown
+list shows all the waypoints, starting at BOR1a again. this is very confusing. It
+should only show the WPs in BOR2, to avoid narrators accidentally editing a wrong
+waypoint."
+
+**Investigated:** the "Waypoint Audio & Break Tags" dropdown (the one used to pick which
+waypoint to edit text/pace for) built its list straight from the full, whole-tour
+`waypoints` array, with no filtering by location at all — so every waypoint from every
+location, done or not, always appeared together in one long list, in tour order.
+Jumping to a new location only moved which waypoint was selected; it never changed what
+the dropdown itself showed.
+
+**Fixed:** the dropdown's option list is now filtered down to just the waypoints inside
+`currentLocationRange` — the same "which location is selectedWpIndex sitting in right
+now" range the map view already uses to frame itself. Since that range is itself worked
+out from whichever waypoint is currently selected, using "Jump to location…" to move to
+BOR2 automatically re-scopes this dropdown to BOR2's own waypoints only — no extra
+wiring needed, and it stays correct however the current waypoint changes (jumping,
+stepping back a waypoint, advancing past the last one). If nothing is loaded yet, it
+falls back to showing the full list rather than an empty one.
+
+**Verified:** `npx eslint` (0 errors, same one pre-existing unrelated warning seen in
+every prior check this session) and a full `npx vite build` (clean). New standalone
+script (`test_dropdown_scoped_to_location_followup201.mjs`) checks the actual JSX source
+for the filter, confirms the original per-item key/value/lock logic was preserved
+untouched, and runs a logic replica against a simulated two-location tour confirming
+BOR1's own waypoint (BOR1a-PS) no longer appears once sitting on BOR2 — the exact bug
+reported. Re-ran all 5 existing verification scripts (follow-ups 197, 198, 199, 200) —
+all still pass, no regressions (63 checks total, all passing).
+
+**Not done / worth knowing for next time:** not yet tested live in the app itself (only
+via source inspection, build, and a logic replica) — worth a quick real check next time
+you're in the simulator: finish a location, jump to a different one, and confirm the
+dropdown only shows that location's own waypoints.
+
+---
+
 ## 2026-09-18 (follow-up 200) — The "new version available" pop-up now fires on every
 ## code deploy automatically, not just ones where someone remembered to bump it by hand
 **Scope:** `vite.config.js` (new build plugin) and `public/sw.js` (comment only — the

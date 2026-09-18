@@ -1649,7 +1649,23 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                     <SelectValue placeholder="Select a waypoint…" />
                   </SelectTrigger>
                   <SelectContent>
-                    {waypoints.map((wp, i) => {
+                    {/* Per Enda's report: this used to list EVERY waypoint in the whole
+                        tour, always — so coming back to edit BOR2 after finishing BOR1
+                        still showed BOR1a-PS at the very top of this same list. Nothing
+                        stopped a narrator from accidentally picking a waypoint from a
+                        DIFFERENT, already-finished location by mistake. Scoped to just
+                        the current location now (currentLocationRange — the same range
+                        the map above already frames itself to), so this list always
+                        shows only the location actually being worked on. Moving to a
+                        different location — via "Jump to location…" above, or "Back 1
+                        Waypoint"/advancing past this location's own last waypoint —
+                        naturally re-scopes this list too, since currentLocationRange is
+                        itself derived from selectedWpIndex. Falls back to the full list
+                        only if currentLocationRange isn't available yet (nothing loaded). */}
+                    {waypoints
+                      .map((wp, i) => ({ wp, i }))
+                      .filter(({ i }) => !currentLocationRange || (i >= currentLocationRange.startIndex && i < currentLocationRange.endIndex))
+                      .map(({ wp, i }) => {
                       const isPrimary = wp.waypoint_role === 'primary_start' || wp.waypoint_role === 'primary_stop';
                       const isDone = !!wp.waypoint_done;
                       const isLocked = lockedWpIndexes[i];
