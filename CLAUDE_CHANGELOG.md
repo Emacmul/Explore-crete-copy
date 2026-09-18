@@ -85,6 +85,57 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-18 (follow-up 204) — The app now keeps the screen from going black while
+## it's open, using the browser's own Screen Wake Lock
+**Scope:** new file `src/components/ScreenWakeLock.jsx`, mounted globally in `App.jsx`
+(one import, one line, alongside the existing `UpdateAvailableToast`). Frontend-only —
+no backend function touched, so no separate redeploy step, just the usual build/deploy.
+
+**Per Enda:** "Twice now I'm testing the complete BOR1 locations, and twice my computer
+screen goes black while the audio keeps playing. This is highly annoying because I
+can't see the car, and so don't know if everything is working as it should. I know this
+is either a windows or a Chrome setting. Either way, I need this disabled for everybody
+when they are working in the app. Can we do this, making sure the screen remains
+visible all the time."
+
+**Investigated:** this is a computer's own screen/monitor-off timer, not a bug in
+anything the app does — it fires purely from a lack of mouse/keyboard activity, and a
+tour or test genuinely has none of that: it plays audio and drives a map marker on its
+own for as long as the drive takes, with nothing for the OS to see as "activity", even
+though the app is very much in active use the whole time. Turning this off in Windows'
+own settings would only fix it on Enda's own computer, only until it's reset, and
+wouldn't help a real customer driving with their own phone or laptop mounted somewhere.
+
+**Fixed:** the page itself now asks the browser to keep the screen on for as long as
+the app is open and actually the one on screen, using the browser's own Screen Wake
+Lock API — the same mechanism a video-calling app or a recipe app uses to stop a screen
+going dark mid-call or mid-recipe. Requested once, globally, the moment the app loads
+(same placement as the existing "new version available" banner, so it covers the Admin
+Panel, Narr Studio, and the customer front end equally), and automatically re-requested
+the moment the tab becomes visible again — the browser itself silently drops the lock
+the instant a tab is minimized or switched away from (working as designed, not a bug to
+fight), so this makes sure it's always back in effect whenever the app is genuinely
+what's on screen. Not supported in every browser (mainly older Safari/iOS) — checked
+first, and does nothing at all there rather than erroring; nothing else in the app
+depends on it.
+
+**Verified:** `npx eslint` and a full `npx vite build`, both clean. New standalone
+script checks the real source for every piece of this (feature detection, the request
+call, the visibility-based re-request, cleanup on unmount, being mounted globally), then
+exercises the actual request/release/re-request logic against a mocked Wake Lock API in
+6 scenarios: acquiring on mount, the browser auto-releasing it, not double-requesting
+while already held, a failed first request retrying successfully, and releasing
+cleanly on unmount — 14 checks, all passing. Re-ran all 8 other existing verification
+scripts (follow-ups 197 through 203) — all still pass, no regressions (105 checks
+total, all passing).
+
+**Not done / worth knowing for next time:** could only be verified against the real
+Wake Lock API's documented behaviour and a faithful mock of it — this sandbox has no
+real screen or Windows power settings to test against directly. Worth confirming on
+your own machine: run a full BOR1 test again and check the screen no longer goes black.
+
+---
+
 ## 2026-09-18 (follow-up 203) — "Test this subsegment"/"Test N subsegments" now plays
 ## audio for a waypoint that hasn't been marked Done yet
 **Scope:** `TourSimulator.jsx` only. Frontend-only — no backend function touched, so no

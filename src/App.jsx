@@ -10,6 +10,7 @@ import Login from './pages/Login';
 import Narr from './pages/Narr';
 import DebugConsoleOverlay from './components/DebugConsoleOverlay';
 import UpdateAvailableToast from './components/UpdateAvailableToast';
+import ScreenWakeLock from './components/ScreenWakeLock';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -97,6 +98,14 @@ function App() {
               or Narr Studio for a while needs this exactly as much as a customer on the
               front end does. See UpdateAvailableToast.jsx for the full explanation. */}
           <UpdateAvailableToast />
+          {/* Per Enda's report: his screen was going black mid-test, with the audio
+              still playing underneath — his own computer's screen-off timer, not
+              anything wrong with the app. Same "global, not tied to any one route"
+              placement as UpdateAvailableToast, for the same reason — a narrator
+              testing in the Admin Panel needs this exactly as much as a customer
+              actually driving a live tour on the front end. See ScreenWakeLock.jsx
+              for the full explanation. */}
+          <ScreenWakeLock />
         </QueryClientProvider>
       </AuthProvider>
     </LanguageProvider>
