@@ -85,6 +85,193 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-18 (follow-up 209) — Mythology icon added
+**Scope:** New asset `assets/interest-icons/mythology.png`. Changed: `lib/interestIcons.js`
+(one import, one map entry). Frontend-only.
+
+**Per Enda:** sent the Mythology icon. "Mythology" was already in `DEFAULT_INTERESTS`
+(added in an earlier follow-up, no icon yet) — just needed the icon wired in.
+
+**Built:** trimmed to its true content bounding box, checked for corner spill-over via
+the same rendered-preview method as every other icon this session (clean), added to
+`INTEREST_ICON_MAP`.
+
+**Verified:** `test_interest_icons_batch2.mjs` extended to cover Mythology — 41/41
+passing. Full regression suite: 197/197 passing (194 previous + 3 new Mythology
+checks). `npx vite build` succeeds; bundled JS confirmed to contain 12 inlined icon
+images (11 previous + Mythology). `npx eslint` on `interestIcons.js`: clean.
+
+**Not done yet:** the bigger "group all interests under one customer-facing heading"
+redesign — still not started.
+
+---
+
+## 2026-09-18 (follow-up 208) — 8 more interest icons added, plus the 3 tour-type icons
+**Scope:** New assets under `assets/interest-icons/` (wild-flowers, history,
+routes-of-faith, archaeology, mountain-biking, birds-of-prey, photography) and
+`assets/tour-type-icons/` (driving-tour, walking-hiking, walkabout). New file
+`lib/tourTypeIcons.js`. Changed: `lib/interestIcons.js`, `components/walks/WalkCard.jsx`,
+`components/walks/TourCategoryPicker.jsx`, `components/walks/TourCategoryDialog.jsx`,
+`components/admin/AdminStartScreen.jsx`. Frontend-only — no backend function touched.
+
+**Per Enda:** sent 9 more icons this session (with a live back-and-forth to sort out
+exactly which was which — see Investigated). Confirmed instruction on the 3 tour-type
+icons: "I want them with the written title. Spice the place up a little."
+
+**Investigated (didn't guess):**
+- Enda sent 8 icon files with no labels. Asked him to confirm the mapping rather than
+  guess — one (a blue "m" shape) turned out to be Mountain Biking, not a logo, and a
+  building-shaped one turned out to be History, not a new "Walkabout" interest.
+- He then clarified "Walkabout" isn't an interest at all — it's one of the 3 tour
+  types (Walking/Hiking Tour, Walkabout Tour, DriveAbout Tour), defined in
+  `tourCategories.js`. Those 3 types currently use generic lucide icons (a footprint,
+  a pin, a car) next to their titles on the tour-type picker screens.
+- The first "walkabout" file he sent was a screenshot of his file browser (solid dark
+  background baked in, not a transparent icon) — asked for and got the real file.
+- Confirmed with Enda that his icon files (32×37px / similarly small) can't be sourced
+  any larger from mapicons.mapsmarker.com — the softness at that size is a source
+  resolution limit, not something introduced by trimming (trimming is a lossless crop,
+  confirmed by checking file dimensions before/after).
+
+**Built:**
+- 6 new interest icons added live to the "Main Interests" dropdown and its
+  `INTEREST_ICON_MAP`: Wild Flowers, History, Routes of Faith, Archaeology, Birds of
+  Prey (new category), Photography. Each trimmed to its true content bounding box and
+  visually checked (rendered through the exact same white-circle/navy-border/78%-fit
+  math as the real component) for corner spill-over before being added — all 8 clean.
+- Routes of Faith's badge on `WalkCard.jsx` now uses its own custom icon instead of the
+  generic lucide `Church` icon (same treatment Buggy Friendly already got).
+- Mountain Biking: icon saved and ready in `INTEREST_ICON_MAP`, but NOT added to the
+  live `DEFAULT_INTERESTS` list — Enda said earlier he may add this as a real category
+  "at a later stage". One line to activate whenever he says go.
+- New `lib/tourTypeIcons.js`: maps each tour type's code (WHT/WBT/DDV) to its custom
+  icon, same reusable circle-badge template as interests. All 3 tour types (Driving
+  Tour, Walking/Hiking, Walkabout) now show their custom icon next to the written
+  title on: the full-screen tour-type picker (`TourCategoryPicker.jsx`), the header's
+  "change tour type" dialog (`TourCategoryDialog.jsx`), and the admin "New Tour"
+  screen (`AdminStartScreen.jsx`). Falls back to the old generic icon automatically for
+  any tour type without a custom icon yet — nothing breaks mid-rollout.
+
+**Verified:**
+- New script `test_interest_icons_batch2.mjs` (38 checks): all new assets exist, the
+  dropdown list and icon map are correct, Mountain Biking is deliberately NOT live yet,
+  Routes of Faith no longer imports the lucide icon, and all 3 tour-type picker screens
+  render the custom icon with a safe fallback and still show the title text.
+- Full regression suite: 194/194 checks passing (156 previous + 38 new).
+- `npx vite build`: succeeds. Bundled JS confirmed to contain exactly 11 inlined icon
+  images (the 1 from follow-up 207 + 10 new ones), matching what was added.
+- `npx eslint` on every touched file: clean (one pre-existing, unrelated unused-import
+  warning in `AdminStartScreen.jsx` predates this change, left alone).
+
+**Not done yet:**
+- Interests still with no icon: Mythology.
+- Mountain Biking interest tag: icon ready, not yet turned on (see above).
+- The bigger "group all interests under one customer-facing heading" redesign has
+  still not been started — only the admin picker and the badges already in place.
+
+---
+
+## 2026-09-18 (follow-up 207) — Interest icons: a reusable circle-badge template, and
+## Buggy-Friendly folded into the shared Main Interests dropdown
+**Scope:** New files `InterestIcon.jsx`, `interestIcons.js`, `assets/interest-icons/buggy-friendly.png`.
+Changed: `WalkEditor.jsx`, `WalkList.jsx`, `WalkCard.jsx`. Frontend-only — no backend
+function touched, so no separate redeploy step, just the usual build/deploy.
+
+**Per Enda:** wants every "interest" (Buggy Friendly, Route of Faith, Archaeology,
+Photography, Wild Flowers, Mythology, History, and more to come — Mountain Biking,
+Driving Tour, Hiking, Historical) grouped under one heading with an icon each, sourced
+from mapicons.mapsmarker.com, recoloured to the site's own blue/white/navy, credited on
+the About page per that site's CC BY-SA 3.0 licence (confirmed via their actual licence
+page, not assumed). He tested one real icon (Buggy Friendly) against several live
+previews before approving a final look, then asked for: (1) a reusable "template" so
+every future icon just drops in with no extra styling, and (2) the admin "Main
+Interests" picker to become an actual dropdown he can multi-select from in one pass,
+instead of a row of buttons.
+
+**Investigated/confirmed before building:**
+- Checked mapicons.mapsmarker.com's actual licence page: CC BY-SA 3.0, commercial use
+  and recolouring both explicitly permitted, credit can be a plain text link (their logo
+  badge is optional, not required), and the ShareAlike clause only applies to the icon
+  files themselves if redistributed — not to the rest of the site.
+- Sampled the real site logo's own pixels (not a guess) to find the actual brand blue:
+  `#1250A4` (the header logo customers actually see) vs. a second, less-visible logo
+  file using `#001489` — flagged the discrepancy to Enda rather than picking one
+  silently; he confirmed `#1250A4` for the icon glyph, `#001489` (navy) for the circle's
+  border.
+- The first real icon Enda sent (Buggy Friendly) was a 32×37px screenshot crop with a
+  lot of empty transparent margin above the actual glyph (confirmed by measuring its
+  real alpha-channel bounding box: content only occupies roughly x:5-28, y:16-37 of the
+  32×37 canvas). Scaling the whole canvas into the circle wasted most of the circle on
+  that empty space and made the glyph look tiny and off-centre — traced and fixed by
+  trimming to the true content bounding box before sizing.
+- Even after trimming to the bounding box, sizing off the box's plain width/height still
+  let the buggy's wheels and the pushing figure's feet poke past the circle — because a
+  circle inscribed in a square never reaches that square's corners, and those details sit
+  near the corners of the icon's bounding box. Fixed by measuring the icon's TRUE
+  farthest opaque pixel from its own centre (not just its bounding box) and sizing off
+  that distance instead — guarantees nothing pokes out regardless of the icon's shape.
+- Two visible defects in the preview images themselves were traced to the PREVIEW
+  generation, not the actual badge design: a "grey background" Enda saw was the
+  preview's own canvas colour bleeding into view, not anything behind the icon — fixed
+  by rendering previews on a checkerboard so the true circle edge is unambiguous. A
+  "pixelated border" was the preview's own final zoom-for-visibility step using a
+  nearest-neighbour resize — fixed by using a smoothing resize for that step; the actual
+  badge asset was never pixelated.
+
+**Built:**
+- `src/components/ui/InterestIcon.jsx` — the reusable "template": a white circle with a
+  thin (1px, not scaled up with size) navy (`#001489`) border, containing the icon at
+  78% of the circle's diameter via `object-fit: contain`. Renders nothing if no `src` is
+  given, so an interest with no icon yet just falls back to plain text/its old icon.
+- `src/lib/interestIcons.js` — single shared place for `DEFAULT_INTERESTS` (now
+  includes 'Buggy Friendly') and `INTEREST_ICON_MAP` (interest label → icon asset).
+  Adding a future icon is one new import + one new map entry here, nothing else.
+  Exports `getSelectedInterests(walk)` and `isBuggyFriendly(walk)` as the one shared
+  source of truth other files now use instead of re-deriving this locally.
+- `src/assets/interest-icons/buggy-friendly.png` — Enda's approved icon, saved
+  pre-trimmed to its real content bounding box (see "Investigated" above for why).
+- `WalkEditor.jsx`: removed the old standalone Buggy-Friendly yes/no toggle switch —
+  it's just another tag in the Main Interests list now, same as Route of Faith already
+  was (per Enda's explicit choice when asked). Replaced the button-grid picker with a
+  `Popover`-based dropdown: a "Select interests…" trigger that stays open across
+  clicks, so ticking several tags is one continuous action rather than one open/close
+  per tag (per Enda's explicit "drop down list, multiple picks in one pass" request).
+  Removed the old 3-tag selection cap (per Enda's explicit choice when asked) — with
+  Buggy Friendly and more categories joining, 3 was no longer enough to describe a tour
+  fairly. Each row shows its icon (if one exists yet) next to its checkbox and label.
+- `WalkList.jsx` / `WalkCard.jsx`: the Buggy-Friendly quick-filter and card badge now go
+  through `isBuggyFriendly(walk)` instead of reading `walk.buggy_friendly` directly.
+  This checks BOTH the new `main_interest` tag AND the old dedicated field — so a tour
+  saved before this change, which only ever set the old field, keeps matching the
+  filter and showing the badge with no data migration needed. WalkCard's badge now
+  renders Enda's custom icon instead of the generic lucide `Baby` icon.
+
+**Verified:**
+- New script `/tmp/verify/test_interest_icons_followup.mjs` (22 checks): the component's
+  fallback behaviour, the shared lib's backward-compatible `isBuggyFriendly` logic (with
+  a logic-replica proving an old legacy-only tour, a new tag-only tour, and a tour with
+  neither all resolve correctly), the dropdown's Popover/Checkbox structure, the removed
+  3-cap, and both WalkList's and WalkCard's switch-over to the shared helpers.
+- Full existing regression suite (12 other scripts, 134 checks) re-run clean — nothing
+  in the unrelated save/test/wording-lock/wake-lock flows regressed.
+- `npx eslint` on every changed/new file: clean (the pre-existing, unrelated errors in
+  WalkEditor.jsx — unused `Download`/`validateDrivingTour`/`generateGpx`/`generateKml`
+  imports — predate this change and weren't touched). Full project build
+  (`npm run build`): succeeds; confirmed the new icon asset is actually bundled (inlined
+  as base64, since it's under Vite's small-asset threshold).
+
+**Not done yet (Enda is still producing the icons):** Archaeology, Photography, Wild
+Flowers, History, Mythology, Routes of Faith (still uses its old lucide `Church` icon),
+Mountain Biking, Driving Tour, Hiking, and Historical all have no custom icon in
+`INTEREST_ICON_MAP` yet — each renders as plain text (or its old icon) in the picker and
+on customer-facing cards until Enda sends the file, at which point adding it is a single
+import + map entry in `interestIcons.js`, no other code changes. The bigger "group all
+interests under one heading" customer-facing redesign Enda originally described is also
+not started — this entry only covers the reusable icon template and the admin picker
+becoming a proper multi-select dropdown.
+
+---
+
 ## 2026-09-18 (follow-up 206) — "Save & Listen Again" was never actually saving to the
 ## server — real narration edits could look finished and still be silently lost
 **Scope:** `NarrationTtsEditor.jsx`. Frontend-only — no backend function touched, so no

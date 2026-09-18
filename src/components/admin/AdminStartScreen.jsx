@@ -10,6 +10,8 @@ import {
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { toast } from '@/components/ui/use-toast';
 import { TOUR_CATEGORIES } from '@/lib/tourCategories';
+import { TOUR_TYPE_ICON_MAP } from '@/lib/tourTypeIcons';
+import InterestIcon from '@/components/ui/InterestIcon';
 import CloneTourDialog from './CloneTourDialog';
 
 const CATEGORY_ICONS = { Footprints, MapPin, Car };
@@ -341,7 +343,14 @@ export default function AdminStartScreen({
                 onClick={() => onNewTour(cat.code)}
                 className={`w-full bg-gradient-to-r ${colourMap[cat.color]} text-white rounded-xl p-4 shadow-lg flex items-center gap-3 transition-all hover:shadow-xl hover:scale-[1.01] active:scale-[0.99] text-left`}
               >
-                <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center shrink-0"><Icon className="w-5 h-5" /></div>
+                {/* Per Enda (2026-09-18): same custom-icon treatment as the customer-facing
+                    tour type pickers — falls back to the old icon while a custom icon
+                    for this tour type is still pending. */}
+                {TOUR_TYPE_ICON_MAP[cat.code] ? (
+                  <InterestIcon src={TOUR_TYPE_ICON_MAP[cat.code]} alt="" size={40} />
+                ) : (
+                  <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center shrink-0"><Icon className="w-5 h-5" /></div>
+                )}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-xs bg-white/25 px-1.5 py-0.5 rounded font-bold">{cat.code}</span>

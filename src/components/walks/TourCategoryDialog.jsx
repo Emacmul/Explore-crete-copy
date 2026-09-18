@@ -3,6 +3,8 @@ import { motion } from 'framer-motion';
 import { Footprints, MapPin, Car, ChevronRight } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { TOUR_CATEGORIES } from '@/lib/tourCategories';
+import { TOUR_TYPE_ICON_MAP } from '@/lib/tourTypeIcons';
+import InterestIcon from '@/components/ui/InterestIcon';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 const ICONS = { Footprints, MapPin, Car };
@@ -37,9 +39,16 @@ export default function TourCategoryDialog({ open, onSelect, onClose }) {
                 onClick={() => onSelect(cat.code)}
                 className={`w-full bg-gradient-to-r ${styles.bg} ${styles.hoverBg} text-white rounded-2xl p-4 shadow-lg flex items-center gap-4 transition-all hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] text-left`}
               >
-                <div className="w-11 h-11 bg-white/20 rounded-xl flex items-center justify-center shrink-0">
-                  <Icon className="w-6 h-6" />
-                </div>
+                {/* Per Enda (2026-09-18): same custom-icon treatment as the full-screen
+                    picker (TourCategoryPicker.jsx) — falls back to the old icon while
+                    a custom icon for this tour type is still pending. */}
+                {TOUR_TYPE_ICON_MAP[cat.code] ? (
+                  <InterestIcon src={TOUR_TYPE_ICON_MAP[cat.code]} alt="" size={44} />
+                ) : (
+                  <div className="w-11 h-11 bg-white/20 rounded-xl flex items-center justify-center shrink-0">
+                    <Icon className="w-6 h-6" />
+                  </div>
+                )}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-xs bg-white/25 px-2 py-0.5 rounded font-bold">{cat.code}</span>

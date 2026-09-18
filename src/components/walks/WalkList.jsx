@@ -9,6 +9,7 @@ import OfflineWalksBanner from '../offline/OfflineWalksBanner';
 import { getTourCategory } from '../../lib/tourCategories';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { LANGUAGE_NAME_BY_CODE, getTourLanguage } from '@/lib/i18n';
+import { isBuggyFriendly } from '@/lib/interestIcons';
 
 const REGIONS = ['Chania', 'Rethymno', 'Heraklion', 'Lasithi'];
 const DIFFICULTIES = ['easy', 'moderate', 'challenging', 'difficult'];
@@ -67,7 +68,12 @@ export default function WalkList({ walks, selectedWalk, onWalkSelect, searchQuer
       const matchesDifficulty = difficulty === 'all' || walk.difficulty === difficulty;
       const matchesDistance = maxDistance === 'all' || (walk.distance_km || 0) <= Number(maxDistance);
       const matchesDuration = maxDuration === 'all' || (walk.duration_hours || 0) <= Number(maxDuration);
-      const matchesBuggyFriendly = !showBuggyFriendlyToggle || !buggyFriendlyOnly || walk.buggy_friendly === true;
+      // Per Enda's "interest icons" request: Buggy Friendly moved into the shared Main
+      // Interests tag list (main_interest), same as Route of Faith already worked — see
+      // isBuggyFriendly() in interestIcons.js. It still also honours the old dedicated
+      // `buggy_friendly` field for any tour saved before this change, so nothing already
+      // tagged the old way silently drops out of this filter.
+      const matchesBuggyFriendly = !showBuggyFriendlyToggle || !buggyFriendlyOnly || isBuggyFriendly(walk);
       const matchesRouteOfFaith = !showRouteOfFaithToggle || !routeOfFaithOnly || hasRouteOfFaith(walk);
       return matchesSearch && matchesRegion && matchesDifficulty && matchesDistance && matchesDuration && matchesBuggyFriendly && matchesRouteOfFaith;
     })

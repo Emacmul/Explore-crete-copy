@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Save, Loader2, Pencil, Check, X, Upload, FileUp, CheckCircle2, Download, AlertTriangle, FileDown, RefreshCw, Send, EyeOff, Languages } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Pencil, Check, X, Upload, FileUp, CheckCircle2, Download, AlertTriangle, FileDown, RefreshCw, Send, EyeOff, Languages, ChevronDown } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { LANGUAGE_CODE_BY_NAME, getGoogleTranslateCode } from '@/lib/i18n';
 import { getFnErrorMessage } from '@/lib/utils';
@@ -23,8 +23,10 @@ import { MAX_WAYPOINT_IMAGES } from '@/lib/waypointImages';
 import { toast } from '@/components/ui/use-toast';
 import { buildTourBackupZip } from '@/lib/tourBackupZip';
 import { DEFAULT_SAFETY_NOTES } from '@/lib/defaultSafetyNotes';
-
-const DEFAULT_INTERESTS = ['Wild Flowers', 'History', 'Mythology', 'Archaeology', 'Photography', 'Routes of Faith'];
+import { DEFAULT_INTERESTS, INTEREST_ICON_MAP } from '@/lib/interestIcons';
+import InterestIcon from '@/components/ui/InterestIcon';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
+import { Checkbox } from '@/components/ui/checkbox';
 
 const EMPTY_WALK = {
   tour_category: '', // WHT | WBT | DDV — no silent default, must be chosen
@@ -280,11 +282,16 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
     ? form.main_interest.split(',').map(s => s.trim()).filter(Boolean)
     : [];
 
+  // Per Enda's "interest icons" request: the old 3-tag cap made sense for the
+  // original 6 options, but with Buggy Friendly, Mountain Biking, Driving Tour,
+  // Hiking and Historical joining the list, a tour can genuinely have more than 3
+  // real attributes at once — so this now allows picking as many as apply, not just
+  // the 3 most defining ones.
   const toggleInterest = (value) => {
     const current = selectedInterests;
     if (current.includes(value)) {
       set('main_interest', current.filter(i => i !== value).join(', '));
-    } else if (current.length < 3) {
+    } else {
       set('main_interest', [...current, value].join(', '));
     }
   };
@@ -1620,22 +1627,15 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
               )}
               {/* Per Enda/Anoushka (follow-up 144): a young parent needs to know a route
                   works with an ordinary buggy — no off-road/4x4-style buggy required —
-                  before they set off, not find out halfway up a rocky path. Tick this and
-                  the walk gets a quick filter + a badge on its card for customers. Widened
-                  to WalkAbouts 2026-09-14 — see the comment above this block. */}
-              <div>
-                <Label className="text-slate-300 mb-1.5 block">Buggy-Friendly</Label>
-                <div className="flex items-center gap-3 h-9 bg-slate-700 border border-slate-600 rounded-md px-3">
-                  <button
-                    type="button"
-                    onClick={() => set('buggy_friendly', !form.buggy_friendly)}
-                    className={`w-10 h-5 rounded-full transition-colors relative ${form.buggy_friendly ? 'bg-amber-500' : 'bg-slate-500'}`}
-                  >
-                    <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${form.buggy_friendly ? 'translate-x-5' : 'translate-x-0.5'}`} />
-                  </button>
-                  <span className="text-slate-300 text-sm">{form.buggy_friendly ? 'Yes' : 'No'}</span>
-                </div>
-              </div>
+                  before they set off, not find out halfway up a rocky path. Widened to
+                  WalkAbouts 2026-09-14 — see the comment above this block.
+                  Per Enda's later "interest icons" request: this dedicated toggle is gone
+                  — Buggy-Friendly is now just another tag in the Main Interests picker
+                  below, same as Route of Faith already was. The underlying
+                  `buggy_friendly` field on Walk is left alone (still read for backward
+                  compatibility, see isBuggyFriendly() in interestIcons.js) — this admin
+                  screen simply no longer writes to it directly; toggleInterest below
+                  does, via main_interest, whenever "Buggy Friendly" is picked. */}
             </div>
             </>
             )}
@@ -1675,15 +1675,18 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
             )}
 
             {/* Main Interests — tour categorisation/discovery metadata, admin-only. Walks
-                and Hikes gets the full up-to-3 picker; WalkAbouts gets the same picker
-                (per Enda's follow-up 145 "Route of Faith" request) so a theme like Routes
-                of Faith can be tagged and then found by customers. */}
+                and Hikes gets the full picker; WalkAbouts gets the same picker (per
+                Enda's follow-up 145 "Route of Faith" request) so a theme like Routes of
+                Faith can be tagged and then found by customers.
+                Per Enda's "interest icons" request: this is now a proper dropdown
+                (Popover, not a plain button grid) so several tags can be ticked in one
+                pass without the list closing between clicks — and Buggy Friendly lives
+                here too now, no longer its own separate toggle elsewhere on this tab.
+                The 3-tag cap is gone (see toggleInterest above) since the list has grown
+                past the point where only 3 tags could describe a tour fairly. */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <Label className="text-slate-300">
-                  Main Interests
-                  <span className="ml-2 text-xs text-slate-500">(select up to 3)</span>
-                </Label>
+                <Label className="text-slate-300">Main Interests</Label>
                 <button
                   type="button"
                   onClick={() => setEditingInterests(v => !v)}
@@ -1699,6 +1702,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 <div className="flex flex-wrap gap-1.5 mb-2">
                   {selectedInterests.map(i => (
                     <span key={i} className="flex items-center gap-1 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-full px-2.5 py-0.5 text-xs font-medium">
+                      {INTEREST_ICON_MAP[i] && <InterestIcon src={INTEREST_ICON_MAP[i]} alt="" size={16} />}
                       {i}
                       <button type="button" onClick={() => toggleInterest(i)} className="hover:text-white">
                         <X className="w-3 h-3" />
@@ -1709,29 +1713,54 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
               )}
 
               {!editingInterests ? (
-                <div className="flex flex-wrap gap-2">
-                  {interests.map(i => {
-                    const selected = selectedInterests.includes(i);
-                    const disabled = !selected && selectedInterests.length >= 3;
-                    return (
-                      <button
-                        key={i}
-                        type="button"
-                        onClick={() => toggleInterest(i)}
-                        disabled={disabled}
-                        className={`px-3 py-1.5 rounded-lg text-sm border transition-all ${
-                          selected
-                            ? 'bg-amber-500 border-amber-500 text-white'
-                            : disabled
-                              ? 'bg-slate-800 border-slate-700 text-slate-600 cursor-not-allowed'
-                              : 'bg-slate-700 border-slate-600 text-slate-300 hover:border-amber-500/50 hover:text-white'
-                        }`}
-                      >
-                        {i}
-                      </button>
-                    );
-                  })}
-                </div>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm border bg-slate-700 border-slate-600 text-slate-300 hover:border-amber-500/50 hover:text-white transition-colors"
+                    >
+                      <span>
+                        {selectedInterests.length === 0
+                          ? 'Select interests…'
+                          : `${selectedInterests.length} interest${selectedInterests.length === 1 ? '' : 's'} selected`}
+                      </span>
+                      <ChevronDown className="w-4 h-4 opacity-60" />
+                    </button>
+                  </PopoverTrigger>
+                  {/* Per Enda: "pick these from a drop down list, multiple picks in one
+                      pass" — this Popover stays open across clicks (unlike a native
+                      <select>, which closes after every choice), so ticking several
+                      interests in a row is one continuous action, not one open/close per
+                      tag. */}
+                  <PopoverContent className="w-64 max-h-80 overflow-y-auto bg-slate-800 border-slate-600 p-2">
+                    <div className="space-y-1">
+                      {interests.map(i => {
+                        const selected = selectedInterests.includes(i);
+                        return (
+                          // A plain clickable row, not a <label> — Checkbox here is a
+                          // Radix button, not a real <input>, so a <label>'s native
+                          // click-forwarding wouldn't do anything useful. The click
+                          // handler lives on this outer div only (not on Checkbox too)
+                          // so clicking the little box itself doesn't fire the toggle
+                          // twice (once from Checkbox, once from the row it bubbles up
+                          // to) and silently cancel itself back out.
+                          <div
+                            key={i}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => toggleInterest(i)}
+                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleInterest(i); } }}
+                            className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-slate-700 cursor-pointer text-sm text-slate-200"
+                          >
+                            <Checkbox checked={selected} className="pointer-events-none" />
+                            {INTEREST_ICON_MAP[i] && <InterestIcon src={INTEREST_ICON_MAP[i]} alt="" size={20} />}
+                            <span>{i}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </PopoverContent>
+                </Popover>
               ) : (
                 <div className="bg-slate-700 border border-slate-600 rounded-lg p-3 space-y-2">
                   {interests.map((interest, idx) => (
