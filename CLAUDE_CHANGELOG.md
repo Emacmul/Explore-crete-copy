@@ -85,6 +85,72 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-18 (follow-up 206) — "Save & Listen Again" was never actually saving to the
+## server — real narration edits could look finished and still be silently lost
+**Scope:** `NarrationTtsEditor.jsx`. Frontend-only — no backend function touched, so no
+separate redeploy step, just the usual build/deploy.
+
+**Per Enda:** he reported BOR1d showing "No narration script for this waypoint yet",
+then separately: "Earlier today, I could test 'the whole location'... I even made
+changes to the text, which now are not there anymore either. Same story with BORc. I
+made those changes at least 3 times, went I went back to it, the changes were gone."
+
+**Investigated (using the real live database, not a guess):**
+- Queried the actual Walk record (Base44 app 6a69e49f583b749066828562, the English
+  clone assigned to Enda's narrator login) directly. Confirmed BOR1a/b/c were still
+  correctly marked Done with their scripts intact — nothing globally broken.
+- BOR1d's real, saved `narration_script` was genuinely empty (0 characters) — matching
+  what the app showed him at that point, not a display bug.
+- Enda then reported BOR1d's screen showing fully-written, fully-narrated text with
+  real generated audio per line. Re-queried the live database at that exact moment:
+  BOR1d was STILL empty server-side, and the specific wording he showed in a
+  screenshot ("To get LPG, turn left just at the far end of the bridge...") did not
+  exist anywhere in the saved record. This proved his screen and the real saved copy
+  had genuinely diverged — not a caching/display issue (confirmed the service worker
+  only ever caches this app's own JS/CSS/HTML, never Base44 API calls, so it can't be
+  the cause).
+- Traced every path that can change a waypoint's narration_script end to end. Found
+  that typing into the top script box or any per-subsection box already keeps the
+  parent's in-memory copy live on every keystroke (`onScriptChange`), but that alone
+  only updates what's showing on screen — it does NOT push anything to the server.
+  Three actions do request a real server save: "Save This Part" (commitSubsectionEdit),
+  a line's own "Save this line" (commitSegmentEdit), and "Mark segment as done". A
+  FOURTH action — "Save & Listen Again" (and plain "Parse & Generate", the same
+  function underneath) — generates real, playable audio and makes the panel look
+  completely finished, but never requested a save at all. A narrator who typed an
+  edit, listened back, was happy, and moved on without separately clicking one of the
+  three real-save buttons had nothing actually saved — with no warning shown anywhere.
+  This exactly reproduces both reports: BOR1c's edits vanishing three times, and
+  BOR1d's screen showing real audio that was never in the database.
+
+**Fixed:** `handleParseAndGenerate` (which both "Parse & Generate" and "Save & Listen
+Again" call) now requests a real server save (`onAutoSave?.()`) right after a
+parse/generate pass actually completes — the same save request "Save This Part" and
+"Save this line" already make. The script text itself was already correct in the
+parent's memory at that point (kept in sync live via `onScriptChange` on every
+keystroke); this just makes sure it's actually sent to the server too, closing the gap
+completely rather than just papering over the one screen he happened to report it on.
+
+**Verified:**
+- New script `/tmp/verify/test_autosave_on_generate_followup206.mjs` (11 checks): the
+  fix is in the right place, doesn't fire on an early-return (no script/over
+  limit/no API key), the three existing real-save paths are untouched, and all three
+  real screens Enda actually uses (Narrate & Simulate tab, and both branches of the
+  Waypoints tab) are confirmed wired to actually receive this save request. Two
+  logic-replica checks reproduce Enda's exact reported sequence (type → Save & Listen
+  Again → close/reopen) both BEFORE the fix (edit is lost, matching his report) and
+  AFTER (edit survives).
+- Full existing regression suite (11 other scripts, 117 checks) re-run clean —
+  nothing else in the save/test/wording-lock/wake-lock flows regressed.
+- `npx eslint` on the changed file: clean. Full project build (`npm run build`):
+  succeeds.
+
+**Not done:** `SegmentScriptEditor.jsx` (a different, separate editor for the shared
+segment-script depository, not the per-waypoint editor Enda uses as a Narrator) has no
+`onAutoSave` wired to it at all — pre-existing, unrelated to this fix, not touched.
+
+---
+
 ## 2026-09-18 (follow-up 205) — "Test this segment" now scrolls straight to the actual
 ## test button, instead of leaving the narrator to find it themselves
 **Scope:** `WaypointPaceEditor.jsx` and `TourSimulator.jsx`. Frontend-only — no backend

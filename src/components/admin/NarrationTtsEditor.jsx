@@ -968,6 +968,25 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     setSegmentAudios(audios);
     setGeneratingSegmentId(null);
     addLog(`Done. ${Object.keys(audios).length} segment(s) generated.`);
+
+    // Per Enda's follow-up 206 report: "Save & Listen Again" (and plain "Parse &
+    // Generate") plays back real, freshly-generated audio and looks completely
+    // finished — but until this fix, it never actually requested a server save. The
+    // script text itself was already being kept in sync with the parent on every
+    // keystroke (see onScriptChange in handleScriptEdit/handleSubsectionScriptEdit
+    // above), but that only updates the in-memory `form` on the page — it takes a
+    // real onAutoSave() call (exactly like "Save This Part"/commitSubsectionEdit and
+    // "Save this line"/commitSegmentEdit already do below) to actually push it to the
+    // server. Without it, a narrator who typed an edit, listened back, was happy with
+    // it, and then moved on WITHOUT separately clicking one of those two buttons had
+    // no real save at all — confirmed live: BOR1c's edits vanished three separate
+    // times, and BOR1d showed fully-generated audio on screen that was never in the
+    // actual saved record. Requesting a save here, every time a parse/generate pass
+    // actually completes, closes that gap the same way it's already closed everywhere
+    // else on this panel — whether or not every single line's TTS call succeeded,
+    // since the TEXT itself (as opposed to its audio) is what narration_script stores,
+    // and that's already correct in `form` by this point regardless.
+    onAutoSave?.();
   };
 
   const handleDurationChange = (segmentId, newDuration) => {
