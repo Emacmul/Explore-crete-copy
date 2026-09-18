@@ -2012,6 +2012,12 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                   waypointSegmentId={uniqueWaypointSegmentId(form.waypoints, toRawIndex(selectedWpIndex))}
                   waypointSegmentTitle={selectedWp.segment_title}
                   currentWalkId={form.id}
+                  // Per Enda's follow-up 202 request: a Narrator must not be able to
+                  // change actual wording through the per-subsection "Edit this part's
+                  // script" box — see NarrationTtsEditor.jsx's own hasWordingChange
+                  // comment for the full reasoning. Admin (isNarrator false/undefined)
+                  // keeps editing that box exactly as freely as before.
+                  isNarrator={isNarrator}
                 />
               ))}
             </div>

@@ -164,7 +164,43 @@ function deriveSubsections(segments, subsectionSizes) {
   return chunkIntoSubsections(segments);
 }
 
-export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, onAudioChange, onAutoSave, fixedLanguage, waypointSegmentId, waypointSegmentTitle, doneLocked = false, currentWalkId, onTestSegment }) {
+// Per Enda: "I just don't want the Narrators to be able to edit the text directly in
+// the big yellow box. They need to get in to the habit of editing in one place only,
+// that's the boxes with the play, dictionary and pencil icons in them." — i.e. the
+// per-subsection "Edit this part's script" box, further down, must stop being a way to
+// change wording for a Narrator, while staying exactly as free as before for Enda's own
+// Admin authoring.
+//
+// The box still has to show, and accept typing into, the WHOLE current text of that
+// part — Enda's own words: "They need the full text overview to be able to see if this
+// works and is in the right place" — so this can't be built by disabling the box
+// outright, or by trying to block keystrokes live as they type (a plain text box isn't
+// built for "you can type here but not there", and trying anyway risks the cursor
+// jumping around and other odd glitches — confirmed with Enda, who chose the
+// alternative below instead). Enforced only the moment they try to save instead —
+// checked in commitSubsectionEdit ("Save This Part") and handleSaveAndListenAgain
+// ("Save & Listen Again") — comparing every text-type piece's own content, in order,
+// against what was already there. Only the <break> tags between them may be added,
+// removed, or have their own timing changed; the words themselves must come out
+// byte-for-byte identical, or the save is refused with WORDING_CHANGE_ERROR below.
+//
+// Deliberately does NOT compare piece-by-piece (an earlier version of this did, and it
+// was wrong): inserting a brand-new pause tag splits ONE existing text piece into TWO,
+// which changes how many text pieces there are even though not a single word changed —
+// comparing pieces one-for-one would wrongly reject the exact "add a pause" edit this
+// box exists to allow. Instead, every text-type piece (ignoring pause tags/durations
+// entirely) is joined back into one single string, on both sides, before comparing —
+// so it doesn't matter how many pauses split the wording up, or whether one gets
+// added, removed, or has its own timing changed; only whether the WORDS, all
+// concatenated back together, are still exactly what they were.
+const WORDING_CHANGE_ERROR = "Words can't be changed here — only pauses. To change words, edit that line in the box above.";
+function hasWordingChange(originalSegs, attemptedText) {
+  const originalWords = originalSegs.filter((s) => s.type === 'text').map((s) => s.content).join(' ');
+  const newWords = parseScript(attemptedText).filter((s) => s.type === 'text').map((s) => s.content).join(' ');
+  return originalWords !== newWords;
+}
+
+export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, onAudioChange, onAutoSave, fixedLanguage, waypointSegmentId, waypointSegmentTitle, doneLocked = false, currentWalkId, onTestSegment, isNarrator = false }) {
   const { keys: apiKeys } = useNarratorApiKeys();
   const [selectedVoice, setSelectedVoice] = useState('NEUTRAL');
   const [selectedLanguage, setSelectedLanguage] = useState(fixedLanguage || 'English');
@@ -529,6 +565,14 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     }
     if (rebuildScript(currentSegs) === currentText) {
       return { segments, segmentAudios };
+    }
+    // Per Enda: a Narrator must not be able to change wording through this box — only
+    // pauses (see the long comment above hasWordingChange/WORDING_CHANGE_ERROR near the
+    // top of this file). Checked here, before anything else — even the API key check
+    // right below — so the very first thing a Narrator sees for a blocked wording
+    // change is this plain explanation, not an unrelated setup requirement.
+    if (isNarrator && hasWordingChange(currentSegs, currentText)) {
+      throw new Error(WORDING_CHANGE_ERROR);
     }
     if (!apiKeys.google_tts_api_key) {
       throw new Error('No Google TTS API key found for your account yet. Add your own key via "API Keys" in the header.');
@@ -1257,6 +1301,26 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   // Segment as Done's 2-pass requirement.
   const handleSaveAndListenAgain = async () => {
     if (passLocked) return;
+    // Per Enda: the SAME "no wording changes here" rule commitSubsectionEdit already
+    // enforces for "Save This Part" must also cover this button. Typing into a
+    // subsection's own box already updates the live `script` sent up to the parent on
+    // every keystroke (see handleSubsectionScriptEdit) — even before "Save This Part"
+    // is ever clicked — so without this check, a wording change could reach a real
+    // re-parse via THIS button without ever passing through that one. Checks every
+    // subsection with a pending draft, not just one; blocks the whole action if any of
+    // them changed actual wording, rather than silently skipping just that one part.
+    if (isNarrator && subsectionTexts) {
+      for (let si = 0; si < subsections.length; si++) {
+        const draftText = subsectionTexts[si];
+        const currentSegs = subsections[si];
+        if (draftText === undefined || !currentSegs) continue;
+        if (rebuildScript(currentSegs) === draftText) continue;
+        if (hasWordingChange(currentSegs, draftText)) {
+          setError(WORDING_CHANGE_ERROR);
+          return;
+        }
+      }
+    }
     await handleParseAndGenerate();
   };
 

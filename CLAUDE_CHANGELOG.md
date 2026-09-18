@@ -85,6 +85,71 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-18 (follow-up 202) — Narrators can no longer change wording through the
+## per-subsection "Edit this part's script" box — only pauses
+**Scope:** `NarrationTtsEditor.jsx` (the fix itself), `TourSimulator.jsx` and
+`DrivingTourWaypointEditor.jsx` (both now pass through the existing `isNarrator` flag so
+the fix knows who it's talking to), `lib/utils.js` (so the new message displays exactly
+as written, not wrapped in a generic "temporary hiccup" message). Frontend-only — no
+backend function touched, so no separate redeploy step, just the usual build/deploy.
+
+**Per Enda, across several messages:** first reported that the "Edit this part's
+script" box (below each waypoint's line cards) showed several lines' text all together
+at once, confusing when only one line needed a fix. Once confirmed that adding a pause
+tag in that box already correctly splits into a new slider in the right spot, he
+clarified the real ask: "I just don't want the Narrators to be able to edit the text
+directly in the big yellow box. They need to get in to the habit of editing in one
+place only, that's the boxes with the play, dictionary and pencil icons in them." Asked
+whether the box should be disabled outright or hidden; he said no — "they need the full
+text overview to be able to see if this works and is in the right place" — so typing
+must stay possible, but "unless they type <...>, it's not accepted. Plain text can't be
+edited." Confirmed checking on Save (not trying to block keystrokes live, which isn't
+reliable in a plain text box) was the right approach, and that the rejection message
+must explain why in plain terms, pointing at the boxes above rather than saying
+"pencil" (a mental leap for a non-native English speaker).
+
+**Investigated:** the box already correctly splits into new pause sliders on save
+(confirmed with a real end-to-end check before this fix, using the actual parser code).
+Found the box's own "Save This Part" button and the panel's "Save & Listen Again"
+button were the two places a typed change actually takes effect — both needed the same
+check, since typing alone already pushes the raw text up to the parent on every
+keystroke, and either button could otherwise turn that into a real save.
+
+**Fixed:** the box stays a normal, freely-typable textarea, still showing the part's
+whole text. On Save, every text-type piece of the ORIGINAL wording is compared against
+every text-type piece of what's now in the box — ignoring pause tags entirely, since
+adding one legitimately splits one piece into two. If the words, all joined back
+together, come out identical, it saves normally (adding, removing, or retiming a pause
+all pass). If any actual word changed, nothing saves — instead: "Words can't be changed
+here — only pauses. To change words, edit that line in the box above." This only
+applies when `isNarrator` is true; Enda's own Admin editing (including the separate top
+script box used for the very first import/master authoring) is completely unaffected.
+
+**Verified:** `npx eslint` and a full `npx vite build`, both clean (one pre-existing,
+unrelated warning in TourSimulator.jsx seen throughout this session; a pre-existing,
+unrelated unused-import error in DrivingTourWaypointEditor.jsx, present before this
+change — flagging it here rather than fixing it, since it wasn't part of what was
+asked). New standalone script checks the real source for every piece of this (the prop,
+the two check sites, the recognized-message fix, both files passing `isNarrator`
+through) and exercises the actual comparison logic against 7 real cases: adding a
+pause, changing a pause's timing, removing a pause, an actual word change, a small
+spelling fix, no change at all, and a shortened line. One of those cases (adding a new
+pause) FAILED on first pass — the original version of this check compared text pieces
+one-by-one, which wrongly treated "one piece became two because a pause was added" as a
+wording change. Caught by this same verification script before delivery, fixed by
+comparing all the words joined together instead of piece-by-piece, then re-verified —
+all 17 checks pass. Re-ran all 6 other existing verification scripts (follow-ups 197
+through 201) — all still pass, no regressions (80 checks total, all passing).
+
+**Not done / worth knowing for next time:** not yet tested live with a real Narrator
+account — worth trying, as a Narrator, typing a wording change into that box and
+confirming the message shows exactly as written. Also worth knowing: this same box has
+no persistent on-screen reminder of the new rule — a Narrator only sees the message
+after actually trying to change a word. Didn't add one since it wasn't asked for; happy
+to add a small permanent note under the box if that would help them learn it faster.
+
+---
+
 ## 2026-09-18 (follow-up 201) — The waypoint dropdown now only lists the CURRENT
 ## location's own waypoints, not the whole tour
 **Scope:** `TourSimulator.jsx` only. Frontend-only change — no backend function touched,

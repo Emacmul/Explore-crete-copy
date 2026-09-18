@@ -42,6 +42,12 @@ const KNOWN_FN_ERROR_PATTERNS = [
   /does not look like a valid/i,
   /too large/i,
   /expected audio\/wav/i,
+  // Per Enda's follow-up 202: NarrationTtsEditor.jsx's own deliberate refusal message
+  // when a Narrator tries to change actual wording through the per-subsection "Edit
+  // this part's script" box (only pause tags may change there) — without this, it would
+  // fall through to the generic "temporary hiccup" wording below and confuse the exact
+  // narrator this message exists to teach.
+  /words can.t be changed here/i,
 ];
 
 export function isRecognizedFnErrorMessage(raw) {
