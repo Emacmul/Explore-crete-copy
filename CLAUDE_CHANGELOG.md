@@ -85,6 +85,58 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-18 (follow-up 203) — "Test this subsegment"/"Test N subsegments" now plays
+## audio for a waypoint that hasn't been marked Done yet
+**Scope:** `TourSimulator.jsx` only. Frontend-only — no backend function touched, so no
+separate redeploy step, just the usual build/deploy.
+
+**Per Enda, as a Narrator:** "I've finished and saved BOR1 first WP as a Narrator. I get
+the 'Test this subsegment', click it, and the car moves, but I don't get any audio. When
+I test 2 segments, meaning WP1 and WP2, I only hear WP1 audio. It forces me to 'mark as
+done' before it will play the audio. This is arseways. I need to test the segment and
+from that test determine whether it can be saved, or needs further editing. But without
+audio, that can't be done."
+
+**Investigated:** "Test this subsegment" builds a fresh, live preview audio file
+in-browser (whatever the current, possibly-still-unsaved wording/pauses say) and hands
+it to the Simulator's own drive/geofence engine as a one-off override, scoped to just
+the waypoint being tested (WaypointPaceEditor.jsx, `handleTest`/`onTestSubsegment`).
+Traced the engine's own geofence check (the part that decides whether to actually play
+anything as the car passes each waypoint): it required `wp.trigger_audio` to already be
+true, with no exception for a live test override. `trigger_audio` only ever gets set
+true automatically once a waypoint has ALREADY been finalized (Mark as Done / Finalize
+Narration Audio) — so testing a waypoint that hasn't reached that point yet built a
+perfectly good preview, handed it to the engine, and the engine silently refused to
+play it, every time. This is exactly what both of Enda's reports describe: testing a
+single not-yet-finished waypoint played nothing at all; testing two in a row played the
+FIRST (already-finalized, real audio) but not the SECOND (the one actually being
+tested, still unfinished).
+
+**Fixed:** the geofence check now plays a waypoint's live test override regardless of
+whether `trigger_audio` has been switched on for it yet — an override existing at all
+for that exact waypoint means a narrator explicitly clicked "Test this subsegment" and
+is owed the result. Every other waypoint (nothing being tested right now) is completely
+unaffected — it still needs its own real `trigger_audio` to be on, exactly as before,
+so this doesn't change ordinary tour playback at all, only testing.
+
+**Verified:** `npx eslint` and a full `npx vite build`, both clean (same one
+pre-existing, unrelated warning seen throughout this session). New standalone script
+checks the real source for the fix and the old buggy line's removal, then exercises the
+actual gate logic against 8 scenarios: the reported single-waypoint test, the reported
+2-in-a-row test (confirming WP1's real audio AND WP2's test override both now play),
+an untouched unrelated waypoint, a deliberately silent waypoint, and ordinary
+(non-test) playback of both a finished and an unfinished waypoint — confirming this
+fix only changes testing, never real tour playback. Re-ran all 7 other existing
+verification scripts (follow-ups 197 through 202) — all still pass, no regressions (91
+checks total, all passing).
+
+**Not done / worth knowing for next time:** not yet tested live as a real Narrator —
+worth trying exactly the sequence Enda described: test an unfinished waypoint alone,
+then test 2 in a row ending on it, and confirm both now play audio properly before
+Mark as Done is ever clicked.
+
+---
+
 ## 2026-09-18 (follow-up 202) — Narrators can no longer change wording through the
 ## per-subsection "Edit this part's script" box — only pauses
 **Scope:** `NarrationTtsEditor.jsx` (the fix itself), `TourSimulator.jsx` and

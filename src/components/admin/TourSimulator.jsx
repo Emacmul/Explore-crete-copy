@@ -1177,12 +1177,27 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
       // the pause sliders currently say, before it's been saved anywhere — not the stale
       // audio_clip_url already on the waypoint. previewAudioOverrideRef (set by
       // jumpToWaypoint's own audioOverrideUrl param, below) carries that one-off URL for
-      // exactly the ONE waypoint index it was built for; everything else about this
-      // waypoint (trigger_audio, radius, bearing, once-only) is completely unaffected —
-      // an override only ever substitutes WHICH clip plays, never whether/when it does.
+      // exactly the ONE waypoint index it was built for; radius, bearing, and once-only
+      // are completely unaffected — an override only ever substitutes WHICH clip plays,
+      // never whether the GEOFENCE itself fires.
+      //
+      // trigger_audio is the one deliberate exception (follow-up 203 fix — this used to
+      // be listed as "unaffected" too, which was the bug). Per Enda's report: "I get
+      // 'Test this subsegment', click it, and the car moves, but I don't get any audio
+      // ... It forces me to mark as done before it will play the audio. This is
+      // arseways. I need to test the segment and from that test determine whether it
+      // can be saved... But without audio, that can't be done." trigger_audio only ever
+      // becomes true automatically once a waypoint is ALREADY finalized (Mark as Done /
+      // Finalize Narration Audio — see onAudioChange further down), so requiring it here
+      // too made testing an unfinished waypoint's own wording/pacing completely silent —
+      // exactly backwards, since the whole point of testing is deciding whether THAT
+      // waypoint is ready to be finalized in the first place. An override existing at
+      // all for this waypoint means a narrator explicitly asked to hear THIS content
+      // right now, so it always plays regardless of whether trigger_audio has been
+      // switched on for it yet.
       const overrideUrl = previewAudioOverrideRef.current?.index === i ? previewAudioOverrideRef.current.url : null;
       const audioUrlToPlay = overrideUrl || wp.audio_clip_url;
-      if (!wp.trigger_audio || !audioUrlToPlay) return;
+      if ((!overrideUrl && !wp.trigger_audio) || !audioUrlToPlay) return;
       if (wp.trigger_once !== false && triggeredRef.current[i]) return;
       // Belongs to the NEXT location, not the one currently being tested (see
       // nextLocationBoundary) — don't let it start playing early, before the boundary
