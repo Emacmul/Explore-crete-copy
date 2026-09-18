@@ -1594,19 +1594,21 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
             </div>
             )}
 
-            {/* Per Enda/Anoushka (follow-up 145): Main Interests now also opens up for
-                WalkAbouts (WBT) — see the narrower `!isDrivingAudioTour` check further
-                below for the Free sample toggle, which stays Walks and Hikes only; only
-                Main Interests needed to widen there. Driving Tours (DDV) are untouched
-                either way, exactly as asked.
-                Follow-up (2026-09-14): Buggy-Friendly now ALSO widens to WalkAbouts, same
-                as Main Interests did — a WalkAbout is still done on foot, so "does this
-                work with an ordinary buggy" is just as relevant there as on a Walk/Hike.
-                Driving Tours stay excluded (you're not pushing a buggy from a car). Free
-                sample stays Walks/Hikes only — not asked to widen. */}
-            {(!isDrivingAudioTour || form.tour_category === 'WBT') && !isNarrator && (
+            {/* Per Enda/Anoushka (follow-up 145): Main Interests opened up for WalkAbouts
+                (WBT) — Driving Tours (DDV) stayed excluded at that time.
+                Follow-up (2026-09-14): Buggy-Friendly widened to WalkAbouts too, same
+                reasoning — Driving Tours still excluded (you're not pushing a buggy from
+                a car). Free sample stays Walks/Hikes only (see its own `!isDrivingAudioTour`
+                check further below) — not asked to widen.
+                Per Enda (2026-09-18, "interest icons"): now that every interest has an
+                icon, Main Interests opens up to Driving Tours too (e.g. Battle of the
+                Rivers) — no tour type is excluded from it any more. Free sample and
+                Buggy-Friendly's old field stay exactly as they were above (unaffected —
+                Free sample keeps its own separate check; Buggy-Friendly has no UI of its
+                own left to gate, see the comment further below). */}
+            {!isNarrator && (
             <>
-            {(!isDrivingAudioTour || form.tour_category === 'WBT') && (
+            {true && (
             <>
             {/* Walk access — pricing/publishing configuration, admin-only */}
             <div className="grid grid-cols-2 gap-4">

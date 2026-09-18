@@ -85,6 +85,35 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-18 (follow-up 210) — Main Interests opened up to Driving Tours
+**Scope:** Changed `components/admin/WalkEditor.jsx` only (one conditional gate + its
+comment). Frontend-only.
+
+**Per Enda:** went to tag "Battle of the Rivers" with interests and found no way to —
+asked me to open Main Interests up to Driving Tours now that every interest has an icon.
+
+**Investigated (didn't guess):** confirmed via live Base44 data that "The Battle of the
+Rivers (Rethymno start)" is tour_category `DDV` (a Driving Tour). Traced the actual
+JSX gate above the Main Interests section in `WalkEditor.jsx`: it was
+`(!isDrivingAudioTour || form.tour_category === 'WBT') && !isNarrator` — deliberately
+written that way in an earlier follow-up (145) specifically to EXCLUDE Driving Tours,
+per Enda's own instruction at the time. Not a bug — working as originally asked.
+
+**Built:** removed the tour-type restriction from that gate, so Main Interests (and its
+dropdown/icons) now shows for all 3 tour types — Walks/Hikes, WalkAbouts, and Driving
+Tours. Left untouched, on purpose: the separate "Free sample" toggle (still Walks/Hikes
+only — never asked to widen) and the "Manual only (GPS)" toggle (still WalkAbout-only —
+unrelated to this).
+
+**Verified:** new script `test_main_interests_widened_to_driving_tours.mjs` (5 checks)
+confirms the old restrictive gate is gone, Main Interests now only depends on
+`!isNarrator`, and both untouched toggles keep their own separate, unaffected checks.
+Full regression suite: 202/202 passing (197 previous + 5 new). `npx vite build`
+succeeds. `npx eslint` on the changed file: no new issues (same 4 pre-existing,
+unrelated unused-import errors as before, untouched by this change).
+
+---
+
 ## 2026-09-18 (follow-up 209) — Mythology icon added
 **Scope:** New asset `assets/interest-icons/mythology.png`. Changed: `lib/interestIcons.js`
 (one import, one map entry). Frontend-only.
