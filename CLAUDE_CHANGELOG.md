@@ -85,6 +85,52 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-19 (follow-up 216) — Fixed "Test this segment" auto-scroll (follow-up 205's fix
+## had a timing bug, never actually scrolled)
+**Scope:** Changed `components/admin/WaypointPaceEditor.jsx` only. Frontend-only.
+
+**Per Enda:** "I asked that when I click 'Test this segment', the system would take me to
+the bottom of the WP editing part, where the test this segment button actually is. It
+doesn't..." — this was already meant to have been fixed once, in follow-up 205.
+
+**Investigated fully before touching anything** (per Enda's own rule): read
+WaypointPaceEditor.jsx's existing autoScrollToTest effect, and TourSimulator.jsx's
+testThisWaypoint/jumpToLocation split that sets it. The follow-up 205 fix was real and
+correctly wired end to end — but it had a race condition. The text boxes, pause sliders,
+and the actual "Test this subsegment" button only exist in the DOM once this waypoint's
+audio has finished loading — a real network round trip (`generateTts` per line, inside
+this component's own async effect). The old scroll effect used an empty dependency array,
+meaning it only ever ran once, immediately on mount — while `segments` was still `null`
+and the div holding `testControlsRef` hadn't rendered yet. `testControlsRef.current` was
+`null` at that exact moment, so `?.scrollIntoView(...)` silently did nothing. By the time
+the content actually appeared a moment later, the effect had already fired its one and
+only time and never ran again. So the fix existed in the code, but in practice it never
+visibly scrolled — matching Enda's report exactly.
+
+**Built:** Replaced the empty-deps effect with the same pattern NarrationTtsEditor's own
+"Parse & Generate" auto-scroll already uses (`justImportedTick`) — a `contentReadyTick`
+counter, starting at 0, bumped exactly once, right where the async load's success path
+already sets `segments`/`segmentAudios` (the one moment the scroll target genuinely
+exists on screen). The scroll effect now depends on `[contentReadyTick, autoScrollToTest]`
+instead of `[]`, so it correctly waits for that moment instead of firing too early.
+Deliberately NOT keyed on `segments` directly — `segments` also changes on every later
+text edit or pause-slider nudge, which must never re-trigger a scroll.
+
+**Verified:**
+- Replaced the old `test_autoscroll_test_button_followup205.mjs` (which asserted the old,
+  broken empty-deps shape) with `test_autoscroll_test_button_followup216.mjs` — checks the
+  new tick-based effect is wired correctly, the old buggy shape is gone, `contentReadyTick`
+  is bumped only in the load-success path (never on a per-edit handler), plus a logic
+  replica proving the old approach never scrolls and the new one does. 10/10 passing.
+- Full verify suite re-run: all 19 files, 226 checks, all passing.
+- `npm run build`: succeeds, no errors. `npx eslint` on the changed file: clean.
+- Confirmed both call sites into this component (via `autoScrollToTest={autoScrollToTest}`
+  in TourSimulator.jsx) are unaffected — "Jump to location…" still explicitly resets
+  `autoScrollToTest` to `false` before this component ever mounts, so it's still
+  unaffected either way.
+
+---
+
 ## 2026-09-19 (follow-up 215) — Manual map zoom/pan now NEVER gets overridden, by anything
 **Scope:** Changed `components/admin/TourSimulatorMap.jsx` only (new `ManualZoomTracker`
 component + a shared ref both `FitBounds` and `FocusBounds` now check first).

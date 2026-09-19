@@ -273,20 +273,33 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
   // this waypoint's own text boxes and pause sliders) off-screen below the fold —
   // exactly the same "narrator has to go find the button themselves" problem
   // NarrationTtsEditor.jsx already solved for "Parse & Generate" (see that file's own
-  // parseGenerateRef/justImportedTick). testControlsRef/autoScrollToTest below is the
-  // same fix, here: TourSimulator.jsx only passes autoScrollToTest as true when this
-  // panel was opened specifically via "Test this segment" (testThisWaypoint) — never
-  // when opened via "Jump to location…", which deliberately lands at the TOP instead,
-  // since editing wording is usually the first thing to do there (see that function's
-  // own comment). Read once on mount — an empty dep array is correct and sufficient
-  // here (rather than needing a "tick" counter like justImportedTick) because this
-  // component always fully remounts fresh every time it's opened at all.
+  // parseGenerateRef/justImportedTick). testControlsRef/autoScrollToTest below is meant
+  // to be the same fix, here.
+  //
+  // First attempt used an empty dep array (scroll once, right on mount) on the theory
+  // that this component always mounts fresh. Enda reported it still wasn't scrolling.
+  // Checked properly rather than guessed again: the text boxes/pause sliders/test
+  // button are ALL inside `{segments && segments.length > 0 && (...)}` — see the render
+  // below — and `segments` starts out null on every mount. It's only filled in once the
+  // async TTS-loading effect below finishes fetching this waypoint's line audio, which
+  // is a real network round trip. The empty-dep-array scroll ran on the FIRST render,
+  // while segments was still null and testControlsRef's own div hadn't rendered at all
+  // yet — `testControlsRef.current` was null, so `?.scrollIntoView` silently did
+  // nothing. By the time the div actually appeared a moment later, the effect had
+  // already fired once and, with `[]`, never runs again.
+  //
+  // Fixed the same way NarrationTtsEditor's own justImportedTick does it: a tick that
+  // only bumps once the content the scroll target lives inside has actually finished
+  // loading (see contentReadyTick, set alongside setSegments/setSegmentAudios in that
+  // effect's success path below) — not `[segments]` directly, since segments also
+  // changes on every later text/pause edit, which must NOT re-trigger a scroll.
   const testControlsRef = useRef(null);
+  const [contentReadyTick, setContentReadyTick] = useState(0);
   useEffect(() => {
-    if (autoScrollToTest) {
+    if (autoScrollToTest && contentReadyTick > 0) {
       testControlsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
-  }, []);
+  }, [contentReadyTick, autoScrollToTest]);
 
   const script = waypoint?.narration_script || '';
 
@@ -342,6 +355,11 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
         setSegments(parsed);
         setSegmentAudios(audios);
         setLoading(false);
+        // Per the auto-scroll fix above (contentReadyTick/testControlsRef): the text
+        // boxes, pause sliders, and "Test this subsegment" button only exist in the DOM
+        // from this point on — this is the one place that's actually true, so this is
+        // the one place that bumps the tick.
+        setContentReadyTick((n) => n + 1);
       }
     })();
     return () => { cancelled = true; };
