@@ -85,6 +85,61 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-19 (follow-up 217) — Leaving the script editor to test a segment, then coming
+## back, no longer wipes all editing progress
+**Scope:** Changed `components/admin/TourSimulator.jsx` and
+`components/admin/NarrationTtsEditor.jsx`. Frontend-only.
+
+**Per Enda:** "when I am editing a WP, and I need to go back to the script editor, it
+takes me back to the very beginning, parse and generate, build and play, ... I need to go
+back to blocks that I can edit after I play just that block and use the pencil... I don't
+need to hear the whole thing over and over again."
+
+**Investigated fully first:** read NarrationTtsEditor.jsx's whole internal state machine
+(`reviewPhase`, `segments`, `playedSegmentIds`, `subsectionTexts`, `editingSegmentId`, and
+several more — all local `useState`, none of it lifted to the parent) and TourSimulator.jsx's
+render logic for this panel. Root cause: TourSimulator.jsx only ever mounted ONE of
+NarrationTtsEditor / WaypointPaceEditor at a time (`speedMatchMode ? WaypointPaceEditor :
+NarrationTtsEditor`). Clicking "Test this segment" swaps to WaypointPaceEditor, and
+clicking "Back to script editor" swaps back — but that swap fully UNMOUNTS then
+REMOUNTS NarrationTtsEditor, so every one of its own `useState` hooks resets to its
+initial value. `reviewPhase` goes back to `'listen'`, `segments` back to `null` — exactly
+"back to the very beginning, parse and generate" — with no way for the component to know
+it was a return trip rather than a fresh visit.
+
+**Built:** NarrationTtsEditor now stays mounted for as long as a waypoint is open at all —
+it's only ever hidden via CSS (a wrapper `<div className={speedMatchMode ? 'hidden' :
+''}>`) while WaypointPaceEditor is showing instead, never unmounted just for that. All of
+its internal progress now survives the round trip untouched, so "Back to script editor"
+lands exactly where Enda left off — same phase, same parsed segments, same played/edited
+lines. WaypointPaceEditor itself is completely unchanged — still only mounted while
+`speedMatchMode` is true, still fully fresh each time (nobody asked for that to change,
+and it has its own separate reasons to reset per visit).
+
+Added a new `visible` prop (default `true`) to NarrationTtsEditor, passed
+`visible={!speedMatchMode}` from this one caller only — its two other callers
+(DrivingTourWaypointEditor.jsx, SegmentScriptEditor.jsx) never hide it this way, so the
+default leaves them untouched. A new effect stops any of its own audio (per-line Play, or
+a Build & Play pass) the instant it's hidden, using the existing `handleStopPlay` — so it
+never keeps playing silently behind WaypointPaceEditor's own "Test this subsegment"
+audio. Only fires on a genuine visible→hidden transition, never on an ordinary mount.
+
+**Verified:**
+- New `test_narration_editor_stays_mounted_followup217.mjs`: confirms the old
+  either/or ternary is gone, WaypointPaceEditor's own mount behaviour is untouched,
+  NarrationTtsEditor is wrapped in the `hidden`-toggling div with `visible` wired
+  correctly, the stop-on-hide effect is correctly ordered and scoped, plus a logic
+  replica proving the old approach loses `reviewPhase`/`segments` on the round trip and
+  the new one keeps both. 15/15 passing.
+- Full verify suite re-run: all 20 files, 230 checks, all passing.
+- Confirmed neither other caller of NarrationTtsEditor passes `visible` — both keep the
+  default `true`, completely unaffected.
+- `npm run build`: succeeds, no errors. `npx eslint` on both changed files: only the
+  one pre-existing, unrelated warning (unused eslint-disable directive) already present
+  before this change.
+
+---
+
 ## 2026-09-19 (follow-up 216) — Fixed "Test this segment" auto-scroll (follow-up 205's fix
 ## had a timing bug, never actually scrolled)
 **Scope:** Changed `components/admin/WaypointPaceEditor.jsx` only. Frontend-only.

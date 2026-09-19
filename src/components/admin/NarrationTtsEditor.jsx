@@ -200,7 +200,27 @@ function hasWordingChange(originalSegs, attemptedText) {
   return originalWords !== newWords;
 }
 
-export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, onAudioChange, onAutoSave, fixedLanguage, waypointSegmentId, waypointSegmentTitle, doneLocked = false, currentWalkId, onTestSegment, isNarrator = false }) {
+// Per Enda's report (2026-09-19): going from this screen into "Test this segment"
+// (WaypointPaceEditor) and then back via "Back to script editor" used to dump the
+// narrator straight back at Parse & Generate — every line already listened to,
+// already edited, or mid-edit was forgotten, forcing a full re-listen from scratch.
+// Root cause: the parent (TourSimulator.jsx) only ever rendered ONE of
+// NarrationTtsEditor/WaypointPaceEditor at a time, so switching to WaypointPaceEditor
+// fully UNMOUNTED this component — every one of its own useState hooks above
+// (segments, reviewPhase, playedSegmentIds, subsectionTexts, editingSegmentId, …) reset
+// to its initial value the moment it mounted again, with no way to tell that this was a
+// "coming back", not a fresh visit.
+//
+// Fix: TourSimulator.jsx now keeps this component mounted the whole time a waypoint is
+// open, and only hides it (CSS, via the `hidden` class on its wrapper) while
+// WaypointPaceEditor is showing instead — never unmounts it just for that. All of the
+// state above now survives the round trip untouched, so returning here lands exactly
+// where the narrator left off. `visible` (true whenever this is actually on screen) is
+// the one new thing this component itself needs to know about that: see the stop-on-hide
+// effect below for why. Every other caller of this component (DrivingTourWaypointEditor,
+// SegmentScriptEditor) never hides it this way, so the default of `true` leaves them
+// completely unaffected.
+export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, onAudioChange, onAutoSave, fixedLanguage, waypointSegmentId, waypointSegmentTitle, doneLocked = false, currentWalkId, onTestSegment, isNarrator = false, visible = true }) {
   const { keys: apiKeys } = useNarratorApiKeys();
   const [selectedVoice, setSelectedVoice] = useState('NEUTRAL');
   const [selectedLanguage, setSelectedLanguage] = useState(fixedLanguage || 'English');
@@ -1366,6 +1386,21 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     setActiveSubsectionIndex(null);
     setCurrentPlayingIndex(null);
   };
+
+  // Per the `visible` comment on this component's own props above: now that this stays
+  // mounted (just hidden) while WaypointPaceEditor is showing instead, anything already
+  // playing here (a per-line Play, or a Build & Play pass) needs to actually stop the
+  // moment it's hidden — otherwise it would keep playing silently behind the scenes,
+  // fighting WaypointPaceEditor's own "Test this subsegment" audio. Only fires on a real
+  // true-to-false transition (wasVisibleRef), never on ordinary mount, so this never
+  // interferes with a fresh open.
+  const wasVisibleRef = useRef(visible);
+  useEffect(() => {
+    if (wasVisibleRef.current && !visible) {
+      handleStopPlay();
+    }
+    wasVisibleRef.current = visible;
+  }, [visible]);
 
   const handleDownload = async () => {
     // Download the full edited script as .docx (break tags preserved)

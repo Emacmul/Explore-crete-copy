@@ -1826,7 +1826,25 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                   click), so opening this tab is instant again. The waypoint dropdown
                   above is shared by both modes, so the narrator always knows which
                   waypoint they're looking at either way. */}
-              {selectedWp && (speedMatchMode ? (
+              {/* Per Enda's report (2026-09-19): this used to be a strict either/or —
+                  only ONE of WaypointPaceEditor/NarrationTtsEditor was ever mounted at
+                  a time, so leaving the script editor to "Test this segment" and coming
+                  back fully unmounted-then-remounted NarrationTtsEditor, wiping every
+                  bit of its own progress (which lines were listened to/edited, where the
+                  narrator had got to) and dumping them back at Parse & Generate every
+                  single time. Fix: NarrationTtsEditor (further down) now stays mounted
+                  for as long as a waypoint is open at all, and is only ever hidden via
+                  CSS (the `hidden` class on its own wrapper) while WaypointPaceEditor is
+                  showing instead — never unmounted just for that. WaypointPaceEditor
+                  itself is untouched — still only mounted while speedMatchMode is true,
+                  same fresh-per-visit behaviour as before (nobody asked for that to
+                  change, and it has its own good reasons to reset each time — see its
+                  own file comment). See NarrationTtsEditor.jsx's own `visible` prop
+                  comment for the other half of this (stopping any audio that was mid-
+                  play the moment it's hidden). */}
+              {selectedWp && (
+                <>
+                {speedMatchMode && (
                 <div className="space-y-2">
                   {/* Per Enda/Anoushka's follow-up 163 report: neither this whole-
                       location "Jump to location…" flow NOR the new per-waypoint "Test
@@ -1971,7 +1989,8 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                     }
                   />
                 </div>
-              ) : (
+                )}
+                <div className={speedMatchMode ? 'hidden' : ''}>
                 <NarrationTtsEditor
                   key={selectedWpIndex}
                   script={selectedWp.narration_script || ''}
@@ -2080,8 +2099,16 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                   // comment for the full reasoning. Admin (isNarrator false/undefined)
                   // keeps editing that box exactly as freely as before.
                   isNarrator={isNarrator}
+                  // Per this block's own comment above: NarrationTtsEditor now stays
+                  // mounted (hidden, not removed) while WaypointPaceEditor is showing
+                  // instead — this tells it so it can stop any of its own audio that
+                  // was mid-play the instant it's hidden, rather than letting it keep
+                  // playing silently behind WaypointPaceEditor's own test audio.
+                  visible={!speedMatchMode}
                 />
-              ))}
+                </div>
+                </>
+              )}
             </div>
           ) : (
             <div className="h-full flex items-center justify-center text-slate-500 text-sm border border-dashed border-slate-600 rounded-lg p-4">
