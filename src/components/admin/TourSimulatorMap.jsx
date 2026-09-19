@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { MapContainer, TileLayer, Polyline, Marker, Circle, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -33,14 +33,45 @@ function destinationPoint(lat, lng, bearingDeg, distanceM) {
   ];
 }
 
+// Per Enda's report (2026-09-19), the final word on this after three earlier attempts
+// each only fixed one specific trigger (a field edit, clicking Test, ...): "if I, or
+// any narrator, manually set the map to a certain zoom, it must stay there. It doesn't
+// matter when or where we do this, it stays." So instead of chasing every individual
+// caller that might re-fit the map, this tracks whether a REAL person has touched the
+// map at all (wheel zoom, click-drag pan, pinch, or the +/- zoom control buttons —
+// every one of these fires a genuine DOM event on the map's own container; Leaflet
+// methods like fitBounds()/setView() never do) — and once that's happened even once,
+// EVERY automatic re-fit below (FitBounds, FocusBounds — every caller of
+// setMapFocusBounds in TourSimulator.jsx funnels through one or the other) is skipped
+// for good, no matter what triggers it. Resets only when this map component itself
+// remounts (leaving this walk's Narrate & Simulate tab and coming back, or opening a
+// different tour) — never automatically "wins back" the zoom mid-session.
+function ManualZoomTracker({ userZoomedRef }) {
+  const map = useMap();
+  useEffect(() => {
+    const container = map.getContainer();
+    const markManual = () => { userZoomedRef.current = true; };
+    container.addEventListener('wheel', markManual, { passive: true });
+    container.addEventListener('mousedown', markManual);
+    container.addEventListener('touchstart', markManual, { passive: true });
+    return () => {
+      container.removeEventListener('wheel', markManual);
+      container.removeEventListener('mousedown', markManual);
+      container.removeEventListener('touchstart', markManual);
+    };
+  }, [map, userZoomedRef]);
+  return null;
+}
+
 // Per Enda's follow-up 48 report: separate from the initial whole-trail fit above —
 // this fires only when `focusBounds` itself changes (passed down from
 // TourSimulator.jsx's jumpToLocation, a fresh array each time), zooming/centring on
 // just one location's own waypoints without disturbing the whole-trail fit's own
 // unrelated effect timing.
-function FocusBounds({ focusBounds }) {
+function FocusBounds({ focusBounds, userZoomedRef }) {
   const map = useMap();
   useEffect(() => {
+    if (userZoomedRef.current) return;
     if (focusBounds && focusBounds.length > 0) {
       // Per Enda's report: opening a location didn't actually zoom in tight — he had to
       // zoom in manually about 4x to reach the view this should already open with.
@@ -74,7 +105,7 @@ function FocusBounds({ focusBounds }) {
   return null;
 }
 
-function FitBounds({ trailPath, waypoints }) {
+function FitBounds({ trailPath, waypoints, userZoomedRef }) {
   const map = useMap();
   // Per Enda: this used to re-fit (and so re-zoom/re-centre) the map on every single
   // render of the parent TourSimulator, because `waypoints` was in the dependency
@@ -91,6 +122,7 @@ function FitBounds({ trailPath, waypoints }) {
   // reasoning as FocusBounds above — this is the very first fit to run at all, so it's
   // the one most likely to land before the grid layout has finished settling.
   useEffect(() => {
+    if (userZoomedRef.current) return;
     const pts = trailPath?.length > 0
       ? trailPath.map(p => [p.lat, p.lng])
       : waypoints?.map(w => [w.lat, w.lng]);
@@ -250,14 +282,20 @@ export default function TourSimulatorMap({ trailPath, waypoints, triggered, curr
       ? [waypoints[0].lat, waypoints[0].lng]
       : [35.24, 24.81];
 
+  // Per Enda's report (2026-09-19) — see ManualZoomTracker's own comment above for the
+  // full reasoning: once he (or a narrator) touches the map's zoom/pan at all, nothing
+  // here auto-moves it again for as long as this map stays mounted.
+  const userZoomedRef = useRef(false);
+
   return (
     <MapContainer center={center} zoom={13} className="w-full h-full" style={{ minHeight: '350px' }}>
       <TileLayer
         url="https://tile.openstreetmap.de/{z}/{x}/{y}.png"
         attribution='&copy; OpenStreetMap contributors'
       />
-      <FitBounds trailPath={trailPath} waypoints={waypoints} />
-      <FocusBounds focusBounds={focusBounds} />
+      <ManualZoomTracker userZoomedRef={userZoomedRef} />
+      <FitBounds trailPath={trailPath} waypoints={waypoints} userZoomedRef={userZoomedRef} />
+      <FocusBounds focusBounds={focusBounds} userZoomedRef={userZoomedRef} />
 
       {displayTrailPath.length > 1 &&
         // `breaks` holds indices into the FULL trailPath — meaningless against a

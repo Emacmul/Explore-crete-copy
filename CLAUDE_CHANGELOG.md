@@ -85,6 +85,49 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-19 (follow-up 215) — Manual map zoom/pan now NEVER gets overridden, by anything
+**Scope:** Changed `components/admin/TourSimulatorMap.jsx` only (new `ManualZoomTracker`
+component + a shared ref both `FitBounds` and `FocusBounds` now check first).
+Frontend-only.
+
+**Per Enda, the final word on this after three earlier attempts each only fixed one
+specific trigger:** "if I, or any narrator, manually set the map to a certain zoom, it
+must stay there. It doesn't matter when or where we do this, it stays." His last
+report: he zoomed to show BOR2, selected BOR2c to test 3 back from there, and the map
+zoomed back out again — a trigger none of follow-ups 211/212/214 covered, because each
+of those fixed one specific CALLER of the map re-fit, not the underlying pattern.
+
+**Investigated (didn't guess) — why the earlier, narrower fixes kept missing new
+triggers:** every previous attempt asked "is THIS specific caller's re-fit
+appropriate?" one at a time (a field edit, a primary_start freeze, clicking Test) —
+but there are several different callers of `setMapFocusBounds`/`fitBounds` across
+`TourSimulator.jsx` and `TourSimulatorMap.jsx` (selecting a waypoint, selecting a
+location, Jump to location, Test this subsegment, the initial whole-trail fit, ...),
+and each fix only ever covered the one Enda had just reported. Selecting BOR2c changes
+`selectedWpIndex`, which re-runs the "whole location" framing effect in
+`TourSimulator.jsx` — a caller none of the 3 previous fixes had touched.
+
+**Built — a different approach, fixing the whole category at once instead of one more
+caller:** a new `ManualZoomTracker` component listens for real user interaction
+directly on the map's own DOM container — `wheel` (scroll zoom), `mousedown` (drag pan,
+or clicking the +/- zoom buttons), `touchstart` (touch drag/pinch). These only ever
+fire from genuine mouse/touch input, never from a Leaflet method call like
+`fitBounds()`/`setView()`, so there's no ambiguity between "the code moved the map" and
+"a person moved the map". The moment any of these fires even once, a shared
+`userZoomedRef` flips true, and BOTH `FitBounds` (the initial whole-trail fit) and
+`FocusBounds` (every other re-fit — selecting a waypoint/location, Jump to location,
+Test this subsegment, and anything added later) skip themselves entirely from then on,
+for as long as this map stays mounted — regardless of which one of them would have
+fired, or why. No more chasing individual triggers one report at a time.
+
+**Verified:** new script `test_manual_zoom_never_overridden.mjs` (5 checks) confirms
+the tracker listens for and cleans up all 3 event types, the shared ref is created once
+and passed to every child, and both `FitBounds` and `FocusBounds` check it before doing
+anything. Full regression suite: 222/222 passing (217 previous + 5 new). `npx vite
+build` succeeds. `npx eslint` on the changed file: clean.
+
+---
+
 ## 2026-09-19 (follow-up 214) — Map no longer re-zooms out the moment a test starts, if
 ## already zoomed to the right area
 **Scope:** Changed `components/admin/TourSimulatorMap.jsx` only (`FocusBounds`, one
