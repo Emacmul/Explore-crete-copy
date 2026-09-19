@@ -1156,24 +1156,26 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   }, []);
 
   tickRef.current = () => {
-    // Per Enda: while a primary_start waypoint's own audio is the one actually playing
-    // right now (activeAudioWpIndexRef — set the moment its clip starts, in the geofence
-    // check further down, and cleared by handleAudioEndedRef once it finishes), the
-    // vehicle must stay exactly where it is. The customer is still parked in the
-    // location's car park at that point — they haven't started driving yet — so letting
-    // the marker glide forward underneath a still-playing "welcome" narration is
-    // confusing to watch. Movement resumes the instant that clip ends and control moves
-    // on (to a different waypoint's already-queued clip, or to nothing) — no separate
-    // "resume" logic needed, since this same check just stops matching on the very next
-    // tick. Deliberately keyed off which waypoint's audio is ACTUALLY playing, not just
-    // "are we near a primary_start" — a secondary point's audio playing while lingering
-    // close to a primary_start's own coordinates (e.g. a co-located pair) must not freeze
-    // anything.
+    // CORRECTED 2026-09-19, per Enda's direct correction — this used to freeze the car
+    // for ANY primary_start waypoint's own audio (BOR1a-PS, BOR2a-PS, BOR3a-PS, ...).
+    // That is only true for the very FIRST waypoint of the very FIRST location in the
+    // whole tour (activeAudioWpIndexRef.current === 0, e.g. BOR1a-PS) — the one
+    // genuinely static "welcome, get ready" point that plays before the tour's own
+    // first drive has even started. This exact distinction already exists elsewhere in
+    // this same file (see testDisabled/onTestSegment's own "selectedWpIndex === 0"
+    // checks and their comments, further down) — EVERY OTHER location's own
+    // primary_start (BOR2a-PS, BOR3a-PS, ...) is reached BY a real drive, so the
+    // customer is still moving (or has just arrived) when its audio starts, not parked.
+    // Freezing the car there was wrong for real playback too, not only during a pace
+    // test — a previous fix here only special-cased pace tests (isPaceTest) and missed
+    // this, which was the actual root cause. That special-case is gone now; the
+    // isPaceTest flag on scopedTestRef.current is no longer read anywhere.
+    // Movement resumes the instant BOR1a-PS's own clip ends — no separate "resume"
+    // logic needed, since this check just stops matching on the very next tick.
     // simTime still advances through this stop (so the driving-time estimate keeps
     // counting real elapsed time), but distTraveled/currentPos are left completely
     // untouched — no geofence/speed-zone checks run either, since position hasn't moved.
-    const activeWp = activeAudioWpIndexRef.current != null ? waypoints[activeAudioWpIndexRef.current] : null;
-    if (activeWp?.waypoint_role === 'primary_start') {
+    if (activeAudioWpIndexRef.current === 0) {
       simTimeRef.current += TICK_MS * multRef.current;
       setSimTime(simTimeRef.current);
       return;

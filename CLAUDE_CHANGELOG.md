@@ -85,6 +85,90 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-19 (follow-up 213) — CORRECTION to follow-up 212: the freeze was wrong for ANY
+## location's primary_start, not just during a pace test
+**Scope:** Changed `components/admin/TourSimulator.jsx` only (the same freeze check
+follow-up 212 touched, fixed properly this time; the isPaceTest flag it added is
+removed again). Frontend-only.
+
+**Per Enda, in the strongest possible terms:** follow-up 212's fix only stopped the
+freeze during a "Test this subsegment"/"Test this waypoint" pace test. Enda pointed out
+this was still wrong: "The customer is parked listening to the first WP of a location"
+is valid ONLY for the tour's very first location — not for every location. This exact
+distinction already existed elsewhere in this same file (testDisabled/onTestSegment's
+`selectedWpIndex === 0` checks, from follow-ups 174 and its own later correction) — it
+should have been applied here the first time, not re-discovered from scratch after a
+second complaint.
+
+**What was actually wrong:** the freeze in `tickRef` fired for ANY waypoint with
+`waypoint_role === 'primary_start'` — BOR1a-PS, BOR2a-PS, BOR3a-PS, everywhere. Only
+BOR1a-PS (the tour's true first waypoint) is genuinely a customer parked before any
+driving has begun. BOR2a-PS, BOR3a-PS etc. are each reached BY a real drive (arriving
+from the previous location's own last leg), so the car was wrongly freezing there too —
+in REAL playback (Jump to location, Play Tour), not only during a pace test. Follow-up
+212's fix treated a symptom (freezing during a pace test) without fixing the actual
+wrong condition, which is why the same class of bug was still there for BOR2a-PS
+during ordinary playback too.
+
+**Built:** the freeze now checks `activeAudioWpIndexRef.current === 0` — the tour's
+literal first waypoint — instead of `waypoint_role === 'primary_start'`. This is the
+same check already used and already vetted elsewhere in this file. Removed follow-up
+212's `isPaceTest` flag entirely (on `scopedTestRef.current` and its one read in
+`tickRef`) since it's no longer needed — with the condition fixed at its root, a pace
+test can't even reach this freeze for any location past the first (its own
+`testDisabled` already blocks pace-testing waypoint 0), so the special-case was dead
+weight once the real fix was in.
+
+**Verified:** rewrote `test_pace_test_no_freeze_on_primary_start.mjs` (5 checks) to
+match the real fix: confirms the freeze keys off `activeAudioWpIndexRef.current === 0`
+(not `waypoint_role`), the `isPaceTest` flag and its one read are both fully gone, and
+the dead `activeWp` local variable was removed too, not just left unread. Full
+regression suite: 213/213 passing (same total as 212 — this replaces that follow-up's
+checks rather than adding new ones on top of a wrong fix). `npx vite build` succeeds.
+`npx eslint`: clean (same one pre-existing, unrelated warning as before).
+
+---
+
+## 2026-09-19 (follow-up 212) — Pace tests no longer freeze the car through a primary_start's audio
+**Scope:** Changed `components/admin/TourSimulator.jsx` only (one new flag on
+`scopedTestRef` + one extra condition in `tickRef`'s freeze check). Frontend-only.
+
+**Per Enda:** testing BOR2a→BOR2c as "3 subsegments", the car correctly started at
+BOR2a's own trigger-radius edge — but then sat frozen there for the whole length of
+BOR2a's audio (a short clip, no break set) before moving. His words: "There is no
+break point set before the audio should play, so it should play as it did and the
+car should move immediately. Otherwise it becomes impossible to set speech/speed
+correct."
+
+**Investigated (didn't guess):** asked Enda exactly which test he ran before touching
+anything (span=1 on just BOR2c, or a 3-span test starting further back) — a single
+waypoint test and a 3-span test take genuinely different code paths. He confirmed a
+3-span test starting at BOR2a. Checked the live data again: BOR2a-PS is
+`waypoint_role: "primary_start"`. Traced `tickRef` in `TourSimulator.jsx`: there's a
+deliberate, previously-built freeze — while a `primary_start` waypoint's own audio is
+playing, the car doesn't move, because a real customer would still be parked at that
+point, not yet driving. That's correct for real playback, but it was also firing
+during "Test this subsegment"/"Test this waypoint" pace tests — where the entire point
+is checking whether speech length and real driving speed line up, so freezing through
+it defeats the test.
+
+**Built:** `resetToWaypoint` now records `isPaceTest: scopeToThisWaypoint` on
+`scopedTestRef.current` — true only for the two pace-testing callers
+(`testThisWaypoint`, `onTestSubsegment`), false for real playback (`jumpToLocation`,
+Play Tour, a plain re-test). The freeze in `tickRef` now also checks
+`!scopedTestRef.current?.isPaceTest`, so it's skipped during a pace test but completely
+unchanged for real customer playback.
+
+**Verified:** new script `test_pace_test_no_freeze_on_primary_start.mjs` (5 checks)
+confirms the flag is recorded correctly, the freeze condition checks it, both
+pace-testing callers set it true, and `jumpToLocation` (real playback) doesn't pass it
+at all. Full regression suite: 213/213 passing (208 previous + 5 new) — including the
+existing `test_jump_to_location_pace_testing_followup198.mjs`, confirming real
+"Jump to location" playback is untouched. `npx vite build` succeeds. `npx eslint` on
+the changed file: clean (same one pre-existing, unrelated warning as before).
+
+---
+
 ## 2026-09-19 (follow-up 211) — Map no longer snaps back to whole-location zoom on every field edit
 **Scope:** Changed `components/admin/TourSimulator.jsx` only (one new ref + one effect's
 dependency list). Frontend-only.
