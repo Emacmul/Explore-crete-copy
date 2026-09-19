@@ -85,6 +85,44 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-19 (follow-up 214) — Map no longer re-zooms out the moment a test starts, if
+## already zoomed to the right area
+**Scope:** Changed `components/admin/TourSimulatorMap.jsx` only (`FocusBounds`, one
+added containment check before its `fitBounds` call). Frontend-only.
+
+**Per Enda:** "I just went to BOR2c, selected test 3 in a row, the map was zoomed in to
+those waypoints only, the moment I click 'test 3 segment', it automatically zooms back
+out." Different trigger from follow-up 211 (which was about an unrelated field-edit
+re-render) — this is clicking the actual "Test this subsegment" button.
+
+**Investigated (didn't guess):** traced `onTestSubsegment`'s handler in
+`TourSimulator.jsx` — it calls `setMapFocusBounds(bounds)` directly, unconditionally,
+every time it runs, framing the WHOLE tested span (built deliberately, per an earlier
+follow-up, so a test's own start point can never end up off-screen). `FocusBounds` in
+`TourSimulatorMap.jsx` then always calls `map.fitBounds(...)` on whatever bounds it's
+given — with no check for whether the target area was already on screen. So clicking
+Test always re-fit, even when Enda had already manually zoomed to exactly that area —
+undoing his zoom at the exact moment he needed it, to watch the car against the audio.
+The SAME unconditional `fitBounds` also runs for "Jump to location…", though Enda
+didn't report a problem there specifically.
+
+**Built:** `FocusBounds` now checks `map.getBounds().contains(targetBounds)` before
+fitting — if the target area is already fully visible in the current view, the fit is
+skipped entirely and his zoom/pan stays exactly as he set it. If it isn't visible, it
+fits exactly as before — the original "never start off-screen" guarantee is untouched,
+just no longer applied when it isn't needed. This is a shared fix — it also covers
+"Jump to location…" and every other caller of `setMapFocusBounds`, not just "Test this
+subsegment".
+
+**Verified:** new script `test_focus_bounds_respects_manual_zoom.mjs` (4 checks)
+confirms the containment check runs before `fitBounds`, that `fitBounds` still runs
+unconditionally when the target isn't visible, and that the existing container-size
+settling fix (`invalidateSize()`, follow-up 48) is untouched. Full regression suite:
+217/217 passing (213 previous + 4 new). `npx vite build` succeeds. `npx eslint` on the
+changed file: clean.
+
+---
+
 ## 2026-09-19 (follow-up 213) — CORRECTION to follow-up 212: the freeze was wrong for ANY
 ## location's primary_start, not just during a pace test
 **Scope:** Changed `components/admin/TourSimulator.jsx` only (the same freeze check

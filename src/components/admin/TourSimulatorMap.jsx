@@ -56,7 +56,17 @@ function FocusBounds({ focusBounds }) {
       // for a map mounted inside a layout whose size isn't known synchronously at mount.
       const frame = requestAnimationFrame(() => {
         map.invalidateSize();
-        map.fitBounds(L.latLngBounds(focusBounds), { padding: [60, 60], maxZoom: 17 });
+        const targetBounds = L.latLngBounds(focusBounds);
+        // Per Enda's report (2026-09-19): clicking "Test this subsegment" (or "Jump to
+        // location…") always re-fit the map to the whole tested/target span, even when
+        // he'd already manually zoomed in tight on exactly that area — undoing his zoom
+        // the moment he clicked, right when he needed to watch the car closely against
+        // the audio. Only re-fit when the target area genuinely ISN'T already visible —
+        // this is what the fit exists for in the first place (see the comment above:
+        // without it, a test's own start point could end up off-screen). If it's
+        // already on screen, leave his zoom/pan exactly as he set it.
+        if (map.getBounds().contains(targetBounds)) return;
+        map.fitBounds(targetBounds, { padding: [60, 60], maxZoom: 17 });
       });
       return () => cancelAnimationFrame(frame);
     }
