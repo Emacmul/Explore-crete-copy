@@ -87,9 +87,30 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   const isWalkingTour = form.tour_category !== 'DDV';
 
   // Which waypoint's own script/audio is currently open in the editor beside the map.
-  // Defaults to the first waypoint so there's always something to work with as soon as
-  // the panel appears.
-  const [selectedWpIndex, setSelectedWpIndex] = useState(0);
+  //
+  // Per Enda's report (2026-09-19): a location with even one unfinished waypoint deep
+  // inside it (e.g. BOR2c) has no door a Narrator can walk through to reach it — "Jump
+  // to location…" only ever offers locations that are ALREADY fully done (see
+  // locationTargets below), and this always used to default to index 0 (the very first
+  // waypoint of the whole tour) on every fresh visit, so a Narrator had no way back to
+  // the actual unfinished spot except clicking through the entire tour by hand, one
+  // waypoint at a time — Admin's separate Waypoints tab has no such restriction, so only
+  // Admin could reach it directly. Enda considered blocking the tab from being closed
+  // until it's marked Done, but that can't really be enforced (nothing stops someone
+  // just closing the browser tab) and risked pushing a rushed, premature "Done" click
+  // just to escape — so instead, per his own second idea: this now starts on the very
+  // FIRST not-yet-done waypoint in the whole tour (in this filtered `waypoints` list, so
+  // the same index lockedWpIndexes below would also treat as the first genuinely
+  // reachable-but-unfinished one), every time this tab opens, for both roles. If every
+  // waypoint is already done, falls back to 0 exactly as before — nothing to land on
+  // instead. A lazy initializer (runs once, at mount, off `waypoints` as it is right
+  // then) — not an effect — since this is a one-time "where do we open" decision, not
+  // something that should keep re-firing and yanking the editor away from wherever the
+  // narrator has since navigated to.
+  const [selectedWpIndex, setSelectedWpIndex] = useState(() => {
+    const firstNotDone = waypoints.findIndex((w) => !w?.waypoint_done);
+    return firstNotDone === -1 ? 0 : firstNotDone;
+  });
 
   // Per Enda's report (follow-up 61 live-testing): follow-up 58 made the leg-scoped
   // speed-matching panel (WaypointPaceEditor) the ONLY thing this tab ever shows beside

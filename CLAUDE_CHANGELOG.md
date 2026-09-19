@@ -85,6 +85,58 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-19 (follow-up 218) — Narrate & Simulate now opens on the first not-yet-done
+## waypoint, instead of always the very start of the tour
+**Scope:** Changed `components/admin/TourSimulator.jsx` only. Frontend-only.
+
+**Per Enda:** BOR2 wasn't showing as complete, so it didn't appear in the Progress row and
+a Narrator couldn't "Jump to location…" to it either. The actual unfinished waypoint
+(BOR2c) was reachable only through the Waypoints tab — Admin-only. "As an Admin I can fix
+it. A Narrator can't." He suggested either blocking the tab from closing until marked
+Done, or landing on the unfinished waypoint automatically on reopen — asked which, before
+building either.
+
+**Investigated first:** traced how a waypoint becomes reachable in this tab.
+`lockedWpIndexes` only allows opening a waypoint once every EARLIER one is done — correct
+and unchanged. `locationTargets` (the "Jump to location…" list) only offers locations that
+are entirely done already. Between those two, once a location has even one unfinished
+waypoint inside it, there's no door left for a Narrator to reach it except starting at
+index 0 and clicking through the whole tour by hand — which is also exactly what
+`selectedWpIndex` always defaulted to (`useState(0)`) on every fresh visit, regardless of
+where real work had actually stalled. Admin's separate Waypoints tab has none of these
+restrictions, which is why only Admin could get there directly.
+
+**Discussed the two options Enda raised before building either:** explained that
+blocking the tab from closing can't really be enforced (nothing stops someone just
+closing the browser tab) and risks the opposite of what he wants — a rushed, premature
+"Done" click just to escape. Recommended the second option instead. Enda confirmed:
+build the auto-land approach.
+
+**Built:** `selectedWpIndex`'s `useState(0)` is now a lazy initializer that scans the
+same filtered `waypoints` list `lockedWpIndexes` already uses, for the first one with
+`waypoint_done` false, and opens on that instead — falling back to 0 only when every
+waypoint is already done (nothing to land on) or the list is empty. Runs once at mount,
+not on an ongoing effect, so it never yanks the editor away from wherever a narrator has
+since navigated to mid-session. Applies to both Admin and Narrator — no role gate. Solves
+today's BOR2c situation the moment this ships: it's the exact index the new initializer
+lands on against the tour's real current data, so no separate manual fix is needed from
+Enda once this is deployed.
+
+**Verified:**
+- New `test_auto_land_first_not_done_followup218.mjs`: confirms the hardcoded `useState(0)`
+  is gone, the new initializer is wired correctly and defined after the `waypoints` memo
+  it depends on, and applies without any `isNarrator` gate. A logic replica built from
+  BOR's own real shape (BOR1 done, BOR2c the one gap, everything after already marked
+  done out of sequence via the Waypoints tab — matching the live data exactly) confirms
+  it lands precisely on BOR2c, and that landing spot is genuinely reachable (not locked).
+  Also checked: falls back to 0 for an already-fully-done tour, a brand-new untouched
+  tour, and an empty waypoint list. 9/9 passing.
+- Full verify suite re-run: all 21 files, 239 checks, all passing.
+- `npm run build`: succeeds, no errors. `npx eslint`: only the one pre-existing,
+  unrelated warning (unused eslint-disable directive) already present before this change.
+
+---
+
 ## 2026-09-19 (follow-up 217) — Leaving the script editor to test a segment, then coming
 ## back, no longer wipes all editing progress
 **Scope:** Changed `components/admin/TourSimulator.jsx` and
