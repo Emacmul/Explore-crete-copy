@@ -85,6 +85,34 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-19 (follow-up 219) — Simulator map: trigger circles no longer stack up into solid red
+Scope: `src/components/admin/TourSimulatorMap.jsx` — frontend only, no redeploy needed.
+
+**Per Enda's report:** after editing a script in the simulator, every trigger circle in that
+location (BOR2) turned solid red. The location before it (BOR1) and the first waypoint of the
+next (BOR3) looked fine.
+
+**Investigated first, not guessed:** the circles' fill opacity is a constant 0.1, so a single
+circle can never look solid. Solid colour therefore meant many identical circles stacked.
+Queried the live BOR tour: every waypoint at one location shares the SAME `segment_id`
+(all nine BOR2 waypoints are "BOR2"). The map used `segment_id` as each waypoint's React key,
+so React saw nine duplicate keys. With duplicate keys, whenever `focusRange` changed (the map
+switches between "one location" and "whole route") or the list changed, React did not remove
+the old Leaflet circle layers and drew new ones on top. Each switch added more copies.
+
+**Reproduced in a test page** (BOR2's real 9 waypoints, same component): 9 circles grew to 12,
+then 20 after switching focus on and off. This is why it "did it again" after edits.
+
+**Fix:** the key is now `segment_id` plus the waypoint's position in the full array, so it is
+unique per waypoint. Tested with the real edited file, same scenarios: circle count always
+correct (9 → 4 when focused → 9 → 8 after removing one → 9 after adding one), and no
+duplicate-key warnings.
+
+Not changed: `WalkDetailMap.jsx` uses a similar `segment_id` key, but on customer-facing
+walk maps where each waypoint has its own code; not part of this report.
+
+---
+
 ## 2026-09-19 (follow-up 218) — Narrate & Simulate now opens on the first not-yet-done
 ## waypoint, instead of always the very start of the tour
 **Scope:** Changed `components/admin/TourSimulator.jsx` only. Frontend-only.

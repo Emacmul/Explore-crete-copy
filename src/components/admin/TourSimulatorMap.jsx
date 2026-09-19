@@ -364,7 +364,14 @@ export default function TourSimulatorMap({ trailPath, waypoints, triggered, curr
         const radiusHandlePos = destinationPoint(wp.lat, wp.lng, bearingDir + 90, radius);
 
         return (
-          <React.Fragment key={wp.segment_id || `${wp.lat},${wp.lng},${i}`}>
+          // The key MUST be unique per waypoint. Every waypoint at one location shares
+          // the same segment_id (e.g. all nine BOR2 waypoints are "BOR2"), so segment_id
+          // alone as the key made React treat them as duplicates. Whenever focusRange
+          // toggled (or the list changed), React then failed to remove the old Leaflet
+          // Circle layers and drew new ones on top — each translucent circle stacked
+          // until the whole location looked solid red. `i` is the waypoint's stable
+          // position in the full array, so it makes the key unique.
+          <React.Fragment key={`${wp.segment_id || ''}-${i}`}>
             <Marker position={[wp.lat, wp.lng]} icon={wpIcon(colour, emoji, size, isOverlapDimmed ? 0.2 : (isMuted ? 0.55 : 1), doneLabel)} />
 
             {/* Pastel red radius circle — scales with zoom (uses metres). Per Enda's
