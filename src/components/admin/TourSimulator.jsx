@@ -241,6 +241,18 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   const distRef = useRef(0);
   const prevPosRef = useRef(trailPath[0] || null);
   const triggeredRef = useRef({});
+  // Per Enda's report (2026-09-19): dragging a waypoint's trigger-radius handle on the
+  // map (or any other field edit) zoomed the map back out to the whole location,
+  // undoing whatever he'd just manually zoomed in to check. Root cause: the map-focus
+  // effect further below re-fits any time `waypoints` changes identity — and
+  // WalkEditor's onWaypointUpdate always rebuilds the FULL array (prev.waypoints.map),
+  // a brand new array reference, on every single field edit, not just when a different
+  // waypoint is selected. Same root cause FitBounds (TourSimulatorMap.jsx) was already
+  // fixed for once before (follow-up 48) — same fix here: read the latest waypoints via
+  // a ref inside the effect instead of depending on the array itself, so the effect only
+  // re-fits on a genuine "selected a different waypoint/location" change.
+  const waypointsRef = useRef(waypoints);
+  useEffect(() => { waypointsRef.current = waypoints; }, [waypoints]);
   const simTimeRef = useRef(0);
   const speedRef = useRef(speed);
   const multRef = useRef(simMult);
@@ -1102,20 +1114,28 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // drive or a "Jump to location…" scoped run's own view.
   useEffect(() => {
     if (isPlaying) return;
+    // Per Enda's report (2026-09-19): reads waypointsRef.current, NOT the `waypoints`
+    // array itself, and `waypoints` is deliberately left out of the dependency list
+    // below — see waypointsRef's own comment above for the full reasoning. This effect
+    // must only re-fit on a genuine "different waypoint/location selected" change,
+    // never on a field edit (trigger radius, bearing, pin position, wording, ...) to
+    // the one already open — otherwise every such edit silently undoes a manual
+    // zoom/pan, exactly like it used to before this fix.
+    const wps = waypointsRef.current;
     if (speedMatchMode) {
-      const wp = waypoints[selectedWpIndex];
+      const wp = wps[selectedWpIndex];
       if (!wp || !wp.lat || !wp.lng) return;
-      const next = waypoints[selectedWpIndex + 1];
+      const next = wps[selectedWpIndex + 1];
       const bounds = [[wp.lat, wp.lng]];
       if (next && next.lat && next.lng) bounds.push([next.lat, next.lng]);
       setMapFocusBounds(bounds);
       return;
     }
     if (!currentLocationRange) return;
-    const locationWaypoints = waypoints.slice(currentLocationRange.startIndex, currentLocationRange.endIndex);
+    const locationWaypoints = wps.slice(currentLocationRange.startIndex, currentLocationRange.endIndex);
     const bounds = locationWaypoints.filter(wp => wp.lat && wp.lng).map(wp => [wp.lat, wp.lng]);
     if (bounds.length > 0) setMapFocusBounds(bounds);
-  }, [selectedWpIndex, waypoints, speedMatchMode, isPlaying, currentLocationRange]);
+  }, [selectedWpIndex, speedMatchMode, isPlaying, currentLocationRange]);
 
   // Reset when trail path changes
   useEffect(() => {

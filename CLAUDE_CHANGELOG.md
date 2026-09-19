@@ -85,6 +85,50 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-19 (follow-up 211) — Map no longer snaps back to whole-location zoom on every field edit
+**Scope:** Changed `components/admin/TourSimulator.jsx` only (one new ref + one effect's
+dependency list). Frontend-only.
+
+**Per Enda:** on Battle of the Rivers, dragging a waypoint's trigger-radius handle on
+the Narrate & Simulate map zoomed the map back out to the whole location every time —
+he had to manually zoom back in after every single adjustment to see the effect of the
+change, for every location, "very frustrating and time costly."
+
+**Investigated (didn't guess):** traced the map-focus `useEffect` in
+`TourSimulator.jsx` (the one that fits the map to the current waypoint/location).
+Its dependency array included `waypoints` directly — but `WalkEditor.jsx`'s
+`onWaypointUpdate` always rebuilds the FULL waypoints array (`prev.waypoints.map(...)`)
+on every single field edit, a brand-new array reference every time, even when only one
+field on one waypoint changed. So this effect re-ran (and re-fit the map) on every
+radius drag, not just when a different waypoint or location was actually selected —
+undoing any manual zoom immediately. This is the exact same root cause `FitBounds` in
+`TourSimulatorMap.jsx` was already fixed for once before (follow-up 48) — this effect
+just hadn't had the same fix applied to it.
+
+**Built:** added `waypointsRef` (kept in sync via its own small effect) and had the
+map-focus effect read `waypointsRef.current` instead of depending on the `waypoints`
+array itself. It now only re-fits on a genuine "different waypoint or location
+selected" change — never on a field edit (trigger radius, bearing, pin position,
+wording, ...) to the one already open. Applies to every tour location, not just BOR2 —
+the fix is in the shared map-focus logic, not anything BOR-specific.
+
+**Verified:** new script `test_map_zoom_persists_on_field_edit.mjs` (6 checks) confirms
+the ref exists and stays in sync, the effect's dependency list no longer includes
+`waypoints`, still correctly depends on `selectedWpIndex`/`speedMatchMode`/`isPlaying`/
+`currentLocationRange`, and reads the latest waypoints via the ref. Full regression
+suite: 208/208 passing (202 previous + 6 new). `npx vite build` succeeds. `npx eslint`
+on the changed file: clean (no new issues).
+
+**Not done yet — still investigating, not guessing:** Enda's other report on the same
+tour — the car staying stationary at BOR2c's trigger-radius edge until its audio
+finishes playing, when testing "3 subsegments" ending there. Checked the live data:
+BOR2c itself is `waypoint_role: "secondary"`, not `primary_start`, so the one known
+"freeze while primary_start audio plays" behaviour (built earlier, intentional) doesn't
+explain it on its own — needs the exact reproduction steps from Enda (which span/button
+was used) before proposing a fix, per his own rule against guessing.
+
+---
+
 ## 2026-09-18 (follow-up 210) — Main Interests opened up to Driving Tours
 **Scope:** Changed `components/admin/WalkEditor.jsx` only (one conditional gate + its
 comment). Frontend-only.
