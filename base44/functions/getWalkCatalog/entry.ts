@@ -141,7 +141,13 @@ export default async function(req) {
       //   4. give up ONLY if nothing is published in any language at all
       const otherClones = [...fam.clones].sort((a, b) =>
         (a.target_language || '').localeCompare(b.target_language || ''));
+      // Per Enda (2026-09-20): a narrator's English "clone" of an English tour is a second English
+      // version of the same tour, and it used to win over the master, so an admin testing the master
+      // was shown the old copy. For an ADMIN asking for English, the master (when it exists) now wins.
+      // Customers and every other language are unchanged.
+      const adminWantsMaster = isAdmin && fam.original && String(narrationLang).toLowerCase() === 'english';
       const active =
+        (adminWantsMaster ? fam.original : null) ||
         fam.clones.find(c => c.target_language === narrationLang) ||
         fam.original ||
         otherClones[0] ||
