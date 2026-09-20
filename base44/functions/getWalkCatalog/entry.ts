@@ -217,29 +217,6 @@ export default async function(req) {
       walks.push(out);
     }
 
-    // TEMPORARY DIAGNOSTIC (2026-09-20) - remove after the admin-visibility problem is solved.
-    try {
-      if (body.token && !isAdmin) {
-        let payloadKeys = null; let wpIdSeen = null; let genuine = null;
-        try {
-          genuine = await isTokenGenuine(body.token, Deno.env.get('WC_SITE_URL'));
-          const parts = String(body.token).split('.');
-          const pl = parts.length === 3 ? JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'))) : null;
-          payloadKeys = pl ? JSON.stringify(pl, (k, v) => (typeof v === 'string' && v.length > 40 ? v.slice(0, 8) + '…' : v)) : null;
-          wpIdSeen = pl?.data?.user?.id || pl?.user_id || pl?.sub || null;
-        } catch (e) { payloadKeys = 'decode error: ' + e.message; }
-        await base44.asServiceRole.entities.DebugCatalogLog.create({
-          note: JSON.stringify({
-            when: new Date().toISOString(), emailSeen: email || null, emailMatchedRow,
-            isAdmin, tokenGenuine: genuine, wpIdSeen, payloadShape: payloadKeys,
-            walksReturned: walks.length,
-            draftsReturned: walks.filter(w => w._is_draft_preview).length,
-            narrationLang,
-          }),
-        });
-      }
-    } catch { /* diagnostic must never affect the response */ }
-
     return Response.json({ walks });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
