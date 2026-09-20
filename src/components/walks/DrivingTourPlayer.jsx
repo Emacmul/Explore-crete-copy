@@ -23,10 +23,17 @@ function haversine(lat1, lng1, lat2, lng2) {
   return 2 * R_EARTH * Math.asin(Math.sqrt(a));
 }
 
-// The same stable per-waypoint key used everywhere below — segment_id when there is one,
-// falling back to name or raw coordinates so nothing ever collides or goes untracked.
+// The same stable per-waypoint key used everywhere below.
+//
+// FIXED 2026-09-20 (Enda's BOR3 road test): this used to be `wp.segment_id || wp.name`. But a
+// segment_id belongs to a whole SEGMENT ("BOR3" is shared by BOR3a-PS, BOR3b, BOR3c ... BOR3f - every
+// real tour stores it that way), so every stop of a segment got the SAME key. The moment the first
+// stop of a segment played, all the others counted as "already played" and never fired; the first two
+// stops made the whole of BOR1 "manual only"; and the tour counted as finished as soon as the first
+// stop of the last segment ended (which then stopped everything). Now each stop's key is its own:
+// segment + name + position.
 function wpKeyFor(wp) {
-  return wp.segment_id || wp.name || `${wp.lat},${wp.lng}`;
+  return `${wp.segment_id || ''}|${wp.name || ''}|${wp.lat},${wp.lng}`;
 }
 
 // "Last known position" tracking — per Enda: while driving, the app should quietly

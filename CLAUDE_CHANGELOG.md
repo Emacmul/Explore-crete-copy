@@ -85,6 +85,26 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-20 (follow-up 238) — ROOT CAUSE of the BOR3 road test: every stop of a segment shared ONE key
+
+Found by running the real Battle of the Rivers data (116 waypoints, 4164-point route) through the real player in a test
+page. In the real data a `segment_id` ("BOR3") is shared by ALL stops of that segment (BOR3a-PS ... BOR3f). The player's
+`wpKeyFor()` used `segment_id` as each stop's identity, so:
+- once BOR3a played, BOR3b-f counted as "already played" and never fired;
+- the first two stops (BOR1a, BOR1b) made ALL of BOR1 "manual only";
+- the tour counted as FINISHED when the first stop of the last segment ended, which stops everything ("Return to Home").
+That is "played a little, then nothing, and could not get it going again".
+Fix: `wpKeyFor()` in `DrivingTourPlayer.jsx` is now `segment_id|name|lat,lng` (unique per stop). The Audit Log also names
+stops by name now (`tourLogService.js`). Already-played memory saved on phones under the old keys is simply ignored.
+Verified with the real BOR data: (1) Test from BOR3, parked 40 s then drive: BOR3a-f all play once, in order; (2) noisy GPS
+(+-15 m, accuracy 25 m) and 12 km/h through Prasses: same; (3) parked 3 min: same; (4) arriving already driving: same;
+(5) whole route BOR1 -> BOR3f from a normal "Start the tour": BOR1a plays on Start, BOR1c ... BOR3f play automatically in order,
+tour completes only after BOR3f. No off-route or GPS alerts in any run. All earlier tests still pass.
+NOT checked (cannot be from here): the real length of each recording, and the phone's real GPS.
+NOTE (not changed): `WalkDetail.jsx` `waypointKey()` (the "you were here" ticks for Walks) also uses segment_id.
+
+---
+
 ## 2026-09-20 (follow-up 237) — Admin test drives now save their Audit Log to the server by themselves
 
 Per Enda: he cannot open/export the Audit Log while driving, and the log only lives in the phone's memory.

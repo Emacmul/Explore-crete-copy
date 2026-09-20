@@ -78,7 +78,7 @@ export function logGuardChange(holding, speedKmh) {
 
 export function logTriggerCheck(waypoint, distance, withinRadius, bearingInfo, alreadyTriggered, result, accuracy) {
   addEntry('trigger_check', {
-    waypointId: waypoint.segment_id || waypoint.name || 'unnamed',
+    waypointId: waypoint.name || waypoint.segment_id || 'unnamed',
     waypointRole: waypoint.waypoint_role,
     distance: Math.round(distance),
     triggerRadius: waypoint.trigger_radius_m,
@@ -94,14 +94,14 @@ export function logTriggerCheck(waypoint, distance, withinRadius, bearingInfo, a
 
 export function logAudioPlay(waypoint, audioUrl) {
   addEntry('audio_play', {
-    waypointId: waypoint.segment_id || waypoint.name || 'unnamed',
+    waypointId: waypoint.name || waypoint.segment_id || 'unnamed',
     audioUrl,
   });
 }
 
 export function logAudioSkip(waypoint, reason) {
   addEntry('audio_skip', {
-    waypointId: waypoint.segment_id || waypoint.name || 'unnamed',
+    waypointId: waypoint.name || waypoint.segment_id || 'unnamed',
     reason,
   });
 }
@@ -115,8 +115,8 @@ export function logAudioSkip(waypoint, reason) {
 // log: it wasn't skipped, it was waiting its turn behind another clip.
 export function logAudioQueued(waypoint, behindWaypoint) {
   addEntry('audio_queued', {
-    waypointId: waypoint.segment_id || waypoint.name || 'unnamed',
-    behindWaypointId: behindWaypoint.segment_id || behindWaypoint.name || 'unnamed',
+    waypointId: waypoint.name || waypoint.segment_id || 'unnamed',
+    behindWaypointId: behindWaypoint.name || behindWaypoint.segment_id || 'unnamed',
   });
 }
 
@@ -129,7 +129,7 @@ export function logWarning(message) {
 // obvious this one wasn't GPS-triggered, in case that's ever relevant to diagnosing a report.
 export function logManualPlay(waypoint) {
   addEntry('manual_play', {
-    waypointId: waypoint.segment_id || waypoint.name || 'unnamed',
+    waypointId: waypoint.name || waypoint.segment_id || 'unnamed',
   });
 }
 
