@@ -85,6 +85,20 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-20 (follow-up 228) — Parse & Generate: failed parts are named, and "Try again" replaces Build & Play
+
+Per Enda: "Segment 12 failed: ... took too long" meant nothing to him, and Build & Play could still
+be pressed with parts missing. NarrationTtsEditor.jsx: failed parts are collected in failedParts
+({id, preview}); the red message now quotes the opening words of each failed part; the listen box
+shows a "Try again" button INSTEAD of Build & Play (handleBuildAndPlay also refuses while any part
+is missing). handleRetryFailedParts regenerates ONLY those parts and merges the new clips into
+segmentAudios under their own ids, so Build & Play and the final combined file (built from
+segmentAudios in script order; finalize also has its own onRegenerateAudio safety net) contain
+everything. No failure = unchanged behaviour. Verified with the real component + a stubbed TTS call
+that fails one part: Try again shown, only that part re-requested, then Build & Play appears.
+The per-part / per-line save messages (already "just try again", no segment numbers) are unchanged.
+No base44/functions files changed.
+
 ## 2026-09-20 (follow-up 227) — Marking a waypoint Done in Narrate & Simulate now replaces its script in the depository
 
 Per Enda: an admin's rewritten English script never reached the shared depository from this

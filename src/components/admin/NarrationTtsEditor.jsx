@@ -10,7 +10,7 @@ import { parseScript, rebuildScript, countCharacters, countBreaks } from '@/lib/
 import TtsSegmentCard from './TtsSegmentCard';
 import TranslationPanel from './TranslationPanel';
 import AudioPlayer from '@/components/ui/AudioPlayer';
-import { Loader2, Sparkles, Pause, Play, Download, Braces, FileText, Square, CheckCircle2, Gauge } from 'lucide-react';
+import { Loader2, Sparkles, Pause, Play, Download, Braces, FileText, Square, CheckCircle2, Gauge, RefreshCw } from 'lucide-react';
 import { downloadScriptAsDocx } from '@/lib/docxExporter';
 import { useNarratorApiKeys } from '@/lib/useNarratorApiKeys';
 import { getFnErrorMessage, withTimeout } from '@/lib/utils';
@@ -47,6 +47,20 @@ const MAX_CHARS = 5000;
 // generous but FINITE ceiling here means a stalled request always either finishes or
 // fails with a clear, recoverable error, never hangs forever.
 const TTS_CALL_TIMEOUT_MS = 30000;
+
+// Opening words of a segment, so a failure message can name the part in words a narrator
+// recognises instead of an internal segment number.
+function describeSegmentStart(content) {
+  const words = String(content || '').replace(/<[^>]*>/g, ' ').trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return 'a part of the script';
+  return `${words.slice(0, 7).join(' ')}${words.length > 7 ? '...' : ''}`;
+}
+
+function failedPartsMessage(failed) {
+  const shown = failed.slice(0, 3).map((f) => `"${f.preview}"`).join(', ');
+  const more = failed.length > 3 ? ` and ${failed.length - 3} more` : '';
+  return `The audio could not be made for ${failed.length === 1 ? 'the part starting' : 'these parts, starting'} ${shown}${more}. This is usually a slow connection. Press Try again - the parts that worked are kept.`;
+}
 
 // How many raw pieces (a narration line and a pause each count as ONE piece toward
 // this) a single box may hold before a new one starts — a CEILING, never a target: a
@@ -225,6 +239,12 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   const [selectedVoice, setSelectedVoice] = useState('NEUTRAL');
   const [selectedLanguage, setSelectedLanguage] = useState(fixedLanguage || 'English');
   const [error, setError] = useState('');
+  // Per Enda (2026-09-20): when Parse & Generate could not make the audio for some parts of the
+  // script (timeout etc.), the old red message said "Segment 12 failed" (a meaningless internal
+  // number) and Build & Play could still be pressed. Now the failed parts are remembered here
+  // ({ id, preview } - preview is the opening words, so a narrator can recognise the part) and a
+  // "Try again" button replaces Build & Play until every part has its audio.
+  const [failedParts, setFailedParts] = useState([]);
   const [segments, setSegments] = useState(null);
   const [segmentAudios, setSegmentAudios] = useState({});
   const [generatingSegmentId, setGeneratingSegmentId] = useState(null);
@@ -914,6 +934,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     }
 
     setError('');
+    setFailedParts([]);
     setDebugLog([]);
     const parsed = parseScript(script);
     setSegments(parsed);
@@ -954,6 +975,8 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     const languageCode = LANG_TO_CODE[selectedLanguage] || 'en-US';
     const audios = {};
 
+    const failed = [];
+    setFailedParts([]);
     for (const seg of parsed) {
       if (seg.type !== 'text') continue;
       setGeneratingSegmentId(seg.id);
@@ -977,16 +1000,21 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
           addLog(`Segment ${seg.id}: OK`);
         } else {
           addLog(`Segment ${seg.id}: no URL returned`);
+          failed.push({ id: seg.id, preview: describeSegmentStart(seg.content) });
         }
       } catch (err) {
         const msg = getFnErrorMessage(err);
         addLog(`Segment ${seg.id}: ERROR — ${msg}`);
-        setError(`Segment ${seg.id} failed: ${msg}`);
+        failed.push({ id: seg.id, preview: describeSegmentStart(seg.content) });
       }
     }
 
     setSegmentAudios(audios);
     setGeneratingSegmentId(null);
+    if (failed.length > 0) {
+      setFailedParts(failed);
+      setError(failedPartsMessage(failed));
+    }
     addLog(`Done. ${Object.keys(audios).length} segment(s) generated.`);
 
     // Per Enda's follow-up 206 report: "Save & Listen Again" (and plain "Parse &
@@ -1007,6 +1035,43 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     // since the TEXT itself (as opposed to its audio) is what narration_script stores,
     // and that's already correct in `form` by this point regardless.
     onAutoSave?.();
+  };
+
+  // "Try again" after a Parse & Generate where some parts failed: regenerates ONLY those
+  // parts and puts each new clip back under its own segment id, so Build & Play and the final
+  // combined file (both built from segmentAudios in script order) then contain every part.
+  const handleRetryFailedParts = async () => {
+    if (failedParts.length === 0 || !segments || generatingSegmentId !== null) return;
+    setError('');
+    const languageCode = LANG_TO_CODE[selectedLanguage] || 'en-US';
+    const stillFailed = [];
+    const fresh = {};
+    for (const part of failedParts) {
+      const seg = segments.find((s) => s.id === part.id);
+      if (!seg) continue;
+      setGeneratingSegmentId(seg.id);
+      try {
+        const response = await withTimeout(
+          base44.functions.invoke('generateTts', {
+            text: seg.content,
+            gender: selectedVoice,
+            language_code: languageCode,
+            apiKey: apiKeys.google_tts_api_key,
+            ...getNarratorAuthPayload(),
+          }),
+          TTS_CALL_TIMEOUT_MS,
+          'Generating this part\'s audio took too long (check your connection) - press Try again.'
+        );
+        if (response.data?.url) fresh[seg.id] = response.data.url;
+        else stillFailed.push(part);
+      } catch {
+        stillFailed.push(part);
+      }
+    }
+    setGeneratingSegmentId(null);
+    if (Object.keys(fresh).length > 0) setSegmentAudios((prev) => ({ ...prev, ...fresh }));
+    setFailedParts(stillFailed);
+    if (stillFailed.length > 0) setError(failedPartsMessage(stillFailed));
   };
 
   const handleDurationChange = (segmentId, newDuration) => {
@@ -1244,7 +1309,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   // failed pass leaves reviewPhase alone (still 'listen'), ready to press Build & Play
   // again from the top.
   const handleBuildAndPlay = async () => {
-    if (reviewPhase !== 'listen' || passLocked || generatingCombined || !hasSegmentAudios || !subsections.length) return;
+    if (reviewPhase !== 'listen' || passLocked || generatingCombined || !hasSegmentAudios || !subsections.length || failedParts.length > 0) return;
 
     // See the comment on playSegment above — a lingering single-line preview clip
     // doesn't touch `playing`, so it wouldn't otherwise be stopped just because this
@@ -1775,6 +1840,8 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
               <p className="text-sm text-slate-300 text-center">
                 {stillGeneratingAudio
                   ? "Still generating audio for every line. When it is ready, the button below will change to Build & Play. Clicking it before then won't do anything, so there is no need to keep clicking it."
+                  : failedParts.length > 0
+                    ? "Some of the audio could not be made. Press Try again. When every part is ready, this button changes to Build & Play."
                   : listenPassCount === 0
                     ? "Listen to the whole part, start to finish, before you can make any changes."
                     : "Listen to your edits, start to finish, before you can edit again."}
@@ -1788,6 +1855,17 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                     <Square className="w-4 h-4" /> Stop
                   </Button>
                 </>
+              ) : failedParts.length > 0 && !stillGeneratingAudio ? (
+                // Some parts have no audio yet: Build & Play is replaced by Try again, which
+                // regenerates only those parts (see handleRetryFailedParts).
+                <Button
+                  type="button"
+                  onClick={handleRetryFailedParts}
+                  disabled={passLocked}
+                  className="w-full bg-purple-600 hover:bg-purple-700 gap-2 text-white"
+                >
+                  <RefreshCw className="w-4 h-4" /> Try again
+                </Button>
               ) : (
                 <Button
                   type="button"
