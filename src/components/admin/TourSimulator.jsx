@@ -1045,7 +1045,9 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     setSelectedWpIndex(targetIndex);
     const boundary = locationRangeBoundary(targetIndex, span);
     const endIndex = boundary ? boundary.waypointIndex : waypoints.length;
-    const locationWaypoints = waypoints.slice(targetIndex, endIndex);
+    // Includes the NEXT location's Start point (BORx+1 a-PS): the view is "from this location's
+    // Start to the next location's Start", so the whole stretch of road is on screen.
+    const locationWaypoints = waypoints.slice(targetIndex, Math.min(endIndex + 1, waypoints.length));
     const bounds = locationWaypoints.filter(wp => wp.lat && wp.lng).map(wp => [wp.lat, wp.lng]);
     if (bounds.length > 0) setMapFocusBounds(bounds);
     setJumpNonce(n => n + 1);
@@ -1197,7 +1199,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
       return;
     }
     if (!currentLocationRange) return;
-    const locationWaypoints = wps.slice(currentLocationRange.startIndex, currentLocationRange.endIndex);
+    const locationWaypoints = wps.slice(currentLocationRange.startIndex, Math.min(currentLocationRange.endIndex + 1, wps.length));
     const bounds = locationWaypoints.filter(wp => wp.lat && wp.lng).map(wp => [wp.lat, wp.lng]);
     if (bounds.length > 0) setMapFocusBounds(bounds);
     lastFramedLocationRef.current = locStart;

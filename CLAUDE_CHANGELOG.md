@@ -85,6 +85,16 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-20 (follow-up 226) — Jump/first view of a location: frame exactly BORx a-PS to BORx+1 a-PS, tightly
+
+Per Enda (screenshots): the map was still ~2-3x too wide. Cause: Leaflet fits only to WHOLE
+zoom levels (zoomSnap 1), so a location that needs 1.6x zoom was shown at 1x. Fixes:
+TourSimulatorMap.jsx MapContainer zoomSnap={0.1}; first-fit padding 60 -> 30.
+TourSimulator.jsx: the bounds for jumpToLocation and the "whole location" focus effect now
+include the NEXT location's Start point (BORx+1 a-PS), i.e. exactly Start-to-next-Start.
+Verified with real BOR data: BOR3a-PS down to BOR4a-PS fills the map height.
+No base44/functions files changed.
+
 ## 2026-09-20 (follow-up 225) — REAL cause of "Jump to BOR3 shows BOR1": sequential waypoint lock applied to admins
 
 Per Enda: Jump to BOR3 still zoomed on BOR1. Reproduced with real BOR data once one earlier

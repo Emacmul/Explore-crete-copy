@@ -113,7 +113,7 @@ function FocusBounds({ focusBounds, userZoomedRef, locationKey, framedKeyRef }) 
           // animate: false — Leaflet silently DROPS a zoom request that arrives while an
           // earlier animated zoom is still running (e.g. the opening whole-trail fit in
           // FitBounds a moment earlier), so an animated fit here could be lost.
-          map.fitBounds(targetBounds, { padding: [60, 60], maxZoom: 17, animate: false });
+          map.fitBounds(targetBounds, { padding: [30, 30], maxZoom: 17, animate: false });
           // Per Enda's report (2026-09-20): after "Jump to location" the map showed
           // roughly three locations instead of just the one. The page layout around the map
           // (the editor next to it) can still change size AFTER this first fit, and Leaflet
@@ -127,7 +127,7 @@ function FocusBounds({ focusBounds, userZoomedRef, locationKey, framedKeyRef }) 
           const refit = () => {
             if (userZoomedRef.current) return;
             map.invalidateSize();
-            map.fitBounds(targetBounds, { padding: [60, 60], maxZoom: 17, animate: false });
+            map.fitBounds(targetBounds, { padding: [30, 30], maxZoom: 17, animate: false });
           };
           let ro = null;
           if (typeof ResizeObserver !== 'undefined') {
@@ -350,8 +350,10 @@ export default function TourSimulatorMap({ trailPath, waypoints, triggered, curr
   // Which showing of which location was last framed by FocusBounds (see there).
   const framedKeyRef = useRef(null);
 
+  // zoomSnap 0.1 below: Leaflet normally only fits to WHOLE zoom levels, which can leave a
+  // location showing up to twice as wide as needed (Enda, 2026-09-20). Fine steps fit it tightly.
   return (
-    <MapContainer center={center} zoom={13} className="w-full h-full" style={{ minHeight: '350px' }}>
+    <MapContainer center={center} zoom={13} zoomSnap={0.1} className="w-full h-full" style={{ minHeight: '350px' }}>
       <TileLayer
         url="https://tile.openstreetmap.de/{z}/{x}/{y}.png"
         attribution='&copy; OpenStreetMap contributors'
