@@ -9,11 +9,17 @@
  *    a queue does not count), and ends after 4 consecutive fixes faster than 5 km/h.
  *  - While holding, NO stop starts automatically. The moment the car really moves again a stop
  *    whose circle you are still inside starts as normal.
- *  - Fixes with poor accuracy or no speed reading change nothing.
+ *  - Fixes with poor accuracy or no speed reading change nothing. Neither does standing still
+ *    (under 1 km/h): a parked car is not a walker.
  * Pure logic, no browser dependencies.
  */
 export const WALKING_GUARD_SETTINGS = {
   WALK_MAX_KMH: 5,
+  // Below this the phone is simply standing still (a parked car, waiting at the start of a
+  // leg). Standing still is NOT walking: it must never switch the guard on, or a driver
+  // sitting at a stop's start point would hear nothing until they drove off (Enda's BOR3
+  // road test, 2026-09-20). A stop that is already holding stays held while standing still.
+  STOPPED_KMH: 1,
   ENTER_MS: 20000,
   MIN_SAMPLES: 3,
   RELEASE_FIXES: 4,
@@ -36,6 +42,8 @@ export function createWalkingGuard(settings = {}) {
         && (accuracyM == null || !Number.isFinite(accuracyM) || accuracyM <= s.MAX_ACCURACY_M);
       if (!good) return;
       everMeasured = true;
+      // Standing still says nothing about walking or driving - leave everything as it is.
+      if (speedKmh < s.STOPPED_KMH) return;
       const slow = speedKmh <= s.WALK_MAX_KMH;
       win.push({ t: nowMs, slow });
       win = win.filter((w) => nowMs - w.t <= s.ENTER_MS);

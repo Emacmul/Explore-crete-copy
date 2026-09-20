@@ -1069,6 +1069,16 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
       };
       utterance.onend = undoOnce;
       utterance.onerror = undoOnce;
+      // Safety net (Enda's BOR3 road test, 2026-09-20: narration stopped after ~3 seconds and never
+      // came back). Narration is only paused while a spoken alert talks, and resumes when the
+      // browser says the alert has ended. Some phones never send that "ended" signal, which would
+      // leave the narration paused for good. So narration always resumes after at most this long.
+      const maxDuckMs = Math.min(20000, 4000 + text.length * 100);
+      setTimeout(() => {
+        if (!ducked) return;
+        tourLogService.logWarning('Spoken alert never reported finishing - resuming narration anyway');
+        undoOnce();
+      }, maxDuckMs);
       window.speechSynthesis.speak(utterance);
       onSpoken?.(text);
     } catch (err) {

@@ -85,6 +85,36 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-20 (follow-up 236) — BOR3 road test: parked car counted as "walking", and narration could stay paused for good
+
+Per Enda's road test of BOR3 (admin draft preview, "Test from location..."): nothing played at BOR3a-PS, after ~3 min
+it played about 3 seconds and stopped; a second try played 3 seconds of a different stop, then nothing.
+Found by reading the code and reproducing in a test page (not guessed):
+1. `lib/walkingGuard.js`: a phone standing still (0 km/h) counted as "walking pace", so after 20 s parked at the start of
+   a stop the guard held every stop until the car drove off (then "played late"). New `STOPPED_KMH: 1`: standing still
+   under 1 km/h is ignored (neither walking nor driving). Crawling 1-5 km/h still holds, as before; a walker who stops
+   to take a photo stays held; a parked car never holds.
+2. `DrivingTourPlayer.jsx` `speak()`: a spoken alert pauses the narration and resumes it only when the browser says the
+   alert has ended. Some phones never send that signal, so the narration stayed paused for good. Now it always resumes
+   after at most 4 s + 0.1 s per letter (max 20 s). Reproduced (stays paused) and fixed in the test page.
+   NOT proven to be what happened on Enda's phone - the phone's own Audit Log would say (see 3).
+3. `TourDebugLog.jsx`: the Audit Log now explains held stops in words (walking pace / earlier stop not played / off the
+   route / played late) and shows spoken alerts, so the next road test can be read.
+Tests: walking guard (21 checks), player test page (parked at start plays, crawl holds, late play, no replay, reload,
+skip-ahead, walker never plays, alert never reporting finish).
+
+---
+
+## 2026-09-20 (follow-up 235) — BACKEND: admin asking for English now sees the master tour, not a narrator's English clone
+
+Per Enda: on the phone the DriveAbouts list showed "BOR-English" (the narrator clone from 18 Sept), not the master BOR
+he needs to test. Cause: getWalkCatalog picks a clone whose target_language equals the narration language BEFORE the
+original, so an English clone of an English tour hid the master. Now, only for an admin with English narration, the
+master wins when it exists. Customers and other languages unchanged. Temporary diagnostic (follow-up 233 debugging)
+removed again. Empty entity `DebugCatalogLog` still exists in Base44 and can be deleted there.
+
+---
+
 ## 2026-09-20 (follow-up 234) — "Saved walks" box now shows only the tab you are on
 
 Per Enda: a downloaded Walk ("Genna Route of Faith") appeared as "1 saved walk" under DriveAbouts, which was confusing.

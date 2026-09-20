@@ -50,6 +50,16 @@ function entryLabel(entry) {
         parts.push(`✗ already triggered`);
       } else if (d.result === 'skip_no_audio') {
         parts.push(`✗ no audio URL`);
+      } else if (d.result === 'skip_walking') {
+        parts.push(`✗ held: moving at walking pace`);
+      } else if (d.result === 'skip_order') {
+        parts.push(`✗ held: an earlier stop has not played yet`);
+      } else if (d.result === 'skip_off_route') {
+        parts.push(`✗ held: off the route`);
+      } else if (d.result === 'fire_late') {
+        parts.push(`✓ played late (was held at walking pace)`);
+      } else {
+        parts.push(`${d.result}`);
       }
       return parts.join(' · ');
     }
@@ -61,6 +71,8 @@ function entryLabel(entry) {
       return `⏳ ${d.waypointId} — waiting behind ${d.behindWaypointId}`;
     case 'warning':
       return d.message;
+    case 'spoken_alert':
+      return `🔊 spoken alert (${d.kind || ''}): ${d.text || ''}`;
     default:
       return entry.type;
   }
