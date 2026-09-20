@@ -85,6 +85,29 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-20 (follow-up 234) — "Saved walks" box now shows only the tab you are on
+
+Per Enda: a downloaded Walk ("Genna Route of Faith") appeared as "1 saved walk" under DriveAbouts, which was confusing.
+`OfflineWalksBanner` now takes `tourCategoryCode` (passed from `WalkList`) and lists only downloads whose `tour_category`
+matches the current tab (same rule Home uses). Files: `offline/OfflineWalksBanner.jsx`, `walks/WalkList.jsx`.
+Note: while offline with no tab context the box still lists everything (no code passed = no filter).
+
+---
+
+## 2026-09-20 (follow-up 233) — BACKEND: getWalkCatalog now finds an admin by WordPress user id too (draft preview was empty)
+
+Per Enda: on his phone, the DriveAbouts list showed "0 of 0" although BOR/TestTour are drafts and he is admin
+(the Admin shield button showed). Cause found in the code: ensureAppUserOnboarding finds the AppUser by WordPress
+user id first (enda@magicalcrete.com, user_id 1, role admin), but getWalkCatalog identified the caller ONLY by the
+email inside the token, so a token without an email (or with one that matches no AppUser row) was treated as a
+customer and all drafts were withheld. Fix, applied directly in Base44 (base44/functions/getWalkCatalog/entry.ts;
+checkpoint 6aafc763a14600f13ea088c4, deploy requested afterwards): if the email matched no AppUser row and the token
+is confirmed genuine by WordPress (isTokenGenuine), look the AppUser up by the user id in the token; admin or
+super_admin => draft preview as before. Fails closed on any error. Ordinary customers whose email matches their row
+skip the extra check (no added WordPress call). To undo: restore the checkpoint before 6aafc763... or delete the added
+block. NOTE for the repo copy: base44/functions/getWalkCatalog/entry.ts differs from any older local copy.
+This was a hypothesis from the code, not proven from the phone's token - confirm BOR now appears for Enda.
+
 ## 2026-09-20 (follow-up 232) — "Test from location..." in the customer tour player (admin draft preview only)
 
 Per Enda: he wants to drive just BOR3 (any location, any tour) with the real phone player without making

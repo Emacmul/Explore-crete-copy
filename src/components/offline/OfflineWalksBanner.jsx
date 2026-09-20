@@ -4,13 +4,19 @@ import { useOfflineWalks } from './useOfflineWalks';
 import WalkCard from '../walks/WalkCard';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 
-export default function OfflineWalksBanner({ onWalkSelect, selectedWalk }) {
+export default function OfflineWalksBanner({ onWalkSelect, selectedWalk, tourCategoryCode }) {
   const { t } = useLanguage();
   // Reads through the hook (not the raw storage functions) specifically because the hook
   // filters to the SIGNED-IN account's own downloads — see useOfflineWalks.jsx's reload()
   // (audit finding U-04, 2026-09-09 review). A second account on a shared device must never
   // see this list populated with someone else's paid offline tours.
-  const { offlineWalks } = useOfflineWalks();
+  const { offlineWalks: allOfflineWalks } = useOfflineWalks();
+  // Per Enda (2026-09-20): this box sat on every tab, so a downloaded Walk showed up under
+  // DriveAbouts and confused everyone. It now lists only the downloads of the tab you are on
+  // (same rule Home uses for the main list: tour_category equals the chosen category).
+  const offlineWalks = tourCategoryCode
+    ? allOfflineWalks.filter(w => w.tour_category === tourCategoryCode)
+    : allOfflineWalks;
   const [expanded, setExpanded] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 

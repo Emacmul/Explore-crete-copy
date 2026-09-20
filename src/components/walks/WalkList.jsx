@@ -292,7 +292,7 @@ export default function WalkList({ walks, selectedWalk, onWalkSelect, searchQuer
       {/* Walk list */}
       <ScrollArea className="flex-1">
         <div className="p-3 space-y-2">
-          <OfflineWalksBanner onWalkSelect={onWalkSelect} selectedWalk={selectedWalk} />
+          <OfflineWalksBanner onWalkSelect={onWalkSelect} selectedWalk={selectedWalk} tourCategoryCode={tourCategoryCode} />
 
           {pagedWalks.length > 0 ? (
             pagedWalks.map(walk => (
