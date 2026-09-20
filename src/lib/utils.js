@@ -38,6 +38,11 @@ const KNOWN_FN_ERROR_PATTERNS = [
   /no translations? were returned/i,
   /translation returned no text/i,
   /took longer than .* with no response/i,
+  // Per Enda's report (2026-09-20): this app's OWN plain-English timeout messages (every
+  // withTimeout(...) message in the narrator screens says "... took too long ...") were not
+  // recognised here, so they were wrapped in the generic "temporary hiccup ... tell Enda"
+  // text below, which says nothing a narrator can act on.
+  /took too long/i,
   /could not (reach|download|check)/i,
   /does not look like a valid/i,
   /too large/i,

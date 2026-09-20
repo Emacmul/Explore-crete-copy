@@ -180,6 +180,15 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
   // (retryable via reloadKeys, wired to a visible Retry button below) rather than by
   // adding a key that may already be there.
   const [keyCheckFailed, setKeyCheckFailed] = useState(false);
+  // Per Enda's report (2026-09-20): an error that only says what went wrong, with nothing
+  // to click, leaves a narrator stuck ("telling Enda" fixes nothing). retryInfo remembers
+  // WHICH action failed ('load' | 'preview' | 'save') together with the exact error text
+  // it produced; the red error box below shows a one-click retry button only while that
+  // same text is still the one on screen — so any other message, or clearing the error,
+  // automatically hides the button again, with no other setError call needing to know.
+  // loadAttempt is bumped by "Reload audio" so the audio-loading effect runs again.
+  const [retryInfo, setRetryInfo] = useState(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   // Per Anoushka/Enda: removing a pause entirely used to mean leaving this screen,
   // going back to the Waypoints tab, scrolling to the big combined script box there,
   // and deleting the <break> tag by hand — slow, easy to delete the WRONG one once
@@ -342,11 +351,15 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
               ...getNarratorAuthPayload(),
             }),
             TTS_CALL_TIMEOUT_MS,
-            "Loading this waypoint's audio for editing took too long — try re-selecting it."
+            "Loading this waypoint's audio took too long. Click Reload audio to try again."
           );
           if (response.data?.url) audios[seg.id] = response.data.url;
         } catch (err) {
-          if (!cancelled) setError(`Could not load audio for editing: ${getFnErrorMessage(err)}`);
+          if (!cancelled) {
+            const msg = `Could not load audio for editing: ${getFnErrorMessage(err)}`;
+            setError(msg);
+            setRetryInfo({ action: 'load', message: msg });
+          }
         }
       }
       if (!cancelled) {
@@ -363,7 +376,7 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
       }
     })();
     return () => { cancelled = true; };
-  }, [keysLoading, keysLoadedOk, keysError, apiKeys.google_tts_api_key, script, fixedLanguage]);
+  }, [keysLoading, keysLoadedOk, keysError, apiKeys.google_tts_api_key, script, fixedLanguage, loadAttempt]);
 
   // Undoes the guard above so the effect runs again — used only for the "the key check
   // itself failed" case (keyCheckFailed), never for "no key saved" (adding a key
@@ -376,6 +389,16 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
     setKeyCheckFailed(false);
     setError('');
     reloadKeys();
+  };
+
+  // "Reload audio" — same idea as handleRetryKeyCheck above, for a failed audio LOAD:
+  // resets the once-per-mount guard and bumps loadAttempt (a dependency of the loading
+  // effect), so that effect runs its whole load again from scratch.
+  const handleReloadAudio = () => {
+    startedRef.current = false;
+    setError('');
+    setRetryInfo(null);
+    setLoadAttempt((n) => n + 1);
   };
 
   // Revoke whatever live-preview blob URL this component created, on unmount (switching
@@ -574,7 +597,9 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
       setTestedSnapshot(JSON.stringify(normalized));
       onTestSubsegment(blobUrl, testSpan);
     } catch (err) {
-      setError(`Could not build a preview: ${getFnErrorMessage(err)}`);
+      const msg = `Could not build a preview: ${getFnErrorMessage(err)}`;
+      setError(msg);
+      setRetryInfo({ action: 'preview', message: msg });
     }
     setTesting(false);
   };
@@ -643,7 +668,7 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
             ...getNarratorAuthPayload(),
           }),
           TTS_CALL_TIMEOUT_MS * 2,
-          'Saving the updated audio took too long (check your connection) — click Save again to retry.'
+          'Saving the updated audio took too long (check your connection). Click Try again.'
         );
         if (!response.data?.url) throw new Error('Upload did not return a file URL.');
         // One atomic update — per follow-up 53's own fix (see CLAUDE_CHANGELOG.md), three
@@ -668,7 +693,9 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
         nextMarkDone = pendingMarkDoneRef.current;
       }
     } catch (err) {
-      setError(`Could not save: ${getFnErrorMessage(err)}`);
+      const msg = `Could not save: ${getFnErrorMessage(err)}`;
+      setError(msg);
+      setRetryInfo({ action: 'save', message: msg });
       hadError = true;
     } finally {
       saveInFlightRef.current = false;
@@ -715,8 +742,26 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
           <AlertTriangle className="w-4 h-4 shrink-0" />
           <span className="flex-1">{error}</span>
           {keyCheckFailed && (
-            <Button size="sm" variant="outline" onClick={handleRetryKeyCheck} className="border-red-500 text-red-200 hover:bg-red-900/40 shrink-0">
+            <Button size="sm" variant="outline" onClick={handleRetryKeyCheck} className="bg-red-900/30 border-red-500 text-red-200 hover:bg-red-900/50 shrink-0">
               Retry
+            </Button>
+          )}
+          {!keyCheckFailed && retryInfo && retryInfo.message === error && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={loading || testing || saving}
+              onClick={() => {
+                const action = retryInfo.action;
+                setError('');
+                setRetryInfo(null);
+                if (action === 'load') handleReloadAudio();
+                else if (action === 'preview') handleTest();
+                else if (action === 'save') runSave({ markDone: lastSaveMarkDoneRef.current });
+              }}
+              className="bg-red-900/30 border-red-500 text-red-200 hover:bg-red-900/50 shrink-0"
+            >
+              {retryInfo.action === 'load' ? 'Reload audio' : 'Try again'}
             </Button>
           )}
         </div>

@@ -85,6 +85,78 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-20 (follow-up 222) — Narrators can't use "Jump to location…" until every waypoint in the tour is Done
+Scope: `src/components/admin/TourSimulator.jsx` — frontend only, no redeploy needed.
+
+**Per Enda's report:** the tab opens on the first unmarked waypoint (e.g. in BOR2, greyed out
+because one waypoint isn't Done), but a Narrator could still use "Jump to location…" to go to
+a finished location (BOR1) and then had no way back to the unmarked waypoint or its location.
+A Narrator must not be able to ignore the unfinished waypoint: they continue where they left
+off, in sequence, moving on only by marking each waypoint Done. Jump is only for once
+everything is finished. Admins are NOT restricted (they can create tours, have the Waypoints
+tab, and need to move between finished and unfinished points).
+
+**Investigated first:** `locationTargets` offered every fully-Done location regardless of
+whether other locations were unfinished. The tab already opens on the first not-Done waypoint
+(`selectedWpIndex` initializer) and the waypoint dropdown already locks every waypoint after
+the first unfinished one (`lockedWpIndexes`), so only Jump was the hole.
+
+**What changed:** new `narratorJumpLocked = isNarrator && any waypoint not Done`. While true:
+the "Jump 1 location / 2 / 3 in a row" select and the "Jump to location…" dropdown + Jump
+button are not shown; an amber note appears instead ("Jump to location unlocks once every
+waypoint is marked Done. Continue with <first unfinished location>, in order."); the blue
+"valid Jump start" rings in the Progress row are hidden; and `jumpToLocation` itself returns
+immediately as a second safety catch. `isNarrator` is `userRole === 'narrator'` in
+`WalkEditor.jsx` (narrators have no Waypoints tab).
+
+**Verified:** `esbuild` parses the file. Test page running the REAL TourSimulator.jsx (3
+locations; location 1 done, 2 partly done, 3 not done; then everything done), 4 cases:
+narrator + unfinished = no Jump controls, note names LOC2, no rings; admin + unfinished =
+Jump controls and ring present as before; narrator + all done = Jump controls back (3
+rings); admin + all done = unchanged. No page errors. Not tested inside the live app.
+
+---
+
+## 2026-09-20 (follow-up 221) — Narrator errors now come with a one-click retry button, and our own "took too long" messages are no longer wrapped in "tell Enda"
+Scope: `src/components/admin/WaypointPaceEditor.jsx`, `src/lib/utils.js` — frontend only, no redeploy needed.
+
+**Per Enda's report:** "Could not load audio for editing: This looks like a temporary hiccup
+talking to the app's own server ... tell Enda" tells the narrator what is wrong but gives them
+nothing to do about it. Narrators need a reload button next to the error.
+
+**Investigated first:** two separate faults. (1) `humanizeFnError` in `utils.js` did not
+recognise this app's own plain timeout messages ("... took too long ..."), so they fell through
+to the generic "temporary hiccup ... tell Enda" wrapper. (2) In `WaypointPaceEditor.jsx` only one
+failure (the API-key check) had a retry button; a failed audio load, preview or save had none.
+All the app's own `withTimeout` messages that say "took too long" are already plain English, so
+recognising the phrase is safe (also fixes the same wrapping in `NarrationTtsEditor.jsx`).
+
+**What changed:**
+- `utils.js`: added `/took too long/i` to `KNOWN_FN_ERROR_PATTERNS`.
+- `WaypointPaceEditor.jsx`: `retryInfo` remembers which action failed (load / preview / save)
+  plus the exact error text; the red error box shows a button only while that same text is on
+  screen. Load failure: "Reload audio" (re-runs the whole audio load via `loadAttempt` +
+  `handleReloadAudio`). Preview failure and save failure: "Try again" (re-runs `handleTest` /
+  `runSave({ markDone: lastSaveMarkDoneRef.current })`, so a failed "Mark segment as done"
+  replays as such). Buttons are disabled while a load/test/save is running. Reworded: load
+  timeout now says "Loading this waypoint's audio took too long. Click Reload audio to try
+  again."; save timeout says "... Click Try again." The existing key-check "Retry" button got a
+  dark red background (no white buttons rule).
+
+**Verified:** `esbuild` parses both files. Test page running the real component (real
+`utils.js`, `ttsParser.js`, `audioCombiner.js`; stubbed server calls): (a) load failure shows
+"Reload audio"; clicking it with the server fixed clears the error and shows the editor;
+(b) load timeout shows the plain message with no "tell Enda"; (c) clicking Reload audio while
+the server still fails re-runs the load every time (2 -> 4 -> 6 server calls) and the button
+comes back; (d) preview failure shows "Try again", which really re-runs the preview; (e) save
+failure shows "Try again", which really re-runs the save. Not tested inside the live app.
+
+Not changed: other unrecognised errors still get the generic "temporary hiccup" wording (now
+with the retry button beside it on these three actions); other screens (e.g. NarrationTtsEditor)
+have no retry buttons yet.
+
+---
+
 ## 2026-09-20 (follow-up 220) — Simulator map: a location is centred and fully framed the first time it is shown; then left alone
 Scope: `src/components/admin/TourSimulatorMap.jsx`, `src/components/admin/TourSimulator.jsx` — frontend only, no redeploy needed.
 

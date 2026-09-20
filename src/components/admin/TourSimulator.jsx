@@ -670,6 +670,17 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // individual location IS done but not `jumpSpan` of them happen to be consecutive.
   const incompleteLocations = useMemo(() => locationStatus.filter(t => !t.isComplete), [locationStatus]);
   const [jumpTargetIndex, setJumpTargetIndex] = useState('');
+  // Per Enda's report (2026-09-20): a Narrator must never be able to walk away from the
+  // unfinished waypoint the tab opens on. "Jump to location…" used to offer any finished
+  // location even while another was unfinished, so a Narrator could jump to BOR1 and had no
+  // way back to the unmarked waypoint in BOR2 (or its location). For a Narrator, every
+  // Jump control now only exists once EVERY waypoint in the tour is marked Done; until
+  // then they open on the first unmarked waypoint and work forward in sequence, moving on
+  // only by marking each one Done (lockedWpIndexes above already enforces that part).
+  // Admins are deliberately NOT restricted: they can create tours and have the Waypoints
+  // tab, and jumping between finished and unfinished points is part of building one.
+  const narratorJumpLocked = !!isNarrator && waypoints.some((w) => !w?.waypoint_done);
+  const firstUnfinishedLocationLabel = (locationStatus.find((l) => !l.isComplete) || {}).label || null;
 
   // Where a jump spanning `span` consecutive locations (starting at targetIndex, a
   // primary_start waypoint index) should auto-pause — generalizes nextLocationBoundary
@@ -1008,6 +1019,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // WaypointPaceEditor (speedMatchMode), landing exactly on that location's own WP1,
   // with no separate "go to the ordinary editor first, then Test this segment" detour.
   const jumpToLocation = (targetIndex, span = 1) => {
+    if (narratorJumpLocked) return;
     jumpToWaypoint(targetIndex, { locationSpan: span });
     // This is the actual moment a narrator has said "I want to work on this location
     // now" — see the speedMatchMode comment above its declaration. Also snaps the
@@ -1545,7 +1557,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
             <span className="text-slate-500 text-xs">— {currentSegment.wp.segment_id || currentSegment.wp.segment_title || `Segment ${currentSegment.index + 1}`}</span>
           )}
         </span>
-        {locationStatus.length > 1 && (
+        {locationStatus.length > 1 && !narratorJumpLocked && (
           // Per Enda's report: the original "Locations: 1 2 3" control (three bare
           // digit buttons right next to the word "Locations") read as if it were
           // picking WHICH location — the first, second, or third in the tour — not
@@ -1564,7 +1576,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
             <option value={3}>Jump 3 in a row</option>
           </select>
         )}
-        {locationTargets.length > 0 && (
+        {!narratorJumpLocked && locationTargets.length > 0 && (
           <div className="flex items-center gap-1.5">
             <select
               value={jumpTargetIndex}
@@ -1594,7 +1606,14 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
             "individual locations are done, just not `jumpSpan` of them in a row" case
             — the progress row makes a gap in the sequence visible either way, so one
             short line pointing at it is enough. */}
-        {locationTargets.length === 0 && locationStatus.length > 0 && (
+        {narratorJumpLocked && (
+          <span className="flex items-center gap-1.5 text-amber-400 text-xs bg-slate-800/60 rounded-lg border border-slate-600 px-2.5 h-8">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+            Jump to location unlocks once every waypoint is marked Done.
+            {firstUnfinishedLocationLabel ? ` Continue with ${firstUnfinishedLocationLabel}, in order.` : ' Continue in order.'}
+          </span>
+        )}
+        {!narratorJumpLocked && locationTargets.length === 0 && locationStatus.length > 0 && (
           <span className="flex items-center gap-1.5 text-amber-400 text-xs bg-slate-800/60 rounded-lg border border-slate-600 px-2.5 h-8">
             <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
             {incompleteLocations.length === locationStatus.length
@@ -1670,7 +1689,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
         <div className="flex items-center gap-1.5 flex-wrap pb-1" title="Every location in this tour, in order — green means fully Done, grey means still needs checking, a blue ring means it's a valid Jump start for the span chosen above.">
           <span className="text-xs text-slate-500 shrink-0">Progress:</span>
           {locationStatus.map((loc) => {
-            const isValidJumpStart = locationTargets.some((t) => t.index === loc.index);
+            const isValidJumpStart = !narratorJumpLocked && locationTargets.some((t) => t.index === loc.index);
             return (
               <span
                 key={loc.index}
