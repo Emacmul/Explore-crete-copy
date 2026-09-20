@@ -85,6 +85,22 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-20 (follow-up 227) — Marking a waypoint Done in Narrate & Simulate now replaces its script in the depository
+
+Per Enda: an admin's rewritten English script never reached the shared depository from this
+tab (only the Waypoints tab's Done button uploaded), so narrators got the old script.
+TourSimulator.jsx: pushScriptToDepository runs when a waypoint is marked Done, via both Done
+paths (WaypointPaceEditor "Mark segment as done" and NarrationTtsEditor finalize). It reuses
+uploadToImportDepository (now exported from DrivingTourWaypointEditor.jsx; new option
+fromSimulator changes only the failure toast wording). Gate (canPushScriptToDepository):
+admin (not narrator) AND saved tour AND not a clone AND English (no target language or
+"English") AND NOT admin_completed AND NOT published (approved === false = Draft).
+Success toast "Script updated in the depository"; a failure shows a red toast saying narrators
+would still get the old script. WalkEditor.jsx passes onDepositoryEntry so the local
+import_files list updates at once. Verified in the real-component harness: uploads for admin +
+English + draft; nothing for French, published, admin-completed, narrator, or clone.
+No base44/functions files changed.
+
 ## 2026-09-20 (follow-up 226) — Jump/first view of a location: frame exactly BORx a-PS to BORx+1 a-PS, tightly
 
 Per Enda (screenshots): the map was still ~2-3x too wide. Cause: Leaflet fits only to WHOLE

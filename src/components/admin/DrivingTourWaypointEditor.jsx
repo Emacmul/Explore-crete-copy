@@ -64,7 +64,7 @@ function buildNarrationExportFilename(wp, segGroup, index) {
 // null (after showing a toast) on failure — the caller merges it into its own local
 // `importFiles` copy so the "already in the depository" status updates immediately,
 // without waiting for a full tour reload.
-async function uploadToImportDepository(walkId, segmentId, script, filename) {
+export async function uploadToImportDepository(walkId, segmentId, script, filename, { fromSimulator = false } = {}) {
   if (!walkId || !segmentId || !script || !script.trim()) return null;
   try {
     const blob = buildScriptOdtBlob(script);
@@ -84,7 +84,9 @@ async function uploadToImportDepository(walkId, segmentId, script, filename) {
     toast({
       variant: 'destructive',
       title: 'Could not add to the shared depository',
-      description: `${segmentId}'s file downloaded to your computer as usual, but narrators won't see it automatically yet — ${err?.message || 'please try again from this waypoint.'}`,
+      description: fromSimulator
+        ? `The edited script for ${segmentId} was NOT sent to the depository, so narrators would still get the old one — ${err?.message || 'please try again from the Waypoints tab (Replace button).'}`
+        : `${segmentId}'s file downloaded to your computer as usual, but narrators won't see it automatically yet — ${err?.message || 'please try again from this waypoint.'}`,
     });
     return null;
   }

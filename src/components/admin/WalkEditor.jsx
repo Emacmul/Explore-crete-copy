@@ -2054,7 +2054,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
             }));
             editVersionRef.current += 1;
             setDirty(true);
-          }} targetLanguage={form.target_language || ''} onSave={triggerSave} saving={saving} onAutoSave={requestAutoSave} isNarrator={isNarrator} titleEditor={tourTitleEditor} />
+          }} targetLanguage={form.target_language || ''} onSave={triggerSave} saving={saving} onAutoSave={requestAutoSave} isNarrator={isNarrator} titleEditor={tourTitleEditor} onDepositoryEntry={(entry) => setForm(prev => ({ ...prev, import_files: [...(prev.import_files || []).filter(f => f.segment_id !== entry.segment_id), entry] }))} />
         )}
       </div>
     </div>

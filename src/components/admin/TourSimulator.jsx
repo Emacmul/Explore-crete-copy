@@ -3,7 +3,8 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Play, Pause, Square, Gauge, Clock, Volume2, AlertTriangle, CheckCircle2, MapPin, Radio, Flag, ChevronDown, ChevronUp, Save, Loader2, Lock, SkipBack, ArrowLeft } from 'lucide-react';
-import { calculateBearing, isBearingInRange, uniqueWaypointSegmentId } from '@/lib/routeExport';
+import { calculateBearing, isBearingInRange, uniqueWaypointSegmentId, waypointDepositoryKey } from '@/lib/routeExport';
+import { uploadToImportDepository } from './DrivingTourWaypointEditor';
 import TourSimulatorMap from './TourSimulatorMap';
 import WaypointPaceEditor from './WaypointPaceEditor';
 import NarrationTtsEditor from './NarrationTtsEditor';
@@ -62,7 +63,7 @@ function fmtTime(ms) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
-export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, onSave, saving, onAutoSave, isNarrator, titleEditor }) {
+export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, onSave, saving, onAutoSave, isNarrator, titleEditor, onDepositoryEntry }) {
   const trailPath = form.trail_path || [];
   // Filtering out waypoints with no usable lat/lng means every index used inside this
   // component (selectedWpIndex, the map's per-marker index, jumpToWaypoint's
@@ -182,6 +183,37 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     }
   }, [waypoints.length, selectedWpIndex, lockedWpIndexes]);
   const selectedWp = waypoints[selectedWpIndex] || null;
+
+  // Per Enda (2026-09-20): an admin often rewrites the English script here in Narrate &
+  // Simulate, but only the Waypoints tab's "Mark Waypoint as Done" pushed the script to the
+  // shared depository, so narrators got the OLD script. Marking a waypoint Done here now
+  // replaces its depository file too. Strictly limited to: an ADMIN (never a narrator), the
+  // ENGLISH original (not a clone / translation), on a tour that is NOT yet marked Admin
+  // Completed and NOT published (approved === false is the app's "Draft" state).
+  const canPushScriptToDepository =
+    !isNarrator
+    && !!form?.id
+    && !form?.clone_of
+    && (!targetLanguage || /^en(glish)?$/i.test(String(targetLanguage).trim()))
+    && !form?.admin_completed
+    && form?.approved === false;
+  const pushScriptToDepository = async (script) => {
+    if (!canPushScriptToDepository || !(script || '').trim()) return;
+    const rawIndex = toRawIndex(selectedWpIndex);
+    const wp = form.waypoints?.[rawIndex];
+    const key = waypointDepositoryKey(form.waypoints, rawIndex);
+    if (!wp || !key) return;
+    const label = uniqueWaypointSegmentId(form.waypoints, rawIndex);
+    const entry = await uploadToImportDepository(
+      form.id, key, script,
+      `${label}${wp.segment_title ? ` - ${wp.segment_title}` : ''}.odt`,
+      { fromSimulator: true },
+    );
+    if (entry) {
+      onDepositoryEntry?.(entry);
+      toast({ title: 'Script updated in the depository', description: `${label}'s new script replaces the old one for narrators.` });
+    }
+  };
 
   // Per Enda's report: this tab let a Done waypoint (e.g. every one of BOR1's) be
   // freely edited — wording, pause timing, even audio — with nothing enforcing the
@@ -1948,7 +1980,10 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                     key={selectedWpIndex}
                     waypoint={selectedWp}
                     fixedLanguage={targetLanguage}
-                    onSave={(updates) => onWaypointUpdate(toRawIndex(selectedWpIndex), updates)}
+                    onSave={(updates) => {
+                      onWaypointUpdate(toRawIndex(selectedWpIndex), updates);
+                      if (updates?.waypoint_done === true) pushScriptToDepository(updates.narration_script ?? selectedWp.narration_script);
+                    }}
                     onAutoSave={onAutoSave}
                     // Per Enda's follow-up 205 report — see autoScrollToTest's own
                     // declaration comment above for the full reasoning.
@@ -2131,6 +2166,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                     onWaypointUpdate(toRawIndex(selectedWpIndex), val
                       ? { audio_clip_url: val, trigger_audio: true, waypoint_done: true }
                       : { audio_clip_url: val });
+                    if (val) pushScriptToDepository(selectedWp.narration_script);
                     // Per Enda (follow-up 73, from Anoushka's walkthrough): after a
                     // real Finalize Narration Audio success, this panel used to just
                     // sit on the now-finished waypoint — nothing stopped a narrator
