@@ -26,7 +26,6 @@ export default async function (req) {
       return Response.json({ error: 'Not authorized' }, { status: 403 });
     }
 
-
     // Who is this? By the email in the (now verified) token, else by the WordPress user id in it.
     const svc = base44.asServiceRole;
     let row = null;
