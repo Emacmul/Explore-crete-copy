@@ -1,5 +1,5 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
-import { verifyEmailFromToken } from '../../shared/wpToken.ts';
+import { verifyEmailFromToken, isTokenGenuine } from '../../shared/wpToken.ts';
 // Per Enda / Base44 support: retries a real 429 (pooled rate limit) with a short backoff —
 // see withEntityRetry.ts's own header comment for the full reasoning. This is also the
 // single most-loaded read in the app (every visitor's every app open), so it's worth this
@@ -60,10 +60,37 @@ export default async function(req) {
     // isAppAdmin/isSuperAdmin already use elsewhere — kept deliberately narrow to 'admin' and
     // 'super_admin' only, NOT 'narrator', per Enda's explicit instruction (follow-up 159).
     let isAdmin = false;
+    let emailMatchedRow = false;
     if (email) {
       const appUserRows = await base44.asServiceRole.entities.AppUser.filter({ email });
+      emailMatchedRow = Array.isArray(appUserRows) && appUserRows.length > 0;
       const role = (Array.isArray(appUserRows) ? appUserRows[0] : null)?.role;
       isAdmin = role === 'admin' || role === 'super_admin';
+    }
+    // Per Enda (2026-09-20): the Admin button (ensureAppUserOnboarding) finds an admin by WordPress
+    // USER ID first, but this function only ever looked the caller up by the email inside the token.
+    // If the token carries no email (or one that matches no AppUser row), a genuine admin was treated
+    // as a customer and every draft tour was withheld ("0 of 0 DriveAbouts"). Fallback, only when the
+    // email found no AppUser row, and only for a token WordPress itself confirms as genuine: identify
+    // the AppUser by the user id in that token, the same way ensureAppUserOnboarding does. Ordinary
+    // customers (whose email matches their row) skip this, so it adds no extra call for them.
+    if (!isAdmin && body.token && !emailMatchedRow) {
+      try {
+        if (await isTokenGenuine(body.token, Deno.env.get('WC_SITE_URL'))) {
+          const parts = String(body.token).split('.');
+          const payload = parts.length === 3
+            ? JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')))
+            : null;
+          const wpId = payload?.data?.user?.id || payload?.user_id || payload?.sub || null;
+          if (wpId) {
+            const byId = await base44.asServiceRole.entities.AppUser.filter({ user_id: String(wpId) });
+            const role = (Array.isArray(byId) ? byId[0] : null)?.role;
+            isAdmin = role === 'admin' || role === 'super_admin';
+          }
+        }
+      } catch {
+        // Could not confirm - stay non-admin (fail closed).
+      }
     }
 
     // Owned product ids by email. Entitlement is decided HERE, by the ORIGINAL's product id
