@@ -65,8 +65,15 @@ export function getEntries() {
 
 // --- Specific log helpers ---
 
-export function logGpsFix(lat, lng, accuracy) {
-  addEntry('gps_fix', { lat, lng, accuracy });
+export function logGpsFix(lat, lng, accuracy, speedKmh, holding) {
+  // speedKmh / holding (walking guard) are only used to explain a held stop afterwards; they stay
+  // in this in-memory log and in an ADMIN's own test-drive upload (see lib/tourLogUpload.js).
+  addEntry('gps_fix', { lat, lng, accuracy, speedKmh, holding });
+}
+
+// The walking guard switched on or off (see lib/walkingGuard.js).
+export function logGuardChange(holding, speedKmh) {
+  addEntry('guard', { holding, speedKmh });
 }
 
 export function logTriggerCheck(waypoint, distance, withinRadius, bearingInfo, alreadyTriggered, result, accuracy) {
@@ -173,8 +180,12 @@ function entryToText(entry) {
       return `[${t}] SESSION START — "${entry.data.walkName}"`;
     case 'session_stop':
       return `[${t}] SESSION STOP — ${fmtElapsed(entry.data.duration)} total`;
-    case 'gps_fix':
-      return `[${t}] GPS — ${entry.data.lat.toFixed(5)}, ${entry.data.lng.toFixed(5)} (±${Math.round(entry.data.accuracy || 0)}m)`;
+    case 'gps_fix': {
+      const sp = Number.isFinite(entry.data.speedKmh) ? ` ${Math.round(entry.data.speedKmh)}km/h` : '';
+      return `[${t}] GPS — ${entry.data.lat.toFixed(5)}, ${entry.data.lng.toFixed(5)} (±${Math.round(entry.data.accuracy || 0)}m)${sp}${entry.data.holding ? ' HOLDING' : ''}`;
+    }
+    case 'guard':
+      return `[${t}] WALKING GUARD ${entry.data.holding ? 'ON - stops held back (walking pace)' : 'OFF - driving again'}${Number.isFinite(entry.data.speedKmh) ? ` at ${Math.round(entry.data.speedKmh)}km/h` : ''}`;
     case 'trigger_check': {
       const d = entry.data;
       const parts = [`WP "${d.waypointId}"`];
@@ -194,6 +205,12 @@ function entryToText(entry) {
         parts.push(`✗ SKIPPED — already triggered (trigger_once=true)`);
       } else if (d.result === 'skip_no_audio') {
         parts.push(`✗ FAILED — no audio_clip_url set on this waypoint`);
+      } else if (d.result === 'skip_walking') {
+        parts.push(`✗ HELD — walking guard: moving at walking pace`);
+      } else if (d.result === 'skip_order') {
+        parts.push(`✗ HELD — an earlier stop has not played yet`);
+      } else if (d.result === 'fire_late') {
+        parts.push(`✓ PLAYED LATE (was held at walking pace, dist=${d.distance}m)`);
       }
 
       if (d.useBearing && d.bearingInfo) {
@@ -229,6 +246,41 @@ export function exportLog() {
     '',
   ];
   return [...header, ...lines].join('\n');
+}
+
+// Compact text for an admin's test-drive upload (lib/tourLogUpload.js): the same lines as
+// exportLog, but the once-a-second GPS lines are thinned to every 5th so a long drive stays
+// small. Every other line (triggers, holds, audio, alerts, warnings) is kept in full.
+export function exportLogForUpload() {
+  if (!sessionInfo && entries.length === 0) return '';
+  let gpsSeen = 0;
+  const lastVerdict = {};
+  const lines = [];
+  for (const e of entries) {
+    if (e.type === 'gps_fix') {
+      gpsSeen += 1;
+      if ((gpsSeen - 1) % 5 !== 0) continue;
+    }
+    // A check that changes nothing ("outside radius", "already triggered") is noise here.
+    if (e.type === 'trigger_check') {
+      if (e.data.result === 'skip_distance' || e.data.result === 'skip_already_triggered') continue;
+      // Same stop, same verdict as its last line: say it once, not once per second.
+      if (lastVerdict[e.data.waypointId] === e.data.result) continue;
+      lastVerdict[e.data.waypointId] = e.data.result;
+    }
+    lines.push(entryToText(e));
+  }
+  const header = [
+    `Tour: ${sessionInfo?.walkName || 'Unknown'}`,
+    `Started: ${new Date(sessionInfo?.startTime || Date.now()).toISOString()}`,
+    `Entries: ${entries.length}`,
+    '',
+  ];
+  return [...header, ...lines].join('\n');
+}
+
+export function getEntryCount() {
+  return entries.length;
 }
 
 export function downloadLog() {

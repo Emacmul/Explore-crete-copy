@@ -7,6 +7,7 @@ import * as tourLogService from '@/lib/tourLogService';
 import { calculateBearing, isBearingInRange } from '@/lib/routeExport';
 import * as speedHint from '@/lib/speedHint';
 import { createWalkingGuard } from '@/lib/walkingGuard';
+import { startTestLogUpload } from '@/lib/tourLogUpload';
 import TourDebugLog from './TourDebugLog';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { useOfflineWalks } from '../offline/useOfflineWalks';
@@ -334,6 +335,7 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
   const speedMonitorRef = useRef(speedHint.createSpeedHintMonitor());
   const lastSpeedFixRef = useRef(null);
   const walkingGuardRef = useRef(createWalkingGuard());
+  const lastSpeedKmhRef = useRef(NaN); // latest speed reading, only for the test-drive log
   const heldStopRef = useRef(null); // the next unplayed stop the walking guard held back, if any
   // Every secondary waypoint the driver has actually reached so far this drive (see the
   // "last known position" comment above) — restored from this device's storage on open,
@@ -416,6 +418,16 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
     statusRef.current = status;
   }, [status]);
 
+  // Admin draft preview only: save this test drive's Audit Log to the server by itself while
+  // driving (see lib/tourLogUpload.js). Never runs for a customer or a published tour.
+  const draftPreview = walk._is_draft_preview === true;
+  const sessionActive = status === 'running' || status === 'paused';
+  useEffect(() => {
+    if (!draftPreview || !sessionActive) return undefined;
+    const stop = startTestLogUpload(walk);
+    return () => { stop(); };
+  }, [draftPreview, sessionActive]);
+
   useEffect(() => {
     passedSecondaryRef.current = passedSecondaryIds;
   }, [passedSecondaryIds]);
@@ -485,7 +497,7 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
   };
 
   const evaluateTriggers = useCallback((lat, lng, accuracy) => {
-    tourLogService.logGpsFix(lat, lng, accuracy);
+    tourLogService.logGpsFix(lat, lng, accuracy, lastSpeedKmhRef.current, walkingGuardRef.current.isHolding());
 
     const prevPos = prevPosRef.current;
     const movementBearing = prevPos
@@ -835,7 +847,12 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
           if (dt >= 1 && dt <= 20) speedKmh = (haversine(prevFix.lat, prevFix.lng, latitude, longitude) / dt) * 3.6;
         }
         lastSpeedFixRef.current = { lat: latitude, lng: longitude, t: nowMs };
+        const wasHolding = walkingGuardRef.current.isHolding();
         walkingGuardRef.current.sample({ nowMs, speedKmh, accuracyM: accuracy });
+        lastSpeedKmhRef.current = speedKmh;
+        if (walkingGuardRef.current.isHolding() !== wasHolding) {
+          tourLogService.logGuardChange(walkingGuardRef.current.isHolding(), speedKmh);
+        }
 
         if (statusRef.current === 'running') {
           evaluateTriggers(latitude, longitude, accuracy);

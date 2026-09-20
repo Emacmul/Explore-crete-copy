@@ -85,6 +85,23 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-20 (follow-up 237) — Admin test drives now save their Audit Log to the server by themselves
+
+Per Enda: he cannot open/export the Audit Log while driving, and the log only lives in the phone's memory.
+- NEW backend function `saveTourTestLog` + NEW entity `TourTestLog` (admin-read only). Accepts a log ONLY from a
+  WordPress-verified login whose AppUser role is admin/super_admin; anyone else gets "Not authorized", nothing stored.
+- NEW `src/lib/tourLogUpload.js`: while an admin runs a DRAFT tour (`walk._is_draft_preview`), the log is uploaded every
+  15 s (only when it changed), when the app goes to the background, and when the tour stops. Never for customers or
+  published tours. Failures are silent.
+- `tourLogService.js`: GPS lines now show speed and "HOLDING"; new "WALKING GUARD ON/OFF" lines; `exportLogForUpload()`
+  thins GPS lines (every 5th), drops far-away checks and repeats of the same verdict per stop.
+- `DrivingTourPlayer.jsx`: starts/stops the upload with the test drive; logs speed and guard changes.
+Enda must redeploy `saveTourTestLog` (open it in Base44, add a blank line, save) - and getWalkCatalog too if not yet.
+Tests: log text (once-per-verdict, thinning, alerts), upload payload/silent failure, player starts upload only for
+admin draft tours (never for a customer), all earlier player tests still pass.
+
+---
+
 ## 2026-09-20 (follow-up 236) — BOR3 road test: parked car counted as "walking", and narration could stay paused for good
 
 Per Enda's road test of BOR3 (admin draft preview, "Test from location..."): nothing played at BOR3a-PS, after ~3 min
