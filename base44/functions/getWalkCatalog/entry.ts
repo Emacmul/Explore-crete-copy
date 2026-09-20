@@ -49,6 +49,7 @@ const PROTECTED_FIELDS = [
   'segment_scripts',
 ];
 
+
 export default async function(req) {
   try {
     const base44 = wrapClientWithRetry(createClientFromRequest(req));
