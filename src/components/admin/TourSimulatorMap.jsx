@@ -75,6 +75,8 @@ function FocusBounds({ focusBounds, userZoomedRef, locationKey, framedKeyRef }) 
   // the key has changed but `focusBounds` hasn't caught up yet would frame the OLD bounds.
   const keyRef = useRef(locationKey);
   keyRef.current = locationKey;
+  const settleCleanup = useRef(null);
+  useEffect(() => () => settleCleanup.current?.(), []);
   useEffect(() => {
     if (!focusBounds || focusBounds.length === 0) return;
     // Per Enda's report (2026-09-20): the FIRST time a location is shown (the simulator
@@ -112,6 +114,33 @@ function FocusBounds({ focusBounds, userZoomedRef, locationKey, framedKeyRef }) 
           // earlier animated zoom is still running (e.g. the opening whole-trail fit in
           // FitBounds a moment earlier), so an animated fit here could be lost.
           map.fitBounds(targetBounds, { padding: [60, 60], maxZoom: 17, animate: false });
+          // Per Enda's report (2026-09-20): after "Jump to location" the map showed
+          // roughly three locations instead of just the one. The page layout around the map
+          // (the editor next to it) can still change size AFTER this first fit, and Leaflet
+          // does not re-fit by itself when its box changes size. So for the first couple of
+          // seconds after framing a location, if the map box changes size and he has not
+          // touched zoom/pan himself, fit the same location again. His own zoom/pan
+          // (wheel, drag, touch) switches this off immediately and permanently.
+          userZoomedRef.current = false;
+          settleCleanup.current?.();
+          const el = map.getContainer();
+          const refit = () => {
+            if (userZoomedRef.current) return;
+            map.invalidateSize();
+            map.fitBounds(targetBounds, { padding: [60, 60], maxZoom: 17, animate: false });
+          };
+          let ro = null;
+          if (typeof ResizeObserver !== 'undefined') {
+            ro = new ResizeObserver(refit);
+            ro.observe(el);
+          }
+          const t1 = setTimeout(refit, 350);
+          const t2 = setTimeout(refit, 1000);
+          const stop = setTimeout(() => settleCleanup.current?.(), 2500);
+          settleCleanup.current = () => {
+            ro?.disconnect(); clearTimeout(t1); clearTimeout(t2); clearTimeout(stop);
+            settleCleanup.current = null;
+          };
           return;
         }
         // Per Enda's report (2026-09-19): clicking "Test this subsegment" always re-fit

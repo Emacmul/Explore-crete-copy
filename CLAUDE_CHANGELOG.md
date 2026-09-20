@@ -85,6 +85,17 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-20 (follow-up 224) — "Jump to location": map re-fits the location if the layout resizes right after the jump
+
+Per Enda: after Jump to BOR3 the map showed roughly BOR1-BOR5 instead of just BOR3.
+Cause: Leaflet doesn't re-fit when the map box changes size, and the layout around the map
+can still shift right after a jump. Fix (TourSimulatorMap.jsx, FocusBounds): after the
+first forced fit of a location, for ~2.5s the same bounds are re-fitted (animate:false) on
+map resize and at 350ms/1s, unless he has zoomed/panned (wheel/drag/touch), which stops it
+for good. A new location's forced fit also resets the manual-zoom flag so it always frames.
+Verified with real BOR data (116 waypoints): jump frames BOR3; resize re-fits; wheel zoom persists.
+No base44/functions files changed.
+
 ## 2026-09-20 (follow-up 223) — Wording: the "still generating audio" message no longer says a "Build & Play button" is already there
 Scope: `src/components/admin/NarrationTtsEditor.jsx` — frontend only, no redeploy needed.
 

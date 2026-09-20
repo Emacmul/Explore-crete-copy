@@ -1774,7 +1774,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
             <div ref={listenBoxRef} className="bg-slate-800/50 rounded-lg border border-purple-600/30 p-4 space-y-3">
               <p className="text-sm text-slate-300 text-center">
                 {stillGeneratingAudio
-                  ? "Still generating audio for every line — the Build & Play button below will light up and become clickable the moment it's ready. Clicking it before then won't do anything, so there's no need to keep clicking it."
+                  ? "Still generating audio for every line. When it is ready, the button below will change to Build & Play. Clicking it before then won't do anything, so there is no need to keep clicking it."
                   : listenPassCount === 0
                     ? "Listen to the whole part, start to finish, before you can make any changes."
                     : "Listen to your edits, start to finish, before you can edit again."}
