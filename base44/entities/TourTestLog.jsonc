@@ -1,0 +1,49 @@
+{
+  "name": "TourTestLog",
+  "properties": {
+    "admin_email": {
+      "type": "string"
+    },
+    "entry_count": {
+      "type": "number"
+    },
+    "log_text": {
+      "description": "Readable log of the test drive, updated every few seconds",
+      "type": "string"
+    },
+    "session_id": {
+      "description": "One test drive (random id made by the phone)",
+      "type": "string"
+    },
+    "walk_id": {
+      "type": "string"
+    },
+    "walk_name": {
+      "type": "string"
+    }
+  },
+  "rls": {
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  },
+  "type": "object",
+  "required": []
+}
