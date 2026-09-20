@@ -68,11 +68,26 @@ function ManualZoomTracker({ userZoomedRef }) {
 // TourSimulator.jsx's jumpToLocation, a fresh array each time), zooming/centring on
 // just one location's own waypoints without disturbing the whole-trail fit's own
 // unrelated effect timing.
-function FocusBounds({ focusBounds, userZoomedRef }) {
+function FocusBounds({ focusBounds, userZoomedRef, locationKey, framedKeyRef }) {
   const map = useMap();
+  // Kept in a ref (NOT in the effect's dependency list below) so this effect only ever
+  // runs when `focusBounds` itself changes. If the key were a dependency, a render where
+  // the key has changed but `focusBounds` hasn't caught up yet would frame the OLD bounds.
+  const keyRef = useRef(locationKey);
+  keyRef.current = locationKey;
   useEffect(() => {
-    if (userZoomedRef.current) return;
-    if (focusBounds && focusBounds.length > 0) {
+    if (!focusBounds || focusBounds.length === 0) return;
+    // Per Enda's report (2026-09-20): the FIRST time a location is shown (the simulator
+    // opening, or "Jump to location…"), the map must always centre on it and zoom so
+    // every waypoint in that location is visible — even if the whole route already
+    // happens to be on screen (the old "already visible, don't move" rule below skipped
+    // exactly this case) and even if a manual zoom was done earlier on another location.
+    // `locationKey` identifies "this showing of this location"; framedKeyRef remembers
+    // the last one that was actually framed. Once framed, every later change to
+    // focusBounds falls through to the ordinary rules below, so his own zoom/pan stays.
+    const isNewLocation = keyRef.current != null && keyRef.current !== framedKeyRef.current;
+    if (userZoomedRef.current && !isNewLocation) return;
+    {
       // Per Enda's report: opening a location didn't actually zoom in tight — he had to
       // zoom in manually about 4x to reach the view this should already open with.
       // Leaflet computes fitBounds against whatever pixel size the map container has AT
@@ -88,14 +103,25 @@ function FocusBounds({ focusBounds, userZoomedRef }) {
       const frame = requestAnimationFrame(() => {
         map.invalidateSize();
         const targetBounds = L.latLngBounds(focusBounds);
-        // Per Enda's report (2026-09-19): clicking "Test this subsegment" (or "Jump to
-        // location…") always re-fit the map to the whole tested/target span, even when
-        // he'd already manually zoomed in tight on exactly that area — undoing his zoom
-        // the moment he clicked, right when he needed to watch the car closely against
-        // the audio. Only re-fit when the target area genuinely ISN'T already visible —
-        // this is what the fit exists for in the first place (see the comment above:
-        // without it, a test's own start point could end up off-screen). If it's
-        // already on screen, leave his zoom/pan exactly as he set it.
+        if (isNewLocation) {
+          // Recorded here (when the fit really happens), not when the effect starts: if
+          // a newer focusBounds arrives before this frame runs, this frame is cancelled
+          // and the newer one must still count as the first framing.
+          framedKeyRef.current = keyRef.current;
+          // animate: false — Leaflet silently DROPS a zoom request that arrives while an
+          // earlier animated zoom is still running (e.g. the opening whole-trail fit in
+          // FitBounds a moment earlier), so an animated fit here could be lost.
+          map.fitBounds(targetBounds, { padding: [60, 60], maxZoom: 17, animate: false });
+          return;
+        }
+        // Per Enda's report (2026-09-19): clicking "Test this subsegment" always re-fit
+        // the map to the whole tested/target span, even when he'd already manually
+        // zoomed in tight on exactly that area — undoing his zoom the moment he clicked,
+        // right when he needed to watch the car closely against the audio. Only re-fit
+        // when the target area genuinely ISN'T already visible — this is what the fit
+        // exists for in the first place (without it, a test's own start point could end
+        // up off-screen). If it's already on screen, leave his zoom/pan exactly as he
+        // set it. (Does not apply to the first showing of a location — handled above.)
         if (map.getBounds().contains(targetBounds)) return;
         map.fitBounds(targetBounds, { padding: [60, 60], maxZoom: 17 });
       });
@@ -105,7 +131,7 @@ function FocusBounds({ focusBounds, userZoomedRef }) {
   return null;
 }
 
-function FitBounds({ trailPath, waypoints, userZoomedRef }) {
+function FitBounds({ trailPath, waypoints, userZoomedRef, framedKeyRef }) {
   const map = useMap();
   // Per Enda: this used to re-fit (and so re-zoom/re-centre) the map on every single
   // render of the parent TourSimulator, because `waypoints` was in the dependency
@@ -122,14 +148,20 @@ function FitBounds({ trailPath, waypoints, userZoomedRef }) {
   // reasoning as FocusBounds above — this is the very first fit to run at all, so it's
   // the one most likely to land before the grid layout has finished settling.
   useEffect(() => {
-    if (userZoomedRef.current) return;
+    // Also skipped once a location has been framed (see FocusBounds): the whole-trail
+    // fit is only the opening view before any location is shown, never something that
+    // may pull the map back out afterwards.
+    if (userZoomedRef.current || framedKeyRef.current != null) return;
     const pts = trailPath?.length > 0
       ? trailPath.map(p => [p.lat, p.lng])
       : waypoints?.map(w => [w.lat, w.lng]);
     if (pts?.length > 0) {
       const frame = requestAnimationFrame(() => {
+        if (framedKeyRef.current != null) return;
         map.invalidateSize();
-        map.fitBounds(L.latLngBounds(pts), { padding: [50, 50] });
+        // animate: false — see the matching note in FocusBounds: an animated zoom still
+        // running here would make Leaflet drop the location fit that follows it.
+        map.fitBounds(L.latLngBounds(pts), { padding: [50, 50], animate: false });
       });
       return () => cancelAnimationFrame(frame);
     }
@@ -265,7 +297,7 @@ function sliceTrailToRange(trailPath, waypoints, focusRange) {
   return slice.length > 1 ? slice : trailPath;
 }
 
-export default function TourSimulatorMap({ trailPath, waypoints, triggered, currentPos, currentBearing, isWalkingTour, onWaypointUpdate, breaks, focusBounds, focusRange, dimWaypointIndex, isNarrator }) {
+export default function TourSimulatorMap({ trailPath, waypoints, triggered, currentPos, currentBearing, isWalkingTour, onWaypointUpdate, breaks, focusBounds, focusRange, dimWaypointIndex, isNarrator, locationKey }) {
   // Per Enda's report: general script/audio browsing should show only the current
   // location's own waypoints and road, not the whole multi-location tour. `waypoints`
   // itself is deliberately left untouched below (still the full array, so `i` in the
@@ -286,6 +318,8 @@ export default function TourSimulatorMap({ trailPath, waypoints, triggered, curr
   // full reasoning: once he (or a narrator) touches the map's zoom/pan at all, nothing
   // here auto-moves it again for as long as this map stays mounted.
   const userZoomedRef = useRef(false);
+  // Which showing of which location was last framed by FocusBounds (see there).
+  const framedKeyRef = useRef(null);
 
   return (
     <MapContainer center={center} zoom={13} className="w-full h-full" style={{ minHeight: '350px' }}>
@@ -294,8 +328,8 @@ export default function TourSimulatorMap({ trailPath, waypoints, triggered, curr
         attribution='&copy; OpenStreetMap contributors'
       />
       <ManualZoomTracker userZoomedRef={userZoomedRef} />
-      <FitBounds trailPath={trailPath} waypoints={waypoints} userZoomedRef={userZoomedRef} />
-      <FocusBounds focusBounds={focusBounds} userZoomedRef={userZoomedRef} />
+      <FitBounds trailPath={trailPath} waypoints={waypoints} userZoomedRef={userZoomedRef} framedKeyRef={framedKeyRef} />
+      <FocusBounds focusBounds={focusBounds} userZoomedRef={userZoomedRef} locationKey={locationKey} framedKeyRef={framedKeyRef} />
 
       {displayTrailPath.length > 1 &&
         // `breaks` holds indices into the FULL trailPath — meaningless against a

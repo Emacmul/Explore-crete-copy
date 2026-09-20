@@ -239,6 +239,15 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // TourSimulatorMap's effect (watching this by reference) fires on every jump, even a
   // repeat jump to the same location.
   const [mapFocusBounds, setMapFocusBounds] = useState(null);
+  // Per Enda's report (2026-09-20): the first showing of a location (opening the
+  // simulator, or "Jump to location…") must centre the map on that location and zoom so
+  // all of its waypoints are visible; after that the map is left alone. jumpNonce goes up
+  // on every explicit "Jump", so even a repeat jump to the location already open counts
+  // as a fresh showing. lastFramedLocationRef / handledJumpNonceRef belong to the
+  // focus effect further below.
+  const [jumpNonce, setJumpNonce] = useState(0);
+  const lastFramedLocationRef = useRef(null);
+  const handledJumpNonceRef = useRef(0);
   const [currentBearing, setCurrentBearing] = useState(() =>
     trailPath.length >= 2
       ? calculateBearing(trailPath[0].lat, trailPath[0].lng, trailPath[1].lat, trailPath[1].lng)
@@ -1022,6 +1031,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     const locationWaypoints = waypoints.slice(targetIndex, endIndex);
     const bounds = locationWaypoints.filter(wp => wp.lat && wp.lng).map(wp => [wp.lat, wp.lng]);
     if (bounds.length > 0) setMapFocusBounds(bounds);
+    setJumpNonce(n => n + 1);
   };
 
   // Per Enda's report while finishing BOR1's waypoints: "Jump to location…" above already
@@ -1134,6 +1144,18 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // entirely while a run is actually playing, so this never fights a live full-tour
   // drive or a "Jump to location…" scoped run's own view.
   useEffect(() => {
+    const locStart = currentLocationRange ? currentLocationRange.startIndex : null;
+    // Per Enda's report (2026-09-20): an explicit "Jump to location…" has already set the
+    // bounds it wants (the whole location, or the whole span for a multi-location jump —
+    // see jumpToLocation). Without this early return, this effect would immediately
+    // replace them with the single-leg bounds below, and the map would never show the
+    // whole location. handledJumpNonceRef makes sure this only ever swallows the one run
+    // that a jump itself caused.
+    if (jumpNonce !== handledJumpNonceRef.current) {
+      handledJumpNonceRef.current = jumpNonce;
+      lastFramedLocationRef.current = locStart;
+      return;
+    }
     if (isPlaying) return;
     // Per Enda's report (2026-09-19): reads waypointsRef.current, NOT the `waypoints`
     // array itself, and `waypoints` is deliberately left out of the dependency list
@@ -1143,7 +1165,12 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     // the one already open — otherwise every such edit silently undoes a manual
     // zoom/pan, exactly like it used to before this fix.
     const wps = waypointsRef.current;
-    if (speedMatchMode) {
+    // The first time a location is shown any other way (the simulator opening, or a
+    // different location picked from the waypoint dropdown), frame the WHOLE location
+    // first, even in pace-testing mode; the single-leg view below only applies once
+    // that location has been framed.
+    const isNewLocation = locStart != null && locStart !== lastFramedLocationRef.current;
+    if (speedMatchMode && !isNewLocation) {
       const wp = wps[selectedWpIndex];
       if (!wp || !wp.lat || !wp.lng) return;
       const next = wps[selectedWpIndex + 1];
@@ -1156,7 +1183,8 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     const locationWaypoints = wps.slice(currentLocationRange.startIndex, currentLocationRange.endIndex);
     const bounds = locationWaypoints.filter(wp => wp.lat && wp.lng).map(wp => [wp.lat, wp.lng]);
     if (bounds.length > 0) setMapFocusBounds(bounds);
-  }, [selectedWpIndex, speedMatchMode, isPlaying, currentLocationRange]);
+    lastFramedLocationRef.current = locStart;
+  }, [selectedWpIndex, speedMatchMode, isPlaying, currentLocationRange, jumpNonce]);
 
   // Reset when trail path changes
   useEffect(() => {
@@ -1695,6 +1723,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
             onWaypointUpdate={onWaypointUpdate ? (i, field, value) => onWaypointUpdate(toRawIndex(i), field, value) : undefined}
             breaks={form.trail_breaks}
             focusBounds={mapFocusBounds}
+            locationKey={currentLocationRange ? `${currentLocationRange.startIndex}:${jumpNonce}` : null}
             dimWaypointIndex={dimWaypointIndex}
             // Same gating as the bounds effect above: only during ordinary browsing
             // (not playing, not mid pace-test) does the map hide everything outside the

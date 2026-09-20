@@ -85,6 +85,46 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-20 (follow-up 220) — Simulator map: a location is centred and fully framed the first time it is shown; then left alone
+Scope: `src/components/admin/TourSimulatorMap.jsx`, `src/components/admin/TourSimulator.jsx` — frontend only, no redeploy needed.
+
+**Per Enda's report:** choosing a location in "Jump to location…" moved the audio editor to
+that location but the map stayed zoomed out on the whole route. Required behaviour: the first
+time a location is shown, the map centres on it and zooms so every waypoint in that location
+is visible; after that nothing moves the map on its own (his own zoom/pan stays).
+
+**Investigated first, not guessed:** reproduced in a test page using the real map component.
+`FocusBounds` skipped the zoom when the target area was "already visible" (rule from the
+2026-09-19 "Test this subsegment" fix). At opening, the whole-route view already contains the
+location, so the zoom was skipped: circle stayed 2 px wide; with that rule removed it grew to
+102 px. Two further problems found while testing the fix: (1) after a jump, the
+`selectedWpIndex/speedMatchMode` effect in `TourSimulator.jsx` immediately replaced the
+location bounds with the single-leg bounds (for BOR1 two identical points, since BOR1a-PS and
+BOR1b share coordinates); (2) Leaflet silently drops a zoom that arrives during an earlier
+animated zoom, so the opening whole-trail fit could swallow the location fit.
+
+**What changed:**
+- `TourSimulatorMap.jsx`: new `locationKey` prop (location start index + jump counter).
+  `FocusBounds` frames the location whenever the key is one it has not yet framed — ignoring
+  the "already visible" rule and any earlier manual zoom — then falls back to the existing
+  rules (manual zoom respected; only re-fit if the target is off screen). `FitBounds` (the
+  opening whole-trail fit) no longer runs once a location has been framed. Both of these fits
+  are non-animated.
+- `TourSimulator.jsx`: `jumpNonce` counter bumped by every "Jump to location…" (so re-jumping
+  to the location already open re-frames it). The focus effect skips the run a jump itself
+  causes (jump already set the whole-location/whole-span bounds) and frames the WHOLE location
+  first the first time any location is shown, before the single-leg pace view applies.
+  `locationKey` passed to the map.
+
+**Verified:** `esbuild` parses both files. Test page with the real map component plus the real
+effect code copied from the file, two locations, 8 scenarios, all as specified: simulator
+opens framed on location 1 (all 5 waypoints inside the map, ~5 px off centre); manual zoom
+stays through field edits and waypoint changes; jump to location 2 in pace-testing mode frames
+all of it; edit after a manual zoom leaves it alone; jump back and jump again to the same
+location re-frame it. Not tested inside the live app.
+
+---
+
 ## 2026-09-19 (follow-up 219) — Simulator map: trigger circles no longer stack up into solid red
 Scope: `src/components/admin/TourSimulatorMap.jsx` — frontend only, no redeploy needed.
 
