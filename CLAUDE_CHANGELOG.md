@@ -85,6 +85,41 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-20 (follow-up 231) — Walking guard: "late play" for a stop held back while crawling through its circle
+
+Per Enda (goat-herd scenario): a stop held by the walking guard used to be lost if the visitor crawled
+through its whole circle and only sped up after leaving it. DrivingTourPlayer.jsx: the next unplayed stop
+that the guard held back is remembered (heldStopRef); once the visitor is clearly driving again
+(guard released + 4 consecutive fixes >5 km/h) and is still within LATE_PLAY_MAX_DISTANCE_M (300 m) of
+it, it plays automatically (log result "fire_late") - no button needed. Forgotten if the visitor gets
+further than 300 m away, once played, and on Start. A walker never reaches driving speed, so never
+triggers it. Audio already playing is never interrupted by the guard. Verified: goat-jam crawl then
+drive-off plays once; strolling walker never; drive-away beyond 300 m does not play late.
+No base44/functions files changed.
+
+## 2026-09-20 (follow-up 230) — Customer tour player: no replays after a reload, no advancing while on foot
+
+Per Enda: visitors use the listening phone as a camera and walk around villages; a stop that already
+played must not play again, and walking must not advance the tour. DrivingTourPlayer.jsx:
+1) Played stops are saved on the device per tour (explore_crete_driving_played__<walkId>, stop ids
+   only, dropped after 18 h and when a tour completes) and restored on load. New "Continue the tour"
+   card (idle + played stops on record, when no last-known-position card is showing) resumes WITHOUT
+   replaying any stop or the welcome; plain Start still begins fresh. "Restart from here" now keeps
+   everything already played.
+2) Order rule: only the next unplayed auto stop may start, unless the visitor is clearly driving
+   (then a missed stop can't block the rest of the tour) or the device gives no speed (old behaviour).
+3) Walking guard (new lib/walkingGuard.js): 5 km/h or slower for a sustained ~20 s (>=80% of fixes,
+   tolerates GPS spikes) = "on foot": NO stop starts automatically; released after 4 consecutive fixes
+   faster than 5 km/h, then a stop whose circle you are still in starts normally. 5-10 km/h (old village
+   streets) is treated as driving; queues under 20 s don't count. Poor-accuracy / speed-less fixes change
+   nothing. Trigger log results: skip_walking, skip_order. Speeds are never stored.
+Known trade-off: a driver who arrives at a stop and stays at <=5 km/h for 20+ s inside its circle
+(e.g. a herd of goats) hears it once they move faster than 5 km/h (still inside the circle), or via
+the manual Play button.
+Verified: 14 unit checks on the guard + real-component scenarios (replay, walking held, drive-off
+release, skip-ahead, 7 km/h village, herd crawl, reload + Continue). Stops with "play more than once"
+ticked (trigger_once false) still replay by design. No base44/functions files changed.
+
 ## 2026-09-20 (follow-up 229) — Gentle, rare speed reminder in the customer tour player (NOT a nag, NOT Big Brother)
 
 Per Enda: warn a driver who is going so fast the tour would fall behind the road, without ever

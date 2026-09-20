@@ -304,6 +304,8 @@ export const translations = {
     'player.tourComplete': "🎉 Tour complete!",
     'player.returnHome': "Return to Home",
     'player.lastKnownPosition': "This was your last known position",
+    'player.continueTour': "Continue the tour",
+    'player.continueTourNote': "You were part-way through this tour. Continue without replaying the stops you have already heard.",
     'player.restartFromHere': "Restart tour from here",
     'player.nextStopLabel': "Next stop",
     'player.gpsIssueTitle': "GPS signal lost",

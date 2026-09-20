@@ -6,6 +6,7 @@ import * as audioService from '@/lib/audioService';
 import * as tourLogService from '@/lib/tourLogService';
 import { calculateBearing, isBearingInRange } from '@/lib/routeExport';
 import * as speedHint from '@/lib/speedHint';
+import { createWalkingGuard } from '@/lib/walkingGuard';
 import TourDebugLog from './TourDebugLog';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { useOfflineWalks } from '../offline/useOfflineWalks';
@@ -42,6 +43,41 @@ function lastPositionStorageKey(walkId) {
   return `explore_crete_driving_last_position__${walkId}`;
 }
 
+// Per Enda (2026-09-20): visitors use the same phone as a camera, and a phone can reload a
+// page while another app (the camera) is in front. The set of stops that have ALREADY PLAYED
+// used to live only in memory, so a reload forgot it and stops could play a second time. It is
+// now also kept on this device, per tour, and dropped after the same 18 hours as the last known
+// position. Stored: only stop identifiers. Never speeds or positions.
+function playedStorageKey(walkId) {
+  return `explore_crete_driving_played__${walkId}`;
+}
+
+function loadPlayedKeys(walkId) {
+  if (!walkId) return [];
+  try {
+    const raw = localStorage.getItem(playedStorageKey(walkId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.keys) || Date.now() - (parsed.updatedAt || 0) > LAST_POSITION_STALE_MS) {
+      localStorage.removeItem(playedStorageKey(walkId));
+      return [];
+    }
+    return parsed.keys.filter((k) => typeof k === 'string');
+  } catch {
+    return [];
+  }
+}
+
+function savePlayedKeys(walkId, keysSet) {
+  if (!walkId) return;
+  try {
+    if (!keysSet || keysSet.size === 0) localStorage.removeItem(playedStorageKey(walkId));
+    else localStorage.setItem(playedStorageKey(walkId), JSON.stringify({ keys: Array.from(keysSet), updatedAt: Date.now() }));
+  } catch {
+    /* storage unavailable - repeat protection then only lasts until the page reloads */
+  }
+}
+
 // Per audit finding U-08 (2026-09-09 code review): a GPS fix's accuracy needs to be at
 // least as good as the trigger radius it's being judged against, or the fix can't be
 // trusted to resolve at that distance. Crete's mountains are notorious for weak signal —
@@ -50,6 +86,11 @@ function lastPositionStorageKey(walkId) {
 // fix so imprecise it shouldn't be trusted for ANY waypoint, however large that
 // waypoint's own radius is. Applied to both audio triggers and "last known position".
 const GPS_ACCURACY_HARD_CAP_M = 100;
+
+// Late play (Enda, 2026-09-20): a stop held back by the walking guard (e.g. crawling behind a herd of
+// goats through its whole circle) still plays once the car is clearly driving again, as long as it is
+// still within this distance of that stop. A walker never reaches driving speed, so never triggers it.
+const LATE_PLAY_MAX_DISTANCE_M = 300;
 
 function fixIsTrustworthy(accuracy, radius) {
   // No accuracy reported at all (not standard, but not every device/browser is
@@ -235,7 +276,7 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
   // 2026-09-09 — third pass, finding U-07 refinement).
   const [startError, setStartError] = useState(null);
   const [currentPos, setCurrentPos] = useState(null);
-  const [triggeredWpIds, setTriggeredWpIds] = useState(new Set());
+  const [triggeredWpIds, setTriggeredWpIds] = useState(() => new Set(loadPlayedKeys(walk.id)));
   const [lastTriggered, setLastTriggered] = useState(null);
   // Per Enda's follow-up 164 clarification: waypoint 2's "Next stop" card must not
   // appear until waypoint 1's welcome audio has ACTUALLY finished playing (not just
@@ -291,6 +332,8 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
   const speedHintsOnRef = useRef(speedHintsOn);
   const speedMonitorRef = useRef(speedHint.createSpeedHintMonitor());
   const lastSpeedFixRef = useRef(null);
+  const walkingGuardRef = useRef(createWalkingGuard());
+  const heldStopRef = useRef(null); // the next unplayed stop the walking guard held back, if any
   // Every secondary waypoint the driver has actually reached so far this drive (see the
   // "last known position" comment above) — restored from this device's storage on open,
   // so it survives the app being closed and reopened.
@@ -299,7 +342,7 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
   const watchIdRef = useRef(null);
   const prevPosRef = useRef(null);
   const playerRef = useRef(null);
-  const triggeredRef = useRef(new Set());
+  const triggeredRef = useRef(new Set(loadPlayedKeys(walk.id)));
   const statusRef = useRef('idle');
   const passedSecondaryRef = useRef(passedSecondaryIds);
   // Per Enda's follow-up 36 report: two waypoints can legitimately share the EXACT same
@@ -423,8 +466,22 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
       triggeredRef.current.delete(wpKey);
     }
     setTriggeredWpIds(new Set(triggeredRef.current));
+    savePlayedKeys(walk.id, triggeredRef.current);
     tourLogService.logOffRouteQueueCleared(queued.length);
-  }, []);
+  }, [walk.id]);
+
+  // True when `wp` is the first stop, in tour order, that can start by itself (GPS-driven, has audio,
+  // plays once) and hasn't played yet. Re-evaluated live, so two stops at the identical spot fire
+  // one after the other in the same pass.
+  const isNextPendingStop = (wp) => {
+    for (const cand of triggerWaypoints) {
+      const key = wpKeyFor(cand);
+      if (manualOnlyWpKeys.has(key) || !cand.audio_clip_url || cand.trigger_once === false) continue;
+      if (triggeredRef.current.has(key)) continue;
+      return key === wpKeyFor(wp);
+    }
+    return true;
+  };
 
   const evaluateTriggers = useCallback((lat, lng, accuracy) => {
     tourLogService.logGpsFix(lat, lng, accuracy);
@@ -487,6 +544,15 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
         result = 'skip_bearing';
       } else if (!wp.audio_clip_url) {
         result = 'skip_no_audio';
+      } else if (walkingGuardRef.current.isHolding()) {
+        // Per Enda (2026-09-20): on foot (5 km/h or slower for a sustained spell) nothing
+        // starts by itself - see lib/walkingGuard.js.
+        result = 'skip_walking';
+        if (isNextPendingStop(wp)) heldStopRef.current = wp;
+      } else if (!isNextPendingStop(wp) && !walkingGuardRef.current.canSkipAhead()) {
+        // Only the NEXT unplayed stop may start unless the visitor is clearly driving (then a
+        // missed stop must not block the rest of the tour).
+        result = 'skip_order';
       } else {
         result = 'fire';
       }
@@ -495,6 +561,26 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
 
       if (result === 'fire') {
         playTriggerAudio(wp, wpKey);
+      }
+    }
+
+    // Late play of a stop the walking guard held back (see LATE_PLAY_MAX_DISTANCE_M).
+    const held = heldStopRef.current;
+    if (held) {
+      const heldKey = wpKeyFor(held);
+      const heldDistance = haversine(lat, lng, held.lat, held.lng);
+      if (triggeredRef.current.has(heldKey) || heldDistance > LATE_PLAY_MAX_DISTANCE_M) {
+        heldStopRef.current = null;
+      } else if (
+        !offRoute
+        && isFixUsable(accuracy, LATE_PLAY_MAX_DISTANCE_M)
+        && !walkingGuardRef.current.isHolding()
+        && walkingGuardRef.current.canSkipAhead()
+        && isNextPendingStop(held)
+      ) {
+        heldStopRef.current = null;
+        tourLogService.logTriggerCheck(held, heldDistance, false, null, false, 'fire_late', accuracy);
+        playTriggerAudio(held, heldKey);
       }
     }
 
@@ -639,8 +725,9 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
     if (wp.trigger_once !== false) {
       triggeredRef.current.add(wpKey);
       setTriggeredWpIds(new Set(triggeredRef.current));
+      savePlayedKeys(walk.id, triggeredRef.current);
     }
-  }, [playNextQueuedAudio, lastTriggerWaypoint]);
+  }, [playNextQueuedAudio, lastTriggerWaypoint, walk.id]);
 
   // Manual "Play" — called from WalkDetail.jsx's Tour Stops list via the imperative handle
   // below, and from handleStartTour for waypoint 1. Reuses playTriggerAudio exactly as
@@ -680,6 +767,9 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
     tourLogService.startSession(walk.id, walk.name);
     triggeredRef.current = new Set(seedKeys || []);
     setTriggeredWpIds(new Set(triggeredRef.current));
+    savePlayedKeys(walk.id, triggeredRef.current);
+    walkingGuardRef.current.reset();
+    heldStopRef.current = null;
     prevPosRef.current = null;
     audioQueueRef.current = [];
     currentlyPlayingWpRef.current = null;
@@ -734,20 +824,24 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
 
         setCurrentPos([latitude, longitude]);
         setGpsAccuracy(accuracy);
+        // Speed for the walking guard and the gentle speed reminder: the device's own reading,
+        // or worked out from two consecutive fixes. Never stored, logged or shown.
+        const nowMs = Date.now();
+        let speedKmh = Number.isFinite(pos.coords.speed) && pos.coords.speed >= 0 ? pos.coords.speed * 3.6 : NaN;
+        const prevFix = lastSpeedFixRef.current;
+        if (!Number.isFinite(speedKmh) && prevFix) {
+          const dt = (nowMs - prevFix.t) / 1000;
+          if (dt >= 1 && dt <= 20) speedKmh = (haversine(prevFix.lat, prevFix.lng, latitude, longitude) / dt) * 3.6;
+        }
+        lastSpeedFixRef.current = { lat: latitude, lng: longitude, t: nowMs };
+        walkingGuardRef.current.sample({ nowMs, speedKmh, accuracyM: accuracy });
+
         if (statusRef.current === 'running') {
           evaluateTriggers(latitude, longitude, accuracy);
         }
         // Gentle speed reminder check - see lib/speedHint.js. Runs on every fix, but speaks
         // only after a clear, sustained overshoot, and at most twice per tour.
         if (speedHintsOnRef.current) {
-          const nowMs = Date.now();
-          let speedKmh = Number.isFinite(pos.coords.speed) && pos.coords.speed >= 0 ? pos.coords.speed * 3.6 : NaN;
-          const prev = lastSpeedFixRef.current;
-          if (!Number.isFinite(speedKmh) && prev) {
-            const dt = (nowMs - prev.t) / 1000;
-            if (dt >= 1 && dt <= 20) speedKmh = (haversine(prev.lat, prev.lng, latitude, longitude) / dt) * 3.6;
-          }
-          lastSpeedFixRef.current = { lat: latitude, lng: longitude, t: nowMs };
           const quiet =
             statusRef.current !== 'running'
             || narrationDuckCountRef.current > 0
@@ -818,7 +912,8 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
     const lastKey = wpKeyFor(lastKnownWaypoint);
     const idx = allWaypoints.findIndex(wp => wpKeyFor(wp) === lastKey);
     const seedKeys = idx >= 0 ? allWaypoints.slice(0, idx + 1).map(wpKeyFor) : [];
-    handleStart(seedKeys);
+    // Also keep everything that already played (survives a page reload - see playedStorageKey).
+    handleStart([...new Set([...seedKeys, ...Array.from(triggeredRef.current)])]);
   };
 
   // The timed speed (km/h) of the leg being driven right now: the most recently triggered stop's
@@ -899,6 +994,8 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
   useEffect(() => {
     if (tourComplete) {
       handleStop();
+      // Finished tour: forget what played, so the next drive starts clean.
+      savePlayedKeys(walk.id, null);
     }
   }, [tourComplete]);
 
@@ -1177,6 +1274,27 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
               {t('player.restartFromHere')}
             </Button>
           )}
+        </div>
+      )}
+
+      {/* Continue where I left off - per Enda (2026-09-20): if the page was reloaded (e.g. the
+          phone was used as a camera) the stops that already played are remembered on this device,
+          and this picks the tour back up WITHOUT replaying any of them or the welcome. Shown only
+          while idle with played stops on record; the ordinary Start still begins a fresh tour. */}
+      {status === 'idle' && !tourComplete && !lastKnownWaypoint && triggeredWpIds.size > 0 && (
+        <div className="mx-4 mb-3 flex items-center justify-between gap-3 bg-blue-900/20 border border-blue-700/40 rounded-lg px-3 py-2">
+          <p className="text-xs text-blue-300">{t('player.continueTourNote')}</p>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => handleStart(Array.from(triggeredRef.current))}
+            disabled={!canStart}
+            title={!canStart ? (!savedOffline ? t('player.mustSaveFirst') : t('player.mustConfirmSafetyFirst')) : undefined}
+            className="shrink-0 border-blue-500 text-blue-300 hover:bg-blue-900/40 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {t('player.continueTour')}
+          </Button>
         </div>
       )}
 
