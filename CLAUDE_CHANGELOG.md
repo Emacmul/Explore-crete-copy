@@ -85,6 +85,19 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-20 (follow-up 232) — "Test from location..." in the customer tour player (admin draft preview only)
+
+Per Enda: he wants to drive just BOR3 (any location, any tour) with the real phone player without making
+it available to others. DrivingTourPlayer.jsx: on a tour flagged walk._is_draft_preview === true (the
+existing admin-only draft preview; customers never get that flag) and while idle, a violet card offers a
+location dropdown (every primary_start, labelled segment_id - segment_title) and "Start here": every stop
+before that location is seeded as already played (handleStart(seedKeys)), the live GPS tour starts, and no
+welcome/manual audio is played. i18n: player.testFromLocation / testFromLocationNote / testFromLocationGo.
+Verified with the real component: absent for a normal tour; for a draft, choosing S3 keeps earlier stops
+silent, plays S3 then S4 as driven; all earlier walking-guard/replay/late-play scenarios still pass.
+BOR (id 6a8c3498...) is currently approved:false, admin_completed:false, so it is a draft preview.
+No base44/functions files changed.
+
 ## 2026-09-20 (follow-up 231) — Walking guard: "late play" for a stop held back while crawling through its circle
 
 Per Enda (goat-herd scenario): a stop held by the walking guard used to be lost if the visitor crawled

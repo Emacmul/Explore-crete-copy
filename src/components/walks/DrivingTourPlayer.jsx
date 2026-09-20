@@ -328,6 +328,7 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
   const narrationDuckCountRef = useRef(0);
   // Gentle speed reminders (see lib/speedHint.js for every rule that keeps this from nagging).
   // Everything stays on this device: speeds are never stored, logged, sent or displayed.
+  const [testLocationIndex, setTestLocationIndex] = useState('');
   const [speedHintsOn, setSpeedHintsOn] = useState(() => speedHint.isEnabled());
   const speedHintsOnRef = useRef(speedHintsOn);
   const speedMonitorRef = useRef(speedHint.createSpeedHintMonitor());
@@ -931,6 +932,25 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
     return 0;
   };
 
+  // Admin preview only (draft tours): the tour's locations, i.e. every primary_start, in tour order.
+  const testLocations = (walk.waypoints || [])
+    .map((wp, index) => ({ wp, index }))
+    .filter(({ wp }) => wp.waypoint_role === 'primary_start' && wp.lat && wp.lng)
+    .map(({ wp, index }) => ({
+      index,
+      label: `${wp.segment_id || wp.name || `#${index + 1}`}${wp.segment_title ? ` - ${wp.segment_title}` : ''}`,
+    }));
+
+  // "Test from location...": starts the live GPS tour AT the chosen location. Every stop before
+  // it counts as already played, and nothing is played by hand (no welcome). Only ever offered on a
+  // draft tour an admin is previewing (walk._is_draft_preview) - customers never see it.
+  const handleTestFromLocation = () => {
+    const idx = Number(testLocationIndex);
+    if (!Number.isFinite(idx) || testLocationIndex === '') return;
+    const seed = (walk.waypoints || []).slice(0, idx).map(wpKeyFor);
+    handleStart(seed);
+  };
+
   const toggleSpeedHints = () => {
     const next = !speedHintsOn;
     setSpeedHintsOn(next);
@@ -1274,6 +1294,36 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
               {t('player.restartFromHere')}
             </Button>
           )}
+        </div>
+      )}
+
+      {/* Test from location - per Enda (2026-09-20): lets an admin drive just one location of a DRAFT
+          tour (e.g. BOR3) with the real live player: stops before it count as already played. */}
+      {status === 'idle' && !tourComplete && walk._is_draft_preview === true && testLocations.length > 1 && (
+        <div className="mx-4 mb-3 bg-violet-900/20 border border-violet-700/40 rounded-lg px-3 py-2 space-y-2">
+          <p className="text-xs text-violet-300">{t('player.testFromLocationNote')}</p>
+          <div className="flex items-center gap-2">
+            <select
+              value={testLocationIndex}
+              onChange={(e) => setTestLocationIndex(e.target.value)}
+              className="flex-1 min-w-0 bg-slate-900 border border-slate-600 text-slate-100 text-sm rounded-md px-2 py-2"
+            >
+              <option value="">{t('player.testFromLocation')}</option>
+              {testLocations.map((loc) => (
+                <option key={loc.index} value={loc.index}>{loc.label}</option>
+              ))}
+            </select>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleTestFromLocation}
+              disabled={!canStart || testLocationIndex === ''}
+              title={!canStart ? (!savedOffline ? t('player.mustSaveFirst') : t('player.mustConfirmSafetyFirst')) : undefined}
+              className="shrink-0 bg-violet-600 hover:bg-violet-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {t('player.testFromLocationGo')}
+            </Button>
+          </div>
         </div>
       )}
 
