@@ -85,6 +85,16 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-20 (follow-up 225) — REAL cause of "Jump to BOR3 shows BOR1": sequential waypoint lock applied to admins
+
+Per Enda: Jump to BOR3 still zoomed on BOR1. Reproduced with real BOR data once one earlier
+waypoint was left not-done: lockedWpIndexes locked BOR3's waypoint, and the effect right
+below it snapped selectedWpIndex back to the unfinished waypoint, so the map framed that
+location. Fix (TourSimulator.jsx): lockedWpIndexes returns "nothing locked" unless
+isNarrator (the strict-order rule is a narrator rule only; admins build tours).
+Verified: admin jump to BOR3 with an unfinished BOR2 waypoint now frames BOR3.
+No base44/functions files changed. (Follow-up 224's resize re-fit stays as a safety net.)
+
 ## 2026-09-20 (follow-up 224) — "Jump to location": map re-fits the location if the layout resizes right after the jump
 
 Per Enda: after Jump to BOR3 the map showed roughly BOR1-BOR5 instead of just BOR3.

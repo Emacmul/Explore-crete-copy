@@ -153,13 +153,18 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // or unticking "done" anywhere immediately unlocks/relocks everything after it.
   const lockedWpIndexes = useMemo(() => {
     const locked = new Array(waypoints.length).fill(false);
+    // Per Enda (2026-09-20): "Jump to location" to BOR3 zoomed the map on BOR1 because an
+    // earlier waypoint wasn't marked done: it locked BOR3's waypoint, and the effect below
+    // snapped the selection back to the unfinished one. Working in strict order is a
+    // NARRATOR rule only. Admins build tours and must be able to open any waypoint.
+    if (!isNarrator) return locked;
     let allPriorDone = true;
     for (let i = 0; i < waypoints.length; i++) {
       locked[i] = !allPriorDone;
       if (!waypoints[i]?.waypoint_done) allPriorDone = false;
     }
     return locked;
-  }, [waypoints]);
+  }, [waypoints, isNarrator]);
 
   useEffect(() => {
     if (selectedWpIndex >= waypoints.length) { setSelectedWpIndex(0); return; }
