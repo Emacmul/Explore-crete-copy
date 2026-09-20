@@ -85,6 +85,28 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-20 (follow-up 223) — Wording: the "still generating audio" message no longer says a "Build & Play button" is already there
+Scope: `src/components/admin/NarrationTtsEditor.jsx` — frontend only, no redeploy needed.
+
+**Per Enda's report:** while audio was generating, the message said "the Build & Play button
+below will light up", but no button called Build & Play was visible — only a greyed
+"Generating audio…" bar.
+
+**Investigated first:** that bar IS the Build & Play button (same `Button`, `handleBuildAndPlay`),
+switched off and relabelled "Generating audio…" while `stillGeneratingAudio` is true, then
+relabelled "Build & Play" when ready. So it never "appears" or "lights up" as a new button.
+Searched the whole of `src` for this text: this is the only user-facing occurrence (every other
+"Build & Play" mention is a code comment, or an error message shown when the button is ready).
+
+**What changed:** the message now reads: "Still generating audio for every line. When it is
+ready, the button below will change to Build & Play. Clicking it before then won't do anything,
+so there is no need to keep clicking it."
+
+**Verified:** `esbuild` parses the file; exactly one replacement made; old wording no longer
+appears anywhere in `src`.
+
+---
+
 ## 2026-09-20 (follow-up 222) — Narrators can't use "Jump to location…" until every waypoint in the tour is Done
 Scope: `src/components/admin/TourSimulator.jsx` — frontend only, no redeploy needed.
 
