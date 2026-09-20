@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback, useImperativeHandle, forwardRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { Play, Pause, Square, Bug, AlertTriangle, Home, CheckCircle2 } from 'lucide-react';
+import { Play, Pause, Square, Bug, AlertTriangle, Home, CheckCircle2, Gauge } from 'lucide-react';
 import * as gpsService from '@/lib/gpsService';
 import * as audioService from '@/lib/audioService';
 import * as tourLogService from '@/lib/tourLogService';
 import { calculateBearing, isBearingInRange } from '@/lib/routeExport';
+import * as speedHint from '@/lib/speedHint';
 import TourDebugLog from './TourDebugLog';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { useOfflineWalks } from '../offline/useOfflineWalks';
@@ -284,6 +285,12 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
   // between the first ending and the second starting. Narration only actually resumes once
   // this drops back to 0.
   const narrationDuckCountRef = useRef(0);
+  // Gentle speed reminders (see lib/speedHint.js for every rule that keeps this from nagging).
+  // Everything stays on this device: speeds are never stored, logged, sent or displayed.
+  const [speedHintsOn, setSpeedHintsOn] = useState(() => speedHint.isEnabled());
+  const speedHintsOnRef = useRef(speedHintsOn);
+  const speedMonitorRef = useRef(speedHint.createSpeedHintMonitor());
+  const lastSpeedFixRef = useRef(null);
   // Every secondary waypoint the driver has actually reached so far this drive (see the
   // "last known position" comment above) — restored from this device's storage on open,
   // so it survives the app being closed and reopened.
@@ -680,6 +687,8 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
     // audio finished" from a previous session — see the state declaration's own
     // comment for the exact, narrow scope this drives.
     setWaypoint1AudioFinished(false);
+    speedMonitorRef.current.reset(Date.now());
+    lastSpeedFixRef.current = null;
     narrationDuckCountRef.current = 0;
     gpsErrorStreakRef.current = 0;
     gpsAccuracyStreakRef.current = 0;
@@ -727,6 +736,27 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
         setGpsAccuracy(accuracy);
         if (statusRef.current === 'running') {
           evaluateTriggers(latitude, longitude, accuracy);
+        }
+        // Gentle speed reminder check - see lib/speedHint.js. Runs on every fix, but speaks
+        // only after a clear, sustained overshoot, and at most twice per tour.
+        if (speedHintsOnRef.current) {
+          const nowMs = Date.now();
+          let speedKmh = Number.isFinite(pos.coords.speed) && pos.coords.speed >= 0 ? pos.coords.speed * 3.6 : NaN;
+          const prev = lastSpeedFixRef.current;
+          if (!Number.isFinite(speedKmh) && prev) {
+            const dt = (nowMs - prev.t) / 1000;
+            if (dt >= 1 && dt <= 20) speedKmh = (haversine(prev.lat, prev.lng, latitude, longitude) / dt) * 3.6;
+          }
+          lastSpeedFixRef.current = { lat: latitude, lng: longitude, t: nowMs };
+          const quiet =
+            statusRef.current !== 'running'
+            || narrationDuckCountRef.current > 0
+            || (typeof window !== 'undefined' && window.speechSynthesis?.speaking === true)
+            || spokenGpsIssueRef.current
+            || offRouteAnnouncedRef.current;
+          if (speedMonitorRef.current.sample({ nowMs, speedKmh, accuracyM: accuracy, targetKmh: currentLegSpeedKmh(), quiet })) {
+            speak(t('player.speedHintSpoken'));
+          }
         }
       },
       (err) => {
@@ -789,6 +819,28 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
     const idx = allWaypoints.findIndex(wp => wpKeyFor(wp) === lastKey);
     const seedKeys = idx >= 0 ? allWaypoints.slice(0, idx + 1).map(wpKeyFor) : [];
     handleStart(seedKeys);
+  };
+
+  // The timed speed (km/h) of the leg being driven right now: the most recently triggered stop's
+  // own recorded speed, or, if it has none, the nearest earlier stop that does. 0 (a stationary
+  // stop, or nothing triggered yet) means "no speed hints".
+  const currentLegSpeedKmh = () => {
+    for (let i = triggerWaypoints.length - 1; i >= 0; i--) {
+      if (!triggeredRef.current.has(wpKeyFor(triggerWaypoints[i]))) continue;
+      for (let j = i; j >= 0; j--) {
+        const v = Number(triggerWaypoints[j].avg_segment_speed_kmh);
+        if (Number.isFinite(v) && triggerWaypoints[j].avg_segment_speed_kmh !== null && triggerWaypoints[j].avg_segment_speed_kmh !== '') return v;
+      }
+      return 0;
+    }
+    return 0;
+  };
+
+  const toggleSpeedHints = () => {
+    const next = !speedHintsOn;
+    setSpeedHintsOn(next);
+    speedHintsOnRef.current = next;
+    speedHint.setEnabled(next);
   };
 
   const handlePause = () => {
@@ -1244,6 +1296,19 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
         </Button>
         </div>
       </div>
+
+      {(status === 'running' || status === 'paused') && !manualOnlyTour && (
+        <div className="px-4 pb-3">
+          <button
+            type="button"
+            onClick={toggleSpeedHints}
+            className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-300"
+          >
+            <Gauge className="w-3.5 h-3.5" />
+            {speedHintsOn ? t('player.speedHintsOn') : t('player.speedHintsOff')}
+          </button>
+        </div>
+      )}
 
       {/* Debug log */}
       {showDebug && (

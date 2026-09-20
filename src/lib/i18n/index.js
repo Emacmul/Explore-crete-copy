@@ -326,6 +326,12 @@ export const translations = {
     // this can't literally guide anyone back — it prompts them to check their own map.
     'player.offRouteTitle': "Possibly off route",
     'player.offRouteMessage': "Your position looks far from this tour's planned route. Check your map, or turn around to get back on track. The tour will carry on automatically once you're back on the route.",
+    // Gentle speed reminders (Enda, 2026-09-20). Spoken at most twice per tour and only after a
+    // clear, sustained overshoot of the tour's own timing - see lib/speedHint.js. Deliberately
+    // friendly, says nothing about speed limits, and tells the driver how to switch it off.
+    'player.speedHintSpoken': "A friendly note: you're driving a little faster than this tour is timed for. If you ease off a bit, the story will stay in step with the road. You can switch these reminders off on the screen, and I won't mention it again for a good while.",
+    'player.speedHintsOn': "Speed reminders: on (tap to turn off)",
+    'player.speedHintsOff': "Speed reminders: off (tap to turn on)",
     'player.offRouteSpoken': "It looks like you've gone off the planned route. Please check your map to get back on track. I'll carry on with the tour once you're back on the route.",
     // Spoken out loud (text-to-speech) the moment the GPS warning banner first appears,
     // so a driver never has to look at the screen to know what's happening or what to do.

@@ -85,6 +85,22 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-20 (follow-up 229) — Gentle, rare speed reminder in the customer tour player (NOT a nag, NOT Big Brother)
+
+Per Enda: warn a driver who is going so fast the tour would fall behind the road, without ever
+nagging or feeling like surveillance. New lib/speedHint.js holds ALL the rules (pure logic, unit-tested
+with 14 checks): compares GPS speed only to the leg's own timed speed (avg_segment_speed_kmh), never to
+legal limits; "clearly faster" = >=25% AND >=12 km/h over; must hold for 30 s of consecutive good fixes
+(accuracy <= 40 m); nothing in the first 3 minutes; nothing while any spoken alert/narration duck/off-route
+or GPS-trouble state is active; at most 2 hints per tour, at least 12 min apart, then silent for the
+rest of the tour; stationary legs (0 km/h) and implausible speeds (>200) ignored. Nothing is stored,
+logged, sent or shown - speeds live only in memory. DrivingTourPlayer.jsx: speed from coords.speed or
+derived from consecutive fixes; speaks via the existing speak() (ducks narration, resumes after);
+small "Speed reminders: on/off" switch on the player, remembered on the device (localStorage
+mc_speed_hints_enabled), hidden for manual-only tours. i18n keys player.speedHintSpoken /
+speedHintsOn / speedHintsOff (English; other languages fall back to English like the other spoken alerts).
+No base44/functions files changed. Not testable against real driving here - needs a real drive test.
+
 ## 2026-09-20 (follow-up 228) — Parse & Generate: failed parts are named, and "Try again" replaces Build & Play
 
 Per Enda: "Segment 12 failed: ... took too long" meant nothing to him, and Build & Play could still
