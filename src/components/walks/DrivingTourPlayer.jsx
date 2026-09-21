@@ -100,6 +100,9 @@ const GPS_ACCURACY_HARD_CAP_M = 100;
 // still within this distance of that stop. A walker never reaches driving speed, so never triggers it.
 const LATE_PLAY_MAX_DISTANCE_M = 300;
 
+// How quiet the narration goes while a spoken alert talks over it (0 = silent, 1 = full).
+const NARRATION_DUCK_VOLUME = 0.2;
+
 function fixIsTrustworthy(accuracy, radius) {
   // No accuracy reported at all (not standard, but not every device/browser is
   // guaranteed to supply it) — behave as before rather than silently blocking every
@@ -237,7 +240,7 @@ function loadPassedSecondaryIds(walkId) {
 // button live in WalkDetail.jsx (the parent), so this is passed down rather than owned
 // here. Defaults to false (fail closed) so a caller that forgets to pass it never
 // accidentally unlocks the gate.
-const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyConfirmed = false, onClose }, ref) {
+const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyConfirmed = false, onClose, onStatusChange }, ref) {
   const { t } = useLanguage();
   const { isDownloaded } = useOfflineWalks();
   const savedOffline = isDownloaded(walk.id);
@@ -260,6 +263,8 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
     paused: { label: t('player.paused'), color: 'text-amber-400' },
   };
   const [status, setStatus] = useState('idle');
+  // Lets WalkDetail know whether the tour is running (its per-stop Play buttons wait for that).
+  useEffect(() => { onStatusChange?.(status); }, [status]);
   // Per Enda: reaching the end of a tour used to just sit there with no way back to the
   // home screen — set true once every trigger waypoint has fired (see the completion
   // effect further down, placed after handleStop is defined). Reset on a genuine fresh
@@ -700,8 +705,35 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
 
     const player = audioService.createPlayer(wp.audio_clip_url);
     playerRef.current = player;
+    // A clip that starts while a spoken alert is talking starts quietly too.
+    if (narrationDuckCountRef.current > 0) player.setVolume(NARRATION_DUCK_VOLUME);
+
+    // What the phone itself knows about this clip - see tourLogService.logClipInfo.
+    const clipName = wp.segment_title || wp.name || wp.segment_id || 'clip';
+    const el = player.getElement?.();
+    let headerSeconds = null;
+    if (el) {
+      el.addEventListener('loadedmetadata', () => {
+        const info = player.getSourceInfo?.() || {};
+        headerSeconds = info.headerSeconds ?? null;
+        tourLogService.logClipInfo(clipName, info.kind, info.bytes, el.duration, info.headerSeconds);
+      });
+      el.addEventListener('pause', () => {
+        if (!el.ended) tourLogService.logClipEvent(clipName, 'paused', el.currentTime, el.duration, narrationDuckCountRef.current);
+      });
+      el.addEventListener('error', () => {
+        tourLogService.logClipEvent(clipName, `error code ${el.error?.code ?? '?'}`, el.currentTime, el.duration, narrationDuckCountRef.current);
+      });
+    }
 
     player.onEnded(() => {
+      if (el) {
+        tourLogService.logClipEvent(clipName, 'ended', el.currentTime, el.duration, narrationDuckCountRef.current);
+        // Ended far short of what the file itself says it holds: the stored copy is cut short.
+        if (Number.isFinite(headerSeconds) && el.currentTime < headerSeconds - 2) {
+          tourLogService.logWarning(`"${clipName}" ended after ${el.currentTime.toFixed(1)}s but its file holds ${headerSeconds.toFixed(1)}s - the stored copy is cut short`);
+        }
+      }
       tourLogService.logAudioPlay(wp, wp.audio_clip_url);
       onFinished?.();
       playNextQueuedAudio();
@@ -773,6 +805,54 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
 
   useImperativeHandle(ref, () => ({ playWaypoint }), [playWaypoint]);
 
+  // GPS watch, kept restartable (2026-09-21). In Enda's BOR road test the phone simply stopped
+  // sending positions part-way through the drive - no error, no warning - so nothing further could
+  // start, and nothing ever woke the GPS again. startGpsWatch opens (or re-opens) the watch with the
+  // handlers handleStart built; the watchdog below re-opens it if no position arrives for a while.
+  const gpsHandlersRef = useRef(null);
+  const lastFixAtRef = useRef(0);
+  const startGpsWatch = () => {
+    const h = gpsHandlersRef.current;
+    if (!h) return;
+    watchIdRef.current = gpsService.watchPosition(
+      h.onGpsPosition,
+      h.onGpsError,
+      { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
+    );
+  };
+  const restartGpsWatch = (reason) => {
+    if (manualOnlyTour || !gpsHandlersRef.current) return;
+    tourLogService.logNote(`GPS restarted (${reason})`);
+    if (watchIdRef.current !== null) {
+      gpsService.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+    lastFixAtRef.current = Date.now();
+    startGpsWatch();
+  };
+  const GPS_SILENCE_RESTART_MS = 15000;
+  useEffect(() => {
+    if (status !== 'running' || manualOnlyTour) return undefined;
+    const timer = setInterval(() => {
+      if (statusRef.current !== 'running') return;
+      const silentMs = Date.now() - lastFixAtRef.current;
+      if (silentMs >= GPS_SILENCE_RESTART_MS) restartGpsWatch(`no GPS activity for ${Math.round(silentMs / 1000)}s`);
+    }, 5000);
+    // The app coming back to the front after being hidden is the usual moment a phone drops the
+    // GPS watch. Log the hide/show either way, and wake the GPS if it has gone quiet.
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        tourLogService.logNote('App went to the background');
+      } else {
+        const silentMs = Date.now() - lastFixAtRef.current;
+        tourLogService.logNote(`App is back in front (last GPS activity ${Math.round(silentMs / 1000)}s ago)`);
+        if (statusRef.current === 'running' && silentMs >= 5000) restartGpsWatch('app came back to the front');
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', onVisibility); };
+  }, [status, manualOnlyTour]);
+
   // seedKeys (optional): waypoint keys to mark as "already triggered" before GPS tracking
   // begins. Used by "Restart tour from here" below so picking up mid-route doesn't replay
   // every earlier segment's audio again — a normal Start Tour click passes nothing, so it
@@ -824,8 +904,8 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
     // correctly hides the position readout and every GPS-related banner below.
     if (manualOnlyTour) return;
 
-    watchIdRef.current = gpsService.watchPosition(
-      (pos) => {
+    const onGpsPosition = (pos) => {
+        lastFixAtRef.current = Date.now();
         const { latitude, longitude, accuracy } = pos.coords;
         // Any fix at all — even a low-accuracy one that evaluateTriggers below will
         // still reject per-waypoint — means GPS itself is working again, so a "no signal"
@@ -884,8 +964,10 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
             speak(t('player.speedHintSpoken'));
           }
         }
-      },
-      (err) => {
+    };
+    const onGpsError = (err) => {
+        // An error callback still proves the watch is alive - only TOTAL silence triggers a restart.
+        lastFixAtRef.current = Date.now();
         tourLogService.logWarning(`GPS error: ${err.message}`);
         // Per audit finding U-07: a permission denial never recovers on its own, so it's
         // treated as sustained immediately. Anything else (timeout, position
@@ -901,9 +983,10 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
             message: isPermissionDenied ? t('player.gpsPermissionDenied') : t('player.gpsUnavailable'),
           });
         }
-      },
-      { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
-    );
+    };
+    gpsHandlersRef.current = { onGpsPosition, onGpsError };
+    lastFixAtRef.current = Date.now();
+    startGpsWatch();
   };
 
   // Per Enda/Anoushka's follow-up 164 report: "Start the tour" (renamed from "Start
@@ -1057,17 +1140,19 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
   // making both hard to follow — this ducks the recording out of the way instead.
   const duckNarration = useCallback(() => {
     narrationDuckCountRef.current += 1;
-    playerRef.current?.pause();
+    // Turned DOWN, never paused (2026-09-21). Pausing depended on the phone later telling us the
+    // spoken alert had ended; some phones never do, and the narration then stayed silent - which is
+    // exactly the "3 seconds and then nothing" Enda heard when a GPS or off-route alert spoke. With a
+    // volume change there is nothing to resume, so the narration can never be left stuck.
+    playerRef.current?.setVolume(NARRATION_DUCK_VOLUME);
   }, []);
 
-  // Resumes narration only once EVERY alert that asked for it has finished (count back to
-  // 0) — see narrationDuckCountRef above for why this is a count, not a flag. Swallows a
-  // resume failure (e.g. the browser blocking an unprompted play()) rather than throwing —
-  // narration staying paused is a far smaller problem than an unhandled promise rejection.
+  // Back to full volume once EVERY alert that asked for it has finished (count back to 0) - see
+  // narrationDuckCountRef above for why this is a count, not a flag.
   const unduckNarration = useCallback(() => {
     narrationDuckCountRef.current = Math.max(0, narrationDuckCountRef.current - 1);
     if (narrationDuckCountRef.current === 0) {
-      playerRef.current?.play().catch(() => {});
+      playerRef.current?.setVolume(1);
     }
   }, []);
 

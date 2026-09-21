@@ -11,6 +11,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import WalkDetailMap from '../map/WalkDetailMap';
 import DownloadButton from './DownloadButton';
+import { preCacheWalkAudio } from '../offline/offlineStorage';
 import WalkProgressBar from './WalkProgressBar';
 import DrivingModeNotice from './DrivingModeNotice';
 import DrivingTourPlayer from './DrivingTourPlayer';
@@ -85,6 +86,23 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
   const { isDownloaded } = useOfflineWalks();
   const savedOffline = isDownloaded(walk.id);
 
+  // Re-check of the saved narration clips (2026-09-21). A tour saved on an earlier version, or on
+  // a shaky connection, may hold clips that are cut short - the phone would play them cut short
+  // (Enda's BOR road tests: 3 and 5 seconds of long clips). Whenever a saved tour is opened with a
+  // connection, every stored clip is proven complete, and any bad one is downloaded again. Runs
+  // once per tour per opening. A clip that cannot be repaired is named on screen.
+  const [audioCheck, setAudioCheck] = React.useState({ state: 'idle', failed: [] });
+  const [audioCheckNonce, setAudioCheckNonce] = React.useState(0);
+  React.useEffect(() => {
+    if (!savedOffline || typeof navigator === 'undefined' || navigator.onLine === false) return undefined;
+    let cancelled = false;
+    setAudioCheck({ state: 'checking', failed: [] });
+    preCacheWalkAudio(walk, () => {})
+      .then((res) => { if (!cancelled) setAudioCheck({ state: res.failed.length ? 'problem' : 'ok', failed: res.failed }); })
+      .catch(() => { if (!cancelled) setAudioCheck({ state: 'idle', failed: [] }); });
+    return () => { cancelled = true; };
+  }, [walk?.id, savedOffline, audioCheckNonce]);
+
   // Per Enda (follow-up 184): "Before You Set Off" is easy to scroll past without reading
   // — until something goes wrong. The customer must tap Confirm before Start Walk/Start
   // Tour becomes active, and every tap is logged to the database (logSafetyConfirmation),
@@ -149,6 +167,10 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
   // own "tapped" feedback (turns the button into a checkmark) — DrivingTourPlayer tracks the
   // real triggered/played state itself; this is just so the driver can see the tap worked.
   const driverPlayerRef = React.useRef(null);
+  // The player reports whether the tour is running, so the per-stop Play buttons can stay off until
+  // Start has really been pressed. (They used to depend on a flag that only Walk/Hike tours ever set,
+  // so on WalkAbouts and DriveAbouts they never appeared at all.)
+  const [playerStatus, setPlayerStatus] = React.useState('idle');
   const [manuallyPlayedKeys, setManuallyPlayedKeys] = React.useState(new Set());
   React.useEffect(() => {
     setManuallyPlayedKeys(new Set());
@@ -406,7 +428,7 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
 
             {walk.route_type === 'driving_audio_tour' && (
               <div ref={drivingPlayerWrapRef}>
-                <DrivingTourPlayer ref={driverPlayerRef} walk={walk} safetyConfirmed={safetyConfirmed} onClose={onClose} />
+                <DrivingTourPlayer ref={driverPlayerRef} walk={walk} safetyConfirmed={safetyConfirmed} onClose={onClose} onStatusChange={setPlayerStatus} />
               </div>
             )}
 
@@ -422,6 +444,25 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
               <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 flex items-center gap-2">
                 <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
                 <p className="text-amber-800 text-sm">{t('detail.offlineWarning')}</p>
+              </div>
+            )}
+
+            {savedOffline && audioCheck.state === 'checking' && (
+              <p className="text-xs text-gray-500">{t('download.checking')}</p>
+            )}
+            {savedOffline && audioCheck.state === 'problem' && (
+              <div className="bg-red-50 border border-red-300 rounded-xl p-3 space-y-2">
+                <p className="text-red-800 text-sm font-semibold">{t('download.problemTitle')}</p>
+                <p className="text-red-700 text-sm">
+                  {t('download.problemBody', { names: audioCheck.failed.map(f => f.name).join(', ') })}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setAudioCheckNonce(n => n + 1)}
+                  className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700"
+                >
+                  {t('download.checkAgain')}
+                </button>
               </div>
             )}
 
@@ -621,7 +662,7 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
                                 letting them play real narration audio before downloading and
                                 confirming safety was a genuine gap, since `canStart`'s gate on
                                 the Start button did nothing to stop this separate button. */}
-                            {isDrivingTour && started && waypoint.trigger_audio && waypoint.audio_clip_url && (
+                            {isDrivingTour && (playerStatus === 'running' || playerStatus === 'paused') && waypoint.trigger_audio && waypoint.audio_clip_url && (
                               <Button
                                 type="button"
                                 size="sm"

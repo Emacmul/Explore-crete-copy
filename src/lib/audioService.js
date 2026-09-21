@@ -14,6 +14,7 @@
  * an HTML <audio> element.
  */
 import { getCachedAudio } from './offlineStorageService';
+import { readWavInfo } from './audioIntegrity';
 
 export function isSupported() {
   return typeof Audio !== 'undefined';
@@ -33,6 +34,9 @@ export function createPlayer(src) {
   let objectUrl = null;
   let srcResolved = false;
   let currentSrc = src;
+  // Where this clip's sound really comes from, for the tour log (2026-09-21): the phone's stored
+  // copy or the server, its size, and the length its own header states (WAV only).
+  let sourceInfo = { kind: 'not started yet', bytes: null, headerSeconds: null };
 
   // Resolve the source lazily on first play: prefer a cached blob (offline-ready),
   // fall back to the remote URL. Deferred so a player can be constructed before its
@@ -44,10 +48,14 @@ export function createPlayer(src) {
       const cached = await getCachedAudio(currentSrc);
       if (cached) {
         objectUrl = URL.createObjectURL(cached);
+        let headerSeconds = null;
+        try { headerSeconds = (await readWavInfo(cached)).declaredSeconds ?? null; } catch { /* log only */ }
+        sourceInfo = { kind: 'offline copy', bytes: cached.size, headerSeconds };
         audio.src = objectUrl;
         return;
       }
     } catch { /* fall through to remote */ }
+    sourceInfo = { kind: 'server', bytes: null, headerSeconds: null };
     audio.src = currentSrc;
   };
 
@@ -70,6 +78,7 @@ export function createPlayer(src) {
     getDuration: () => audio.duration || 0,
     getCurrentTime: () => audio.currentTime || 0,
     getElement: () => audio,
+    getSourceInfo: () => sourceInfo,
     destroy: () => {
       audio.pause();
       if (objectUrl) URL.revokeObjectURL(objectUrl);

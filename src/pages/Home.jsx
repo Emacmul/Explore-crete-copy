@@ -127,9 +127,14 @@ export default function Home() {
 
         if (outdated) {
           setUpdatingWalkName(serverWalk.name);
-          await replaceWalkOffline(serverWalk, user.email);
+          // Audio first, and the new version only replaces the saved one once EVERY clip is
+          // proven complete (2026-09-21): this used to replace first and ignore the audio result,
+          // which could leave a tour marked "saved" with cut-short clips in it.
           await preCacheWalkTiles(serverWalk, () => {});
-          await preCacheWalkAudio(serverWalk, () => {});
+          const audio = await preCacheWalkAudio(serverWalk, () => {});
+          if (audio.cached >= audio.total) {
+            await replaceWalkOffline(serverWalk, user.email);
+          }
           setUpdatingWalkName(null);
 
           setSelectedWalk(prev => prev?.id === serverWalk.id ? serverWalk : prev);
@@ -159,9 +164,12 @@ export default function Home() {
 
     if (outdated) {
       setUpdatingWalkName(walk.name);
-      await replaceWalkOffline(walk, user.email);
+      // Same rule as the bulk update above: only replace the saved copy once every clip is complete.
       await preCacheWalkTiles(walk, () => {});
-      await preCacheWalkAudio(walk, () => {});
+      const audio = await preCacheWalkAudio(walk, () => {});
+      if (audio.cached >= audio.total) {
+        await replaceWalkOffline(walk, user.email);
+      }
       setUpdatingWalkName(null);
     }
 

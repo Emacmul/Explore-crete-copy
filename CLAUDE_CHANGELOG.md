@@ -85,6 +85,18 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-21 (follow-up 241) — Offline audio proven complete; alerts duck narration; clip logging; GPS watchdog; Remove download button
+Why: BOR1a/BOR3a played only 3-5 s on Enda's phone though the server files are whole. The phone's stored copy was never checked.
+Frontend only - NO backend function changed.
+- NEW lib/audioIntegrity.js: 4-step check per clip (size vs Content-Length, WAV header vs bytes held, read-back from storage, test-load in phone's audio player). 3 tries. Existing stored copies re-checked and replaced if bad.
+- offlineStorage.jsx: preCacheWalkAudio uses it, returns {total, cached, failed:[{url,name,reason}]}.
+- Home.jsx: auto-update flows only replaceWalkOffline when every clip verified.
+- WalkDetail.jsx: re-check of stored clips when a saved tour is opened online; red problem banner naming bad clips + "Check again". Tour Stops Play button now shows only while the player is running/paused (playerStatus via new onStatusChange prop).
+- DrivingTourPlayer.jsx: spoken alerts lower narration volume to 0.2 instead of pausing (iOS cannot set HTML audio volume - alert talks over narration there). Per-clip log (source server/offline copy, bytes, phone length, header length, pauses, endings, "cut short" warning). GPS watchdog: restart watch after 15 s total silence; logs app background/foreground.
+- audioService.js getSourceInfo(); tourLogService.js logClipInfo/logClipEvent/logNote; TourDebugLog.jsx labels.
+- DownloadButton.jsx: always-visible "Remove download" with two-step confirm + status line "Saved for offline use - every clip checked". i18n keys download.*.
+- Tested in harness: integrity 7/7, alerts/watchdog/diagnostics pass, DriveAbout regression 23/23. Not runtime-tested: WalkDetail Tour Stops gate, DownloadButton (syntax only).
+
 ## 2026-09-21 (follow-up 240) — WalkAbouts: walking guard switched OFF (it was blocking walkers)
 - Problem (found while answering Enda's question about the WalkAbout Rethymno intro text): the
   walking guard added in follow-up 236 (and the "next stop only" order rule from the same change)

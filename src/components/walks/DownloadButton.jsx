@@ -10,6 +10,10 @@ export default function DownloadButton({ walk, size = 'sm', showLabel = true }) 
   const { toast } = useToast();
   const { downloadWalk, removeWalk, isDownloaded } = useOfflineWalks();
   const [phase, setPhase] = useState('idle'); // 'idle' | 'saving' | 'removing'
+  // Two-step remove: first tap asks "are you sure?", second tap removes. The old button removed
+  // the download on ONE tap while it was labelled "Saved Offline" - and its "Remove" label only
+  // showed when a mouse hovered over it, which a phone never does (Enda, 2026-09-21).
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [progress, setProgress] = useState(0);
   const downloaded = isDownloaded(walk.id);
 
@@ -31,7 +35,9 @@ export default function DownloadButton({ walk, size = 'sm', showLabel = true }) 
           description: t('download.incompleteBody', {
             cached: result?.audio?.cached ?? 0,
             total: result?.audio?.total ?? 0,
-          }),
+          }) + (result?.audio?.failed?.length
+            ? ' ' + t('download.incompleteNames', { names: result.audio.failed.map(f => f.name).join(', ') })
+            : ''),
         });
       }
     } catch {
@@ -48,6 +54,7 @@ export default function DownloadButton({ walk, size = 'sm', showLabel = true }) 
 
   const handleRemove = async (e) => {
     e.stopPropagation();
+    setConfirmingRemove(false);
     setPhase('removing');
     try {
       await removeWalk(walk.id);
@@ -75,22 +82,37 @@ export default function DownloadButton({ walk, size = 'sm', showLabel = true }) 
   }
 
   if (downloaded) {
+    if (confirmingRemove) {
+      return (
+        <div className="flex flex-col gap-2" onClick={(e) => e.stopPropagation()}>
+          <p className="text-sm text-gray-700">{t('download.removeConfirm')}</p>
+          <div className="flex gap-2">
+            <Button size={size} variant="outline" onClick={handleRemove} className="gap-2 border-red-300 text-red-700 hover:bg-red-50">
+              <Trash2 className="w-3.5 h-3.5" /> {t('download.removeYes')}
+            </Button>
+            <Button size={size} variant="outline" onClick={(e) => { e.stopPropagation(); setConfirmingRemove(false); }} className="border-gray-300 text-gray-700 hover:bg-gray-50">
+              {t('download.removeNo')}
+            </Button>
+          </div>
+        </div>
+      );
+    }
     return (
-      <Button
-        size={size}
-        variant="outline"
-        onClick={handleRemove}
-        className="gap-2 border-green-300 text-green-700 hover:border-red-300 hover:text-red-600 hover:bg-red-50 group"
-      >
-        <CheckCircle className="w-3.5 h-3.5 group-hover:hidden" />
-        <Trash2 className="w-3.5 h-3.5 hidden group-hover:block" />
-        {showLabel && (
-          <>
-            <span className="group-hover:hidden">{t('download.savedOffline')}</span>
-            <span className="hidden group-hover:block">{t('download.remove')}</span>
-          </>
-        )}
-      </Button>
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center gap-1.5 text-sm text-green-700">
+          <CheckCircle className="w-4 h-4 shrink-0" />
+          <span>{t('download.allChecked')}</span>
+        </div>
+        <Button
+          size={size}
+          variant="outline"
+          onClick={(e) => { e.stopPropagation(); setConfirmingRemove(true); }}
+          className="gap-2 border-gray-300 text-gray-700 hover:border-red-300 hover:text-red-600 hover:bg-red-50 self-start"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+          {showLabel && <span>{t('download.removeDownload')}</span>}
+        </Button>
+      </div>
     );
   }
 

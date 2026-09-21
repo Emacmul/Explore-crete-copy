@@ -137,6 +137,23 @@ export function logManualPlay(waypoint) {
 // banner first appears, telling the driver out loud that this is a signal issue, not an app
 // failure, without requiring them to look at the screen. Logged so a support conversation
 // about "the app went quiet" can confirm whether the spoken alert actually played.
+// Per-clip facts from the phone itself (2026-09-21): where the sound comes from (the phone's stored
+// copy or the server), its size, the length the phone says it has, and the length its own file
+// header says. A clip that ends far short of its header length is the "3 seconds" fault.
+export function logClipInfo(name, sourceKind, bytes, phoneSeconds, headerSeconds) {
+  addEntry('clip_info', { name, sourceKind, bytes, phoneSeconds, headerSeconds });
+}
+
+// A clip pausing, resuming, ending or failing, with how far in it was and why (alert in progress?).
+export function logClipEvent(name, event, atSeconds, ofSeconds, alertsActive) {
+  addEntry('clip_event', { name, event, atSeconds, ofSeconds, alertsActive });
+}
+
+// Page or GPS housekeeping worth seeing in a road-test log (app to background, GPS restarted).
+export function logNote(text) {
+  addEntry('note', { text });
+}
+
 export function logSpokenAlert(kind, text) {
   addEntry('spoken_alert', { kind, text });
 }
@@ -227,6 +244,19 @@ function entryToText(entry) {
       return `[${t}] ⚠ ${entry.data.message}`;
     case 'manual_play':
       return `[${t}] ▶ MANUAL PLAY — "${entry.data.waypointId}" (tapped by driver)`;
+    case 'clip_info': {
+      const d = entry.data;
+      const kb = d.bytes != null ? `${Math.round(d.bytes / 1024)} KB` : 'size unknown';
+      const num = (v) => (Number.isFinite(v) ? `${v.toFixed(1)}s` : 'unknown');
+      return `[${t}] 🎧 CLIP "${d.name}" — from ${d.sourceKind} (${kb}); phone says ${num(d.phoneSeconds)}, file header says ${num(d.headerSeconds)}`;
+    }
+    case 'clip_event': {
+      const d = entry.data;
+      const num = (v) => (Number.isFinite(v) ? `${v.toFixed(1)}s` : '?');
+      return `[${t}] 🎧 CLIP "${d.name}" ${String(d.event).toUpperCase()} at ${num(d.atSeconds)} of ${num(d.ofSeconds)}${d.alertsActive ? ` (spoken alerts active: ${d.alertsActive})` : ''}`;
+    }
+    case 'note':
+      return `[${t}] 📝 ${entry.data.text}`;
     case 'spoken_alert':
       return `[${t}] 🔊 SPOKEN ALERT (${entry.data.kind}) — "${entry.data.text}"`;
     case 'off_route_queue_cleared':

@@ -73,6 +73,16 @@ function entryLabel(entry) {
       return d.message;
     case 'spoken_alert':
       return `🔊 spoken alert (${d.kind || ''}): ${d.text || ''}`;
+    case 'clip_info': {
+      const num = (v) => (Number.isFinite(v) ? `${v.toFixed(1)}s` : 'unknown');
+      return `🎧 ${d.name}: from ${d.sourceKind}${d.bytes != null ? ` (${Math.round(d.bytes / 1024)} KB)` : ''}; phone says ${num(d.phoneSeconds)}, file says ${num(d.headerSeconds)}`;
+    }
+    case 'clip_event': {
+      const num = (v) => (Number.isFinite(v) ? `${v.toFixed(1)}s` : '?');
+      return `🎧 ${d.name} ${d.event} at ${num(d.atSeconds)} of ${num(d.ofSeconds)}${d.alertsActive ? ` (alerts: ${d.alertsActive})` : ''}`;
+    }
+    case 'note':
+      return `📝 ${d.text}`;
     default:
       return entry.type;
   }

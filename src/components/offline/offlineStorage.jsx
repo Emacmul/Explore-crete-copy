@@ -8,6 +8,7 @@
 
 import * as offlineStorageService from '@/lib/offlineStorageService';
 import { splitTrailRuns } from '@/lib/routeExport';
+import { ensureVerifiedClip } from '@/lib/audioIntegrity';
 
 export const saveWalkOffline = offlineStorageService.saveWalkData;
 export const getOfflineWalk = offlineStorageService.getWalkData;
@@ -122,33 +123,38 @@ export function collectWalkAudioUrls(walk) {
 
 /**
  * Pre-download all narration audio for a walk into IndexedDB so it plays offline.
- * Skips clips already cached. Returns { total, cached }.
+ *
+ * Every clip is PROVEN complete before it counts (see lib/audioIntegrity.js): size, file header,
+ * read-back from storage, and a test-load in the phone's own audio player. A clip already stored
+ * from an earlier download is re-checked too, and replaced if it is cut short. A clip that never
+ * passes is listed in `failed` (with the waypoint's name) and is NOT counted as cached, so the
+ * tour is never marked "saved" with a bad clip in it.
+ * Returns { total, cached, failed: [{ url, name, reason }] }.
  */
 export async function preCacheWalkAudio(walk, onProgress) {
   const urls = collectWalkAudioUrls(walk);
   const total = urls.length;
+  const nameFor = (url) => {
+    const wp = (walk?.waypoints || []).find(w => w.audio_clip_url === url);
+    return wp ? (wp.segment_title || wp.name || wp.segment_id || 'a stop') : 'a narration clip';
+  };
   let done = 0;
   let cached = 0;
+  const failed = [];
 
   for (const url of urls) {
     try {
-      const existing = await offlineStorageService.getCachedAudio(url);
-      if (existing) {
-        cached++;
-      } else {
-        const res = await fetch(url);
-        if (res.ok) {
-          const blob = await res.blob();
-          await offlineStorageService.cacheAudio(url, blob);
-          cached++;
-        }
-      }
-    } catch { /* skip a single failed clip — the rest still download */ }
+      const result = await ensureVerifiedClip(url);
+      if (result.ok) cached++;
+      else failed.push({ url, name: nameFor(url), reason: result.reason });
+    } catch (err) {
+      failed.push({ url, name: nameFor(url), reason: err?.message || 'unknown' });
+    }
     done++;
     if (onProgress) onProgress(total ? Math.round((done / total) * 100) : 100);
   }
 
-  return { total, cached };
+  return { total, cached, failed };
 }
 
 /**
