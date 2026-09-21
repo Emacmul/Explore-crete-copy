@@ -166,6 +166,29 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
 
   const isDrivingTour = walk?.route_type === 'driving_audio_tour';
 
+  // Per Enda: on a driving tour the Start Tour button lives at the TOP of this screen, but
+  // the two things that unlock it (Stay Safe Offline, and confirming the safety notes) are
+  // further down — so after finishing both he was left at the bottom and had to scroll all
+  // the way back up. The moment the tour becomes startable (offline saved AND safety
+  // confirmed, in either order), scroll the player back into view. Fires only on the
+  // not-ready -> ready change, so it never yanks the screen around afterwards.
+  const drivingPlayerWrapRef = React.useRef(null);
+  const wasCanStartRef = React.useRef(false);
+  React.useEffect(() => {
+    const was = wasCanStartRef.current;
+    wasCanStartRef.current = canStart;
+    if (!isDrivingTour || !canStart || was) return;
+    const el = drivingPlayerWrapRef.current;
+    if (el && typeof el.scrollIntoView === 'function') {
+      // Wait one frame so the confirmed/offline banners have finished re-rendering first.
+      requestAnimationFrame(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    }
+  }, [canStart, isDrivingTour]);
+  // Opening a different tour starts the "was ready" memory afresh.
+  React.useEffect(() => {
+    wasCanStartRef.current = false;
+  }, [walk?.id]);
+
   // For driving tours, only show primary_start (the -PS segment-start points) to users.
   // Secondary waypoints are used internally for audio triggering only and are never
   // exposed in the user-facing UI. The route line still follows the full waypoint
@@ -382,7 +405,9 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
             )}
 
             {walk.route_type === 'driving_audio_tour' && (
-              <DrivingTourPlayer ref={driverPlayerRef} walk={walk} safetyConfirmed={safetyConfirmed} onClose={onClose} />
+              <div ref={drivingPlayerWrapRef}>
+                <DrivingTourPlayer ref={driverPlayerRef} walk={walk} safetyConfirmed={safetyConfirmed} onClose={onClose} />
+              </div>
             )}
 
             {/* Legal/safety compliance banner — required every time this tour is opened,

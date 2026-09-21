@@ -85,6 +85,22 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-21 (follow-up 239) — Driving tours: page scrolls back up to Start Tour once the tour is ready
+- Problem (Enda): the Start Tour button is at the TOP of a driving tour's
+  screen, but "Stay Safe Offline" and the safety confirmation are further
+  down. After finishing both he had to scroll all the way back up.
+- Fix: `WalkDetail.jsx` — the player is wrapped in a div with a ref, and an
+  effect scrolls it into view the moment `canStart` (saved offline AND safety
+  confirmed, either order) changes from false to true. Only on that change,
+  so it never moves the screen afterwards. Walk/Hike tabs unaffected (their
+  Start button already sits right under the confirmation).
+- Both gates stay compulsory; safety tap still logged as before.
+- Tested with a small browser test of the same logic: scrolls to the top when
+  the second step is finished (either order), does not scroll when only one is done.
+- Frontend only — no backend function changes.
+
+---
+
 ## 2026-09-20 (follow-up 238) — ROOT CAUSE of the BOR3 road test: every stop of a segment shared ONE key
 
 Found by running the real Battle of the Rivers data (116 waypoints, 4164-point route) through the real player in a test
