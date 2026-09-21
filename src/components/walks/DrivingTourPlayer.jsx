@@ -342,6 +342,13 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
   const speedMonitorRef = useRef(speedHint.createSpeedHintMonitor());
   const lastSpeedFixRef = useRef(null);
   const walkingGuardRef = useRef(createWalkingGuard());
+  // The walking guard (lib/walkingGuard.js) exists for DRIVERS: it stops stops firing while a
+  // car crawls or is parked and the phone is used on foot. A WalkAbout (category WBT) is walked
+  // from start to finish, so a walker is ALWAYS at walking pace - with the guard on, nothing would
+  // ever start by itself and only the Play button would work (found 2026-09-21). For WalkAbouts the
+  // guard and the "next stop only" order rule stay off, exactly as before 2026-09-20.
+  const guardActiveRef = useRef(walk.tour_category !== 'WBT');
+  guardActiveRef.current = walk.tour_category !== 'WBT';
   const lastSpeedKmhRef = useRef(NaN); // latest speed reading, only for the test-drive log
   const heldStopRef = useRef(null); // the next unplayed stop the walking guard held back, if any
   // Every secondary waypoint the driver has actually reached so far this drive (see the
@@ -564,12 +571,12 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
         result = 'skip_bearing';
       } else if (!wp.audio_clip_url) {
         result = 'skip_no_audio';
-      } else if (walkingGuardRef.current.isHolding()) {
+      } else if (guardActiveRef.current && walkingGuardRef.current.isHolding()) {
         // Per Enda (2026-09-20): on foot (5 km/h or slower for a sustained spell) nothing
         // starts by itself - see lib/walkingGuard.js.
         result = 'skip_walking';
         if (isNextPendingStop(wp)) heldStopRef.current = wp;
-      } else if (!isNextPendingStop(wp) && !walkingGuardRef.current.canSkipAhead()) {
+      } else if (guardActiveRef.current && !isNextPendingStop(wp) && !walkingGuardRef.current.canSkipAhead()) {
         // Only the NEXT unplayed stop may start unless the visitor is clearly driving (then a
         // missed stop must not block the rest of the tour).
         result = 'skip_order';
@@ -855,7 +862,7 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
         }
         lastSpeedFixRef.current = { lat: latitude, lng: longitude, t: nowMs };
         const wasHolding = walkingGuardRef.current.isHolding();
-        walkingGuardRef.current.sample({ nowMs, speedKmh, accuracyM: accuracy });
+        if (guardActiveRef.current) walkingGuardRef.current.sample({ nowMs, speedKmh, accuracyM: accuracy });
         lastSpeedKmhRef.current = speedKmh;
         if (walkingGuardRef.current.isHolding() !== wasHolding) {
           tourLogService.logGuardChange(walkingGuardRef.current.isHolding(), speedKmh);

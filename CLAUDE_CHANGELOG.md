@@ -85,6 +85,21 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-21 (follow-up 240) — WalkAbouts: walking guard switched OFF (it was blocking walkers)
+- Problem (found while answering Enda's question about the WalkAbout Rethymno intro text): the
+  walking guard added in follow-up 236 (and the "next stop only" order rule from the same change)
+  runs in DrivingTourPlayer, which WalkAbouts share with DriveAbouts. A WalkAbout is walked, so the
+  visitor is always at walking pace and the guard would hold every stop: nothing would start by
+  itself, only the manual Play button.
+- Fix: `DrivingTourPlayer.jsx` — `guardActiveRef` (false when `walk.tour_category === 'WBT'`).
+  For WalkAbouts the guard is never sampled, never holds, and the order rule is skipped, i.e. the
+  behaviour from before 2026-09-20. DriveAbouts are unchanged.
+- Tested in the player test page: DriveAbout, all 23 earlier checks still pass; WalkAbout (walker at
+  3-4 km/h in the village, crawl, missed stop): stops start by themselves, as intended.
+- Frontend only — no backend function changes.
+
+---
+
 ## 2026-09-21 (follow-up 239) — Driving tours: page scrolls back up to Start Tour once the tour is ready
 - Problem (Enda): the Start Tour button is at the TOP of a driving tour's
   screen, but "Stay Safe Offline" and the safety confirmation are further
