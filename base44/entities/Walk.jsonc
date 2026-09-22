@@ -1,353 +1,356 @@
 {
   "name": "Walk",
-  "type": "object",
   "properties": {
-    "tour_category": {
-      "type": "string",
-      "enum": [
-        "WHT",
-        "WBT",
-        "DDV"
-      ],
-      "default": "WHT",
-      "description": "Tour category: WHT=Walking/Hiking Tour, WBT=Walkabout Tour, DDV=DriveAbout Tour"
+    "admin_completed": {
+      "default": false,
+      "description": "Master (non-clone) tour only: true once an Admin has fully finished editing the English original and it's ready for narrators to clone and translate. Separate from 'approved' \u2014 a tour can be admin_completed but not yet approved (not published for customer purchase), or approved without ever needing this flag touched again. Only master tours use this; a translation clone doesn't have its own meaning for it. Defaults false, so every existing and future master tour starts hidden from narrators' \"Clone a tour to translate\" list until an Admin explicitly marks it ready.",
+      "type": "boolean"
     },
-    "route_type": {
-      "type": "string",
-      "enum": [
-        "walk",
-        "driving_audio_tour"
-      ],
-      "default": "walk",
-      "description": "Internal editor type: walk for WHT, driving_audio_tour for WBT and DDV"
+    "announced_at": {
+      "description": "When an admin/narrator last confirmed this route is still accurate on the ground (the 'new walk' customer announcement feature that originally used this field has been retired)",
+      "format": "date-time",
+      "type": "string"
+    },
+    "approved": {
+      "default": true,
+      "description": "Whether the walk is publicly visible",
+      "type": "boolean"
+    },
+    "assigned_narrator_email": {
+      "description": "Email of the Narr who owns this translation clone. While finished is false, only this Narr can see the clone.",
+      "type": "string"
+    },
+    "buggy_friendly": {
+      "default": false,
+      "description": "Walks/Hikes (WHT) and WalkAbouts (WBT): true if this route works with an ordinary buggy/stroller, no off-road/4x4-style buggy needed. Not applicable to DriveAbouts (DDV). Shown to customers as a quick filter and a badge on the walk's card, per Enda/Anoushka's request (follow-up 144, widened to WalkAbouts 2026-09-14) so young-family-suitable walks don't get lost in the general list.",
+      "type": "boolean"
+    },
+    "checkout_url": {
+      "description": "Checkout URL for this product at the current Merchant of Record (Creem sandbox now, Paddle later). The in-app Buy button opens this URL, so the MoR owns the checkout page, tax collection and payment. Swapping processors = update this link.",
+      "type": "string"
+    },
+    "clone_of": {
+      "description": "ID of the original tour this record is a translation clone of. Unset on original/published tours.",
+      "type": "string"
     },
     "code": {
-      "type": "string",
-      "description": "Unique identifying code for the walk or 3-letter tour code"
+      "description": "Unique identifying code for the walk or 3-letter tour code",
+      "type": "string"
     },
-    "name": {
-      "type": "string",
-      "description": "Name of the walk or tour"
+    "creem_product_id": {
+      "description": "The matching product's ID in Creem \u2014 used to identify which walk was purchased when a payment webhook arrives",
+      "type": "string"
+    },
+    "default_driving_speed_kmh": {
+      "description": "Default average driving speed for audio tours (helper only)",
+      "type": "number"
     },
     "description": {
-      "type": "string",
-      "description": "Detailed description of the walk or tour"
-    },
-    "safety_notes": {
-      "type": "string",
-      "description": "Safety information and required equipment for this walk"
+      "description": "Detailed description of the walk or tour",
+      "type": "string"
     },
     "difficulty": {
-      "type": "string",
+      "description": "Difficulty level (walking routes only)",
       "enum": [
         "easy",
         "moderate",
         "challenging",
         "difficult"
       ],
-      "description": "Difficulty level (walking routes only)"
-    },
-    "buggy_friendly": {
-      "type": "boolean",
-      "default": false,
-      "description": "Walks/Hikes (WHT) and WalkAbouts (WBT): true if this route works with an ordinary buggy/stroller, no off-road/4x4-style buggy needed. Not applicable to DriveAbouts (DDV). Shown to customers as a quick filter and a badge on the walk's card, per Enda/Anoushka's request (follow-up 144, widened to WalkAbouts 2026-09-14) so young-family-suitable walks don't get lost in the general list."
-    },
-    "manual_only_tour": {
-      "type": "boolean",
-      "default": false,
-      "description": "WalkAbouts (WBT) only: true when GPS does not work reliably at this location (inside a monastery, the Fortezza, Aptera, etc.), not just weak signal. The customer player skips GPS entirely for this tour — no auto-trigger, no GPS/off-route warnings — and every waypoint needs an explicit manual tap to play instead. Never used for a real DriveAbout (DDV), which relies on GPS working on the road."
+      "type": "string"
     },
     "distance_km": {
-      "type": "number",
-      "description": "Total distance in kilometres"
+      "description": "Total distance in kilometres",
+      "type": "number"
     },
     "duration_hours": {
-      "type": "number",
-      "description": "Estimated duration in hours"
+      "description": "Estimated duration in hours",
+      "type": "number"
     },
     "elevation_gain_m": {
-      "type": "number",
-      "description": "Total elevation gain in metres"
+      "description": "Total elevation gain in metres",
+      "type": "number"
     },
-    "start_lat": {
-      "type": "number",
-      "description": "Starting point latitude"
-    },
-    "start_lng": {
-      "type": "number",
-      "description": "Starting point longitude"
-    },
-    "region": {
-      "type": "string",
-      "description": "Region or province of Crete"
-    },
-    "main_interest": {
-      "type": "string",
-      "description": "Main interest or theme"
-    },
-    "is_sample_walk": {
-      "type": "boolean",
+    "finished": {
       "default": false,
-      "description": "One of the free sample walks available to all users"
+      "description": "Narr has marked this translation clone complete \u2014 it now becomes visible to admins for review/publish.",
+      "type": "boolean"
     },
-    "price_eur": {
-      "type": "number",
-      "default": 12.5,
-      "description": "Purchase price for non-members, VAT included. Defaults by tour category (applied automatically when the tour type is chosen in the editor): Walk/Hike (WHT) = \u20ac12.50, Walkabout (WBT) and DriveAbout (DDV) = \u20ac24.99."
-    },
-    "creem_product_id": {
-      "type": "string",
-      "description": "The matching product's ID in Creem \u2014 used to identify which walk was purchased when a payment webhook arrives"
-    },
-    "checkout_url": {
-      "type": "string",
-      "description": "Checkout URL for this product at the current Merchant of Record (Creem sandbox now, Paddle later). The in-app Buy button opens this URL, so the MoR owns the checkout page, tax collection and payment. Swapping processors = update this link."
-    },
-    "requires_review": {
-      "type": "boolean",
-      "default": false,
-      "description": "Community walk awaiting approval"
-    },
-    "approved": {
-      "type": "boolean",
-      "default": true,
-      "description": "Whether the walk is publicly visible"
-    },
-    "admin_completed": {
-      "type": "boolean",
-      "default": false,
-      "description": "Master (non-clone) tour only: true once an Admin has fully finished editing the English original and it's ready for narrators to clone and translate. Separate from 'approved' — a tour can be admin_completed but not yet approved (not published for customer purchase), or approved without ever needing this flag touched again. Only master tours use this; a translation clone doesn't have its own meaning for it. Defaults false, so every existing and future master tour starts hidden from narrators' \"Clone a tour to translate\" list until an Admin explicitly marks it ready."
-    },
-    "default_driving_speed_kmh": {
-      "type": "number",
-      "description": "Default average driving speed for audio tours (helper only)"
+    "image_url": {
+      "description": "Main walk image",
+      "type": "string"
     },
     "import_files": {
-      "type": "array",
       "description": "Master (non-clone) tour only: the shared narration-source depository. One entry per waypoint's segment_id, auto-populated the moment an admin marks that waypoint Done in the Waypoints tab (the same .odt that used to be emailed to narrators by hand). A narrator's clone reaches these through the manageTourImportFiles backend function's 'get' action, never by reading this field directly.",
       "items": {
-        "type": "object",
         "properties": {
-          "segment_id": {
-            "type": "string",
-            "description": "Waypoint segment_id this file belongs to, e.g. BOR1a"
-          },
           "file_url": {
-            "type": "string",
-            "description": "Public storage URL of the uploaded .odt"
+            "description": "Public storage URL of the uploaded .odt",
+            "type": "string"
           },
           "filename": {
-            "type": "string",
-            "description": "Original filename, shown to the admin/narrator for reference"
+            "description": "Original filename, shown to the admin/narrator for reference",
+            "type": "string"
+          },
+          "segment_id": {
+            "description": "Waypoint segment_id this file belongs to, e.g. BOR1a",
+            "type": "string"
           },
           "uploaded_at": {
-            "type": "string",
+            "description": "When this file was last uploaded/replaced",
             "format": "date-time",
-            "description": "When this file was last uploaded/replaced"
+            "type": "string"
           }
-        }
-      }
+        },
+        "type": "object"
+      },
+      "type": "array"
     },
-    "trail_path": {
-      "type": "array",
-      "description": "Array of coordinates forming the trail",
+    "is_sample_walk": {
+      "default": false,
+      "description": "One of the free sample walks available to all users",
+      "type": "boolean"
+    },
+    "main_interest": {
+      "description": "Main interest or theme",
+      "type": "string"
+    },
+    "manual_only_tour": {
+      "default": false,
+      "description": "WalkAbouts (WBT) only: true when GPS does not work reliably at this location (inside a monastery, the Fortezza, Aptera, etc.), not just weak signal. The customer player skips GPS entirely for this tour \u2014 no auto-trigger, no GPS/off-route warnings \u2014 and every waypoint needs an explicit manual tap to play instead. Never used for a real DriveAbout (DDV), which relies on GPS working on the road.",
+      "type": "boolean"
+    },
+    "name": {
+      "description": "Name of the walk or tour",
+      "type": "string"
+    },
+    "price_eur": {
+      "default": 12.5,
+      "description": "Purchase price for non-members, VAT included. Defaults by tour category (applied automatically when the tour type is chosen in the editor): Walk/Hike (WHT) = \u20ac12.50, Walkabout (WBT) and DriveAbout (DDV) = \u20ac24.99.",
+      "type": "number"
+    },
+    "region": {
+      "description": "Region or province of Crete",
+      "type": "string"
+    },
+    "related_tour_codes": {
+      "description": "Admin-only curation field (same across every language clone of this tour, like Region/Difficulty). Comma-separated list of OTHER tours' `code` values to suggest from this tour's page, e.g. \"FTZ, RAR\". Shown to the customer only once that related tour is itself approved/published \u2014 an unpublished or non-existent code is silently skipped, never shown as \"coming soon\", since a tour can take 6-7 months to go from idea to published (Enda, 2026-09-22).",
+      "type": "string"
+    },
+    "requires_review": {
+      "default": false,
+      "description": "Community walk awaiting approval",
+      "type": "boolean"
+    },
+    "route_type": {
+      "default": "walk",
+      "description": "Internal editor type: walk for WHT, driving_audio_tour for WBT and DDV",
+      "enum": [
+        "walk",
+        "driving_audio_tour"
+      ],
+      "type": "string"
+    },
+    "safety_notes": {
+      "description": "Safety information and required equipment for this walk",
+      "type": "string"
+    },
+    "segment_scripts": {
+      "description": "Combined narration scripts per segment, saved for simulator break-tag editing",
       "items": {
-        "type": "object",
         "properties": {
-          "lat": {
-            "type": "number"
+          "combined_audio_url": {
+            "description": "Google TTS audio URL for the combined draft script",
+            "type": "string"
           },
-          "lng": {
-            "type": "number"
+          "combined_script": {
+            "description": "All waypoint narration scripts in this segment combined in order (a, b, c\u2026) with break tags between them",
+            "type": "string"
+          },
+          "final_audio_url": {
+            "description": "Draft audio URL after simulator adjustments (Google TTS, used for simulator testing only)",
+            "type": "string"
+          },
+          "final_script": {
+            "description": "Final edited script after simulator break-tag adjustments for speech/speed matching",
+            "type": "string"
+          },
+          "finished_audio_url": {
+            "description": "Final production PCV (Professional Cloned Voice) audio \u2014 only uploadable after the segment is tested and accepted in the simulator",
+            "type": "string"
+          },
+          "segment_id": {
+            "description": "Segment ID e.g. WRC01",
+            "type": "string"
+          },
+          "segment_number": {
+            "description": "Segment number",
+            "type": "string"
+          },
+          "status": {
+            "default": "draft",
+            "description": "draft = combined but not yet finalized; finalized = break tags adjusted and draft audio saved; accepted = tested in simulator and approved, finished audio upload unlocked",
+            "type": "string"
           }
-        }
-      }
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "start_lat": {
+      "description": "Starting point latitude",
+      "type": "number"
+    },
+    "start_lng": {
+      "description": "Starting point longitude",
+      "type": "number"
+    },
+    "target_language": {
+      "description": "Target language for a translation clone (e.g. German).",
+      "type": "string"
+    },
+    "tour_category": {
+      "default": "WHT",
+      "description": "Tour category: WHT=Walking/Hiking Tour, WBT=Walkabout Tour, DDV=DriveAbout Tour",
+      "enum": [
+        "WHT",
+        "WBT",
+        "DDV"
+      ],
+      "type": "string"
     },
     "trail_breaks": {
-      "type": "array",
       "description": "Segment start indices where the drawn line is broken (no line is drawn between point b and point b+1), so a non-existing link across a gap between two trail sections isn't rendered",
       "items": {
         "type": "number"
-      }
+      },
+      "type": "array"
     },
-    "waypoints": {
-      "type": "array",
-      "description": "Important points along the trail",
+    "trail_path": {
+      "description": "Array of coordinates forming the trail",
       "items": {
-        "type": "object",
         "properties": {
           "lat": {
             "type": "number"
           },
           "lng": {
             "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "waypoints": {
+      "description": "Important points along the trail",
+      "items": {
+        "properties": {
+          "audio_clip_url": {
+            "description": "URL of the audio clip to play when triggered",
+            "type": "string"
+          },
+          "avg_segment_speed_kmh": {
+            "description": "Average segment speed in km/h (required on Primary-Start)",
+            "type": "number"
+          },
+          "bearing_direction": {
+            "description": "Required movement bearing in degrees (0=N, 90=E, 180=S, 270=W)",
+            "maximum": 359,
+            "minimum": 0,
+            "type": "number"
+          },
+          "bearing_tolerance": {
+            "default": 30,
+            "description": "Tolerance in degrees around bearing_direction",
+            "maximum": 180,
+            "minimum": 0,
+            "type": "number"
+          },
+          "description": {
+            "type": "string"
           },
           "elevation": {
+            "type": "number"
+          },
+          "final_audio_applied": {
+            "default": false,
+            "description": "True only once an Admin has replaced this waypoint's AI-generated draft audio with the final PCV (Professional Cloned Voice) narration via the Update Audio tool. Reset to false automatically whenever audio_clip_url changes any other way (regenerated TTS, manual re-upload, removed). A tour cannot be published (approved) while any audio-triggered waypoint has this false \u2014 enforced in base44/functions/saveWalkForBackend.",
+            "type": "boolean"
+          },
+          "image_url": {
+            "type": "string"
+          },
+          "lat": {
+            "type": "number"
+          },
+          "lng": {
+            "type": "number"
+          },
+          "name": {
+            "description": "Admin/narrator-entered descriptive label shown alongside the code, e.g. 'Rocky descent'",
+            "type": "string"
+          },
+          "narration_script": {
+            "description": "Narration script text for this location (may include SSML break tags)",
+            "type": "string"
+          },
+          "segment_id": {
+            "description": "Segment/waypoint code \u2014 e.g. BOR03 for DriveAbout/WalkAbout tour segments, or MXR14 for a plain walk/hike waypoint",
+            "type": "string"
+          },
+          "segment_number": {
+            "description": "Admin/narrator-entered code shared by every waypoint at one stop (shown as \"Segment Number\" in the Waypoints tab), used to build segment_id via buildSegmentId(tourCode, segmentNumber) and as the grouping key for the Segment Script Manager's combined-script feature \u2014 not cosmetic. Was missing from this schema entirely until follow-up 149 \u2014 Base44 silently drops any waypoint field that isn't declared here on save, so every typed Segment Number was discarded the moment the tour was saved, then re-guessed as a plain incrementing sequence the next time the editor loaded (see DrivingTourWaypointEditor.jsx's mount-only auto-fill effect, which only ever fires for a waypoint missing this field).",
+            "type": "string"
+          },
+          "segment_title": {
+            "description": "DriveAbout segment title",
+            "type": "string"
+          },
+          "trigger_audio": {
+            "default": false,
+            "description": "Whether this waypoint triggers an audio clip on geofence entry",
+            "type": "boolean"
+          },
+          "trigger_once": {
+            "default": true,
+            "description": "If true, audio plays only once per tour; if false, replays on each re-entry",
+            "type": "boolean"
+          },
+          "trigger_radius_m": {
+            "default": 150,
+            "description": "Geofence radius in metres around this waypoint",
             "type": "number"
           },
           "type": {
             "type": "string"
           },
-          "name": {
-            "type": "string",
-            "description": "Admin/narrator-entered descriptive label shown alongside the code, e.g. 'Rocky descent'"
+          "use_bearing": {
+            "default": false,
+            "description": "If true, audio only triggers when the user's movement direction is within the bearing range",
+            "type": "boolean"
           },
-          "description": {
+          "waypoint_colour": {
+            "description": "Auto-assigned marker colour for DriveAbout waypoints",
             "type": "string"
           },
-          "image_url": {
-            "type": "string"
+          "waypoint_done": {
+            "default": false,
+            "description": "Admin/narrator-set flag marking this waypoint's editing as finished for this session. Ticked only from inside the waypoint's editing panel; while true, the row is locked from re-opening until unticked from the collapsed summary row.",
+            "type": "boolean"
           },
           "waypoint_role": {
-            "type": "string",
+            "description": "DriveAbout waypoint role",
             "enum": [
               "primary_start",
               "primary_stop",
               "secondary"
             ],
-            "description": "DriveAbout waypoint role"
-          },
-          "waypoint_done": {
-            "type": "boolean",
-            "default": false,
-            "description": "Admin/narrator-set flag marking this waypoint's editing as finished for this session. Ticked only from inside the waypoint's editing panel; while true, the row is locked from re-opening until unticked from the collapsed summary row."
-          },
-          "segment_id": {
-            "type": "string",
-            "description": "Segment/waypoint code \u2014 e.g. BOR03 for DriveAbout/WalkAbout tour segments, or MXR14 for a plain walk/hike waypoint"
-          },
-          "segment_number": {
-            "type": "string",
-            "description": "Admin/narrator-entered code shared by every waypoint at one stop (shown as \"Segment Number\" in the Waypoints tab), used to build segment_id via buildSegmentId(tourCode, segmentNumber) and as the grouping key for the Segment Script Manager's combined-script feature \u2014 not cosmetic. Was missing from this schema entirely until follow-up 149 \u2014 Base44 silently drops any waypoint field that isn't declared here on save, so every typed Segment Number was discarded the moment the tour was saved, then re-guessed as a plain incrementing sequence the next time the editor loaded (see DrivingTourWaypointEditor.jsx's mount-only auto-fill effect, which only ever fires for a waypoint missing this field)."
-          },
-          "segment_title": {
-            "type": "string",
-            "description": "DriveAbout segment title"
-          },
-          "avg_segment_speed_kmh": {
-            "type": "number",
-            "description": "Average segment speed in km/h (required on Primary-Start)"
-          },
-          "waypoint_colour": {
-            "type": "string",
-            "description": "Auto-assigned marker colour for DriveAbout waypoints"
-          },
-          "narration_script": {
-            "type": "string",
-            "description": "Narration script text for this location (may include SSML break tags)"
-          },
-          "trigger_audio": {
-            "type": "boolean",
-            "default": false,
-            "description": "Whether this waypoint triggers an audio clip on geofence entry"
-          },
-          "audio_clip_url": {
-            "type": "string",
-            "description": "URL of the audio clip to play when triggered"
-          },
-          "final_audio_applied": {
-            "type": "boolean",
-            "default": false,
-            "description": "True only once an Admin has replaced this waypoint's AI-generated draft audio with the final PCV (Professional Cloned Voice) narration via the Update Audio tool. Reset to false automatically whenever audio_clip_url changes any other way (regenerated TTS, manual re-upload, removed). A tour cannot be published (approved) while any audio-triggered waypoint has this false — enforced in base44/functions/saveWalkForBackend."
-          },
-          "trigger_radius_m": {
-            "type": "number",
-            "default": 150,
-            "description": "Geofence radius in metres around this waypoint"
-          },
-          "trigger_once": {
-            "type": "boolean",
-            "default": true,
-            "description": "If true, audio plays only once per tour; if false, replays on each re-entry"
-          },
-          "use_bearing": {
-            "type": "boolean",
-            "default": false,
-            "description": "If true, audio only triggers when the user's movement direction is within the bearing range"
-          },
-          "bearing_direction": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 359,
-            "description": "Required movement bearing in degrees (0=N, 90=E, 180=S, 270=W)"
-          },
-          "bearing_tolerance": {
-            "type": "number",
-            "default": 30,
-            "minimum": 0,
-            "maximum": 180,
-            "description": "Tolerance in degrees around bearing_direction"
+            "type": "string"
           }
-        }
-      }
-    },
-    "segment_scripts": {
-      "type": "array",
-      "description": "Combined narration scripts per segment, saved for simulator break-tag editing",
-      "items": {
-        "type": "object",
-        "properties": {
-          "segment_number": {
-            "type": "string",
-            "description": "Segment number"
-          },
-          "segment_id": {
-            "type": "string",
-            "description": "Segment ID e.g. WRC01"
-          },
-          "combined_script": {
-            "type": "string",
-            "description": "All waypoint narration scripts in this segment combined in order (a, b, c\u2026) with break tags between them"
-          },
-          "combined_audio_url": {
-            "type": "string",
-            "description": "Google TTS audio URL for the combined draft script"
-          },
-          "final_script": {
-            "type": "string",
-            "description": "Final edited script after simulator break-tag adjustments for speech/speed matching"
-          },
-          "final_audio_url": {
-            "type": "string",
-            "description": "Draft audio URL after simulator adjustments (Google TTS, used for simulator testing only)"
-          },
-          "finished_audio_url": {
-            "type": "string",
-            "description": "Final production PCV (Professional Cloned Voice) audio \u2014 only uploadable after the segment is tested and accepted in the simulator"
-          },
-          "status": {
-            "type": "string",
-            "default": "draft",
-            "description": "draft = combined but not yet finalized; finalized = break tags adjusted and draft audio saved; accepted = tested in simulator and approved, finished audio upload unlocked"
-          }
-        }
-      }
-    },
-    "image_url": {
-      "type": "string",
-      "description": "Main walk image"
-    },
-    "announced_at": {
-      "type": "string",
-      "format": "date-time",
-      "description": "When an admin/narrator last confirmed this route is still accurate on the ground (the 'new walk' customer announcement feature that originally used this field has been retired)"
-    },
-    "clone_of": {
-      "type": "string",
-      "description": "ID of the original tour this record is a translation clone of. Unset on original/published tours."
-    },
-    "target_language": {
-      "type": "string",
-      "description": "Target language for a translation clone (e.g. German)."
-    },
-    "assigned_narrator_email": {
-      "type": "string",
-      "description": "Email of the Narr who owns this translation clone. While finished is false, only this Narr can see the clone."
-    },
-    "finished": {
-      "type": "boolean",
-      "default": false,
-      "description": "Narr has marked this translation clone complete \u2014 it now becomes visible to admins for review/publish."
+        },
+        "type": "object"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -358,6 +361,7 @@
     "region",
     "tour_category"
   ],
+  "type": "object",
   "rls": {
     "read": {
       "user_condition": {
