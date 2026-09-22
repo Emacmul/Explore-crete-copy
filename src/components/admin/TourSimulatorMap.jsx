@@ -473,7 +473,36 @@ export default function TourSimulatorMap({ trailPath, waypoints, triggered, curr
           // until the whole location looked solid red. `i` is the waypoint's stable
           // position in the full array, so it makes the key unique.
           <React.Fragment key={`${wp.segment_id || ''}-${i}`}>
-            <Marker position={[wp.lat, wp.lng]} icon={wpIcon(colour, emoji, size, isOverlapDimmed ? 0.2 : (isMuted ? 0.55 : 1), doneLabel)} />
+            {/* Per Enda's follow-up request: the pin itself is now the drag handle for
+                repositioning a waypoint — a separate satellite dot (tried first) sat
+                awkwardly off to the side and was fiddlier to grab than just dragging the
+                actual pin, the middle of the trigger circle, directly. Admin-only (never
+                a narrator) and not on waypoint 0 (e.g. BOR1a-PS) — see the position-
+                handle comment that used to live here, now folded into this one: waypoint
+                0 always sits at the exact same coordinates as waypoint 1 (BOR1b) by
+                design (a static "welcome" point with no driving leg before it — see
+                dimWaypointIndex in TourSimulator.jsx), so letting it be dragged risks
+                grabbing the wrong one of that co-located pair; it's the only waypoint
+                excluded.
+                Dragging still snaps hard onto the recorded route (trail_path) —
+                nearestPointOnTrail below is what actually gets saved, never the raw drop
+                point — so a waypoint can never end up off the route, while remaining
+                completely free to move up/down the route by any distance (an overshoot
+                can simply be dragged back). The pin's own colour is untouched by this —
+                green/blue still means Primary/Secondary role (follow-up 48) regardless
+                of whether this admin can currently drag it. */}
+            <Marker
+              position={[wp.lat, wp.lng]}
+              icon={wpIcon(colour, emoji, size, isOverlapDimmed ? 0.2 : (isMuted ? 0.55 : 1), doneLabel)}
+              draggable={canEdit && !isNarrator && i !== 0}
+              eventHandlers={canEdit && !isNarrator && i !== 0 ? {
+                dragend: (e) => {
+                  const ll = e.target.getLatLng();
+                  const snapped = nearestPointOnTrail(ll.lat, ll.lng, trailPath);
+                  onWaypointUpdate(i, { lat: snapped.lat, lng: snapped.lng });
+                },
+              } : undefined}
+            />
 
             {/* Pastel red radius circle — scales with zoom (uses metres). Per Enda's
                 follow-up 49 report: shown for every waypoint now, not just ones that
@@ -544,48 +573,6 @@ export default function TourSimulatorMap({ trailPath, waypoints, triggered, curr
               />
             )}
 
-            {/* Per Enda's request: an Admin can drag a waypoint's own position (its pin)
-                to a new spot along the route — e.g. moving BOR3b further along so its
-                trigger circle lines up with where the audio actually references
-                something ("look across the valley"), rather than having to add a whole
-                new waypoint. Admin-only (never a narrator), same gating as the bearing
-                handle above. Not shown on the trigger-radius/bearing/emoji condition —
-                available even before a waypoint has any audio, since repositioning is
-                just as useful while first laying out a route.
-                Deliberately does NOT set draggable on the waypoint's own plain pin
-                marker above — that pin's colour is a meaningful, established signal
-                (green/blue = primary/secondary role, per follow-up 48) that must never
-                be repurposed to mean "draggable". This is a separate satellite handle
-                instead, on the OPPOSITE side of the trigger circle from the radius
-                handle (bearingDir + 270) so the two never overlap, in violet — visibly
-                not the red radius handle or the white bearing arrow.
-                One exception: waypoint 0 (e.g. BOR1a-PS), the tour's very first point,
-                sits at the EXACT same coordinates as waypoint 1 (BOR1b) by design — see
-                dimWaypointIndex in TourSimulator.jsx for the full reasoning — so it gets
-                no position handle at all, to remove any chance of dragging the wrong one
-                of that co-located pair.
-                Per Enda's follow-up correction: a waypoint must stay ON the recorded
-                route (trail_path) — hard-enforced, not just warned about. dragend does
-                NOT write the dropped point's raw coordinates; it snaps them onto the
-                nearest point of trail_path first (see nearestPointOnTrail above), so it's
-                physically impossible to drag a waypoint off the route. Movement along
-                that route is still free in either direction, any distance, so an
-                overshoot can simply be dragged back — only "off the route entirely" is
-                blocked. */}
-            {canEdit && !isNarrator && i !== 0 && (
-              <Marker
-                position={destinationPoint(wp.lat, wp.lng, bearingDir + 270, radius)}
-                icon={handleIcon('#a78bfa')}
-                draggable={canEdit}
-                eventHandlers={{
-                  dragend: (e) => {
-                    const ll = e.target.getLatLng();
-                    const snapped = nearestPointOnTrail(ll.lat, ll.lng, trailPath);
-                    onWaypointUpdate(i, { lat: snapped.lat, lng: snapped.lng });
-                  },
-                }}
-              />
-            )}
           </React.Fragment>
         );
       })}
