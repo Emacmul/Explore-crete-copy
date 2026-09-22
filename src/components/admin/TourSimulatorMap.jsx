@@ -33,6 +33,42 @@ function destinationPoint(lat, lng, bearingDeg, distanceM) {
   ];
 }
 
+// Per Enda's report: the recorded route (trail_path) is what a waypoint must be
+// dragged along — not literally a "road" (a walking tour's route can be miles from
+// any road), and the fit must be hard-enforced, not just a warning. Finds the
+// closest point ON the trail_path polyline itself (projected onto each short
+// segment between two consecutive recorded points, not just snapped to the nearest
+// recorded point) so a drag lands smoothly along the route rather than jumping
+// between sparse GPS points. Longitude is scaled by cos(latitude) before the flat-
+// plane projection maths so a degree of longitude and a degree of latitude are
+// weighted as roughly equal real-world distances — otherwise, this far north (Crete,
+// ~35°N), east-west stretches would under-count how far a point actually is. Same
+// simplification level as the rest of this file's own geometry (straight-line
+// interpolation, no true geodesic maths) — accurate enough at real trail-point
+// spacing.
+function nearestPointOnTrail(lat, lng, trailPath) {
+  if (!trailPath || trailPath.length === 0) return { lat, lng };
+  if (trailPath.length === 1) return { lat: trailPath[0].lat, lng: trailPath[0].lng };
+  const cosLat = Math.cos((lat * Math.PI) / 180);
+  let best = { lat: trailPath[0].lat, lng: trailPath[0].lng };
+  let bestDist = Infinity;
+  for (let i = 1; i < trailPath.length; i++) {
+    const a = trailPath[i - 1];
+    const b = trailPath[i];
+    const ax = a.lng * cosLat, ay = a.lat;
+    const bx = b.lng * cosLat, by = b.lat;
+    const px = lng * cosLat, py = lat;
+    const dx = bx - ax, dy = by - ay;
+    const lenSq = dx * dx + dy * dy;
+    let t = lenSq === 0 ? 0 : ((px - ax) * dx + (py - ay) * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+    const candidate = { lat: a.lat + t * (b.lat - a.lat), lng: a.lng + t * (b.lng - a.lng) };
+    const d = haversine(lat, lng, candidate.lat, candidate.lng);
+    if (d < bestDist) { bestDist = d; best = candidate; }
+  }
+  return best;
+}
+
 // Per Enda's report (2026-09-19), the final word on this after three earlier attempts
 // each only fixed one specific trigger (a field edit, clicking Test, ...): "if I, or
 // any narrator, manually set the map to a certain zoom, it must stay there. It doesn't
@@ -505,6 +541,49 @@ export default function TourSimulatorMap({ trailPath, waypoints, triggered, curr
                     onWaypointUpdate(i, 'trigger_radius_m', Math.max(10, Math.round(newRadius)));
                   },
                 } : undefined}
+              />
+            )}
+
+            {/* Per Enda's request: an Admin can drag a waypoint's own position (its pin)
+                to a new spot along the route — e.g. moving BOR3b further along so its
+                trigger circle lines up with where the audio actually references
+                something ("look across the valley"), rather than having to add a whole
+                new waypoint. Admin-only (never a narrator), same gating as the bearing
+                handle above. Not shown on the trigger-radius/bearing/emoji condition —
+                available even before a waypoint has any audio, since repositioning is
+                just as useful while first laying out a route.
+                Deliberately does NOT set draggable on the waypoint's own plain pin
+                marker above — that pin's colour is a meaningful, established signal
+                (green/blue = primary/secondary role, per follow-up 48) that must never
+                be repurposed to mean "draggable". This is a separate satellite handle
+                instead, on the OPPOSITE side of the trigger circle from the radius
+                handle (bearingDir + 270) so the two never overlap, in violet — visibly
+                not the red radius handle or the white bearing arrow.
+                One exception: waypoint 0 (e.g. BOR1a-PS), the tour's very first point,
+                sits at the EXACT same coordinates as waypoint 1 (BOR1b) by design — see
+                dimWaypointIndex in TourSimulator.jsx for the full reasoning — so it gets
+                no position handle at all, to remove any chance of dragging the wrong one
+                of that co-located pair.
+                Per Enda's follow-up correction: a waypoint must stay ON the recorded
+                route (trail_path) — hard-enforced, not just warned about. dragend does
+                NOT write the dropped point's raw coordinates; it snaps them onto the
+                nearest point of trail_path first (see nearestPointOnTrail above), so it's
+                physically impossible to drag a waypoint off the route. Movement along
+                that route is still free in either direction, any distance, so an
+                overshoot can simply be dragged back — only "off the route entirely" is
+                blocked. */}
+            {canEdit && !isNarrator && i !== 0 && (
+              <Marker
+                position={destinationPoint(wp.lat, wp.lng, bearingDir + 270, radius)}
+                icon={handleIcon('#a78bfa')}
+                draggable={canEdit}
+                eventHandlers={{
+                  dragend: (e) => {
+                    const ll = e.target.getLatLng();
+                    const snapped = nearestPointOnTrail(ll.lat, ll.lng, trailPath);
+                    onWaypointUpdate(i, { lat: snapped.lat, lng: snapped.lng });
+                  },
+                }}
               />
             )}
           </React.Fragment>
