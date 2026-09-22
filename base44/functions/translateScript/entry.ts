@@ -62,11 +62,10 @@ Deno.serve(async (req) => {
     const WALK_LEVEL_FIELDS = ['description', 'safety_notes'];
     const WAYPOINT_LEVEL_FIELDS = ['segment_title', 'description'];
     const isWaypointField = field && Number.isInteger(waypointIndex) && waypointIndex >= 0;
-    const FIELD_LABELS = {
-      description: 'description ("About this walk")',
-      safety_notes: 'safety notes ("Before You Set Off")',
-      segment_title: "stop's name",
-    };
+    function fieldLabel(f: string, waypointScoped: boolean): string {
+      if (waypointScoped) return f === 'segment_title' ? "stop's name" : "stop's short description";
+      return f === 'safety_notes' ? 'safety notes ("Before You Set Off")' : 'description ("About this walk")';
+    }
     if (field) {
       const allowed = isWaypointField ? WAYPOINT_LEVEL_FIELDS : WALK_LEVEL_FIELDS;
       if (!allowed.includes(field)) {
