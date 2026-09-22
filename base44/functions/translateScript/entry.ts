@@ -41,7 +41,7 @@ Deno.serve(async (req) => {
     const base44 = wrapClientWithRetry(createClientFromRequest(req));
 
     const body = await req.json();
-    const { text, target_language, apiKey, apiKey2, googleApiKey, target_lang_code, walkId, titleOnly, field } = body;
+    const { text, target_language, apiKey, apiKey2, googleApiKey, target_lang_code, walkId, titleOnly, field, waypointIndex } = body;
 
     // Per Enda: "About this walk" (Walk.description) and "Before You Set Off"
     // (Walk.safety_notes) needed the same one-click "Translate" convenience the Tour
@@ -52,10 +52,26 @@ Deno.serve(async (req) => {
     // trust the client's own copy — by the time someone clicks Translate, their clone's
     // box may already hold a half-finished translation, exactly the same risk titleOnly
     // was built to avoid for the title).
-    const TRANSLATABLE_FIELDS = ['description', 'safety_notes'];
-    const FIELD_LABELS = { description: 'description ("About this walk")', safety_notes: 'safety notes ("Before You Set Off")' };
-    if (field && !TRANSLATABLE_FIELDS.includes(field)) {
-      return Response.json({ error: 'Unknown field to translate' }, { status: 400 });
+    //
+    // Per Enda (follow-up 245): a tour's individual stops have their own customer-facing
+    // name and short description too (shown in the app's "Tour Stops"/"Key Points" list,
+    // and while driving) — same gap, same fix. `waypointIndex`, alongside `field: 'segment_title'`
+    // or `field: 'description'`, points this at ONE waypoint on the master tour instead of
+    // the tour-level field — everything else (brand-phrase protection, prompt, error
+    // shape) is shared with the tour-level path below.
+    const WALK_LEVEL_FIELDS = ['description', 'safety_notes'];
+    const WAYPOINT_LEVEL_FIELDS = ['segment_title', 'description'];
+    const isWaypointField = field && Number.isInteger(waypointIndex) && waypointIndex >= 0;
+    const FIELD_LABELS = {
+      description: 'description ("About this walk")',
+      safety_notes: 'safety notes ("Before You Set Off")',
+      segment_title: "stop's name",
+    };
+    if (field) {
+      const allowed = isWaypointField ? WAYPOINT_LEVEL_FIELDS : WALK_LEVEL_FIELDS;
+      if (!allowed.includes(field)) {
+        return Response.json({ error: 'Unknown field to translate' }, { status: 400 });
+      }
     }
 
     // Admin, or narrator via email+narrToken — without this, this function was reachable
