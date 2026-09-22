@@ -85,6 +85,11 @@ Pulled: 2026-08-03
 
 ---
 
+## 2026-09-22 (follow-up 242) — Download failure message made blunt, no soft wording
+Why: Enda said the old message ("Download incomplete... try again on a stronger connection") was too soft. If any clip fails, the tour must not be usable, and the user must be told plainly.
+Frontend only - NO backend function changed. Behaviour was already correct (a part-downloaded tour is never marked saved, retry only re-fetches the missing clips) - only the wording changed.
+- lib/i18n/index.js: download.incompleteTitle/incompleteBody and download.failedTitle/failedBody now read "Download failed" / "This tour did NOT save. It will not work offline. Check your connection and try again." download.incompleteNames now reads "Not downloaded: {names}."
+
 ## 2026-09-21 (follow-up 241) — Offline audio proven complete; alerts duck narration; clip logging; GPS watchdog; Remove download button
 Why: BOR1a/BOR3a played only 3-5 s on Enda's phone though the server files are whole. The phone's stored copy was never checked.
 Frontend only - NO backend function changed.
