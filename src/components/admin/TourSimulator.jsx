@@ -684,13 +684,23 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     ? Math.max(0, paceWindowEndDist - paceWindowStartDist)
     : null;
 
-  // The driving speed in force at the START of that window — fixed 3.5 km/h for a
+  // The driving speed in force for this waypoint's own leg — fixed 3.5 km/h for a
   // walking tour (WBT), regardless of anything set on a waypoint; for a DDV tour, the
-  // last speed zone (avg_segment_speed_kmh) reached at or before that point, or the
-  // tour's own starting default_driving_speed_kmh if the window begins before any zone
-  // — the same rule startSim/the tick loop above use to advance speed as the car
-  // actually reaches each zone, just asked here for an arbitrary distance instead of
-  // during real playback.
+  // last speed zone (avg_segment_speed_kmh) reached at or before the SELECTED
+  // WAYPOINT'S OWN position, or the tour's own starting default_driving_speed_kmh if
+  // the waypoint sits before any zone.
+  //
+  // Per Enda's report (testing BOR3a-PS→BOR3b): this used to look up the zone active at
+  // paceWindowStartDist (where the car enters BOR3a-PS's own TRIGGER CIRCLE) rather
+  // than at BOR3a-PS's own pin — and entering a trigger circle always happens slightly
+  // BEFORE reaching the pin itself (the whole point of a trigger radius). So testing a
+  // waypoint that is ITSELF a speed zone (e.g. BOR3a-PS, set to 50 km/h) found its own
+  // zone's cumDist to be very slightly AHEAD of paceWindowStartDist, failed the "already
+  // reached" check, and fell back to the PREVIOUS location's leftover speed (e.g. BOR2's
+  // 40 km/h) — wrong by a whole zone. Looking the zone up at the waypoint's own position
+  // instead fixes this exactly: a waypoint that IS a zone always matches itself (same
+  // cumDistForWaypoint call, same result, so `<=` is always true for its own zone), and
+  // a waypoint that ISN'T one still correctly inherits whichever zone came before it.
   const activeSpeedKmhAt = (distAlong) => {
     if (isWalkingTour) return 3.5;
     let active = Number(form.default_driving_speed_kmh) || 50;
@@ -700,7 +710,9 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     }
     return active;
   };
-  const paceSpeedKmh = paceDistanceM != null ? activeSpeedKmhAt(paceWindowStartDist) : null;
+  const paceSpeedKmh = (paceDistanceM != null && selectedWp)
+    ? activeSpeedKmhAt(cumDistForWaypoint(selectedWp))
+    : null;
   const paceAvailableSec = (paceDistanceM != null && paceSpeedKmh > 0)
     ? paceDistanceM / (paceSpeedKmh * 1000 / 3600)
     : null;
