@@ -180,7 +180,11 @@ Return ONLY the translated title. No quotes, no explanations, no markdown.
 Title:
 ${promptText}`
       : field
-      ? `Translate the following customer-facing text into ${target_language}. This is ${field === 'safety_notes' ? 'a safety notice a customer reads before setting off on the tour' : 'a short description of the tour, shown to a customer browsing the app'}. Keep it natural and clear in ${target_language}, in the same tone as the original, rather than a stiff word-for-word translation. Keep the same paragraph breaks as the original.${markersPresent ? ' The text may contain a token like xxbrandphrase0xx — copy it through EXACTLY as written, never translate or explain it.' : ''}
+      ? `Translate the following customer-facing text into ${target_language}. This is ${
+          isWaypointField
+            ? (field === 'segment_title' ? 'the short name of one stop along the tour, shown to a customer' : 'a short description of one stop along the tour, shown to a customer')
+            : (field === 'safety_notes' ? 'a safety notice a customer reads before setting off on the tour' : 'a short description of the tour, shown to a customer browsing the app')
+        }. Keep it natural and clear in ${target_language}, in the same tone as the original, rather than a stiff word-for-word translation. Keep the same paragraph breaks as the original.${markersPresent ? ' The text may contain a token like xxbrandphrase0xx — copy it through EXACTLY as written, never translate or explain it.' : ''}
 
 Return ONLY the translated text. No quotes, no explanations, no markdown.
 
