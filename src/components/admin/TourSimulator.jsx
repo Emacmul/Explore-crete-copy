@@ -664,6 +664,66 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     return endDist;
   };
 
+  // Per Enda's request: right where a narrator sees their last saved audio for a
+  // waypoint, they also need to see how well that audio's real length matches the real
+  // driving time actually available for it — so a mismatch (too long for the trigger
+  // circle, or lots of spare time before the next one fires) is obvious immediately,
+  // not just guessed at by ear. Uses the exact same trigger-radius-aware "real usable
+  // window" as testSpanStartDist/testSpanEndDist above (start: where the car genuinely
+  // enters THIS waypoint's own trigger circle; end: where it enters the NEXT one's) —
+  // the same measure Enda himself chose for "Test this subsegment" — rather than a
+  // naive pin-to-pin distance, which would ignore trigger radius overlap entirely.
+  const prevWpForPace = waypoints[selectedWpIndex - 1] || null;
+  const nextWpForPace = waypoints[selectedWpIndex + 1] || null;
+  const paceWindowStartDist = selectedWp ? testSpanStartDist(prevWpForPace, selectedWp) : null;
+  const paceWindowEndDist = (selectedWp && nextWpForPace) ? testSpanEndDist(selectedWp, nextWpForPace) : null;
+  // null (rather than 0) whenever there's no next waypoint to measure against — this is
+  // the last waypoint in the tour, so "available time" genuinely doesn't apply, and the
+  // display below must say so rather than showing a false zero.
+  const paceDistanceM = (paceWindowStartDist != null && paceWindowEndDist != null)
+    ? Math.max(0, paceWindowEndDist - paceWindowStartDist)
+    : null;
+
+  // The driving speed in force at the START of that window — fixed 3.5 km/h for a
+  // walking tour (WBT), regardless of anything set on a waypoint; for a DDV tour, the
+  // last speed zone (avg_segment_speed_kmh) reached at or before that point, or the
+  // tour's own starting default_driving_speed_kmh if the window begins before any zone
+  // — the same rule startSim/the tick loop above use to advance speed as the car
+  // actually reaches each zone, just asked here for an arbitrary distance instead of
+  // during real playback.
+  const activeSpeedKmhAt = (distAlong) => {
+    if (isWalkingTour) return 3.5;
+    let active = Number(form.default_driving_speed_kmh) || 50;
+    for (const { wp } of speedZones) {
+      if (cumDistForWaypoint(wp) <= distAlong) active = Number(wp.avg_segment_speed_kmh) || active;
+      else break;
+    }
+    return active;
+  };
+  const paceSpeedKmh = paceDistanceM != null ? activeSpeedKmhAt(paceWindowStartDist) : null;
+  const paceAvailableSec = (paceDistanceM != null && paceSpeedKmh > 0)
+    ? paceDistanceM / (paceSpeedKmh * 1000 / 3600)
+    : null;
+
+  // Audio duration is never stored as data anywhere in this app — the only way to know
+  // how long a saved clip actually runs is to load the real file and ask the browser.
+  // Reloaded fresh every time the selected waypoint's own saved audio_clip_url changes
+  // (including to/from blank), and cleared immediately on that change so a stale
+  // duration from the PREVIOUS waypoint can never briefly show against this one's.
+  const [paceAudioDurationSec, setPaceAudioDurationSec] = useState(null);
+  useEffect(() => {
+    setPaceAudioDurationSec(null);
+    const url = selectedWp?.audio_clip_url;
+    if (!url) return;
+    const probe = new Audio();
+    let cancelled = false;
+    const onLoaded = () => { if (!cancelled && Number.isFinite(probe.duration)) setPaceAudioDurationSec(probe.duration); };
+    probe.addEventListener('loadedmetadata', onLoaded);
+    probe.preload = 'metadata';
+    probe.src = url;
+    return () => { cancelled = true; probe.removeEventListener('loadedmetadata', onLoaded); probe.src = ''; };
+  }, [selectedWp?.audio_clip_url]);
+
   // Where a location scoped jump/test (see jumpToWaypoint below) should auto-pause: the
   // very next primary_start waypoint AFTER the one being tested — per Enda, that point
   // is where the next location starts, which is exactly where the current one ends (a
@@ -2358,6 +2418,15 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                   // was mid-play the instant it's hidden, rather than letting it keep
                   // playing silently behind WaypointPaceEditor's own test audio.
                   visible={!speedMatchMode}
+                  // Per Enda's request: lets the "Current saved audio" box compare this
+                  // waypoint's real saved audio length against the real driving time
+                  // actually available for it — see the paceWindowStartDist/
+                  // paceWindowEndDist block above for how these are worked out.
+                  paceDistanceM={paceDistanceM}
+                  paceAvailableSec={paceAvailableSec}
+                  paceSpeedKmh={paceSpeedKmh}
+                  paceAudioDurationSec={paceAudioDurationSec}
+                  paceHasNext={!!nextWpForPace}
                 />
                 </div>
                 </>

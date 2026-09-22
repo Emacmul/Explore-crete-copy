@@ -31,6 +31,23 @@ const LANG_TO_CODE = {
 
 const MAX_CHARS = 5000;
 
+// Per Enda's request: formats the pace-matching numbers below (distance/time between
+// this waypoint's own trigger circle and the next one's) the same plain way the rest of
+// the app already does — metres/km for distance, M:SS for time. Local to this file since
+// TourSimulator.jsx's own fmtDist/fmtTime take milliseconds, not seconds, and these
+// pace props are always plain seconds.
+function fmtPaceDist(m) {
+  if (m == null || !Number.isFinite(m)) return '';
+  return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(2)} km`;
+}
+function fmtPaceSec(s) {
+  if (s == null || !Number.isFinite(s)) return '';
+  const rounded = Math.round(Math.abs(s));
+  const mins = Math.floor(rounded / 60);
+  const secs = rounded % 60;
+  return `${s < 0 ? '-' : ''}${mins}:${String(secs).padStart(2, '0')}`;
+}
+
 // Per Enda's follow-up 26 report: a narrator working through many lines in one sitting
 // hit a real, total freeze — every control on the panel stuck disabled, no error, no
 // spinner ever resolving, the only way out a hard refresh that throws away whatever
@@ -234,7 +251,7 @@ function hasWordingChange(originalSegs, attemptedText) {
 // effect below for why. Every other caller of this component (DrivingTourWaypointEditor,
 // SegmentScriptEditor) never hides it this way, so the default of `true` leaves them
 // completely unaffected.
-export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, onAudioChange, onAutoSave, fixedLanguage, waypointSegmentId, waypointSegmentTitle, doneLocked = false, currentWalkId, onTestSegment, isNarrator = false, visible = true }) {
+export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, onAudioChange, onAutoSave, fixedLanguage, waypointSegmentId, waypointSegmentTitle, doneLocked = false, currentWalkId, onTestSegment, isNarrator = false, visible = true, paceDistanceM = null, paceAvailableSec = null, paceSpeedKmh = null, paceAudioDurationSec = null, paceHasNext = null }) {
   const { keys: apiKeys } = useNarratorApiKeys();
   const [selectedVoice, setSelectedVoice] = useState('NEUTRAL');
   const [selectedLanguage, setSelectedLanguage] = useState(fixedLanguage || 'English');
@@ -2163,6 +2180,64 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
             </span>
           </div>
           <AudioPlayer src={audioUrl} className="w-full" />
+
+          {/* Per Enda's request: right here, where the last saved audio is shown, a
+              narrator can see how its real length compares to the real driving time
+              actually available before the next trigger point — using the same
+              trigger-radius-aware "real usable window" as "Test this subsegment", not a
+              naive pin-to-pin distance. This is a live browser-side measurement (audio
+              duration is never stored as data), so it briefly reads "Loading audio
+              length…" until the file itself has been fetched. Only shown when the caller
+              actually supplies this geometry (today: TourSimulator's own Narration &
+              Simulate tab) — paceHasNext stays null, and this box stays hidden, for every
+              other place this same component is embedded (the admin-only Waypoints tab,
+              etc.), which never pass these props at all. */}
+          {paceHasNext != null && (
+          <div className="bg-slate-800/60 border border-slate-600/60 rounded-md p-2 space-y-1">
+            <div className="flex items-center gap-2 text-xs text-slate-300">
+              <Gauge className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span className="font-medium">Pace check</span>
+            </div>
+            <p className="text-xs text-slate-400">
+              Audio length:{' '}
+              <span className="text-slate-200 font-medium">
+                {paceAudioDurationSec == null ? 'Loading audio length…' : fmtPaceSec(paceAudioDurationSec)}
+              </span>
+            </p>
+            {!paceHasNext ? (
+              <p className="text-xs text-slate-500 italic">
+                This is the last stop in the tour — no next trigger point to compare against.
+              </p>
+            ) : paceDistanceM == null ? (
+              <p className="text-xs text-slate-500 italic">
+                Could not work out the real driving distance to the next stop's trigger point —
+                check both this stop and the next one have a position and trigger radius set.
+              </p>
+            ) : (
+              <>
+                <p className="text-xs text-slate-400">
+                  Driving time to the next trigger point:{' '}
+                  <span className="text-slate-200 font-medium">{fmtPaceSec(paceAvailableSec)}</span>
+                  {' '}({fmtPaceDist(paceDistanceM)} at {paceSpeedKmh} km/h)
+                </p>
+                {paceAudioDurationSec != null && (
+                  paceAvailableSec - paceAudioDurationSec < 0 ? (
+                    <p className="text-xs text-amber-400 font-medium">
+                      Too long by {fmtPaceSec(paceAvailableSec - paceAudioDurationSec)} for this trigger circle —
+                      the audio will still be playing when the next one is due to fire.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-emerald-400 font-medium">
+                      {fmtPaceSec(paceAvailableSec - paceAudioDurationSec)} to spare before the next trigger
+                      point — the overspill can keep playing.
+                    </p>
+                  )
+                )}
+              </>
+            )}
+          </div>
+          )}
+
           <p className="text-xs text-slate-500">
             To change this: edit the script above and click <strong>Parse &amp; Generate</strong>, then
             <strong> Build &amp; Play</strong> — listen to the whole thing, start to finish. Only once that
