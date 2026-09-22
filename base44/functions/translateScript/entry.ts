@@ -128,9 +128,15 @@ Deno.serve(async (req) => {
       }
       sourceText = masterTitle;
     } else if (field) {
-      const masterFieldText = (masterWalk?.[field] || '').trim();
+      let masterFieldText: string;
+      if (isWaypointField) {
+        const masterWp = (masterWalk?.waypoints || [])[waypointIndex];
+        masterFieldText = (masterWp?.[field] || '').trim();
+      } else {
+        masterFieldText = (masterWalk?.[field] || '').trim();
+      }
       if (!masterFieldText) {
-        return Response.json({ error: `Could not find the original tour's ${FIELD_LABELS[field]} to translate from — is this actually a clone, and does the original have it filled in?` }, { status: 400 });
+        return Response.json({ error: `Could not find the original tour's ${fieldLabel(field, isWaypointField)} to translate from — is this actually a clone, and does the original have it filled in?` }, { status: 400 });
       }
       sourceText = masterFieldText;
     } else {
