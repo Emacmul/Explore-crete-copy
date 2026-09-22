@@ -400,6 +400,8 @@ export default function Home() {
                     walk={selectedWalk}
                     onClose={() => setShowDetail(false)}
                     accessible={selectedWalk._accessible ?? true}
+                    allWalks={walks}
+                    onSelectRelatedWalk={handleWalkSelect}
                   />
                 </motion.div>
               ) : (

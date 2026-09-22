@@ -15,8 +15,8 @@ import DisputesManager from './DisputesManager';
 import TranslationsManager from './TranslationsManager';
 import UpdateAudioTool from './UpdateAudioTool';
 import { getRouteTypeForCategory, defaultPriceForCategory } from '@/lib/tourCategories';
-import { LANGUAGE_CODE_BY_NAME, getGoogleTranslateCode } from '@/lib/i18n';
 import { toast } from '@/components/ui/use-toast';
+import { translateWalkField } from '@/lib/fieldTranslation';
 
 /**
  * Shared back-end shell used by both the Admin route (Base44 sign-in) and the
@@ -179,36 +179,36 @@ export default function BackendShell({ user, userRole, isSuperAdmin, authMode, u
       setWalks((prev) => [saved, ...prev]);
       toast({ title: 'Clone created', description: `Translating “${original.name}” into ${lang}.` });
 
-      // Per Enda (follow-up 190): Safety Notes should already be translated into the
-      // target language the moment the clone is created, not left in English until the
-      // narrator remembers to hit "Translate" themselves. Uses this narrator's own saved
-      // translation for this language if they have one (see translateScript.ts's cache
-      // check), otherwise a fresh AI translation via their own Groq/Google keys — same
-      // one-click "Translate" logic the Safety Notes box's own button already uses, just
-      // triggered automatically here instead of waiting for a tap. Best-effort only: the
-      // clone is already fully usable with the master's English text if this fails for
-      // any reason (no safety_notes on the master yet, a rate limit, etc.) — exactly
-      // today's behaviour — and the narrator can still translate it manually as before.
+      // Per Enda (follow-up 190, extended follow-up 245): every piece of customer-facing
+      // tour-level text should already be translated into the target language the
+      // moment the clone is created, not left in English until the narrator remembers to
+      // hit "Translate" themselves — Safety Notes worked this way already; Description
+      // now does too. Per-waypoint text (each stop's own name/description) is NOT
+      // translated here in one big batch — a driving tour can have dozens of stops, and
+      // firing that many Groq calls back to back the instant a clone is created would hit
+      // Groq's own per-minute rate limit almost immediately (see TranslationsManager.jsx
+      // for the lengths this app already goes to elsewhere to handle exactly that).
+      // Instead, each stop is auto-translated the moment a narrator actually opens it in
+      // Narration & Simulate — see the effect in TourSimulator.jsx — spreading the same
+      // calls out naturally over however long the narrator spends working through the
+      // tour, instead of all firing in the first few seconds. Best-effort only, field by
+      // field, for the two tour-level fields below: the clone is already
+      // fully usable with the master's English text if any one of these fails (no text
+      // on the master yet, a rate limit, etc.) — exactly today's behaviour — and the
+      // narrator can still translate each one manually afterwards (see the "Translate"
+      // buttons on the Preview tab, and the "still English" warning next to each one).
       if (lang.toLowerCase() !== 'english') {
-        try {
-          const translateResponse = await base44.functions.invoke('translateScript', {
-            field: 'safety_notes',
-            walkId: saved.id,
-            target_language: lang,
-            apiKey: myApiKeys.groq_api_key,
-            apiKey2: myApiKeys.groq_api_key_2,
-            googleApiKey: myApiKeys.google_tts_api_key || undefined,
-            target_lang_code: getGoogleTranslateCode(LANGUAGE_CODE_BY_NAME[lang] || ''),
-            ...narrAuth,
-          });
-          const translatedText = translateResponse?.data?.translated_text;
-          if (translatedText) {
-            const saveResponse = await callWalkFn('saveWalkForBackend', { id: saved.id, patch: { safety_notes: translatedText } });
+        for (const field of ['safety_notes', 'description']) {
+          try {
+            const translatedText = await translateWalkField({
+              field, walkId: saved.id, targetLanguage: lang, apiKeys: myApiKeys, authPayload: narrAuth,
+            });
+            const saveResponse = await callWalkFn('saveWalkForBackend', { id: saved.id, patch: { [field]: translatedText } });
             saved = saveResponse.walk;
             setWalks((prev) => prev.map(w => w.id === saved.id ? saved : w));
+          } catch (translateErr) {
+            console.error(`Auto-translating ${field} for the new clone failed (clone still created, English text left in place):`, translateErr);
           }
-        } catch (translateErr) {
-          console.error('Auto-translating Safety Notes for the new clone failed (clone still created, English text left in place):', translateErr);
         }
       }
 
@@ -511,6 +511,7 @@ export default function BackendShell({ user, userRole, isSuperAdmin, authMode, u
             onToggleFinished={handleToggleFinished}
             onTogglePublish={handleTogglePublish}
             onToggleAdminCompleted={handleToggleAdminCompleted}
+            allWalks={walks}
           />
         ) : view === 'users' ? (
           <UsersManager isSuperAdmin={isSuperAdmin} />

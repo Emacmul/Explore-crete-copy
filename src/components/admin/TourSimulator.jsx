@@ -1,14 +1,18 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Play, Pause, Square, Gauge, Clock, Volume2, AlertTriangle, CheckCircle2, MapPin, Radio, Flag, ChevronDown, ChevronUp, Save, Loader2, Lock, SkipBack, ArrowLeft } from 'lucide-react';
+import { Play, Pause, Square, Gauge, Clock, Volume2, AlertTriangle, CheckCircle2, MapPin, Radio, Flag, ChevronDown, ChevronUp, Save, Loader2, Lock, SkipBack, ArrowLeft, Languages } from 'lucide-react';
 import { calculateBearing, isBearingInRange, uniqueWaypointSegmentId, waypointDepositoryKey } from '@/lib/routeExport';
 import { uploadToImportDepository } from './DrivingTourWaypointEditor';
 import TourSimulatorMap from './TourSimulatorMap';
 import WaypointPaceEditor from './WaypointPaceEditor';
 import NarrationTtsEditor from './NarrationTtsEditor';
 import { toast } from '@/components/ui/use-toast';
+import { useNarratorApiKeys, getNarratorAuthPayload } from '@/lib/useNarratorApiKeys';
+import { translateWalkField, stillMatchesMaster } from '@/lib/fieldTranslation';
 
 const ROLE_LABEL = { primary_start: 'Start', primary_stop: 'Stop', secondary: 'Point' };
 
@@ -63,7 +67,7 @@ function fmtTime(ms) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
-export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, onSave, saving, onAutoSave, isNarrator, titleEditor, onDepositoryEntry }) {
+export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, onSave, saving, onAutoSave, isNarrator, titleEditor, onDepositoryEntry, allWalks = [] }) {
   const trailPath = form.trail_path || [];
   // Filtering out waypoints with no usable lat/lng means every index used inside this
   // component (selectedWpIndex, the map's per-marker index, jumpToWaypoint's
@@ -183,6 +187,74 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     }
   }, [waypoints.length, selectedWpIndex, lockedWpIndexes]);
   const selectedWp = waypoints[selectedWpIndex] || null;
+
+  // Per Enda (follow-up 245): each stop's own name and short description are shown to
+  // customers (the "Tour Stops" list, and while driving) just like the tour's overall
+  // Description and Safety Notes — so they need the same "already translated, edit and
+  // correct" treatment a narrator already gets for narration scripts. Unlike Description/
+  // Safety Notes (translated once, the moment the whole clone is created — see
+  // handleCloneTour in BackendShell.jsx), a tour can have dozens of stops, so translating
+  // all of them the instant the clone exists would fire that many Groq calls back to back
+  // and walk straight into Groq's own per-minute rate limit. Instead, each stop's two
+  // fields are auto-translated the moment a narrator actually opens THAT stop here —
+  // spread out naturally over however long they spend working through the tour, the same
+  // "quietly fetch it the moment this waypoint is open" idea TranslationPanel.jsx already
+  // uses for the shared script depository.
+  const { keys: stopFieldApiKeys } = useNarratorApiKeys();
+  const masterWalkForStops = form.clone_of ? allWalks.find(w => w.id === form.clone_of) : null;
+  const rawIndexForSelected = toRawIndex(selectedWpIndex);
+  const masterWp = masterWalkForStops?.waypoints?.[rawIndexForSelected] || null;
+  const [translatingStopField, setTranslatingStopField] = useState(null); // 'segment_title' | 'description' | null
+  const [stopFieldError, setStopFieldError] = useState({});
+  // Tracks which waypoint+field combinations this browser tab has already tried to
+  // auto-translate, so the effect below never fires twice for the same stop — whether it
+  // succeeded (the box no longer matches the master, so the check below would already
+  // skip it) or failed (a rate limit, no API key yet) and would otherwise retry on every
+  // re-render. Cleared only by leaving and reopening this clone.
+  const autoTranslateAttempted = useRef(new Set());
+
+  const translateStopField = async (field) => {
+    if (!form.id || !form.clone_of || !form.target_language) return;
+    setStopFieldError(prev => ({ ...prev, [field]: '' }));
+    if (!stopFieldApiKeys.groq_api_key) {
+      setStopFieldError(prev => ({ ...prev, [field]: 'No Groq API key found for your account yet. Add your own key via "API Keys" in the header.' }));
+      return;
+    }
+    setTranslatingStopField(field);
+    try {
+      const translated = await translateWalkField({
+        field, waypointIndex: rawIndexForSelected, walkId: form.id,
+        targetLanguage: form.target_language, apiKeys: stopFieldApiKeys, authPayload: getNarratorAuthPayload(),
+      });
+      onWaypointUpdate(rawIndexForSelected, field, translated);
+    } catch (err) {
+      setStopFieldError(prev => ({ ...prev, [field]: err?.message || 'Could not translate this text.' }));
+    }
+    setTranslatingStopField(null);
+  };
+
+  useEffect(() => {
+    if (!form.clone_of || !form.target_language || form.target_language === 'English') return;
+    if (!selectedWp || !masterWp) return;
+    if (!stopFieldApiKeys.groq_api_key) return; // nothing to auto-fire with yet — manual Translate button still works once one's added
+    for (const field of ['segment_title', 'description']) {
+      const attemptKey = `${rawIndexForSelected}:${field}`;
+      if (autoTranslateAttempted.current.has(attemptKey)) continue;
+      if (!stillMatchesMaster(selectedWp[field], masterWp[field])) continue; // already translated or hand-edited
+      autoTranslateAttempted.current.add(attemptKey);
+      translateWalkField({
+        field, waypointIndex: rawIndexForSelected, walkId: form.id,
+        targetLanguage: form.target_language, apiKeys: stopFieldApiKeys, authPayload: getNarratorAuthPayload(),
+      })
+        .then(translated => onWaypointUpdate(rawIndexForSelected, field, translated))
+        .catch(err => console.error(`Auto-translating a stop's ${field} failed (English text left in place, the Translate button still works):`, err));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawIndexForSelected, form.clone_of, form.target_language, stopFieldApiKeys.groq_api_key]);
+
+  // A stale error from the PREVIOUS stop (e.g. "no API key yet") must not linger and
+  // wrongly appear to be about whichever stop is open now.
+  useEffect(() => { setStopFieldError({}); }, [rawIndexForSelected]);
 
   // Per Enda (2026-09-20): an admin often rewrites the English script here in Narrate &
   // Simulate, but only the Waypoints tab's "Mark Waypoint as Done" pushed the script to the
@@ -1920,6 +1992,75 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                   >
                     Unlock to edit
                   </Button>
+                </div>
+              )}
+
+              {/* Per Enda (follow-up 245): this stop's own customer-facing name and short
+                  description — shown in the app's "Tour Stops" list and while driving,
+                  same as the tour's overall Description/Safety Notes. Auto-translated the
+                  moment this stop is opened (see the effect above); this box is where a
+                  narrator checks and corrects that draft, same "Translate" + editable-box
+                  pattern used for Description/Safety Notes and for narration scripts. */}
+              {selectedWp && form.clone_of && (
+                <div className="bg-slate-800/60 border border-amber-600/30 rounded-lg px-3 py-2 space-y-2.5">
+                  <div className="flex items-center gap-2">
+                    <Languages className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span className="text-xs text-slate-400 shrink-0">Stop name:</span>
+                    {form.target_language && (
+                      <Button
+                        type="button" size="sm" variant="outline"
+                        onClick={() => translateStopField('segment_title')}
+                        disabled={translatingStopField === 'segment_title'}
+                        title={`Translate this stop's name into ${form.target_language} and fill this box with it.`}
+                        className="bg-blue-700/30 hover:bg-blue-700/50 border-blue-600/50 text-amber-400 hover:text-amber-300 shrink-0 gap-1.5 h-8"
+                      >
+                        {translatingStopField === 'segment_title' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Languages className="w-3.5 h-3.5" />}
+                        Translate
+                      </Button>
+                    )}
+                    {form.target_language && form.target_language !== 'English' && masterWp && stillMatchesMaster(selectedWp.segment_title, masterWp.segment_title) && (
+                      <span className="flex items-center gap-1 text-xs font-medium text-amber-400 bg-amber-900/30 border border-amber-700/50 rounded-full px-2 py-0.5 shrink-0">
+                        <AlertTriangle className="w-3 h-3" /> Still English
+                      </span>
+                    )}
+                  </div>
+                  <Input
+                    value={selectedWp.segment_title || ''}
+                    onChange={e => onWaypointUpdate(toRawIndex(selectedWpIndex), 'segment_title', e.target.value)}
+                    placeholder="This stop's name, as shown to a customer"
+                    className="bg-slate-700 border-slate-600 text-white text-sm"
+                  />
+                  {stopFieldError.segment_title && <p className="text-xs text-red-400">{stopFieldError.segment_title}</p>}
+
+                  <div className="flex items-center gap-2">
+                    <Languages className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span className="text-xs text-slate-400 shrink-0">Stop description:</span>
+                    {form.target_language && (
+                      <Button
+                        type="button" size="sm" variant="outline"
+                        onClick={() => translateStopField('description')}
+                        disabled={translatingStopField === 'description'}
+                        title={`Translate this stop's description into ${form.target_language} and fill this box with it.`}
+                        className="bg-blue-700/30 hover:bg-blue-700/50 border-blue-600/50 text-amber-400 hover:text-amber-300 shrink-0 gap-1.5 h-8"
+                      >
+                        {translatingStopField === 'description' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Languages className="w-3.5 h-3.5" />}
+                        Translate
+                      </Button>
+                    )}
+                    {form.target_language && form.target_language !== 'English' && masterWp && stillMatchesMaster(selectedWp.description, masterWp.description) && (
+                      <span className="flex items-center gap-1 text-xs font-medium text-amber-400 bg-amber-900/30 border border-amber-700/50 rounded-full px-2 py-0.5 shrink-0">
+                        <AlertTriangle className="w-3 h-3" /> Still English
+                      </span>
+                    )}
+                  </div>
+                  <Textarea
+                    value={selectedWp.description || ''}
+                    onChange={e => onWaypointUpdate(toRawIndex(selectedWpIndex), 'description', e.target.value)}
+                    placeholder="A short description of this stop, as shown to a customer"
+                    rows={3}
+                    className="bg-slate-700 border-slate-600 text-white text-sm resize-none"
+                  />
+                  {stopFieldError.description && <p className="text-xs text-red-400">{stopFieldError.description}</p>}
                 </div>
               )}
 

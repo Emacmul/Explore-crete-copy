@@ -9,6 +9,7 @@ import { ArrowLeft, Save, Loader2, Pencil, Check, X, Upload, FileUp, CheckCircle
 import { base44 } from '@/api/base44Client';
 import { LANGUAGE_CODE_BY_NAME, getGoogleTranslateCode } from '@/lib/i18n';
 import { getFnErrorMessage } from '@/lib/utils';
+import { translateWalkField, stillMatchesMaster } from '@/lib/fieldTranslation';
 import FitParser from 'fit-file-parser';
 import WaypointEditor from './WaypointEditor';
 import DrivingTourWaypointEditor from './DrivingTourWaypointEditor';
@@ -51,6 +52,10 @@ const EMPTY_WALK = {
   start_lng: '',
   region: '',
   main_interest: '',
+  // Admin-only curation field (same idea as Region/Difficulty — not per-language).
+  // Comma-separated `code` values of OTHER tours to suggest from this tour's page.
+  // Only shown to customers once the target tour is itself published — see WalkDetail.jsx.
+  related_tour_codes: '',
   trail_path: [],
   trail_breaks: [],
   waypoints: [],
@@ -71,10 +76,16 @@ function SaveButton({ onSave, saving, canSave }) {
   );
 }
 
-export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin', focusWaypointIndex, onToggleFinished, onTogglePublish, onToggleAdminCompleted }) {
+export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin', focusWaypointIndex, onToggleFinished, onTogglePublish, onToggleAdminCompleted, allWalks = [] }) {
   const isNarrator = userRole === 'narrator';
   console.log('WalkEditor mounted/rendering');
   const [form, setForm] = useState({ ...EMPTY_WALK, ...walk });
+  // The true master tour this clone was made from, if any — used only to show a plain
+  // "still shows the English original" warning next to Description/Safety Notes (see
+  // fieldEditor below), by comparing this clone's current text against it. Best-effort:
+  // allWalks may not (yet) include the master on a very fresh clone, in which case the
+  // warning simply doesn't show rather than showing something wrong.
+  const masterWalk = form.clone_of ? allWalks.find(w => w.id === form.clone_of) : null;
   const [saving, setSaving] = useState(false);
   // Per Enda's follow-up 39 report: a full morning of editing BOR1 (scripts, audio,
   // "Mark Waypoint as Done") never reached the server. "Save this line" and "Mark
@@ -200,22 +211,14 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
     }
     setTranslatingField(field);
     try {
-      const response = await base44.functions.invoke('translateScript', {
+      const translated = await translateWalkField({
         field,
         walkId: form.id,
-        target_language: form.target_language,
-        apiKey: titleTranslateApiKeys.groq_api_key,
-        apiKey2: titleTranslateApiKeys.groq_api_key_2,
-        googleApiKey: titleTranslateApiKeys.google_tts_api_key || undefined,
-        target_lang_code: getGoogleTranslateCode(LANGUAGE_CODE_BY_NAME[form.target_language] || ''),
-        ...getNarratorAuthPayload(),
+        targetLanguage: form.target_language,
+        apiKeys: titleTranslateApiKeys,
+        authPayload: getNarratorAuthPayload(),
       });
-      if (response?.data?.error) throw new Error(response.data.error);
-      if (response?.data?.translated_text) {
-        set(field, response.data.translated_text);
-      } else {
-        setFieldTranslateError(prev => ({ ...prev, [field]: 'Translation returned no text.' }));
-      }
+      set(field, translated);
     } catch (err) {
       setFieldTranslateError(prev => ({ ...prev, [field]: getFnErrorMessage(err, 'Could not translate this text.') }));
     }
@@ -224,6 +227,17 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
 
   function fieldEditor(field, label, rows) {
     if (!form.clone_of) return null;
+    // Per Enda (follow-up 245): this clone is auto-translated the moment it's created
+    // (see handleCloneTour in BackendShell.jsx) — but that's best-effort (a rate limit,
+    // a missing API key, etc. can silently leave it untranslated), so this box still
+    // needs its own visible check. If the text here still exactly matches the master's
+    // English original, it hasn't actually been translated yet, whatever it looks like —
+    // flagged plainly rather than left silent, same idea as the "unsaved changes"
+    // banner elsewhere in this editor.
+    const notYetTranslated = form.target_language
+      && form.target_language !== 'English'
+      && masterWalk
+      && stillMatchesMaster(form[field], masterWalk[field]);
     return (
       <div className="bg-slate-800/60 border border-amber-600/30 rounded-lg px-3 py-2 space-y-1.5">
         <div className="flex items-center gap-2">
@@ -240,6 +254,11 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
               {translatingField === field ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Languages className="w-3.5 h-3.5" />}
               Translate
             </Button>
+          )}
+          {notYetTranslated && (
+            <span className="flex items-center gap-1 text-xs font-medium text-amber-400 bg-amber-900/30 border border-amber-700/50 rounded-full px-2 py-0.5 shrink-0">
+              <AlertTriangle className="w-3 h-3" /> Still English — not translated yet
+            </span>
           )}
         </div>
         <Textarea
@@ -1538,6 +1557,51 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
               />
             </div>
 
+            {/* Per Enda (follow-up 244): admin-only curation, like Region/Difficulty — not
+                shown to narrators. A tour can point at other tours (e.g. WAR pointing at a
+                future Fortezza tour). The customer only ever sees a related tour once THAT
+                tour is itself published — an unpublished or unknown code is silently skipped,
+                never shown as "coming soon", since a tour can take 6-7 months to go from idea
+                to published. This box just tells the admin, as they type, whether each code
+                resolves to a real tour yet and what its publish status is. */}
+            {!isNarrator && (
+              <div>
+                <Label className="text-slate-300 mb-1.5 block">
+                  Related tours
+                  <span className="ml-2 text-xs text-slate-500 font-normal">Comma-separated tour codes, e.g. "FTZ, RAR"</span>
+                </Label>
+                <Input
+                  value={form.related_tour_codes || ''}
+                  onChange={e => set('related_tour_codes', e.target.value)}
+                  placeholder="e.g. FTZ, RAR"
+                  className="bg-slate-700 border-slate-600 text-white"
+                />
+                {(() => {
+                  const codes = (form.related_tour_codes || '').split(',').map(c => c.trim()).filter(Boolean);
+                  if (codes.length === 0) return null;
+                  return (
+                    <ul className="mt-2 space-y-1">
+                      {codes.map(code => {
+                        const match = allWalks.find(w => w.code === code);
+                        return (
+                          <li key={code} className="text-xs flex items-center gap-1.5">
+                            <span className="font-mono text-slate-400">{code}</span>
+                            {!match ? (
+                              <span className="text-red-400">— no tour with this code yet</span>
+                            ) : match.approved === false ? (
+                              <span className="text-amber-400">— "{match.name}" (not published yet — won't show to customers until it is)</span>
+                            ) : (
+                              <span className="text-emerald-400">— "{match.name}" (published — will show to customers)</span>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  );
+                })()}
+              </div>
+            )}
+
             {/* Per Enda: this used to only show for a Walk/Hike (isDrivingAudioTour false) —
                 a WalkAbout or a real Driving Tour had no Safety Notes field at all anywhere in
                 this editor, so a customer opening one of those always saw the generic default
@@ -2054,7 +2118,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
             }));
             editVersionRef.current += 1;
             setDirty(true);
-          }} targetLanguage={form.target_language || ''} onSave={triggerSave} saving={saving} onAutoSave={requestAutoSave} isNarrator={isNarrator} titleEditor={tourTitleEditor} onDepositoryEntry={(entry) => setForm(prev => ({ ...prev, import_files: [...(prev.import_files || []).filter(f => f.segment_id !== entry.segment_id), entry] }))} />
+          }} targetLanguage={form.target_language || ''} onSave={triggerSave} saving={saving} onAutoSave={requestAutoSave} isNarrator={isNarrator} titleEditor={tourTitleEditor} onDepositoryEntry={(entry) => setForm(prev => ({ ...prev, import_files: [...(prev.import_files || []).filter(f => f.segment_id !== entry.segment_id), entry] }))} allWalks={allWalks} />
         )}
       </div>
     </div>

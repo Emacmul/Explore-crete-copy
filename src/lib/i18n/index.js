@@ -261,6 +261,7 @@ export const translations = {
     'detail.mustConfirmSafetyFirst': "Please confirm you've read \"Before You Set Off\" above before starting.",
     'detail.returnHome': "Return to Home",
     'detail.aboutThisWalk': "About this walk",
+    'detail.relatedTours': "Related tours",
     'detail.tourStops': "Tour Stops",
     'detail.keyPoints': "Key Points",
     'detail.resetProgress': "Reset progress",

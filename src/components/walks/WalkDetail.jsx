@@ -6,7 +6,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   X, Clock, Route, TrendingUp, MapPin, AlertTriangle,
   Eye, Droplets, TreePine, Navigation, Crosshair, ShieldAlert,
-  CheckCircle2, Circle, RotateCcw, Mountain, Play, FlaskConical, Home
+  CheckCircle2, Circle, RotateCcw, Mountain, Play, FlaskConical, Home, ChevronRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import WalkDetailMap from '../map/WalkDetailMap';
@@ -78,7 +78,7 @@ function waypointKey(waypoint, index) {
 // backgrounding the app for a phone call, never gets mistaken for "a different day".
 const REACHED_STALE_MS = 18 * 60 * 60 * 1000;
 
-export default function WalkDetail({ walk, onClose, accessible = true }) {
+export default function WalkDetail({ walk, onClose, accessible = true, allWalks = [], onSelectRelatedWalk }) {
   const [followGps, setFollowGps] = React.useState(false);
   const [started, setStarted] = React.useState(false);
   const { t } = useLanguage();
@@ -313,6 +313,18 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
 
   if (!walk) return null;
 
+  // Related tours (per Enda, 2026-09-22) — walk.related_tour_codes is an admin-entered,
+  // comma-separated list of OTHER tours' `code` values. Each code is looked up against
+  // allWalks (the same catalogue the tour list uses) and kept only if that tour exists
+  // AND is itself published (`approved`) — a code with no match yet (the related tour
+  // hasn't been built) or one that's still a draft is silently skipped, never shown as
+  // locked or "coming soon" (a new tour can take 6-7 months to go from idea to published,
+  // so a permanent "coming soon" chip would just be misleading for all that time).
+  const relatedCodes = (walk.related_tour_codes || '').split(',').map(c => c.trim()).filter(Boolean);
+  const relatedWalks = relatedCodes
+    .map(code => allWalks.find(w => w.code === code && w.approved !== false && w.id !== walk.id))
+    .filter(Boolean);
+
   // The furthest-along waypoint reached so far, so it can be highlighted distinctly — this is
   // the point a lost walker is most likely to recognise and be able to navigate back to.
   const lastReachedIndex = waypoints.reduce((last, wp, index) => (
@@ -483,9 +495,42 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
             {walk.description && (
               <div>
                 <h3 className="font-semibold text-gray-900 mb-2">{t('detail.aboutThisWalk')}</h3>
-                <p className="text-gray-600 text-sm leading-relaxed">
+                {/* Per Enda (2026-09-22): the description is written and saved as separate
+                    paragraphs (blank-line-separated), but a plain <p> collapses every line
+                    break, so it used to show as one run-on block in the app while the
+                    website (which does respect line breaks) showed proper paragraphs.
+                    whitespace-pre-line keeps the paragraph breaks without needing to touch
+                    any already-saved description text. */}
+                <p className="text-gray-600 text-sm leading-relaxed whitespace-pre-line">
                   {walk.description}
                 </p>
+              </div>
+            )}
+
+            {/* Related tours — per Enda (2026-09-22): cross-links to other tours, matching
+                the "Related tours" links on the website product page, but pointing at that
+                tour's own page IN THE APP (not the website) so the Buy button there is the
+                app's own purchase flow. A related tour is only ever shown once it is itself
+                published (`approved`) — an unpublished or not-yet-existing code is silently
+                skipped, never shown as locked/"coming soon", since a tour can take six or
+                seven months to go from idea to published and a permanent "coming soon" chip
+                would be misleading for that whole time. */}
+            {relatedWalks.length > 0 && (
+              <div>
+                <h3 className="font-semibold text-gray-900 mb-2">{t('detail.relatedTours')}</h3>
+                <div className="space-y-2">
+                  {relatedWalks.map(rw => (
+                    <button
+                      key={rw.id}
+                      type="button"
+                      onClick={() => onSelectRelatedWalk?.(rw)}
+                      className="w-full flex items-center justify-between gap-3 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg px-3 py-2.5 text-left transition-colors"
+                    >
+                      <span className="text-sm font-medium text-gray-800 min-w-0 break-words">{rw.name}</span>
+                      <ChevronRight className="w-4 h-4 text-gray-400 shrink-0" />
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -688,7 +733,7 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
                           </div>
 
                           {waypoint.description && (
-                            <p className="text-sm text-gray-600 mt-1">
+                            <p className="text-sm text-gray-600 mt-1 whitespace-pre-line">
                               {waypoint.description}
                             </p>
                           )}

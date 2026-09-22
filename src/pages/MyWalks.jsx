@@ -55,7 +55,12 @@ export default function MyWalks() {
           {selectedWalk ? (
             <motion.div key="detail" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               className="h-[calc(100vh-100px)]">
-              <WalkDetail walk={selectedWalk} onClose={() => setSelectedWalk(null)} />
+              <WalkDetail
+                walk={selectedWalk}
+                onClose={() => setSelectedWalk(null)}
+                allWalks={walks}
+                onSelectRelatedWalk={setSelectedWalk}
+              />
             </motion.div>
           ) : (
             <motion.div key="list" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
