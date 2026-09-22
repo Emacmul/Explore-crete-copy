@@ -47,7 +47,7 @@ export default function WalkCard({ walk, onClick, isSelected, accessible = true 
       >
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-2">
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
               <span className="font-mono text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded font-medium">
                 {walk.code}
               </span>
@@ -110,7 +110,7 @@ export default function WalkCard({ walk, onClick, isSelected, accessible = true 
 
             {downloaded && <div className="mt-1"><OfflineBadge /></div>}
 
-            <div className="flex items-center gap-4 mt-3 text-xs text-gray-600">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 text-xs text-gray-600">
               {walk.distance_km && (
                 <div className="flex items-center gap-1">
                   <Route className="w-3.5 h-3.5" />

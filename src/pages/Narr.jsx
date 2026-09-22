@@ -84,11 +84,11 @@ export default function Narr() {
   return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center px-4">
       <div className="w-full max-w-sm bg-slate-900 border border-slate-700 rounded-2xl p-6 space-y-5">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-purple-500"><Mic className="w-5 h-5 text-white" /></div>
-          <div>
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="p-2 rounded-lg bg-purple-500 shrink-0"><Mic className="w-5 h-5 text-white" /></div>
+          <div className="min-w-0">
             <h1 className="font-bold text-white">Narrator Studio</h1>
-            <p className="text-xs text-slate-400">{user.email}</p>
+            <p className="text-xs text-slate-400 break-words">{user.email}</p>
           </div>
         </div>
         <div>

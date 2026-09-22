@@ -1331,7 +1331,7 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
           )}
         </div>
         {lastTriggered && (
-          <div className="text-xs text-green-400 bg-green-900/30 px-2 py-1 rounded-full shrink-0">
+          <div className="text-xs text-green-400 bg-green-900/30 px-2 py-1 rounded-full shrink-0 max-w-[45%] truncate">
             ▶ {lastTriggered}
           </div>
         )}
@@ -1371,9 +1371,9 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
       {gpsIssueActive && (
         <div className="mx-4 mb-3 flex items-start gap-2 bg-red-900/30 border border-red-600 rounded-lg px-3 py-2">
           <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm font-semibold text-red-300">{gpsIssueTitle}</p>
-            <p className="text-xs text-red-300/90 mt-0.5">{gpsIssue.message}</p>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-red-300 break-words">{gpsIssueTitle}</p>
+            <p className="text-xs text-red-300/90 mt-0.5 break-words">{gpsIssue.message}</p>
           </div>
         </div>
       )}
@@ -1386,9 +1386,9 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
       {offRouteActive && (
         <div className="mx-4 mb-3 flex items-start gap-2 bg-amber-900/30 border border-amber-600 rounded-lg px-3 py-2">
           <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm font-semibold text-amber-300">{t('player.offRouteTitle')}</p>
-            <p className="text-xs text-amber-300/90 mt-0.5">{t('player.offRouteMessage')}</p>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-amber-300 break-words">{t('player.offRouteTitle')}</p>
+            <p className="text-xs text-amber-300/90 mt-0.5 break-words">{t('player.offRouteMessage')}</p>
           </div>
         </div>
       )}
@@ -1459,7 +1459,7 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
           while idle with played stops on record; the ordinary Start still begins a fresh tour. */}
       {status === 'idle' && !tourComplete && !lastKnownWaypoint && triggeredWpIds.size > 0 && (
         <div className="mx-4 mb-3 flex items-center justify-between gap-3 bg-blue-900/20 border border-blue-700/40 rounded-lg px-3 py-2">
-          <p className="text-xs text-blue-300">{t('player.continueTourNote')}</p>
+          <p className="text-xs text-blue-300 min-w-0 break-words">{t('player.continueTourNote')}</p>
           <Button
             type="button"
             size="sm"
@@ -1505,13 +1505,13 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
         {tourComplete && (
           <div className="flex items-start gap-2 bg-emerald-900/30 border border-emerald-600 rounded-lg px-3 py-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-            <p className="text-sm text-emerald-300">{t('player.tourComplete')}</p>
+            <p className="text-sm text-emerald-300 min-w-0 break-words">{t('player.tourComplete')}</p>
           </div>
         )}
         {status === 'idle' && !tourComplete && startError && (
           <div className="flex items-start gap-2 bg-red-900/30 border border-red-600 rounded-lg px-3 py-2">
             <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-            <p className="text-xs text-red-300">{startError}</p>
+            <p className="text-xs text-red-300 min-w-0 break-words">{startError}</p>
           </div>
         )}
         {status === 'idle' && !tourComplete && !savedOffline && (

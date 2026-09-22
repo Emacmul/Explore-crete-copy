@@ -334,18 +334,18 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
         className="h-full flex flex-col bg-white rounded-2xl shadow-xl overflow-hidden"
       >
         <div className="p-4 border-b bg-gradient-to-r from-blue-600 to-blue-700 text-white">
-          <div className="flex items-start justify-between">
-            <div>
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
               <span className="font-mono text-xs bg-white/20 px-2 py-1 rounded">
                 {walk.code}
               </span>
-              <h2 className="text-xl font-bold mt-2">{walk.name}</h2>
+              <h2 className="text-xl font-bold mt-2 break-words">{walk.name}</h2>
               {walk.region && (
-                <p className="text-blue-100 text-sm mt-1">{walk.region}</p>
+                <p className="text-blue-100 text-sm mt-1 break-words">{walk.region}</p>
               )}
             </div>
 
-            <div className="flex items-center gap-1 -mt-1 -mr-1">
+            <div className="flex items-center gap-1 -mt-1 -mr-1 shrink-0">
               <Button
                 variant="ghost"
                 size="icon"
@@ -367,7 +367,7 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
             </div>
           </div>
 
-          <div className="flex items-center gap-4 mt-4 text-sm">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-4 text-sm">
             {walk.difficulty && (
               <Badge className={`${difficultyColors[walk.difficulty]} border-0`}>
                 {t('diff.' + walk.difficulty)}
@@ -413,9 +413,9 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
             {walk._is_draft_preview && (
               <div className="bg-violet-50 border border-violet-300 rounded-xl p-3 flex items-center gap-2">
                 <FlaskConical className="w-5 h-5 text-violet-600 shrink-0" />
-                <div>
-                  <p className="text-violet-900 text-sm font-semibold">{t('detail.draftPreviewTitle')}</p>
-                  <p className="text-violet-800 text-sm">{t('detail.draftPreviewMessage')}</p>
+                <div className="min-w-0">
+                  <p className="text-violet-900 text-sm font-semibold break-words">{t('detail.draftPreviewTitle')}</p>
+                  <p className="text-violet-800 text-sm break-words">{t('detail.draftPreviewMessage')}</p>
                 </div>
               </div>
             )}
@@ -438,12 +438,12 @@ export default function WalkDetail({ walk, onClose, accessible = true }) {
             {savedOffline ? (
               <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center gap-2">
                 <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                <p className="text-emerald-800 text-sm">{t('detail.offlineThankYou')}</p>
+                <p className="text-emerald-800 text-sm min-w-0 break-words">{t('detail.offlineThankYou')}</p>
               </div>
             ) : (
               <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 flex items-center gap-2">
                 <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
-                <p className="text-amber-800 text-sm">{t('detail.offlineWarning')}</p>
+                <p className="text-amber-800 text-sm min-w-0 break-words">{t('detail.offlineWarning')}</p>
               </div>
             )}
 

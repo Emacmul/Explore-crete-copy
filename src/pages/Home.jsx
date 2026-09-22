@@ -372,7 +372,7 @@ export default function Home() {
 
       <main className="max-w-7xl mx-auto p-4">
         <div className="grid lg:grid-cols-3 gap-4 h-[calc(100vh-180px)]">
-          <div className="lg:col-span-1 h-full">
+          <div className="lg:col-span-1 h-full min-w-0">
             <WalkList
               walks={categoryWalks}
               selectedWalk={selectedWalk}
@@ -386,7 +386,7 @@ export default function Home() {
             />
           </div>
 
-          <div className="lg:col-span-2 h-full relative scroll-mt-32" ref={detailSectionRef}>
+          <div className="lg:col-span-2 h-full min-w-0 relative scroll-mt-32" ref={detailSectionRef}>
             <AnimatePresence mode="wait">
               {showDetail && selectedWalk ? (
                 <motion.div

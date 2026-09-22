@@ -172,7 +172,7 @@ export default function TourDebugLog() {
                       {fmtElapsed(entry.elapsed)}
                     </span>
                     <Icon className={`w-3 h-3 mt-0.5 shrink-0 ${meta.color}`} />
-                    <span className={`text-slate-300 ${resultColor}`}>
+                    <span className={`text-slate-300 min-w-0 break-words ${resultColor}`}>
                       {entryLabel(entry)}
                     </span>
                   </div>

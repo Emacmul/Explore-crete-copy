@@ -43,13 +43,13 @@ export default function OfflineWalksBanner({ onWalkSelect, selectedWalk, tourCat
         className="w-full flex items-center justify-between px-4 py-3 text-left"
         onClick={() => setExpanded(e => !e)}
       >
-        <div className="flex items-center gap-2">
-          <WifiOff className={`w-4 h-4 ${!isOnline ? 'text-amber-600' : 'text-gray-500'}`} />
-          <span className={`font-medium text-sm ${!isOnline ? 'text-amber-700' : 'text-gray-700'}`}>
+        <div className="flex items-center gap-2 min-w-0">
+          <WifiOff className={`w-4 h-4 shrink-0 ${!isOnline ? 'text-amber-600' : 'text-gray-500'}`} />
+          <span className={`font-medium text-sm min-w-0 break-words ${!isOnline ? 'text-amber-700' : 'text-gray-700'}`}>
             {!isOnline ? t('offline.modePrefix') : ''}{t(offlineWalks.length === 1 ? 'offline.savedWalkOne' : 'offline.savedWalkMany', { n: offlineWalks.length })}
           </span>
         </div>
-        {expanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+        {expanded ? <ChevronUp className="w-4 h-4 text-gray-400 shrink-0" /> : <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" />}
       </button>
 
       {expanded && (

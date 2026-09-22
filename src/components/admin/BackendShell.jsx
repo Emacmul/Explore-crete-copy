@@ -433,17 +433,17 @@ export default function BackendShell({ user, userRole, isSuperAdmin, authMode, u
   return (
     <div className="min-h-screen bg-slate-950 text-white">
       <header className="bg-slate-900 border-b border-slate-700 sticky top-0 z-50">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg ${isAdmin ? 'bg-amber-500' : 'bg-purple-500'}`}>
+        <div className="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-y-2">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className={`p-2 rounded-lg shrink-0 ${isAdmin ? 'bg-amber-500' : 'bg-purple-500'}`}>
               {isAdmin ? <ShieldCheck className="w-5 h-5 text-white" /> : <Mic className="w-5 h-5 text-white" />}
             </div>
-            <div>
+            <div className="min-w-0">
               <h1 className="font-bold text-white">{isAdmin ? 'Admin Panel' : 'Narrator Studio'}</h1>
-              <p className="text-xs text-slate-400">{user?.full_name || user?.email} · {isAdmin ? 'admin' : 'Narrator'}{unrestricted ? ' · Admin access' : ''}</p>
+              <p className="text-xs text-slate-400 break-words">{user?.full_name || user?.email} · {isAdmin ? 'admin' : 'Narrator'}{unrestricted ? ' · Admin access' : ''}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {showBackToStart && (
               <Button variant="ghost" size="sm" onClick={() => { setEditingWalk(null); setView('start'); }} className="text-slate-300 hover:text-white gap-2">
                 <ArrowLeft className="w-4 h-4" /> Start

@@ -52,14 +52,14 @@ export default function DrivingModeNotice() {
     return (
       <Card className="bg-amber-50 border-amber-300 p-3 flex items-center gap-3">
         <ShieldCheck className="w-5 h-5 text-amber-600 shrink-0" />
-        <p className="text-xs text-amber-800 flex-1">
+        <p className="text-xs text-amber-800 flex-1 min-w-0 break-words">
           {t('drivingNotice.activeShort')}
         </p>
         <Button
           variant="ghost"
           size="sm"
           onClick={() => setAcknowledged(false)}
-          className="text-amber-700 hover:bg-amber-100 h-7 px-2 text-xs"
+          className="text-amber-700 hover:bg-amber-100 h-7 px-2 text-xs shrink-0"
         >
           {t('drivingNotice.viewAgain')}
         </Button>
@@ -69,32 +69,32 @@ export default function DrivingModeNotice() {
 
   return (
     <Card className="bg-amber-50 border-amber-400 p-4 space-y-3">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 min-w-0">
         <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
-        <h3 className="font-bold text-amber-900">{t('drivingNotice.title')}</h3>
+        <h3 className="font-bold text-amber-900 break-words min-w-0">{t('drivingNotice.title')}</h3>
       </div>
 
       <div className="space-y-2 text-sm text-amber-900">
-        <p className="font-medium">
+        <p className="font-medium break-words">
           {t('drivingNotice.keepOpen')}
         </p>
 
         <div className="flex items-start gap-2 text-amber-800">
           <Smartphone className="w-4 h-4 mt-0.5 shrink-0" />
-          <p>
+          <p className="min-w-0 break-words">
             {t('drivingNotice.noOtherApps')}
           </p>
         </div>
 
         <div className="flex items-start gap-2 text-amber-800">
           <Sun className="w-4 h-4 mt-0.5 shrink-0" />
-          <p>
+          <p className="min-w-0 break-words">
             {t('drivingNotice.mountPhone')}
           </p>
         </div>
       </div>
 
-      <div className="flex items-center gap-2 pt-1">
+      <div className="flex items-center gap-2 pt-1 flex-wrap">
         <Button
           variant="outline"
           size="sm"
