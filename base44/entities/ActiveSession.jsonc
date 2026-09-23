@@ -20,6 +20,10 @@
       "default": true,
       "description": "Whether this session is considered active"
     },
+    "token_issued_at": {
+      "type": "number",
+      "description": "The `iat` claim of the exact WordPress JWT whose login created (or last re-authenticated) this session row \u2014 that login's 'generation'. Content reads and heartbeats only count when the caller's own token carries this same iat, so an older still-valid token (from before a forced logout, a logout, or a newer login on any device) no longer matches the row and stays revoked (audit U1/U2, 2026-09-23). Rows created before this field existed have it unset and are treated as legacy."
+    },
     "description": {
       "type": "string",
       "maxLength": 1000,

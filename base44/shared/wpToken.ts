@@ -26,6 +26,26 @@ export function getEmailFromToken(token) {
   return email ? String(email).toLowerCase().trim() : null;
 }
 
+// Returns the token's `iat` (issued-at) claim, raw-decoded — the login "generation" stamp.
+// Safe to use ONLY as a comparator on a token that has ALREADY been verified genuine via
+// verifyEmailFromToken / isTokenGenuine: like getEmailFromToken above, this alone proves
+// nothing about who the caller is. Its one job (audit U1/U2, 2026-09-23) is to let the
+// session system tell two different logins of the same account apart — the session row
+// created at login records the iat of the exact token that login minted, so a heartbeat
+// or a protected read carrying an older token no longer matches the row.
+export function getTokenIatFromToken(token) {
+  if (!token) return null;
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  try {
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+    const iat = Number(payload?.iat);
+    return Number.isFinite(iat) ? iat : null;
+  } catch {
+    return null;
+  }
+}
+
 // The real, secure version — confirms a token is genuinely valid by asking WordPress
 // itself, via the JWT Auth plugin's own standard validation endpoint, before trusting
 // anything about who it claims to be. This is what closes the actual vulnerability: without

@@ -2,8 +2,10 @@ import { createClientFromRequest } from "npm:@base44/sdk@0.8.40";
 import { secrets } from "base44:runtime";
 import {
   CODE_EXPIRY_MIN, generateSixDigitCode, isoPlusMinutes, isoNow,
-  findDevice, getActiveSessionForUser, upsertSession, sendDeviceCodeEmail, fetchWpToken,
+  findDevice, getActiveSessionForUser, upsertSession, deactivateOtherSessions,
+  sendDeviceCodeEmail, fetchWpToken,
 } from "../../shared/deviceAuth.ts";
+import { getTokenIatFromToken } from "../../shared/wpToken.ts";
 
 export default async function (req: Request): Promise<Response> {
   try {
@@ -39,6 +41,11 @@ export default async function (req: Request): Promise<Response> {
       return Response.json({ error: wpData?.error || "Invalid email or password" }, { status: 401 });
     }
 
+    // The iat of the exact token this login minted — stamped onto the session row below so
+    // the row belongs to this one login "generation" (audit U1/U2, 2026-09-23; see
+    // deviceAuth.ts's isSessionRevoked for what that protects).
+    const tokenIat = getTokenIatFromToken(wpData.token);
+
     // Staff bypass: admins, super admins and narrators always work from desktop/laptop and
     // are exempt from the device challenge and concurrent-session lock. super_admin was
     // originally omitted (audit N4, 2026-09-23), which put Super Admins under the customer
@@ -52,7 +59,7 @@ export default async function (req: Request): Promise<Response> {
       } else {
         await svc.entities.Device.create({ user_email: email, device_id, device_label: device_label || "Admin device", first_seen: isoNow(), last_used: isoNow() });
       }
-      await upsertSession(svc, email, device_id);
+      await upsertSession(svc, email, device_id, tokenIat);
       return Response.json({ status: "ok", token: wpData.token, user: wpData.user });
     }
 
@@ -69,7 +76,11 @@ export default async function (req: Request): Promise<Response> {
     const known = await findDevice(svc, email, device_id);
     if (known) {
       await svc.entities.Device.update(known.id, { last_used: isoNow(), device_label: device_label || known.device_label });
-      await upsertSession(svc, email, device_id);
+      await upsertSession(svc, email, device_id, tokenIat);
+      // End any session rows this account still holds on OTHER devices (audit U2): a stale
+      // row left active on another device kept that device's older token passing the
+      // session-revocation check even after this newer login took over the account.
+      await deactivateOtherSessions(svc, email, device_id);
       return Response.json({ status: "ok", token: wpData.token, user: wpData.user });
     }
 

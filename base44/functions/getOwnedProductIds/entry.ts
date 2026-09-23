@@ -19,7 +19,7 @@ export default async function(req) {
     // Session-revocation gate (audit N5, 2026-09-23) — see isSessionRevoked in
     // shared/deviceAuth.ts. A session explicitly ended (forceLogoutAdmin / logout) must
     // revoke ownership reads for as long as the old WordPress token stays valid.
-    if (await isSessionRevoked(base44.asServiceRole, email)) {
+    if (await isSessionRevoked(base44.asServiceRole, email, body.token)) {
       return Response.json({ productIds: [] });
     }
 

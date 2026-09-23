@@ -89,7 +89,7 @@ export default async function(req) {
     // they just no longer get owned/draft content. See isSessionRevoked for why this is
     // not heartbeat-based.
     const sessionRevoked = email
-      ? await isSessionRevoked(base44.asServiceRole, email)
+      ? await isSessionRevoked(base44.asServiceRole, email, body.token)
       : false;
 
     // Admin-only draft preview gate. Same AppUser.role lookup ensureAppUserOnboarding and

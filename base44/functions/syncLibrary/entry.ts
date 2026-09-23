@@ -42,7 +42,7 @@ Deno.serve(async (req) => {
     // the same empty-ownership shape a successful sync produces, so no client change is
     // needed.
     const wpEmail = payload.data?.user?.email || payload.email;
-    if (wpEmail && await isSessionRevoked(base44.asServiceRole, String(wpEmail).toLowerCase().trim())) {
+    if (wpEmail && await isSessionRevoked(base44.asServiceRole, String(wpEmail).toLowerCase().trim(), token)) {
       return Response.json({ owned_codes: [], owned_sku_count: 0, walk_count: 0, walks: [] });
     }
 

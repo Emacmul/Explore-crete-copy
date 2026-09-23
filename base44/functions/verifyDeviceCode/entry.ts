@@ -2,8 +2,10 @@ import { createClientFromRequest } from "npm:@base44/sdk@0.8.40";
 import { secrets } from "base44:runtime";
 import {
   DEVICE_LIMIT, MAX_ATTEMPTS, LOCKOUT_MIN,
-  isoNow, isoPlusMinutes, findDevice, listDevicesForUser, getActiveSessionForUser, upsertSession, fetchWpToken,
+  isoNow, isoPlusMinutes, findDevice, listDevicesForUser, getActiveSessionForUser, upsertSession,
+  deactivateOtherSessions, fetchWpToken,
 } from "../../shared/deviceAuth.ts";
+import { getTokenIatFromToken } from "../../shared/wpToken.ts";
 
 export default async function (req: Request): Promise<Response> {
   try {
@@ -72,6 +74,9 @@ export default async function (req: Request): Promise<Response> {
     } catch (err: any) {
       return Response.json({ error: err.message || "Invalid email or password" }, { status: 401 });
     }
+    // The fresh token's iat — stamped onto the session row below so it belongs to this
+    // one login "generation" (audit U1/U2, 2026-09-23; see deviceAuth.ts).
+    const tokenIat = getTokenIatFromToken(wpData.token);
 
     // Re-check concurrent session right before completing (another device may have logged in meanwhile).
     const activeSession = await getActiveSessionForUser(svc, email);
@@ -108,8 +113,11 @@ export default async function (req: Request): Promise<Response> {
       await svc.entities.Device.update(existing.id, { last_used: isoNow(), device_label: device_label || existing.device_label });
     }
 
-    // Activate the session.
-    await upsertSession(svc, email, device_id);
+    // Activate the session, stamped with this login's token generation, and end any
+    // session rows this account still holds on OTHER devices (audit U2 — same reasoning
+    // as loginWithDeviceCheck's known-device path; this flow is customer-only).
+    await upsertSession(svc, email, device_id, tokenIat);
+    await deactivateOtherSessions(svc, email, device_id);
 
     return Response.json({ status: "ok", token: wpData.token, user: wpData.user });
   } catch (error) {
