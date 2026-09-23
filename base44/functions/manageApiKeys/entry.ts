@@ -26,7 +26,7 @@ export default async function(req) {
   try {
     const base44 = wrapClientWithRetry(createClientFromRequest(req));
     const body = await req.json().catch(() => ({}));
-    const { action, google_tts_api_key, groq_api_key, groq_api_key_2 } = body || {};
+    const { action, google_tts_api_key, groq_api_key, groq_api_key_2, elevenlabs_api_key, elevenlabs_voice_id } = body || {};
 
     if (action !== 'get' && action !== 'save') {
       return Response.json({ error: 'action must be "get" or "save"' }, { status: 400 });
@@ -64,6 +64,15 @@ export default async function(req) {
         // Optional backup Groq key from a SEPARATE Groq account — see
         // base44/shared/groqKeyRotation.ts. Never required; blank means "no backup set".
         groq_api_key_2: record?.groq_api_key_2 || '',
+        // Per Enda's follow-up request: system voice messages (off-route/GPS/speed alerts)
+        // now need to be generated in this narrator's own PCV (ElevenLabs cloned voice)
+        // instead of the phone's robotic built-in voice — see generateSystemMessageAudio.
+        // Each narrator has their own separate ElevenLabs account (Enda has permissioned
+        // access to all of them, but each key/voice is still stored per-account here,
+        // same as every other key on this record). Optional — blank until a narrator/admin
+        // sets it up.
+        elevenlabs_api_key: record?.elevenlabs_api_key || '',
+        elevenlabs_voice_id: record?.elevenlabs_voice_id || '',
       });
     }
 
@@ -72,6 +81,8 @@ export default async function(req) {
     if (google_tts_api_key !== undefined) updates.google_tts_api_key = google_tts_api_key;
     if (groq_api_key !== undefined) updates.groq_api_key = groq_api_key;
     if (groq_api_key_2 !== undefined) updates.groq_api_key_2 = groq_api_key_2;
+    if (elevenlabs_api_key !== undefined) updates.elevenlabs_api_key = elevenlabs_api_key;
+    if (elevenlabs_voice_id !== undefined) updates.elevenlabs_voice_id = elevenlabs_voice_id;
 
     if (record) {
       await base44.asServiceRole.entities.AppUser.update(record.id, updates);
