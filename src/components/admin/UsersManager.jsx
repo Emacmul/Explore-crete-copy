@@ -90,12 +90,6 @@ function EditAppUserDialog({ appUser, onClose, isSuperAdmin, narrAuth = {} }) {
 
       await base44.functions.invoke('saveAppUserAdmin', { id: appUser.id, updates, ...narrAuth });
 
-      // Promoting to Admin or Super Admin: invite them to Base44 so the Admin button
-      // works for them (only needed the first time — skip if they already had either).
-      if ((role === 'admin' || role === 'super_admin') && !wasElevated) {
-        try { await base44.users.inviteUser(appUser.email, 'user'); } catch (e) { /* ignore — they may already be invited */ }
-      }
-
       qc.invalidateQueries({ queryKey: ['appUsers-all'] });
       const roleLabel = role === 'user' ? 'a regular user' : role === 'narrator' ? 'a Narrator' : role === 'super_admin' ? 'a Super Admin' : 'an Admin';
       toast({ title: 'User updated', description: `${appUser.email} is now ${roleLabel}.` });

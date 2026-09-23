@@ -302,10 +302,10 @@ export default function Home() {
 
             {selectedTourCategory && (
               <Select value={selectedTourCategory} onValueChange={handleCategorySelect}>
-                <SelectTrigger className="h-8 w-auto gap-2 text-xs border-blue-300 text-blue-700">
-                  <span className="sm:hidden">{t('home.change')}:</span>
-                  <span className="hidden sm:inline">{t('home.changeTourType')}:</span>
-                  <SelectValue />
+                <SelectTrigger className="h-8 w-auto max-w-full gap-2 text-xs border-blue-300 text-blue-700">
+                  <span className="sm:hidden shrink-0">{t('home.change')}:</span>
+                  <span className="hidden sm:inline shrink-0">{t('home.changeTourType')}:</span>
+                  <SelectValue className="truncate" />
                 </SelectTrigger>
                 <SelectContent>
                   {[...TOUR_CATEGORIES]
