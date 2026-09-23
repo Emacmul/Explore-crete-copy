@@ -961,7 +961,7 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
             || spokenGpsIssueRef.current
             || offRouteAnnouncedRef.current;
           if (speedMonitorRef.current.sample({ nowMs, speedKmh, accuracyM: accuracy, targetKmh: currentLegSpeedKmh(), quiet })) {
-            speak(t('player.speedHintSpoken'));
+            playSystemAlert(walk?.speed_hint_audio_url, t('player.speedHintSpoken'));
           }
         }
     };
@@ -1203,6 +1203,56 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
     }
   }, [duckNarration, unduckNarration]);
 
+  // Plays a real PCV (Professional Cloned Voice) system-alert recording, generated in the
+  // narrator's own voice and tour language (see SystemMessagesPanel.jsx / Walk.jsc's
+  // *_audio_url fields), instead of the phone's built-in robotic speechSynthesis voice —
+  // per Enda: the built-in voice "sounds disgustingly horrible". Falls back to speak()
+  // (the old behaviour) whenever no PCV audio has been generated yet for this tour, or if
+  // the PCV file itself fails to load/play for any reason — a driver should never simply
+  // hear nothing because of a bad URL or a network blip. Ducks narration exactly the same
+  // way speak() does, via the same duckNarration/unduckNarration ref-count, so the two can
+  // never leave narration stuck paused regardless of which one fires.
+  const playSystemAlert = useCallback((audioUrl, fallbackText, onSpoken) => {
+    if (!audioUrl) {
+      speak(fallbackText, onSpoken);
+      return;
+    }
+    const player = audioService.createPlayer(audioUrl);
+    let ducked = false;
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      if (ducked) { ducked = false; unduckNarration(); }
+      player.destroy();
+    };
+    try {
+      duckNarration();
+      ducked = true;
+      const el = player.getElement();
+      el.addEventListener('ended', finish, { once: true });
+      el.addEventListener('error', () => {
+        finish();
+        tourLogService.logWarning('PCV system alert audio failed to play - falling back to built-in voice');
+        speak(fallbackText, onSpoken);
+      }, { once: true });
+      // Safety net, same idea as speak()'s maxDuckMs above — some phones may never fire
+      // 'ended', which would otherwise leave narration ducked for good.
+      setTimeout(finish, 20000);
+      player.play().then(() => {
+        onSpoken?.(fallbackText);
+      }).catch((err) => {
+        finish();
+        tourLogService.logWarning(`PCV system alert play() failed: ${err?.message || 'unknown'} - falling back to built-in voice`);
+        speak(fallbackText, onSpoken);
+      });
+    } catch (err) {
+      finish();
+      tourLogService.logWarning(`PCV system alert failed: ${err?.message || 'unknown'} - falling back to built-in voice`);
+      speak(fallbackText, onSpoken);
+    }
+  }, [duckNarration, unduckNarration, speak]);
+
   // Spoken (text-to-speech) GPS-trouble alert — per Enda: a driver shouldn't have to look at
   // the screen to find out narration has stopped triggering, so this reads the same news the
   // red banner shows out loud, once per issue episode (see spokenGpsIssueRef above), and
@@ -1212,8 +1262,11 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
     const text = kind === 'low_accuracy'
       ? t('player.gpsIssueSpokenLowAccuracy')
       : t('player.gpsIssueSpokenNoSignal');
-    speak(text, (spoken) => tourLogService.logSpokenAlert(kind, spoken));
-  }, [t, speak]);
+    const audioUrl = kind === 'low_accuracy'
+      ? walk?.gps_low_accuracy_audio_url
+      : walk?.gps_no_signal_audio_url;
+    playSystemAlert(audioUrl, text, (spoken) => tourLogService.logSpokenAlert(kind, spoken));
+  }, [t, walk, playSystemAlert]);
 
   useEffect(() => {
     const active = !!gpsIssue && status === 'running';
@@ -1233,8 +1286,8 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
   // timing. The app has no turn-by-turn directions to give, so this is honest about that —
   // it points the driver at their own map rather than claiming to guide them.
   const speakOffRouteAlert = useCallback(() => {
-    speak(t('player.offRouteSpoken'), (spoken) => tourLogService.logSpokenAlert('off_route', spoken));
-  }, [t, speak]);
+    playSystemAlert(walk?.off_route_audio_url, t('player.offRouteSpoken'), (spoken) => tourLogService.logSpokenAlert('off_route', spoken));
+  }, [t, walk, playSystemAlert]);
 
   useEffect(() => {
     const active = offRoute && status === 'running';

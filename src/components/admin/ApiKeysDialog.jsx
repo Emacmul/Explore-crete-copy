@@ -17,9 +17,12 @@ export default function ApiKeysDialog({ open, onOpenChange, required = false, on
   const [googleKey, setGoogleKey] = useState('');
   const [groqKey, setGroqKey] = useState('');
   const [groqKey2, setGroqKey2] = useState('');
+  const [elevenlabsKey, setElevenlabsKey] = useState('');
+  const [elevenlabsVoiceId, setElevenlabsVoiceId] = useState('');
   const [showGoogle, setShowGoogle] = useState(false);
   const [showGroq, setShowGroq] = useState(false);
   const [showGroq2, setShowGroq2] = useState(false);
+  const [showElevenlabs, setShowElevenlabs] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
@@ -37,15 +40,23 @@ export default function ApiKeysDialog({ open, onOpenChange, required = false, on
       setGoogleKey(keys.google_tts_api_key || '');
       setGroqKey(keys.groq_api_key || '');
       setGroqKey2(keys.groq_api_key_2 || '');
+      setElevenlabsKey(keys.elevenlabs_api_key || '');
+      setElevenlabsVoiceId(keys.elevenlabs_voice_id || '');
     }
-  }, [loading, keys.google_tts_api_key, keys.groq_api_key, keys.groq_api_key_2]);
+  }, [loading, keys.google_tts_api_key, keys.groq_api_key, keys.groq_api_key_2, keys.elevenlabs_api_key, keys.elevenlabs_voice_id]);
 
   const handleSave = async () => {
     setError('');
     setSaved(false);
     setSaving(true);
     try {
-      await saveKeys({ google_tts_api_key: googleKey.trim(), groq_api_key: groqKey.trim(), groq_api_key_2: groqKey2.trim() });
+      await saveKeys({
+        google_tts_api_key: googleKey.trim(),
+        groq_api_key: groqKey.trim(),
+        groq_api_key_2: groqKey2.trim(),
+        elevenlabs_api_key: elevenlabsKey.trim(),
+        elevenlabs_voice_id: elevenlabsVoiceId.trim(),
+      });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
       onSaved?.();
@@ -157,6 +168,45 @@ export default function ApiKeysDialog({ open, onOpenChange, required = false, on
                   account is automatically tried whenever the first one is rate-limited.
                   Entirely optional.
                 </p>
+              </div>
+
+              <div className="pt-2 border-t border-slate-700">
+                <Label className="text-slate-300 text-sm mb-1.5 block">
+                  ElevenLabs API Key <span className="text-slate-500 font-normal">(optional — real voice for system alerts)</span>
+                </Label>
+                <div className="flex gap-2">
+                  <Input
+                    type={showElevenlabs ? 'text' : 'password'}
+                    value={elevenlabsKey}
+                    onChange={e => setElevenlabsKey(e.target.value)}
+                    placeholder="Paste your ElevenLabs API key"
+                    className="bg-slate-700 border-slate-500 text-white font-mono text-sm"
+                    autoComplete="off"
+                    disabled={!loadedOk}
+                  />
+                  <Button type="button" variant="outline" size="icon" className="border-slate-500 shrink-0" onClick={() => setShowElevenlabs(s => !s)}>
+                    {showElevenlabs ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </Button>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  Your own ElevenLabs account and cloned voice (PCV), used only to generate
+                  the spoken off-route/GPS/speed alerts in your own voice instead of the
+                  phone's built-in robotic one. Entirely optional — a tour still works
+                  without it.
+                </p>
+              </div>
+
+              <div>
+                <Label className="text-slate-300 text-sm mb-1.5 block">ElevenLabs Voice ID <span className="text-slate-500 font-normal">(optional)</span></Label>
+                <Input
+                  type="text"
+                  value={elevenlabsVoiceId}
+                  onChange={e => setElevenlabsVoiceId(e.target.value)}
+                  placeholder="Your cloned voice's ID from ElevenLabs"
+                  className="bg-slate-700 border-slate-500 text-white font-mono text-sm"
+                  autoComplete="off"
+                  disabled={!loadedOk}
+                />
               </div>
 
               {error && (

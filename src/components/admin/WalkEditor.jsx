@@ -24,10 +24,22 @@ import { MAX_WAYPOINT_IMAGES } from '@/lib/waypointImages';
 import { toast } from '@/components/ui/use-toast';
 import { buildTourBackupZip } from '@/lib/tourBackupZip';
 import { DEFAULT_SAFETY_NOTES } from '@/lib/defaultSafetyNotes';
+import SystemMessagesPanel from './SystemMessagesPanel';
 import { DEFAULT_INTERESTS, INTEREST_ICON_MAP } from '@/lib/interestIcons';
 import InterestIcon from '@/components/ui/InterestIcon';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Checkbox } from '@/components/ui/checkbox';
+
+// Exact English wording used by DrivingTourPlayer.jsx's speechSynthesis fallback (see
+// lib/i18n/index.js: player.offRouteSpoken, player.gpsIssueSpokenNoSignal,
+// player.gpsIssueSpokenLowAccuracy, player.speedHintSpoken) — kept in sync by hand, since
+// these are the seed text a brand-new tour's spoken-alert boxes start with (see
+// SystemMessagesPanel.jsx), same starting point the backend's translateScript also falls
+// back to for an older tour that never explicitly saved these fields.
+const DEFAULT_OFF_ROUTE_TEXT = "It looks like you've gone off the planned route. Please check your map to get back on track. I'll carry on with the tour once you're back on the route.";
+const DEFAULT_GPS_NO_SIGNAL_TEXT = "We're experiencing a GPS signal problem due to your surroundings. This is not an app failure. If your narration doesn't resume, press the Play button on your screen to continue listening to your tour.";
+const DEFAULT_GPS_LOW_ACCURACY_TEXT = "Your GPS signal is too weak to pinpoint your location right now, due to your surroundings. This is not an app failure. If your narration doesn't resume, press the Play button on your screen to continue listening to your tour.";
+const DEFAULT_SPEED_HINT_TEXT = "A friendly note: you're driving a little faster than this tour is timed for. If you ease off a bit, the story will stay in step with the road. You can switch these reminders off on the screen, and I won't mention it again for a good while.";
 
 const EMPTY_WALK = {
   tour_category: '', // WHT | WBT | DDV — no silent default, must be chosen
@@ -41,6 +53,14 @@ const EMPTY_WALK = {
   // with placeholder text just to get past the required-field check). Tour-specific
   // measures are then added on top of this by hand, same as always.
   safety_notes: DEFAULT_SAFETY_NOTES,
+  // Spoken system alerts (off-route / no-GPS / weak-GPS / driving-too-fast) — default to
+  // the exact English wording used by the phone's built-in voice (see lib/i18n/index.js)
+  // so a brand-new driving tour starts with real, editable text rather than an empty box.
+  // Same "real tour-design content, same regardless of language" idea as safety_notes.
+  off_route_text: DEFAULT_OFF_ROUTE_TEXT,
+  gps_no_signal_text: DEFAULT_GPS_NO_SIGNAL_TEXT,
+  gps_low_accuracy_text: DEFAULT_GPS_LOW_ACCURACY_TEXT,
+  speed_hint_text: DEFAULT_SPEED_HINT_TEXT,
   difficulty: 'moderate',
   is_sample_walk: false,
   buggy_friendly: false,
@@ -2119,6 +2139,14 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
             editVersionRef.current += 1;
             setDirty(true);
           }} targetLanguage={form.target_language || ''} onSave={triggerSave} saving={saving} onAutoSave={requestAutoSave} isNarrator={isNarrator} titleEditor={tourTitleEditor} onDepositoryEntry={(entry) => setForm(prev => ({ ...prev, import_files: [...(prev.import_files || []).filter(f => f.segment_id !== entry.segment_id), entry] }))} allWalks={allWalks} />
+        )}
+
+        {activeTab === 'narrate' && isDrivingAudioTour && (
+          // Rendered once per tour, not per-waypoint — these are tour-level spoken
+          // alerts, unrelated to which stop is currently selected in TourSimulator.
+          <div className="mt-4">
+            <SystemMessagesPanel form={form} set={set} masterWalk={masterWalk} />
+          </div>
         )}
       </div>
     </div>

@@ -198,7 +198,14 @@ export default function BackendShell({ user, userRole, isSuperAdmin, authMode, u
       // narrator can still translate each one manually afterwards (see the "Translate"
       // buttons on the Preview tab, and the "still English" warning next to each one).
       if (lang.toLowerCase() !== 'english') {
-        for (const field of ['safety_notes', 'description']) {
+        // Per Enda's system-voice-messages request: the four spoken alert texts
+        // (off_route_text etc.) are the same kind of "real tour-design content, same
+        // regardless of language" as safety_notes/description, so they get the same
+        // best-effort auto-translate-on-clone treatment. Audio is deliberately NOT
+        // auto-generated here — ElevenLabs audio only gets created when the narrator
+        // presses "Generate PCV audio" themselves in Narration & Simulate, after
+        // reviewing/editing the translated text.
+        for (const field of ['safety_notes', 'description', 'off_route_text', 'gps_no_signal_text', 'gps_low_accuracy_text', 'speed_hint_text']) {
           try {
             const translatedText = await translateWalkField({
               field, walkId: saved.id, targetLanguage: lang, apiKeys: myApiKeys, authPayload: narrAuth,
@@ -254,6 +261,18 @@ export default function BackendShell({ user, userRole, isSuperAdmin, authMode, u
     return (walk?.waypoints || []).filter(wp => wp.trigger_audio && !wp.final_audio_applied);
   };
 
+  // Same idea as getAudioNotReadyWaypoints just above, but for the tour-level spoken
+  // system alerts (off-route/GPS/speed) rather than per-waypoint narration — see
+  // SystemMessagesPanel.jsx. Only meaningful for a driving_audio_tour (a plain Walk/Hike
+  // has no GPS/off-route/speed alerts at all). Fail-fast client-side check only; the real,
+  // unbypassable gate is the matching check in saveWalkForBackend.
+  const SYSTEM_MESSAGE_AUDIO_FIELDS = ['off_route_audio_url', 'gps_no_signal_audio_url', 'gps_low_accuracy_audio_url', 'speed_hint_audio_url'];
+  const getMissingSystemMessageAudio = (walkId) => {
+    const walk = walks.find(w => w.id === walkId);
+    if (!walk || walk.route_type !== 'driving_audio_tour') return [];
+    return SYSTEM_MESSAGE_AUDIO_FIELDS.filter((f) => !walk[f]);
+  };
+
   // Admin publishes a finished translation as its own standalone public tour. Also
   // clears any pushback reason — re-publishing confirms the correction was accepted.
   const handlePublishClone = async (walkId) => {
@@ -263,6 +282,15 @@ export default function BackendShell({ user, userRole, isSuperAdmin, authMode, u
         variant: 'destructive',
         title: 'Final audio not applied yet',
         description: `${notReady.length} waypoint${notReady.length === 1 ? '' : 's'} still ${notReady.length === 1 ? 'has' : 'have'} the AI draft narration. Use "Update Audio" to replace ${notReady.length === 1 ? 'it' : 'them'} with the final PCV narration before publishing.`,
+      });
+      return;
+    }
+    const missingSystemAudio = getMissingSystemMessageAudio(walkId);
+    if (missingSystemAudio.length > 0) {
+      toast({
+        variant: 'destructive',
+        title: 'System voice messages not ready',
+        description: `${missingSystemAudio.length} spoken alert${missingSystemAudio.length === 1 ? '' : 's'} (off-route/GPS/speed) still need${missingSystemAudio.length === 1 ? 's' : ''} PCV audio. Generate ${missingSystemAudio.length === 1 ? 'it' : 'them'} in Narration & Simulate before publishing.`,
       });
       return;
     }
@@ -290,6 +318,15 @@ export default function BackendShell({ user, userRole, isSuperAdmin, authMode, u
           variant: 'destructive',
           title: 'Final audio not applied yet',
           description: `${notReady.length} waypoint${notReady.length === 1 ? '' : 's'} still ${notReady.length === 1 ? 'has' : 'have'} the AI draft narration. Use "Update Audio" to replace ${notReady.length === 1 ? 'it' : 'them'} with the final PCV narration before publishing.`,
+        });
+        return false;
+      }
+      const missingSystemAudio = getMissingSystemMessageAudio(walkId);
+      if (missingSystemAudio.length > 0) {
+        toast({
+          variant: 'destructive',
+          title: 'System voice messages not ready',
+          description: `${missingSystemAudio.length} spoken alert${missingSystemAudio.length === 1 ? '' : 's'} (off-route/GPS/speed) still need${missingSystemAudio.length === 1 ? 's' : ''} PCV audio. Generate ${missingSystemAudio.length === 1 ? 'it' : 'them'} in Narration & Simulate before publishing.`,
         });
         return false;
       }

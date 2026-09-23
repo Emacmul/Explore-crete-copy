@@ -14,7 +14,7 @@ import { base44 } from '@/api/base44Client';
 // failed with "Not authorized" (fixed 2026-09-02; see manageApiKeys/entry.ts).
 
 export function useNarratorApiKeys() {
-  const [keys, setKeys] = useState({ google_tts_api_key: '', groq_api_key: '', groq_api_key_2: '' });
+  const [keys, setKeys] = useState({ google_tts_api_key: '', groq_api_key: '', groq_api_key_2: '', elevenlabs_api_key: '', elevenlabs_voice_id: '' });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   // True only in the instant right after a GET has actually confirmed what's on the
@@ -40,6 +40,10 @@ export function useNarratorApiKeys() {
         groq_api_key: res?.data?.groq_api_key || '',
         // Optional backup Groq key from a separate account — see groqKeyRotation.ts.
         groq_api_key_2: res?.data?.groq_api_key_2 || '',
+        // Optional — this narrator's own ElevenLabs account, used to generate the tour's
+        // system voice messages (off-route/GPS/speed alerts) in their own PCV voice.
+        elevenlabs_api_key: res?.data?.elevenlabs_api_key || '',
+        elevenlabs_voice_id: res?.data?.elevenlabs_voice_id || '',
       });
       setLoadedOk(true);
     } catch (err) {
