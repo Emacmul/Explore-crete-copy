@@ -155,6 +155,38 @@
       "description": "Safety information and required equipment for this walk",
       "type": "string"
     },
+    "off_route_text": {
+      "description": "System voice message spoken when the customer strays off the recorded route, in this tour's own language. Defaults to the English original; translated/edited per clone same as description/safety_notes. Only meaningful for a driving_audio_tour.",
+      "type": "string"
+    },
+    "off_route_audio_url": {
+      "description": "Real PCV (Professional Cloned Voice) audio for off_route_text, generated via ElevenLabs in this tour's assigned narrator's own cloned voice. Played instead of the phone's built-in robotic voice once set.",
+      "type": "string"
+    },
+    "gps_no_signal_text": {
+      "description": "System voice message spoken when GPS signal is lost entirely, in this tour's own language. Defaults to the English original; translated/edited per clone same as description/safety_notes. Only meaningful for a driving_audio_tour.",
+      "type": "string"
+    },
+    "gps_no_signal_audio_url": {
+      "description": "Real PCV audio for gps_no_signal_text, generated via ElevenLabs in this tour's assigned narrator's own cloned voice.",
+      "type": "string"
+    },
+    "gps_low_accuracy_text": {
+      "description": "System voice message spoken when GPS signal is too imprecise, in this tour's own language. Defaults to the English original; translated/edited per clone same as description/safety_notes. Only meaningful for a driving_audio_tour.",
+      "type": "string"
+    },
+    "gps_low_accuracy_audio_url": {
+      "description": "Real PCV audio for gps_low_accuracy_text, generated via ElevenLabs in this tour's assigned narrator's own cloned voice.",
+      "type": "string"
+    },
+    "speed_hint_text": {
+      "description": "System voice message spoken when the customer drives faster than the tour is paced for, in this tour's own language. Defaults to the English original; translated/edited per clone same as description/safety_notes. Only meaningful for a driving_audio_tour.",
+      "type": "string"
+    },
+    "speed_hint_audio_url": {
+      "description": "Real PCV audio for speed_hint_text, generated via ElevenLabs in this tour's assigned narrator's own cloned voice.",
+      "type": "string"
+    },
     "segment_scripts": {
       "description": "Combined narration scripts per segment, saved for simulator break-tag editing",
       "items": {
