@@ -36,7 +36,14 @@
 // fails that check), which is a far worse outcome than the low-sensitivity
 // cost of a narrator seeing their own tour's region/difficulty label.
 
-export const NARRATOR_WALK_WRITE_FIELDS = ['name', 'description', 'safety_notes', 'finished'];
+// Per Enda's follow-up request: the 4 system voice messages (off-route/GPS/speed) are
+// tour-level text a narrator translates/edits and generates PCV audio for, exactly like
+// description/safety_notes already are — so both the text and the resulting audio URL
+// belong on the SAME read/write lists as those two, not a separate mechanism.
+const SYSTEM_MESSAGE_TEXT_FIELDS = ['off_route_text', 'gps_no_signal_text', 'gps_low_accuracy_text', 'speed_hint_text'];
+const SYSTEM_MESSAGE_AUDIO_FIELDS = ['off_route_audio_url', 'gps_no_signal_audio_url', 'gps_low_accuracy_audio_url', 'speed_hint_audio_url'];
+
+export const NARRATOR_WALK_WRITE_FIELDS = ['name', 'description', 'safety_notes', 'finished', ...SYSTEM_MESSAGE_TEXT_FIELDS, ...SYSTEM_MESSAGE_AUDIO_FIELDS];
 
 export const NARRATOR_WAYPOINT_WRITE_FIELDS = [
   'narration_script', 'audio_clip_url', 'trigger_audio',
@@ -49,7 +56,12 @@ export const NARRATOR_WALK_READ_FIELDS = [
   'clone_of', 'target_language', 'route_type', 'tour_category',
   'start_lat', 'start_lng', 'region', 'difficulty',
   'default_driving_speed_kmh', 'trail_path', 'trail_breaks',
+  ...SYSTEM_MESSAGE_TEXT_FIELDS, ...SYSTEM_MESSAGE_AUDIO_FIELDS,
 ];
+
+// Exported for saveWalkForBackend.ts's publish-time hard gate (must every system
+// message have real PCV audio before a driving_audio_tour can go live).
+export { SYSTEM_MESSAGE_AUDIO_FIELDS };
 
 export const NARRATOR_WAYPOINT_READ_FIELDS = [
   'lat', 'lng', 'waypoint_role', 'segment_id', 'segment_title', 'segment_number', 'name',
