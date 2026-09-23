@@ -14,10 +14,10 @@ import { grantAllPublishedToursToNarrator } from '../../shared/narratorFreeTours
 export default async function (req) {
   try {
     const base44 = createClientFromRequest(req);
-    if (!(await isAppAdmin(base44))) {
+    const body = await req.json().catch(() => ({}));
+    if (!(await isAppAdmin(base44, body))) {
       return Response.json({ error: 'Admin only' }, { status: 403 });
     }
-    const body = await req.json().catch(() => ({}));
     const { id, updates } = body;
     if (!id || !updates || typeof updates !== 'object') {
       return Response.json({ error: 'id and updates are required' }, { status: 400 });
@@ -41,7 +41,7 @@ export default async function (req) {
       const wasElevated = elevatedRoles.includes(currentBeforeSave?.role);
       const willBeElevated = elevatedRoles.includes(updates.role);
       const roleActuallyChanging = currentBeforeSave?.role !== updates.role;
-      if ((wasElevated || willBeElevated) && roleActuallyChanging && !(await isSuperAdmin(base44))) {
+      if ((wasElevated || willBeElevated) && roleActuallyChanging && !(await isSuperAdmin(base44, body))) {
         return Response.json({ error: 'Only a Super Admin can grant or remove Admin/Super Admin.' }, { status: 403 });
       }
     }

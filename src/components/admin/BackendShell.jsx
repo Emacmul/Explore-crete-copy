@@ -19,8 +19,10 @@ import { toast } from '@/components/ui/use-toast';
 import { translateWalkField } from '@/lib/fieldTranslation';
 
 /**
- * Shared back-end shell used by both the Admin route (Base44 sign-in) and the
- * Narr route (custom Narr password). The only differences are the role and the
+ * Shared back-end shell used by both the Admin route and the Narr route. Both
+ * hats sign in with the backend password via narrLogin (Base44's own platform
+ * sign-in is no longer used anywhere — retired 2026-09-23), so both arrive here
+ * as narr-token sessions. The only differences are the role and the
  * logout handler — passed in as props. Everything below (tour list, editor,
  * save/delete, clone workflow) is identical so narrators get the full editing
  * toolset; the role just gates which start-screen sections and tools appear.
@@ -551,11 +553,11 @@ export default function BackendShell({ user, userRole, isSuperAdmin, authMode, u
             allWalks={walks}
           />
         ) : view === 'users' ? (
-          <UsersManager isSuperAdmin={isSuperAdmin} />
+          <UsersManager isSuperAdmin={isSuperAdmin} narrAuth={narrAuth} />
         ) : view === 'dashboard' ? (
           <WalksDashboard walks={walks} />
         ) : view === 'disputes' ? (
-          <DisputesManager isSuperAdmin={isSuperAdmin} />
+          <DisputesManager isSuperAdmin={isSuperAdmin} narrAuth={narrAuth} />
         ) : view === 'translations' ? (
           <TranslationsManager authMode={authMode} user={user} />
         ) : view === 'updateAudio' && isAdmin ? (

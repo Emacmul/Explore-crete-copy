@@ -15,11 +15,10 @@ import { isSuperAdmin } from '../../shared/appUserAuth.ts';
 export default async function(req) {
   try {
     const base44 = createClientFromRequest(req);
-    if (!(await isSuperAdmin(base44))) {
+    const body = await req.json().catch(() => ({}));
+    if (!(await isSuperAdmin(base44, body))) {
       return Response.json({ error: 'Forbidden' }, { status: 403 });
     }
-
-    const body = await req.json().catch(() => ({}));
     const { disputeId } = body;
     if (!disputeId) {
       return Response.json({ error: 'disputeId is required' }, { status: 400 });

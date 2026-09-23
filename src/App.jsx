@@ -23,9 +23,10 @@ const LayoutWrapper = ({ children, currentPageName }) => Layout ?
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isAuthenticated } = useAuth();
 
-  // /Admin deliberately uses its own, separate Base44 staff login (checked inside the Admin page
-  // itself) rather than the customer WordPress login this gate covers — so it must be allowed
-  // through here regardless of customer auth state, or staff can never reach it at all.
+  // /Admin uses the customer WordPress front-end login plus a separate backend password
+  // (checked inside the Admin page itself, the same way Narr does) — it stays exempt from
+  // the gate so the page can show its own "log in to the front end first" prompt rather
+  // than the bare customer login form.
   const isAdminPath = window.location.pathname.toLowerCase().startsWith('/admin');
   const isNarrPath = window.location.pathname.toLowerCase().startsWith('/narr');
   // About and Contact are public marketing/info pages — a prospective customer (or an app-store

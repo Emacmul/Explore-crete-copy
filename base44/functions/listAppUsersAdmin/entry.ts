@@ -36,7 +36,8 @@ function toSafeUser(u: any) {
 export default async function (req) {
   try {
     const base44 = wrapClientWithRetry(createClientFromRequest(req));
-    if (!(await isAppAdmin(base44))) {
+    const body = await req.json().catch(() => ({}));
+    if (!(await isAppAdmin(base44, body))) {
       return Response.json({ error: 'Admin only' }, { status: 403 });
     }
     const list = await base44.asServiceRole.entities.AppUser.filter(

@@ -13,7 +13,7 @@ import { toast } from '@/components/ui/use-toast';
 // backend (see restoreDispute's own comment) — the Restore button below is hidden for
 // anyone else, so a regular Admin sees a clear note instead of a button that would
 // just fail.
-export default function DisputesManager({ isSuperAdmin = false }) {
+export default function DisputesManager({ isSuperAdmin = false, narrAuth = {} }) {
   const [disputes, setDisputes] = useState([]);
   const [walks, setWalks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -36,7 +36,7 @@ export default function DisputesManager({ isSuperAdmin = false }) {
   const handleRestore = async (dispute) => {
     setRestoringId(dispute.id);
     try {
-      const res = await base44.functions.invoke('restoreDispute', { disputeId: dispute.id });
+      const res = await base44.functions.invoke('restoreDispute', { disputeId: dispute.id, ...narrAuth });
       const data = res.data || {};
       if (data.restored) {
         toast({

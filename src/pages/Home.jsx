@@ -65,7 +65,7 @@ export default function Home() {
           display_name: user.full_name || user.display_name,
         });
         const role = res.data?.role;
-        if (role === 'admin' || role === 'narrator') {
+        if (role === 'admin' || role === 'narrator' || role === 'super_admin') {
           setUserRole(role);
         }
       } catch (error) {
@@ -332,7 +332,7 @@ export default function Home() {
               </Button>
             </Link>
 
-            {userRole === 'admin' && (
+            {(userRole === 'admin' || userRole === 'super_admin') && (
               <Link to={createPageUrl('Admin')}>
                 <Button variant="outline" size="sm" className="gap-2 border-amber-300 text-amber-600 hover:bg-amber-50">
                   <ShieldCheck className="w-4 h-4" />
@@ -340,7 +340,7 @@ export default function Home() {
                 </Button>
               </Link>
             )}
-            {(userRole === 'admin' || userRole === 'narrator') && (
+            {(userRole === 'admin' || userRole === 'narrator' || userRole === 'super_admin') && (
               <Link to={createPageUrl('Narr')}>
                 <Button variant="outline" size="sm" className="gap-2 border-purple-300 text-purple-600 hover:bg-purple-50">
                   <Mic className="w-4 h-4" />

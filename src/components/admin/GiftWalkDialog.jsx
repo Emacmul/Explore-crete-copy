@@ -11,7 +11,7 @@ import { toast } from '@/components/ui/use-toast';
 // winner, etc.). Calls the admin-only grantWalk function, which records a "manual" Purchase
 // against the user's email — the same record the customer's catalogue already reads to
 // decide entitlement, so the gifted tour appears in their library on next load.
-export default function GiftWalkDialog({ appUser, onClose }) {
+export default function GiftWalkDialog({ appUser, onClose, narrAuth = {} }) {
   const [walks, setWalks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [walkId, setWalkId] = useState('');
@@ -31,7 +31,7 @@ export default function GiftWalkDialog({ appUser, onClose }) {
     if (!grantable) return;
     setGranting(true);
     try {
-      const res = await base44.functions.invoke('grantWalk', { walkId, buyerEmail: appUser.email });
+      const res = await base44.functions.invoke('grantWalk', { walkId, buyerEmail: appUser.email, ...narrAuth });
       const data = res.data || {};
       if (data.granted) {
         toast({ title: 'Walk gifted', description: `${appUser.email} now has "${data.walk_name}".` });

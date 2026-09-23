@@ -39,12 +39,12 @@ export async function resolveActor(base44: any, body: any) {
   const normalized = String(email).trim().toLowerCase();
   const matches = await base44.asServiceRole.entities.AppUser.filter({ email: normalized });
   const u = Array.isArray(matches) ? matches[0] : null;
-  if (!u || (u.role !== 'narrator' && u.role !== 'admin')) return null;
+  if (!u || (u.role !== 'narrator' && u.role !== 'admin' && u.role !== 'super_admin')) return null;
 
   const tokenValid = u.narr_session_token && String(u.narr_session_token) === String(narrToken)
     && u.narr_session_expires_at && new Date(u.narr_session_expires_at).getTime() > Date.now();
   if (!tokenValid) return null;
 
-  if (u.role === 'admin') return { kind: 'admin' as const };
+  if (u.role === 'admin' || u.role === 'super_admin') return { kind: 'admin' as const };
   return { kind: 'narrator' as const, email: u.email };
 }

@@ -10,7 +10,37 @@
 //
 // Kept client-safe (no base44:runtime / npm imports) — the base44 client is
 // passed in by each calling function, matching the deviceAuth.ts pattern.
-export async function isAppAdmin(base44: any): Promise<boolean> {
+// Narr-session verification shared by both gates below: checks body.email +
+// body.narrToken against that exact AppUser row — the same rule backendActor.ts
+// applies to Walk functions (never a global token scan, so a token can't be
+// replayed under a different claimed email). Returns the AppUser row when the
+// session is valid, null otherwise.
+export async function resolveNarrSession(base44: any, body?: any) {
+  const email = body?.email;
+  const narrToken = body?.narrToken;
+  if (!email || !narrToken) return null;
+  try {
+    const rows = await base44.asServiceRole.entities.AppUser.filter({
+      email: String(email).trim().toLowerCase(),
+    });
+    const u = Array.isArray(rows) ? rows[0] : null;
+    if (!u) return null;
+    const tokenValid = u.narr_session_token && String(u.narr_session_token) === String(narrToken)
+      && u.narr_session_expires_at && new Date(u.narr_session_expires_at).getTime() > Date.now();
+    return tokenValid ? u : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function isAppAdmin(base44: any, body?: any): Promise<boolean> {
+  // Narr session (the Admin page and Narrator Studio both sign in with the
+  // backend password since Base44's own platform sign-in was retired, 2026-09-23
+  // — these callers have no Base44 session at all): a valid narr_session_token on
+  // an AppUser whose role is admin/super_admin counts, same as backendActor.ts.
+  const narrUser = await resolveNarrSession(base44, body);
+  if (narrUser && (narrUser.role === 'admin' || narrUser.role === 'super_admin')) return true;
+
   try {
     const me = await base44.auth.me();
     if (!me) return false;
@@ -43,7 +73,13 @@ export async function isAppAdmin(base44: any): Promise<boolean> {
 // can be handed to someone else later without also handing over the whole Base44
 // account. Because a real Base44 login always counts as Super Admin, Enda already
 // qualifies automatically — no separate bootstrap step was needed to make him one.
-export async function isSuperAdmin(base44: any): Promise<boolean> {
+export async function isSuperAdmin(base44: any, body?: any): Promise<boolean> {
+  // Narr session: only an AppUser explicitly marked 'super_admin' qualifies —
+  // a valid narr token on a plain admin row must NOT unlock the highest-risk
+  // actions.
+  const narrUser = await resolveNarrSession(base44, body);
+  if (narrUser && narrUser.role === 'super_admin') return true;
+
   try {
     const me = await base44.auth.me();
     if (!me) return false;

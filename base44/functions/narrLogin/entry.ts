@@ -5,8 +5,9 @@ import { verifyPassword, hashPassword } from '../../shared/passwordHash.ts';
  * Narr Studio login.
  *
  * A Narr (narrator role) reaches the back end through the "Narr" button on the
- * front end, NOT through Base44's separate native sign-in that admins use.
- * This function validates the Narr's backend password, which an admin set for
+ * front end, NOT through Base44's native sign-in. Since 2026-09-23 the ADMIN
+ * page signs in through this same function — Base44's own platform sign-in is
+ * no longer used anywhere in the app. This function validates the Narr's backend password, which an admin set for
  * them in the EditAppUser section — it is deliberately separate from the
  * WordPress password that gets them into the front end.
  *
@@ -44,7 +45,7 @@ Deno.serve(async (req) => {
     // Same message whether the account doesn't exist at all or just isn't a
     // Narrator/Admin — nothing to lock either way, since there's no real account
     // password to be guessed against here.
-    if (!match || (match.role !== 'narrator' && match.role !== 'admin')) {
+    if (!match || (match.role !== 'narrator' && match.role !== 'admin' && match.role !== 'super_admin')) {
       return Response.json({ ok: false, error: GENERIC_ERROR });
     }
 
@@ -64,9 +65,11 @@ Deno.serve(async (req) => {
       return Response.json({ ok: false, error: GENERIC_ERROR });
     }
 
-    // An admin may also enter through the "Narr" button to wear the Narr hat; they
-    // get the narrator workflow but without the narrator-only limits (see Narr.jsx +
-    // BackendShell `unrestricted`). Their existing backend password is reused.
+    // An admin (or super admin) may also enter through the "Narr" button to wear the
+    // Narr hat; they get the narrator workflow but without the narrator-only limits
+    // (see Narr.jsx + BackendShell `unrestricted`). The Admin page signs in here too
+    // and checks isAdmin/isSuperAdmin on this response (Admin.jsx). Their existing
+    // backend password is reused either way.
 
     // Issue a fresh session token — verified against a real password check right here,
     // not a bypass of it. Lets the rest of this Narr Studio visit (saving translations,
@@ -90,8 +93,9 @@ Deno.serve(async (req) => {
     await base44.asServiceRole.entities.AppUser.update(match.id, patch);
 
     const name = `${match.first_name || ''} ${match.last_name || ''}`.trim();
-    const isAdmin = match.role === 'admin';
-    return Response.json({ ok: true, email: match.email, role: 'narrator', name, isAdmin, token });
+    const isAdmin = match.role === 'admin' || match.role === 'super_admin';
+    const isSuperAdmin = match.role === 'super_admin';
+    return Response.json({ ok: true, email: match.email, role: 'narrator', name, isAdmin, isSuperAdmin, token });
   } catch (error) {
     return Response.json({ ok: false, error: error.message }, { status: 200 });
   }

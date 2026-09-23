@@ -13,7 +13,7 @@ export default async function (req: Request): Promise<Response> {
     }
 
     const base44 = createClientFromRequest(req);
-    if (!(await isSuperAdmin(base44))) {
+    if (!(await isSuperAdmin(base44, body))) {
       return Response.json({ error: "Forbidden" }, { status: 403 });
     }
 

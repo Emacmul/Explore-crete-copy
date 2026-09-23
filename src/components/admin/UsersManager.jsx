@@ -88,7 +88,7 @@ function EditAppUserDialog({ appUser, onClose, isSuperAdmin }) {
         updates.password = '';
       }
 
-      await base44.functions.invoke('saveAppUserAdmin', { id: appUser.id, updates });
+      await base44.functions.invoke('saveAppUserAdmin', { id: appUser.id, updates, ...narrAuth });
 
       // Promoting to Admin or Super Admin: invite them to Base44 so the Admin button
       // works for them (only needed the first time — skip if they already had either).
@@ -162,7 +162,7 @@ function EditAppUserDialog({ appUser, onClose, isSuperAdmin }) {
   );
 }
 
-export default function UsersManager({ isSuperAdmin = false }) {
+export default function UsersManager({ isSuperAdmin = false, narrAuth = {} }) {
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState(null);
   const [gifting, setGifting] = useState(null);
@@ -178,7 +178,7 @@ export default function UsersManager({ isSuperAdmin = false }) {
   const { data: appUsers = [], isLoading } = useQuery({
     queryKey: ['appUsers-all'],
     queryFn: async () => {
-      const res = await base44.functions.invoke('listAppUsersAdmin', {});
+      const res = await base44.functions.invoke('listAppUsersAdmin', { ...narrAuth });
       return res.data?.users || [];
     },
   });
@@ -207,7 +207,7 @@ export default function UsersManager({ isSuperAdmin = false }) {
     if (!confirmDeleteUser) return;
     setDeleting(true);
     try {
-      const res = await base44.functions.invoke('deleteAppUserAdmin', { id: confirmDeleteUser.id });
+      const res = await base44.functions.invoke('deleteAppUserAdmin', { id: confirmDeleteUser.id, ...narrAuth });
       qc.invalidateQueries({ queryKey: ['appUsers-all'] });
       const n = res?.data?.sessionsDeactivated || 0;
       toast({
@@ -235,7 +235,7 @@ export default function UsersManager({ isSuperAdmin = false }) {
       </div>
 
       {editing && <EditAppUserDialog appUser={editing} onClose={() => setEditing(null)} isSuperAdmin={isSuperAdmin} />}
-      {gifting && <GiftWalkDialog appUser={gifting} onClose={() => setGifting(null)} />}
+      {gifting && <GiftWalkDialog appUser={gifting} narrAuth={narrAuth} onClose={() => setGifting(null)} />}
 
       {isLoading ? (
         <div className="flex justify-center py-10"><Loader2 className="w-8 h-8 animate-spin text-amber-400" /></div>
