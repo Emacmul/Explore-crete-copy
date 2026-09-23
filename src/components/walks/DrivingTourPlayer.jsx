@@ -872,6 +872,9 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
     if (!wp || !wp.audio_clip_url) return;
     const wpKey = wpKeyFor(wp);
     tourLogService.logManualPlay(wp);
+    // A manual Play is the customer answering the failed-resume notice themselves —
+    // the notice has done its job and goes away.
+    setResumeError(false);
     playTriggerAudio(wp, wpKey, onFinished);
   }, [playTriggerAudio]);
 
@@ -965,6 +968,8 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
     offRouteStreakRef.current = 0;
     offRouteAnnouncedRef.current = false;
     setOffRoute(false);
+    // A fresh Start/Restart/Continue never carries a stale failed-resume notice over.
+    setResumeError(false);
     setStatus('running');
 
     // A manual-only tour never starts GPS tracking at all — no permission prompt, no
@@ -1129,7 +1134,11 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
     const wp = (walk.waypoints || []).find(w => wpKeyFor(w) === snap.wpKey);
     if (!wp || !wp.audio_clip_url) {
       // The tour changed since the interruption (stop removed, audio unset) — say so
-      // plainly and leave the customer the manual Play option in the Tour Stops list.
+      // plainly with the way forward (the Tour Stops list's manual Play buttons). The
+      // snapshot is cleared too: there is genuinely nothing to resume, and the notice
+      // below renders on its own, NOT inside the resume card, so it stays visible.
+      clearResumeSnapshot(walk.id);
+      setResumeSnap(null);
       setResumeError(true);
       return;
     }
@@ -1580,6 +1589,18 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
           >
             <Play className="w-3.5 h-3.5" /> {t('player.resumeNarration')}
           </Button>
+        </div>
+      )}
+
+      {/* A failed resume must never vanish silently: when the restored clip couldn't
+          load, the snapshot is cleared (there is nothing left to resume) and with it
+          the resume card — so this notice lives OUTSIDE the card and keeps showing the
+          way forward. It clears when the customer manually plays a stop, starts a
+          fresh tour, or stops the tour — never because the card disappeared. */}
+      {resumeError && !showResumeCard && (
+        <div className="mx-4 mb-3 flex items-start gap-2 bg-blue-900/30 border border-blue-500 rounded-lg px-3 py-2">
+          <AlertTriangle className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+          <p className="text-xs text-blue-200 min-w-0 break-words">{t('player.resumeUnavailable')}</p>
         </div>
       )}
 

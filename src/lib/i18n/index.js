@@ -349,7 +349,7 @@ export const translations = {
     // audio continuing in the background — that genuinely differs between phones.
     'player.resumeNarration': "Resume narration",
     'player.resumeNarrationNote': "Narration was interrupted — for example by opening the camera or another app. Tap to carry on where it left off.",
-    'player.resumeUnavailable': "That narration clip couldn't be loaded, so it can't be resumed. You can still play any stop from the Tour Stops list below.",
+    'player.resumeUnavailable': "That narration clip couldn't be loaded, so it can't be resumed here. Scroll down to the Tour Stops list and tap Play next to the stop you were listening to.",
 
     'download.savingPct': "Saving {n}%",
     'download.removing': "Removing…",
