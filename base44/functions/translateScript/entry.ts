@@ -59,11 +59,34 @@ Deno.serve(async (req) => {
     // or `field: 'description'`, points this at ONE waypoint on the master tour instead of
     // the tour-level field — everything else (brand-phrase protection, prompt, error
     // shape) is shared with the tour-level path below.
-    const WALK_LEVEL_FIELDS = ['description', 'safety_notes'];
+    // Per Enda's follow-up request: the 4 system voice messages (off-route/GPS/speed
+    // alerts) are translated the same way description/safety_notes already are — the
+    // MASTER tour's own current text, translated fresh every time, never the clone's
+    // possibly-half-finished box. Unlike description/safety_notes, though, a pre-existing
+    // master tour was never REQUIRED to have these fields filled in before this feature
+    // existed — SYSTEM_MESSAGE_DEFAULTS (below) is the same English wording the app itself
+    // used to speak with the phone's built-in voice, used as a fallback source text so
+    // translation works immediately even for an older master that hasn't explicitly saved
+    // these fields yet.
+    const SYSTEM_MESSAGE_FIELDS = ['off_route_text', 'gps_no_signal_text', 'gps_low_accuracy_text', 'speed_hint_text'];
+    const SYSTEM_MESSAGE_DEFAULTS: Record<string, string> = {
+      off_route_text: "It looks like you've gone off the planned route. Please check your map to get back on track. I'll carry on with the tour once you're back on the route.",
+      gps_no_signal_text: "We're experiencing a GPS signal problem due to your surroundings. This is not an app failure. If your narration doesn't resume, press the Play button on your screen to continue listening to your tour.",
+      gps_low_accuracy_text: "Your GPS signal is too weak to pinpoint your location right now, due to your surroundings. This is not an app failure. If your narration doesn't resume, press the Play button on your screen to continue listening to your tour.",
+      speed_hint_text: "A friendly note: you're driving a little faster than this tour is timed for. If you ease off a bit, the story will stay in step with the road. You can switch these reminders off on the screen, and I won't mention it again for a good while.",
+    };
+    const WALK_LEVEL_FIELDS = ['description', 'safety_notes', ...SYSTEM_MESSAGE_FIELDS];
     const WAYPOINT_LEVEL_FIELDS = ['segment_title', 'description'];
     const isWaypointField = field && Number.isInteger(waypointIndex) && waypointIndex >= 0;
+    const SYSTEM_MESSAGE_LABELS: Record<string, string> = {
+      off_route_text: 'off-route voice message',
+      gps_no_signal_text: 'no-GPS-signal voice message',
+      gps_low_accuracy_text: 'weak-GPS voice message',
+      speed_hint_text: 'driving-too-fast voice message',
+    };
     function fieldLabel(f: string, waypointScoped: boolean): string {
       if (waypointScoped) return f === 'segment_title' ? "stop's name" : "stop's short description";
+      if (f in SYSTEM_MESSAGE_LABELS) return SYSTEM_MESSAGE_LABELS[f];
       return f === 'safety_notes' ? 'safety notes ("Before You Set Off")' : 'description ("About this walk")';
     }
     if (field) {
@@ -134,6 +157,11 @@ Deno.serve(async (req) => {
         masterFieldText = (masterWp?.[field] || '').trim();
       } else {
         masterFieldText = (masterWalk?.[field] || '').trim();
+        // See SYSTEM_MESSAGE_DEFAULTS above — an older master tour that never explicitly
+        // saved this field still has a real, known English default to translate from.
+        if (!masterFieldText && field in SYSTEM_MESSAGE_DEFAULTS) {
+          masterFieldText = SYSTEM_MESSAGE_DEFAULTS[field];
+        }
       }
       if (!masterFieldText) {
         return Response.json({ error: `Could not find the original tour's ${fieldLabel(field, isWaypointField)} to translate from — is this actually a clone, and does the original have it filled in?` }, { status: 400 });
