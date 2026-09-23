@@ -74,17 +74,17 @@ export default function Login() {
 
   if (step === 'code') {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-teal-700 to-teal-900 p-6">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-brand p-6">
         <div className="w-full max-w-sm">
           <div className="text-center mb-8">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-white/10 backdrop-blur-sm mb-4">
               <Mail className="w-8 h-8 text-white" />
             </div>
             <h1 className="text-2xl font-bold text-white">{t('login.newDeviceTitle')}</h1>
-            <p className="text-teal-200 text-sm mt-1">{t('login.newDeviceBody', { email })}</p>
+            <p className="text-white/70 text-sm mt-1">{t('login.newDeviceBody', { email })}</p>
           </div>
 
-          <div className="bg-white rounded-2xl shadow-xl p-6 space-y-4">
+          <div className="bg-white rounded-2xl shadow-xl p-8 space-y-4">
             <form onSubmit={handleVerify} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="code">{t('login.codeLabel')}</Label>
@@ -113,7 +113,7 @@ export default function Login() {
 
               <Button
                 type="submit"
-                className="w-full bg-teal-700 hover:bg-teal-800"
+                className="w-full bg-sage text-white hover:bg-sage/90"
                 disabled={loading || code.length !== 6}
               >
                 {loading ? (
@@ -132,7 +132,7 @@ export default function Login() {
                 type="button"
                 onClick={handleResend}
                 disabled={loading}
-                className="text-sm text-teal-700 font-medium hover:underline disabled:opacity-50"
+                className="text-sm text-brand font-medium hover:underline disabled:opacity-50"
               >
                 {t('login.resendCode')}
               </button>
@@ -154,17 +154,15 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-teal-700 to-teal-900 p-6">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-brand p-6">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-white/10 backdrop-blur-sm mb-4">
-            <img src="/explore-crete-logo.png" alt={t('app.title')} className="w-11 h-11 object-contain" />
-          </div>
+          <img src="/explore-crete-logo.png" alt={t('app.title')} className="w-16 h-16 rounded-2xl shadow-lg mb-4" />
           <h1 className="text-2xl font-bold text-white">{t('app.title')}</h1>
-          <p className="text-teal-200 text-sm mt-1">{t('login.tagline')}</p>
+          <p className="text-white/70 text-sm mt-1">{t('login.tagline')}</p>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-xl p-6 space-y-4">
+        <div className="bg-white rounded-2xl shadow-xl p-8 space-y-4">
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">{t('login.email')}</Label>
@@ -208,7 +206,7 @@ export default function Login() {
                   href="https://magicalcrete.com/wp-login.php?action=lostpassword"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-sm text-teal-700 font-medium hover:underline"
+                  className="text-sm text-brand font-medium hover:underline"
                 >
                   {t('login.forgotPassword')}
                 </a>
@@ -224,7 +222,7 @@ export default function Login() {
 
             <Button
               type="submit"
-              className="w-full bg-teal-700 hover:bg-teal-800"
+              className="w-full bg-sage text-white hover:bg-sage/90"
               disabled={loading || !email || !password}
             >
               {loading ? (
@@ -244,16 +242,16 @@ export default function Login() {
               href="https://magicalcrete.com/wp-login.php?action=register"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-sm text-teal-700 font-medium hover:underline"
+              className="text-sm text-brand font-medium hover:underline"
             >
               {t('login.createAccount')}
             </a>
           </div>
         </div>
 
-        <div className="flex items-center justify-center gap-4 mt-6 text-sm text-teal-200">
+        <div className="flex items-center justify-center gap-4 mt-6 text-sm text-white/90">
           <Link to="/About" className="hover:text-white hover:underline">{t('footer.about')}</Link>
-          <span className="text-teal-400">·</span>
+          <span className="text-white/60">·</span>
           <Link to="/Contact" className="hover:text-white hover:underline">{t('footer.contact')}</Link>
         </div>
       </div>
