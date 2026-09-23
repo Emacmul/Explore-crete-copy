@@ -230,6 +230,7 @@ export default async function(req) {
                 error: `This tour is already live — the change would put ${newUnready.length} waypoint(s) on (or back on) the AI draft narration. Replace them with the final PCV narration via "Update Audio" first, or unpublish the tour while editing.`,
               }, { status: 400 });
             }
+            const existingIssues = collectAudioReadinessIssues(existingBeforeSave);
             const prevMissingSys = new Set(existingIssues.missingSystemAudio);
             const newMissingSys = issues.missingSystemAudio.filter((f: string) => !prevMissingSys.has(f));
             if (newMissingSys.length > 0) {
