@@ -4,7 +4,7 @@
   "properties": {
     "user_id": {
       "type": "string",
-      "description": "WordPress user ID (set on first login via ensureAppUserOnboarding, or by the sync). Not a Base44 user id — real customers never have a Base44 session."
+      "description": "WordPress user ID (set on first login via ensureAppUserOnboarding, or by the sync). Not a Base44 user id \u2014 real customers never have a Base44 session."
     },
     "email": {
       "type": "string",
@@ -44,7 +44,7 @@
     },
     "password": {
       "type": "string",
-      "description": "Backend password — required for Narrator and Admin roles. Stored hashed (pbkdf2$...) since 2026-09; a password saved before then transparently upgrades to a hash the next time its owner logs in successfully."
+      "description": "Backend password \u2014 required for Narrator and Admin roles. Stored hashed (pbkdf2$...) since 2026-09; a password saved before then transparently upgrades to a hash the next time its owner logs in successfully."
     },
     "login_failed_attempts": {
       "type": "number",
@@ -58,7 +58,7 @@
     },
     "narr_session_token": {
       "type": "string",
-      "description": "Random token issued at successful Narr Studio login, letting authenticated actions (like saving a UI translation) skip re-entering the password for the rest of that login — the password itself is genuinely verified once, at login, not bypassed."
+      "description": "Random token issued at successful Narr Studio login, letting authenticated actions (like saving a UI translation) skip re-entering the password for the rest of that login \u2014 the password itself is genuinely verified once, at login, not bypassed."
     },
     "google_tts_api_key": {
       "type": "string",
@@ -70,7 +70,15 @@
     },
     "groq_api_key_2": {
       "type": "string",
-      "description": "Optional backup Groq API key from a SEPARATE Groq account — Groq's rate limits are per-account, so this gives a second, independent budget to fall back on automatically when the primary key hits a rate limit. Never required; blank means no backup is set."
+      "description": "Optional backup Groq API key from a SEPARATE Groq account \u2014 Groq's rate limits are per-account, so this gives a second, independent budget to fall back on automatically when the primary key hits a rate limit. Never required; blank means no backup is set."
+    },
+    "elevenlabs_api_key": {
+      "type": "string",
+      "description": "This admin/narrator's own ElevenLabs API key, used to generate the tour's system voice messages (off-route/GPS/speed alerts) in their own PCV (Professional Cloned Voice). Each narrator has their own separate ElevenLabs account. Optional \u2014 blank until set up."
+    },
+    "elevenlabs_voice_id": {
+      "type": "string",
+      "description": "This admin/narrator's own ElevenLabs voice ID \u2014 identifies which cloned voice in their ElevenLabs account to use for generating system voice messages. Optional \u2014 blank until set up."
     },
     "narr_session_expires_at": {
       "type": "string",
@@ -93,7 +101,7 @@
         "type": "string"
       },
       "default": [],
-      "description": "IDs of walks this person has purchased — set automatically when Creem confirms a payment, never edited by hand"
+      "description": "IDs of walks this person has purchased \u2014 set automatically when Creem confirms a payment, never edited by hand"
     },
     "description": {
       "type": "string",
