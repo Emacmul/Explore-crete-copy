@@ -30,6 +30,14 @@ import { wrapClientWithRetry } from '../../shared/withEntityRetry.ts';
 // teaser fields only for walks the caller doesn't own. The caller is identified from the
 // WordPress-issued token (not Base44's session), like syncLibrary / getOwnedProductIds.
 //
+// Per security finding U1 (2026-09-23 audit): this used to be a delete-list (strip
+// trail_path/waypoints/... from inaccessible tours), which silently served every field it
+// forgot — import_files' public .odt narration-source URLs, the tour-level PCV system-alert
+// audio URLs and their texts, and the assigned narrator's email all leaked to every unpaid
+// visitor, and any future Walk field would have leaked the same way by default. It is now
+// an explicit ALLOWLIST (PUBLIC_CATALOG_FIELDS below): an unentitled caller gets exactly
+// those fields, nothing else, ever.
+//
 // Admin draft preview (per Enda, follow-up 159): a tour like "Battle of the Rivers" needs
 // to be tested inside the REAL customer app — the actual listing, map, paywall unlock and
 // driving player — before it's published to everyone. Previously the only way to do that
@@ -42,11 +50,28 @@ import { wrapClientWithRetry } from '../../shared/withEntityRetry.ts';
 // customer, or a narrator — Enda was explicit this is admin-only, not narrators) is
 // completely unaffected: this only ever ADDS records for admins, never changes what a
 // published tour looks like to anyone.
-const PROTECTED_FIELDS = [
-  'trail_path',
-  'trail_breaks',
-  'waypoints',
-  'segment_scripts',
+// The exact fields an UNENTITLED caller may see. Deliberately included: the catalog
+// machinery this function itself sets, the listing-card/paywall teasers (the customer
+// must see what they're buying — same deliberate set as before), and the commerce fields.
+// Deliberately excluded (finding U1): the narration depository (import_files), all
+// spoken-alert texts AND their PCV audio URLs, the route (trail_path/trail_breaks/
+// waypoints), segment scripts, the assigned narrator's email, and anything not on this
+// list — including Walk fields added to the schema in the future, which now default to
+// withheld instead of default-public.
+const PUBLIC_CATALOG_FIELDS = [
+  // identity + catalog machinery (set/derived in this function)
+  'id', 'created_date', 'updated_date',
+  '_family_id', '_active_id', '_active_lang', '_available_langs', '_is_draft_preview',
+  'marker_lat', 'marker_lng',
+  // listing card + paywall teasers
+  'name', 'code', 'description', 'image_url', 'region', 'main_interest', 'difficulty',
+  'distance_km', 'duration_hours', 'elevation_gain_m', 'tour_category', 'route_type',
+  'buggy_friendly', 'manual_only_tour', 'related_tour_codes', 'announced_at',
+  'safety_notes', 'start_lat', 'start_lng',
+  // commerce
+  'price_eur', 'checkout_url', 'creem_product_id', 'is_sample_walk',
+  // status flags the frontend reads for badges/language handling
+  'approved', 'finished', 'target_language', 'clone_of',
 ];
 
 export default async function(req) {
@@ -211,7 +236,12 @@ export default async function(req) {
         || !!(out.creem_product_id && ownedSet.has(out.creem_product_id))
         || isDraftPreview;
       if (!accessible) {
-        for (const f of PROTECTED_FIELDS) delete out[f];
+        // Allowlist enforcement (finding U1): drop everything not explicitly public —
+        // never a delete-list again, so a future forgotten field can't re-open the leak.
+        const allowed = new Set(PUBLIC_CATALOG_FIELDS);
+        for (const k of Object.keys(out)) {
+          if (!allowed.has(k)) delete out[k];
+        }
       }
       out._accessible = accessible;
       walks.push(out);

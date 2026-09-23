@@ -97,6 +97,27 @@ function mergeNarratorSegmentScripts(existingScripts: any[], incomingScripts: an
   });
 }
 
+// Audio-readiness of ONE record (the existing one, the incoming patch, or both merged):
+// which audio-triggered waypoints still carry the AI draft narration, and which spoken
+// system messages (off-route / GPS / speed alerts) still lack their PCV audio. System
+// messages only apply to a driving_audio_tour — a plain walk/hike tour has none of those
+// alerts, so it is never blocked by that half of the check.
+function collectAudioReadinessIssues(record: any) {
+  const waypoints = (record && Array.isArray(record.waypoints)) ? record.waypoints : [];
+  const notReady = waypoints.filter((wp: any) => wp && wp.trigger_audio && !wp.final_audio_applied);
+  const missingSystemAudio = (record && record.route_type === 'driving_audio_tour')
+    ? SYSTEM_MESSAGE_AUDIO_FIELDS.filter((f: string) => !record[f])
+    : [];
+  return { notReady, missingSystemAudio };
+}
+
+// Stable identity for comparing "the same waypoint" between the existing record and the
+// incoming patch — segment_id is the real key; the index/name fallback only covers legacy
+// waypoints that never got one.
+function waypointKey(wp: any, index: number) {
+  return String(wp.segment_id || `${wp.name || ''}#${index}`);
+}
+
 // Single save entry point for the back end. Replaces the direct
 // entities.Walk.create/update calls BackendShell.jsx used to make for
 // handleSave, handleToggleFree, handleMarkChecked, handlePublishClone,
@@ -125,42 +146,59 @@ export default async function(req) {
       // an Admin builds directly — same rule, same check, both go through this one
       // saveWalkForBackend admin branch either way.
       if (id) {
-        // Fetched once, before the save, and reused for two separate checks below:
-        // the audio-readiness gate right here, and (further down) deciding whether
-        // this save is the actual moment the tour goes live — the false->true
-        // transition on `approved` — which triggers the free-tour grant to
-        // narrators/admins.
-        let existingBeforeSave = null;
-        // This only fires on the actual false->true transition, so it never
-        // retroactively blocks editing an already-published tour (which predates
-        // this field and has no final_audio_applied stamps of its own) — it only
-        // gates the moment a tour is (re)approved.
-        if (patch.approved === true) {
-          existingBeforeSave = await base44.asServiceRole.entities.Walk.get(String(id));
-          if (existingBeforeSave && existingBeforeSave.approved !== true) {
-            const waypoints = ('waypoints' in patch) ? patch.waypoints : existingBeforeSave.waypoints;
-            const notReady = (waypoints || []).filter((wp: any) => wp && wp.trigger_audio && !wp.final_audio_applied);
-            if (notReady.length > 0) {
+        // Fetched once for EVERY admin update now (audit finding U2): the readiness gate
+        // below validates the RESULTING record (existing + patch merged) whenever the
+        // tour is or stays public, and the free-tour grant further down still needs the
+        // pre-save state to spot the actual moment a tour goes live.
+        const existingBeforeSave = await base44.asServiceRole.entities.Walk.get(String(id));
+        if (!existingBeforeSave) {
+          return Response.json({ error: 'Walk not found.' }, { status: 404 });
+        }
+
+        // Public-record invariant (audit finding U2): the old gate fired ONLY on the
+        // approved false->true transition, so an edit to an already-published tour could
+        // quietly swap ready PCV audio back for missing/draft audio with no check at all.
+        // Now every save that leaves the tour public is validated instead.
+        const wasPublic = existingBeforeSave.approved === true;
+        const willBePublic = ('approved' in patch) ? patch.approved === true : wasPublic;
+        if (willBePublic) {
+          const merged = { ...existingBeforeSave, ...patch };
+          const issues = collectAudioReadinessIssues(merged);
+          if (!wasPublic) {
+            // The (re)publish moment: full strict gate, same rule as before — just no
+            // longer tied to the false->true transition, so an update that doesn't
+            // mention `approved` can no longer sneak a draft tour public, and a published
+            // tour can't have its readiness quietly downgraded.
+            if (issues.notReady.length > 0) {
               return Response.json({
-                error: `Cannot publish — ${notReady.length} waypoint(s) still have the AI draft narration. Use "Update Audio" to replace them with the final PCV narration first.`,
+                error: `Cannot publish — ${issues.notReady.length} waypoint(s) still have the AI draft narration. Use "Update Audio" to replace them with the final PCV narration first.`,
               }, { status: 400 });
             }
-
-            // Per Enda's follow-up request: the tour's spoken system messages (off-route,
-            // GPS trouble, driving too fast) must all be real PCV audio — not the phone's
-            // robotic built-in voice — before a driving_audio_tour can go live, same
-            // unbypassable gate as the per-waypoint check just above. Only meaningful for
-            // a driving_audio_tour (a plain walk/hike tour has none of these alerts at
-            // all, so it's never blocked by this).
-            const routeType = ('route_type' in patch) ? patch.route_type : existingBeforeSave.route_type;
-            if (routeType === 'driving_audio_tour') {
-              const merged = { ...existingBeforeSave, ...patch };
-              const missingSystemAudio = SYSTEM_MESSAGE_AUDIO_FIELDS.filter((f) => !merged[f]);
-              if (missingSystemAudio.length > 0) {
-                return Response.json({
-                  error: `Cannot publish — ${missingSystemAudio.length} system voice message(s) (off-route/GPS/speed alerts) still need PCV audio generated. Open Narration & Simulate to generate them in the narrator's own voice first.`,
-                }, { status: 400 });
-              }
+            if (issues.missingSystemAudio.length > 0) {
+              return Response.json({
+                error: `Cannot publish — ${issues.missingSystemAudio.length} system voice message(s) (off-route/GPS/speed alerts) still need PCV audio generated. Open Narration & Simulate to generate them in the narrator's own voice first.`,
+              }, { status: 400 });
+            }
+          } else {
+            // Already published and staying published: reject edits that would take
+            // ready audio BACKWARDS (draft narration re-applied, a system PCV clip
+            // removed). A waypoint that was ALREADY on draft narration (a legacy tour
+            // published before final_audio_applied existed) is left alone — only NEW
+            // unreadiness is blocked, so old tours keep being editable.
+            const existingIssues = collectAudioReadinessIssues(existingBeforeSave);
+            const prevUnreadyKeys = new Set(existingIssues.notReady.map((wp: any, i: number) => waypointKey(wp, i)));
+            const newUnready = issues.notReady.filter((wp: any, i: number) => !prevUnreadyKeys.has(waypointKey(wp, i)));
+            if (newUnready.length > 0) {
+              return Response.json({
+                error: `This tour is already live — the change would put ${newUnready.length} waypoint(s) back on the AI draft narration. Replace them with the final PCV narration via "Update Audio" first, or unpublish the tour while editing.`,
+              }, { status: 400 });
+            }
+            const prevMissingSys = new Set(existingIssues.missingSystemAudio);
+            const newMissingSys = issues.missingSystemAudio.filter((f: string) => !prevMissingSys.has(f));
+            if (newMissingSys.length > 0) {
+              return Response.json({
+                error: `This tour is already live — the change would remove the PCV audio for ${newMissingSys.length} system voice message(s) (off-route/GPS/speed alerts). Restore it, or unpublish the tour while editing.`,
+              }, { status: 400 });
             }
           }
         }
@@ -194,7 +232,23 @@ export default async function(req) {
       // Publish action once it's actually ready, same as a Narrator's clone always
       // has. WalkEditor.jsx never sends `approved` on creation today, so this is
       // the effective default for every new tour from here on.
+      // Audit finding U2: explicitly creating WITH approved:true used to skip the
+      // readiness gate entirely (the gate only ever ran on updates) — now the new
+      // tour's own content is validated before it can be born public.
       const createPatch = ('approved' in patch) ? patch : { ...patch, approved: false };
+      if (createPatch.approved === true) {
+        const issues = collectAudioReadinessIssues(createPatch);
+        if (issues.notReady.length > 0) {
+          return Response.json({
+            error: `Cannot publish — ${issues.notReady.length} waypoint(s) still have the AI draft narration. Use "Update Audio" to replace them with the final PCV narration first.`,
+          }, { status: 400 });
+        }
+        if (issues.missingSystemAudio.length > 0) {
+          return Response.json({
+            error: `Cannot publish — ${issues.missingSystemAudio.length} system voice message(s) (off-route/GPS/speed alerts) still need PCV audio generated. Open Narration & Simulate to generate them in the narrator's own voice first.`,
+          }, { status: 400 });
+        }
+      }
       const saved = await base44.asServiceRole.entities.Walk.create(createPatch);
       return Response.json({ ok: true, walk: saved });
     }
