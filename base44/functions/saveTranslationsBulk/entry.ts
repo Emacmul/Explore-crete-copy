@@ -15,8 +15,9 @@ import { wrapClientWithRetry } from '../../shared/withEntityRetry.ts';
 // and a hand-corrected one are indistinguishable once saved, which is the point: seeding just
 // gives a narrator something real to start correcting from instead of raw English.
 //
-// Auth mirrors saveTranslation exactly (admin via Base44 session, or narrator via
-// email+narrToken/narrPassword) since this is the same write, just batched.
+// Auth mirrors saveTranslation exactly (narrator or admin via email+narrToken/
+// narrPassword, or a genuine Base44 admin session for platform-level tooling) since
+// this is the same write, just batched.
 //
 // Chunk size/pacing (per Enda, thinking ahead to several narrators auto-translating at
 // once): Base44's own published limits are per-app, not per-narrator-clone — narrators

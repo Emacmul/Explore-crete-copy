@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Layers, Save, Loader2, FileText, CheckCircle2, Download, Volume2, Lock, Unlock } from 'lucide-react';
+import { Layers, Save, Loader2, FileText, CheckCircle2, Download, Volume2, Unlock } from 'lucide-react';
 import NarrationTtsEditor from './NarrationTtsEditor';
 import SimpleAudioUpload from './SimpleAudioUpload';
 import { downloadScriptAsDocx } from '@/lib/docxExporter';

@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { motion } from 'framer-motion';
 import {
-  Footprints, MapPin, Car, ChevronRight, ShieldCheck, Mic,
+  Footprints, MapPin, Car, ChevronRight, Mic,
   LayoutDashboard, List, Users, Plus, AlertCircle, Volume2,
   Languages, CheckCircle2, Send, AlertTriangle, AudioLines, Trash2, Loader2,
 } from 'lucide-react';

@@ -2,8 +2,7 @@ import React, { useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Button } from '@/components/ui/button';
-import { Upload, FileCheck, Loader2, Trash2, Volume2, Compass, Play } from 'lucide-react';
+import { Upload, FileCheck, Loader2, Trash2, Volume2, Compass } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 
 /**

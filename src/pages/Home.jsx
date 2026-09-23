@@ -13,7 +13,7 @@ import WalkDetail from '../components/walks/WalkDetail';
 import UpdateInProgressModal from '../components/offline/UpdateInProgressModal';
 import { isWalkOutdated, replaceWalkOffline, preCacheWalkTiles, preCacheWalkAudio, isWalkSavedOffline, removeWalkFullyOffline } from '../components/offline/offlineStorage';
 import SplashScreen from '../components/onboarding/SplashScreen';
-import { getTourCategory, TOUR_CATEGORIES } from '../lib/tourCategories';
+import { TOUR_CATEGORIES } from '../lib/tourCategories';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@/components/ui/select';
 import InstallPrompt from '../components/InstallPrompt';
 import LanguagePicker from '@/components/ui/LanguagePicker';

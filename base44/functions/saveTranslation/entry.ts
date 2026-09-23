@@ -10,15 +10,17 @@ import { wrapClientWithRetry } from '../../shared/withEntityRetry.ts';
 // goes live for every customer on next app load.
 //
 // Authorization — three paths, because the back end is reached different ways:
-//  - Admin via the /Admin route: signed in with Base44's own login, so base44.auth.me()
-//    returns role 'admin'. No extra credentials needed.
-//  - Narrator (or admin wearing the Narr hat) via the Narr button, within the same
-//    login session: a session token issued by narrLogin at the moment the password was
-//    genuinely verified — this is what lets a narrator save repeatedly without
-//    re-entering the password each time, without ever skipping the actual password
-//    check itself (that check just happened once, at login, not here).
-//  - Narrator email + password directly — kept as a fallback for any caller that
+//  - Narrator OR Admin (both hats authenticate identically now — a backend password
+//    checked by narrLogin, NOT a Base44 platform login): a session token issued by
+//    narrLogin at the moment the password was genuinely verified — this is what lets
+//    them save repeatedly without re-entering the password each time, without ever
+//    skipping the actual password check itself (that check just happened once, at
+//    login, not here).
+//  - Narrator/admin email + password directly — kept as a fallback for any caller that
 //    doesn't have a session token for some reason.
+//  - base44.auth.me() with a genuine Base44 'admin' role — kept only for platform-level
+//    admin tooling (the builder's own session, internal scripts); human admins normally
+//    arrive through the session-token path above.
 // Runs as the service role so it can read AppUser (narrator auth) and write Translation
 // records regardless of the caller's session.
 export default async function(req) {
