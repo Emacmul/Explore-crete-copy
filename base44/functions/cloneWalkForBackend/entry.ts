@@ -130,6 +130,20 @@ export default async function(req) {
       is_sample_walk: false,
       creem_product_id: undefined,
       pushback_reason: '',
+      // Per Enda's system-voice-messages request: off_route_text/gps_no_signal_text/
+      // gps_low_accuracy_text/speed_hint_text are real tour-design content (like
+      // safety_notes/description just below) and deliberately carry over from the
+      // master UNRESET, ready for handleCloneTour's auto-translate step. But the
+      // matching *_audio_url fields must NOT carry over — they're a specific PCV
+      // recording in ONE narrator's ONE voice for THAT exact (soon-to-be-translated)
+      // text. Left unreset, a fresh clone would inherit the master's own English audio
+      // (if the master ever had any generated) and show as "PCV audio ready" despite
+      // the audio not matching the clone's language or narrator at all. Same idea as
+      // audio_clip_url resetting on every cloned waypoint just below.
+      off_route_audio_url: '',
+      gps_no_signal_audio_url: '',
+      gps_low_accuracy_audio_url: '',
+      speed_hint_audio_url: '',
       trail_path: (original.trail_path || []).map((p: any) => ({ ...p })),
       // Per Enda's report (via Anoushka's first end-to-end run-through): a fresh
       // translation clone must start "virgin" for narration content — never carrying
