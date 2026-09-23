@@ -54,7 +54,7 @@ function roleBadge(role) {
  * editing someone below that, so the choice on screen always matches what Save will
  * actually accept.
  */
-function EditAppUserDialog({ appUser, onClose, isSuperAdmin }) {
+function EditAppUserDialog({ appUser, onClose, isSuperAdmin, narrAuth = {} }) {
   const wasElevated = appUser.role === 'admin' || appUser.role === 'super_admin';
   const roleLocked = wasElevated && !isSuperAdmin;
   const [role, setRole] = useState(['admin', 'narrator', 'super_admin'].includes(appUser.role) ? appUser.role : 'user');
@@ -234,7 +234,7 @@ export default function UsersManager({ isSuperAdmin = false, narrAuth = {} }) {
         <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or email" className="bg-slate-800 border-slate-700 text-white pl-9" />
       </div>
 
-      {editing && <EditAppUserDialog appUser={editing} onClose={() => setEditing(null)} isSuperAdmin={isSuperAdmin} />}
+      {editing && <EditAppUserDialog appUser={editing} onClose={() => setEditing(null)} isSuperAdmin={isSuperAdmin} narrAuth={narrAuth} />}
       {gifting && <GiftWalkDialog appUser={gifting} narrAuth={narrAuth} onClose={() => setGifting(null)} />}
 
       {isLoading ? (
