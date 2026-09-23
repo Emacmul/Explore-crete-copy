@@ -6,6 +6,13 @@ import { isAppAdmin } from '../../shared/appUserAuth.ts';
 // WordPress-registered user into AppUser as a plain "user" so admins can see the
 // full customer list and promote people to Narr/Admin.
 //
+// Auth context, verified against REAL workflow runs (audit N4, 2026-09-23): the
+// platform attaches a trusted builder/admin identity to scheduled invokes, so
+// isAppAdmin below passes in the scheduler context — every recorded run reached the
+// WordPress fetch step and failed THERE (the plugin's /users endpoint is not yet
+// deployed, HTTP 404), never at this gate with a 403. No dedicated scheduled
+// identity is needed; the only blocker for this sync is deploying that endpoint.
+//
 // Only CREATES rows for emails not already in AppUser. It never updates an
 // existing row and never touches role — an already-promoted Narr/Admin is never
 // reset to "user". Only email + first/last name come from WordPress; the legacy

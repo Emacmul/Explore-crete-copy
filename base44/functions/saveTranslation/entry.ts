@@ -10,7 +10,7 @@ import { wrapClientWithRetry } from '../../shared/withEntityRetry.ts';
 // goes live for every customer on next app load.
 //
 // Authorization — three paths, because the back end is reached different ways:
-//  - Narrator OR Admin (both hats authenticate identically now — a backend password
+//  - Narrator, Admin or Super Admin (all hats authenticate identically now — a backend password
 //    checked by narrLogin, NOT a Base44 platform login): a session token issued by
 //    narrLogin at the moment the password was genuinely verified — this is what lets
 //    them save repeatedly without re-entering the password each time, without ever
@@ -47,7 +47,10 @@ export default async function(req) {
       const normalized = String(email).trim().toLowerCase();
       const matches = await base44.asServiceRole.entities.AppUser.filter({ email: normalized });
       const u = Array.isArray(matches) ? matches[0] : null;
-      if (!u || (u.role !== 'narrator' && u.role !== 'admin')) {
+      // super_admin is accepted here too (audit N1, 2026-09-23): narrLogin admits the
+      // super_admin role and issues it a session token, so excluding it here left a Super
+      // Admin unable to save, revert or auto-translate UI strings.
+      if (!u || (u.role !== 'narrator' && u.role !== 'admin' && u.role !== 'super_admin')) {
         return Response.json({ error: 'Not authorized' }, { status: 403 });
       }
       const tokenValid = narrToken && u.narr_session_token && String(u.narr_session_token) === String(narrToken)

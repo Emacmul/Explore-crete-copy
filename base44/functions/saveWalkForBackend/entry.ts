@@ -12,6 +12,9 @@ import { wrapClientWithRetry } from '../../shared/withEntityRetry.ts';
 // read/write split explicit at every call site below; behaviour is
 // unchanged, only the names and where they're declared.
 import { NARRATOR_WALK_WRITE_FIELDS, NARRATOR_WAYPOINT_WRITE_FIELDS, SYSTEM_MESSAGE_AUDIO_FIELDS } from '../../shared/narratorWalkFields.ts';
+// One shared public predicate for read + write paths (audit N2, 2026-09-23) — see its own
+// header comment for the mismatch this closes.
+import { isWalkPublic } from '../../shared/walkPublish.ts';
 // Per Enda's follow-up 146: the moment an English tour is actually published,
 // every current admin/narrator gets it for free — see narratorFreeTours.ts for
 // the full reasoning.
@@ -113,9 +116,19 @@ function collectAudioReadinessIssues(record: any) {
 
 // Stable identity for comparing "the same waypoint" between the existing record and the
 // incoming patch — segment_id is the real key; the index/name fallback only covers legacy
-// waypoints that never got one.
+// waypoints that never got one, and always uses the waypoint's ORIGINAL position in its
+// OWN array (audit N3, 2026-09-23): the live-tour gate used to build these keys from the
+// filtered list of unready waypoints, so an insertion or deletion anywhere shifted every
+// fallback key and made two different waypoints compare as the same one.
 function waypointKey(wp: any, index: number) {
   return String(wp.segment_id || `${wp.name || ''}#${index}`);
+}
+
+// The audio-bearing state of one waypoint (audit N3): identity alone can't tell whether an
+// edit actually changed the audio a live tour is serving — the same waypoint with a
+// different clip is a NEW unresolved problem, not the same grandfathered old one.
+function waypointAudioKey(wp: any) {
+  return JSON.stringify([wp.audio_clip_url ?? null, wp.trigger_audio === true, wp.final_audio_applied === true]);
 }
 
 // Single save entry point for the back end. Replaces the direct
@@ -159,7 +172,13 @@ export default async function(req) {
         // approved false->true transition, so an edit to an already-published tour could
         // quietly swap ready PCV audio back for missing/draft audio with no check at all.
         // Now every save that leaves the tour public is validated instead.
-        const wasPublic = existingBeforeSave.approved === true;
+        // Boundary validation (audit N2): `approved` may only ever be a real boolean —
+        // a null/undefined/other value would create a third "sort of public" state the
+        // catalog read path and this gate could disagree about (see walkPublish.ts).
+        if ('approved' in patch && typeof patch.approved !== 'boolean') {
+          return Response.json({ error: 'approved must be true or false.' }, { status: 400 });
+        }
+        const wasPublic = isWalkPublic(existingBeforeSave);
         const willBePublic = ('approved' in patch) ? patch.approved === true : wasPublic;
         if (willBePublic) {
           const merged = { ...existingBeforeSave, ...patch };
@@ -182,15 +201,33 @@ export default async function(req) {
           } else {
             // Already published and staying published: reject edits that would take
             // ready audio BACKWARDS (draft narration re-applied, a system PCV clip
-            // removed). A waypoint that was ALREADY on draft narration (a legacy tour
-            // published before final_audio_applied existed) is left alone — only NEW
-            // unreadiness is blocked, so old tours keep being editable.
-            const existingIssues = collectAudioReadinessIssues(existingBeforeSave);
-            const prevUnreadyKeys = new Set(existingIssues.notReady.map((wp: any, i: number) => waypointKey(wp, i)));
-            const newUnready = issues.notReady.filter((wp: any, i: number) => !prevUnreadyKeys.has(waypointKey(wp, i)));
+            // removed). The legacy exception is deliberately NARROW (audit N3,
+            // 2026-09-23): a waypoint that was ALREADY on draft narration (a tour
+            // published before final_audio_applied existed) is tolerated only while
+            // its audio is completely untouched — its identity key AND its audio state
+            // must both match what's stored. Swapping the draft clip on such a waypoint,
+            // or shifting its position via an insert/delete around it, is new
+            // unreadiness on a live tour and is blocked like any other; unpublish the
+            // tour while its audio is being edited.
+            const prevUnreadyAudioByKey = new Map();
+            (Array.isArray(existingBeforeSave.waypoints) ? existingBeforeSave.waypoints : []).forEach((wp: any, i: number) => {
+              if (wp && wp.trigger_audio && !wp.final_audio_applied) {
+                prevUnreadyAudioByKey.set(waypointKey(wp, i), waypointAudioKey(wp));
+              }
+            });
+            const newUnready: any[] = [];
+            (Array.isArray(merged.waypoints) ? merged.waypoints : []).forEach((wp: any, i: number) => {
+              if (!(wp && wp.trigger_audio && !wp.final_audio_applied)) return;
+              const prevAudio = prevUnreadyAudioByKey.get(waypointKey(wp, i));
+              // Not previously unready at all, or previously unready but its audio
+              // changed: either way, a new unresolved problem on a live tour.
+              if (prevAudio === undefined || prevAudio !== waypointAudioKey(wp)) {
+                newUnready.push(wp);
+              }
+            });
             if (newUnready.length > 0) {
               return Response.json({
-                error: `This tour is already live — the change would put ${newUnready.length} waypoint(s) back on the AI draft narration. Replace them with the final PCV narration via "Update Audio" first, or unpublish the tour while editing.`,
+                error: `This tour is already live — the change would put ${newUnready.length} waypoint(s) on (or back on) the AI draft narration. Replace them with the final PCV narration via "Update Audio" first, or unpublish the tour while editing.`,
               }, { status: 400 });
             }
             const prevMissingSys = new Set(existingIssues.missingSystemAudio);
@@ -212,7 +249,7 @@ export default async function(req) {
         // actually publishing.
         const isFreshPublish = patch.approved === true
           && existingBeforeSave
-          && existingBeforeSave.approved !== true
+          && !isWalkPublic(existingBeforeSave)
           && !existingBeforeSave.clone_of;
         if (isFreshPublish) {
           try {
@@ -235,8 +272,13 @@ export default async function(req) {
       // Audit finding U2: explicitly creating WITH approved:true used to skip the
       // readiness gate entirely (the gate only ever ran on updates) — now the new
       // tour's own content is validated before it can be born public.
+      // Boundary validation (audit N2) — same rule as the update path above: `approved`
+      // may only ever be a real boolean.
+      if ('approved' in patch && typeof patch.approved !== 'boolean') {
+        return Response.json({ error: 'approved must be true or false.' }, { status: 400 });
+      }
       const createPatch = ('approved' in patch) ? patch : { ...patch, approved: false };
-      if (createPatch.approved === true) {
+      if (isWalkPublic(createPatch)) {
         const issues = collectAudioReadinessIssues(createPatch);
         if (issues.notReady.length > 0) {
           return Response.json({

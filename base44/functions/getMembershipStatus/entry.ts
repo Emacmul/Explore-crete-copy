@@ -38,27 +38,33 @@ export default async function (req) {
       return Response.json({ isMember: false, status: null, expiresAt: null });
     }
 
-    // A buyer could in principle hold more than one membership record (a stale one plus a
-    // new subscription, or a different processor). Use the one with the furthest-future
-    // expiry — that's the one granting access right now.
+    // Eligible-first selection (audit N5, 2026-09-23): a record grants access when its
+    // status isn't 'expired', it isn't disputed, and its paid period hasn't lapsed. A buyer
+    // can hold more than one membership record (a stale one plus a new subscription, or a
+    // different processor), so the furthest-future expiry among the ELIGIBLE records wins.
+    // The old code picked the furthest expiry first and only then checked eligibility, so a
+    // later-expiring but expired/disputed record masked a genuinely active paid period and
+    // answered "not a member" despite it. canceled-but-still-within-the-paid-period stays
+    // eligible until expires_at, as before.
     const now = Date.now();
-    let best = null;
+    const eligible = memberships.filter((m) =>
+      m.status !== 'expired' && m.disputed !== true
+      && m.expires_at && new Date(m.expires_at).getTime() > now
+    );
+    // Nothing eligible: still report the furthest-expiry record's status/expiry so the
+    // client can show why — but isMember stays false.
+    const pool = eligible.length > 0 ? eligible : memberships;
+    let best = pool[0];
     let bestExp = -Infinity;
-    for (const m of memberships) {
+    for (const m of pool) {
       const exp = m.expires_at ? new Date(m.expires_at).getTime() : 0;
       if (exp > bestExp) { best = m; bestExp = exp; }
     }
 
-    const expiresAt = best.expires_at || null;
-    const lapsed = !best.expires_at || new Date(best.expires_at).getTime() <= now;
-    // canceled-but-still-within-the-paid-period keeps access until expires_at; only an
-    // 'expired' status or a lapsed expiry means no current membership.
-    const isMember = !lapsed && best.status !== 'expired';
-
     return Response.json({
-      isMember,
+      isMember: eligible.length > 0,
       status: best.status,
-      expiresAt,
+      expiresAt: best.expires_at || null,
       processor: best.processor,
       subscriptionId: best.subscription_id,
     });

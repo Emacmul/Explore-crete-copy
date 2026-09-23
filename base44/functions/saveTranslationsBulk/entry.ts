@@ -15,7 +15,7 @@ import { wrapClientWithRetry } from '../../shared/withEntityRetry.ts';
 // and a hand-corrected one are indistinguishable once saved, which is the point: seeding just
 // gives a narrator something real to start correcting from instead of raw English.
 //
-// Auth mirrors saveTranslation exactly (narrator or admin via email+narrToken/
+// Auth mirrors saveTranslation exactly (narrator, admin or super_admin via email+narrToken/
 // narrPassword, or a genuine Base44 admin session for platform-level tooling) since
 // this is the same write, just batched.
 //
@@ -55,7 +55,8 @@ export default async function(req) {
       const normalized = String(email).trim().toLowerCase();
       const matches = await base44.asServiceRole.entities.AppUser.filter({ email: normalized });
       const u = Array.isArray(matches) ? matches[0] : null;
-      if (!u || (u.role !== 'narrator' && u.role !== 'admin')) {
+      // super_admin accepted, same as saveTranslation (audit N1, 2026-09-23).
+      if (!u || (u.role !== 'narrator' && u.role !== 'admin' && u.role !== 'super_admin')) {
         return Response.json({ error: 'Not authorized' }, { status: 403 });
       }
       const tokenValid = narrToken && u.narr_session_token && String(u.narr_session_token) === String(narrToken)

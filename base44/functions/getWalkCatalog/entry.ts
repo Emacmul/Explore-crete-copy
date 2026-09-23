@@ -6,6 +6,7 @@ import { verifyEmailFromToken, isTokenGenuine } from '../../shared/wpToken.ts';
 // protection regardless of the narrator-specific concern that started this.
 import { wrapClientWithRetry } from '../../shared/withEntityRetry.ts';
 import { isSessionRevoked } from '../../shared/deviceAuth.ts';
+import { isWalkPublic } from '../../shared/walkPublish.ts';
 
 // The walk catalogue, collapsed to one STABLE entry per tour (not per language).
 //
@@ -79,55 +80,72 @@ export default async function(req) {
   try {
     const base44 = wrapClientWithRetry(createClientFromRequest(req));
     const body = await req.json().catch(() => ({}));
-    const email = await verifyEmailFromToken(body.token, Deno.env.get('WC_SITE_URL'));
+    // ONE verified identity first (audit N6, 2026-09-23): the token's email when it
+    // carries one; otherwise — for a genuine token carrying only a WordPress user id —
+    // the AppUser that id resolves to (the same shape ensureAppUserOnboarding matches).
+    // Every gate below (admin role, session revocation, purchase entitlement) then uses
+    // that single resolved email, so an email-free admin token can no longer skip the
+    // revocation check that the email-bearing path goes through.
+    let email = await verifyEmailFromToken(body.token, Deno.env.get('WC_SITE_URL'));
     const narrationLang = body.narrationLang || 'English';
 
-    // Session-revocation gate (audit N5, 2026-09-23): a session explicitly ended by
+    // Fallback for the email-free / unmatched-email token shapes (per Enda, 2026-09-20):
+    // identify the AppUser by the WordPress user id inside a token WordPress itself
+    // confirms as genuine — the same way ensureAppUserOnboarding does.
+    const resolveByWpUserId = async () => {
+      if (!body.token) return null;
+      try {
+        if (!(await isTokenGenuine(body.token, Deno.env.get('WC_SITE_URL')))) return null;
+        const parts = String(body.token).split('.');
+        const payload = parts.length === 3
+          ? JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')))
+          : null;
+        const wpId = payload?.data?.user?.id || payload?.user_id || payload?.sub || null;
+        if (!wpId) return null;
+        const byId = await base44.asServiceRole.entities.AppUser.filter({ user_id: String(wpId) });
+        return (Array.isArray(byId) ? byId[0] : null) || null;
+      } catch {
+        return null; // could not confirm — stay unresolved (fail closed)
+      }
+    };
+
+    // Admin-only draft preview gate. Same AppUser.role lookup ensureAppUserOnboarding and
+    // isAppAdmin/isSuperAdmin already use elsewhere — kept deliberately narrow to 'admin' and
+    // 'super_admin' only, NOT 'narrator', per Enda's explicit instruction (follow-up 159).
+    let isAdmin = false;
+    if (email) {
+      const appUserRows = await base44.asServiceRole.entities.AppUser.filter({ email });
+      if (Array.isArray(appUserRows) && appUserRows.length > 0) {
+        isAdmin = appUserRows[0].role === 'admin' || appUserRows[0].role === 'super_admin';
+      } else {
+        // The token's email matched no AppUser row — fall back to the id lookup.
+        const byId = await resolveByWpUserId();
+        if (byId) {
+          email = byId.email || email;
+          isAdmin = byId.role === 'admin' || byId.role === 'super_admin';
+        }
+      }
+    } else {
+      // Email-free token: resolve the whole identity by WordPress user id so revocation
+      // and entitlement apply below, exactly as for an email-bearing token.
+      const byId = await resolveByWpUserId();
+      if (byId) {
+        email = byId.email || null;
+        isAdmin = byId.role === 'admin' || byId.role === 'super_admin';
+      }
+    }
+
+    // Session-revocation gate (audits N5 + N6, 2026-09-23): a session explicitly ended by
     // forceLogoutAdmin or the customer's own logout must actually revoke the content a
-    // still-valid WordPress token would otherwise keep serving. A revoked caller keeps
+    // still-valid WordPress token would otherwise keep serving — including for an admin
+    // whose token had to be identified by user id instead of email. A revoked caller keeps
     // browsing the anonymous teaser catalogue (exactly like a visitor with no token),
     // they just no longer get owned/draft content. See isSessionRevoked for why this is
     // not heartbeat-based.
     const sessionRevoked = email
       ? await isSessionRevoked(base44.asServiceRole, email, body.token)
       : false;
-
-    // Admin-only draft preview gate. Same AppUser.role lookup ensureAppUserOnboarding and
-    // isAppAdmin/isSuperAdmin already use elsewhere — kept deliberately narrow to 'admin' and
-    // 'super_admin' only, NOT 'narrator', per Enda's explicit instruction (follow-up 159).
-    let isAdmin = false;
-    let emailMatchedRow = false;
-    if (email) {
-      const appUserRows = await base44.asServiceRole.entities.AppUser.filter({ email });
-      emailMatchedRow = Array.isArray(appUserRows) && appUserRows.length > 0;
-      const role = (Array.isArray(appUserRows) ? appUserRows[0] : null)?.role;
-      isAdmin = !sessionRevoked && (role === 'admin' || role === 'super_admin');
-    }
-    // Per Enda (2026-09-20): the Admin button (ensureAppUserOnboarding) finds an admin by WordPress
-    // USER ID first, but this function only ever looked the caller up by the email inside the token.
-    // If the token carries no email (or one that matches no AppUser row), a genuine admin was treated
-    // as a customer and every draft tour was withheld ("0 of 0 DriveAbouts"). Fallback, only when the
-    // email found no AppUser row, and only for a token WordPress itself confirms as genuine: identify
-    // the AppUser by the user id in that token, the same way ensureAppUserOnboarding does. Ordinary
-    // customers (whose email matches their row) skip this, so it adds no extra call for them.
-    if (!isAdmin && body.token && !emailMatchedRow) {
-      try {
-        if (await isTokenGenuine(body.token, Deno.env.get('WC_SITE_URL'))) {
-          const parts = String(body.token).split('.');
-          const payload = parts.length === 3
-            ? JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')))
-            : null;
-          const wpId = payload?.data?.user?.id || payload?.user_id || payload?.sub || null;
-          if (wpId) {
-            const byId = await base44.asServiceRole.entities.AppUser.filter({ user_id: String(wpId) });
-            const role = (Array.isArray(byId) ? byId[0] : null)?.role;
-            isAdmin = !sessionRevoked && (role === 'admin' || role === 'super_admin');
-          }
-        }
-      } catch {
-        // Could not confirm - stay non-admin (fail closed).
-      }
-    }
+    if (sessionRevoked) isAdmin = false;
 
     // Owned product ids by email. Entitlement is decided HERE, by the ORIGINAL's product id
     // — a clone is never a separate sellable product, so owning the original grants every
@@ -147,14 +165,14 @@ export default async function(req) {
     const clones = all.filter(w => !!w.clone_of);
     const originalsById = new Map(originals.map(o => [o.id, o]));
 
-    // A record reaches a customer when:
-    //  - original: approved !== false
-    //  - clone: finished === true AND approved !== false (only swap once finished + published)
+    // A record reaches a customer when (one shared predicate — see walkPublish.ts, audit N2):
+    //  - original: isWalkPublic (explicitly approved === true)
+    //  - clone: finished === true AND public (only swap once finished + published)
     // An admin additionally sees every draft (see the header comment above) — every original
     // and every clone, regardless of approved/finished — so they can open and test it in the
     // real app before it's published to anyone else.
-    const approvedOriginals = isAdmin ? originals : originals.filter(w => w.approved !== false);
-    const eligibleClones = isAdmin ? clones : clones.filter(w => w.finished === true && w.approved !== false);
+    const approvedOriginals = isAdmin ? originals : originals.filter(w => isWalkPublic(w));
+    const eligibleClones = isAdmin ? clones : clones.filter(w => w.finished === true && isWalkPublic(w));
 
     // Group into families keyed by the original's id (the stable identity). `original` holds
     // the APPROVED original only — null when the English source is paused for edits or gone —
@@ -217,8 +235,8 @@ export default async function(req) {
       // above? If not, it's only here because the caller is an admin — mark it so the
       // frontend can badge it clearly as a draft, not a real published tour.
       const passesNormalGate = active.clone_of
-        ? (active.finished === true && active.approved !== false)
-        : (active.approved !== false);
+        ? (active.finished === true && isWalkPublic(active))
+        : isWalkPublic(active);
       const isDraftPreview = isAdmin && !passesNormalGate;
       out._is_draft_preview = isDraftPreview;
 
