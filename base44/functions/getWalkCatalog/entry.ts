@@ -5,6 +5,7 @@ import { verifyEmailFromToken, isTokenGenuine } from '../../shared/wpToken.ts';
 // single most-loaded read in the app (every visitor's every app open), so it's worth this
 // protection regardless of the narrator-specific concern that started this.
 import { wrapClientWithRetry } from '../../shared/withEntityRetry.ts';
+import { isSessionRevoked } from '../../shared/deviceAuth.ts';
 
 // The walk catalogue, collapsed to one STABLE entry per tour (not per language).
 //
@@ -81,6 +82,16 @@ export default async function(req) {
     const email = await verifyEmailFromToken(body.token, Deno.env.get('WC_SITE_URL'));
     const narrationLang = body.narrationLang || 'English';
 
+    // Session-revocation gate (audit N5, 2026-09-23): a session explicitly ended by
+    // forceLogoutAdmin or the customer's own logout must actually revoke the content a
+    // still-valid WordPress token would otherwise keep serving. A revoked caller keeps
+    // browsing the anonymous teaser catalogue (exactly like a visitor with no token),
+    // they just no longer get owned/draft content. See isSessionRevoked for why this is
+    // not heartbeat-based.
+    const sessionRevoked = email
+      ? await isSessionRevoked(base44.asServiceRole, email)
+      : false;
+
     // Admin-only draft preview gate. Same AppUser.role lookup ensureAppUserOnboarding and
     // isAppAdmin/isSuperAdmin already use elsewhere — kept deliberately narrow to 'admin' and
     // 'super_admin' only, NOT 'narrator', per Enda's explicit instruction (follow-up 159).
@@ -90,7 +101,7 @@ export default async function(req) {
       const appUserRows = await base44.asServiceRole.entities.AppUser.filter({ email });
       emailMatchedRow = Array.isArray(appUserRows) && appUserRows.length > 0;
       const role = (Array.isArray(appUserRows) ? appUserRows[0] : null)?.role;
-      isAdmin = role === 'admin' || role === 'super_admin';
+      isAdmin = !sessionRevoked && (role === 'admin' || role === 'super_admin');
     }
     // Per Enda (2026-09-20): the Admin button (ensureAppUserOnboarding) finds an admin by WordPress
     // USER ID first, but this function only ever looked the caller up by the email inside the token.
@@ -110,7 +121,7 @@ export default async function(req) {
           if (wpId) {
             const byId = await base44.asServiceRole.entities.AppUser.filter({ user_id: String(wpId) });
             const role = (Array.isArray(byId) ? byId[0] : null)?.role;
-            isAdmin = role === 'admin' || role === 'super_admin';
+            isAdmin = !sessionRevoked && (role === 'admin' || role === 'super_admin');
           }
         }
       } catch {
@@ -122,7 +133,7 @@ export default async function(req) {
     // — a clone is never a separate sellable product, so owning the original grants every
     // language version of it.
     let ownedSet = new Set();
-    if (email) {
+    if (email && !sessionRevoked) {
       // A revoked purchase (refund/chargeback — see accessRevoker.ts) is kept in the table
       // but must not count as owned, or a refunded customer would keep the protected fields
       // below. Records from before that field existed have no status and are treated as active.

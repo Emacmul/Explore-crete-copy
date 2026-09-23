@@ -115,3 +115,23 @@ export async function upsertSession(svc: any, email: string, deviceId: string) {
     await svc.entities.ActiveSession.create({ user_email: email, device_id: deviceId, active: true, heartbeat_at: now });
   }
 }
+
+// ---- Session-revocation check for token-authenticated reads (audit N5, 2026-09-23) ----
+// The one-device rule only ever ran at LOGIN time, so a WordPress JWT that was still valid
+// kept granting content access even after sessionEnd / forceLogoutAdmin flipped its
+// session row to active=false. This makes that flip an actual access revocation: a caller
+// whose session rows ALL read active=false is treated as not entitled.
+//
+// Deliberately NOT heartbeat-based: a session left open by closing the app (no explicit
+// logout) must keep working when the customer returns hours later, so only an EXPLICIT
+// flip (their own logout, or an admin force-logout) revokes — never heartbeat staleness.
+// And a caller with NO session rows at all (a customer from before the session system
+// existed, or a WordPress token never used with this app) is NOT revoked: nobody ever
+// ended that session, so the token keeps its normal power until it expires at WordPress.
+// A genuine re-login upserts the session row back to active, which correctly restores
+// access — re-authentication is exactly what should restore it.
+export async function isSessionRevoked(svc: any, email: string): Promise<boolean> {
+  const list = await svc.entities.ActiveSession.filter({ user_email: email });
+  if (!Array.isArray(list) || list.length === 0) return false;
+  return !list.some((s: any) => s.active === true);
+}

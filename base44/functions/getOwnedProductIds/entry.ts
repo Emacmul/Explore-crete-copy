@@ -1,5 +1,6 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 import { verifyEmailFromToken } from '../../shared/wpToken.ts';
+import { isSessionRevoked } from '../../shared/deviceAuth.ts';
 
 // Returns the set of Merchant-of-Record product IDs the calling customer has purchased.
 //
@@ -14,6 +15,13 @@ export default async function(req) {
     const body = await req.json().catch(() => ({}));
     const email = await verifyEmailFromToken(body.token, Deno.env.get('WC_SITE_URL'));
     if (!email) return Response.json({ productIds: [] });
+
+    // Session-revocation gate (audit N5, 2026-09-23) — see isSessionRevoked in
+    // shared/deviceAuth.ts. A session explicitly ended (forceLogoutAdmin / logout) must
+    // revoke ownership reads for as long as the old WordPress token stays valid.
+    if (await isSessionRevoked(base44.asServiceRole, email)) {
+      return Response.json({ productIds: [] });
+    }
 
     // Service role: read this caller's Purchase records (the client only receives product
     // IDs, never raw purchase records, so other buyers' data is never exposed). A revoked

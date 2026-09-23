@@ -17,9 +17,14 @@ export default function GiftWalkDialog({ appUser, onClose, narrAuth = {} }) {
   const [walkId, setWalkId] = useState('');
   const [granting, setGranting] = useState(false);
 
+  // Tour list comes from getWalksForBackend, not a direct entity read (audit N2, 2026-09-23):
+  // Walk's own RLS only recognises a native Base44 admin session, but this dialog lives in
+  // the admin backend where sign-in is a WordPress login plus a narr session — a direct
+  // entities.Walk.list() came back empty or errored for exactly the admins who gift walks.
+  // grantWalk already accepted narrAuth; the read now matches.
   useEffect(() => {
-    base44.entities.Walk.list('-name', 500)
-      .then(list => setWalks(list || []))
+    base44.functions.invoke('getWalksForBackend', { ...narrAuth })
+      .then(res => setWalks(res.data?.walks || []))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);

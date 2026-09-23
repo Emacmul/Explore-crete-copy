@@ -19,13 +19,18 @@ export default function DisputesManager({ isSuperAdmin = false, narrAuth = {} })
   const [loading, setLoading] = useState(true);
   const [restoringId, setRestoringId] = useState(null);
 
+  // Reads go through staff-gated backend functions, not direct entity reads (audit N2,
+  // 2026-09-23): Dispute/Walk RLS only recognises a native Base44 admin session, but this
+  // screen is reached with a WordPress login plus a narr session — the direct reads came
+  // back empty or errored for exactly the admins who use it. restoreDispute already
+  // accepted narrAuth; the reads now match. Walks only serve the name lookup below.
   const load = useCallback(async () => {
-    const [list, walkList] = await Promise.all([
-      base44.entities.Dispute.list('-created_date', 200),
-      base44.entities.Walk.list('-name', 500),
+    const [dRes, wRes] = await Promise.all([
+      base44.functions.invoke('listDisputesAdmin', { ...narrAuth }),
+      base44.functions.invoke('getWalksForBackend', { ...narrAuth }),
     ]);
-    setDisputes(list || []);
-    setWalks(walkList || []);
+    setDisputes(dRes.data?.disputes || []);
+    setWalks(wRes.data?.walks || []);
     setLoading(false);
   }, []);
 

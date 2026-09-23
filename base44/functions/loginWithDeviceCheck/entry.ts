@@ -39,10 +39,13 @@ export default async function (req: Request): Promise<Response> {
       return Response.json({ error: wpData?.error || "Invalid email or password" }, { status: 401 });
     }
 
-    // Staff bypass: admins and narrators always work from desktop/laptop and are
-    // exempt from the device challenge and concurrent-session lock.
+    // Staff bypass: admins, super admins and narrators always work from desktop/laptop and
+    // are exempt from the device challenge and concurrent-session lock. super_admin was
+    // originally omitted (audit N4, 2026-09-23), which put Super Admins under the customer
+    // device restrictions — same backend role family as narrLogin's staff roles, so the
+    // exemption deliberately matches it.
     const staffRecords = await svc.entities.AppUser.filter({ email });
-    if (staffRecords.length > 0 && (staffRecords[0].role === "admin" || staffRecords[0].role === "narrator")) {
+    if (staffRecords.length > 0 && (staffRecords[0].role === "admin" || staffRecords[0].role === "super_admin" || staffRecords[0].role === "narrator")) {
       const existing = await findDevice(svc, email, device_id);
       if (existing) {
         await svc.entities.Device.update(existing.id, { last_used: isoNow(), device_label: device_label || existing.device_label });

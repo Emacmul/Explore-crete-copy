@@ -1,5 +1,6 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.38';
 import { isTokenGenuine } from '../../shared/wpToken.ts';
+import { isSessionRevoked } from '../../shared/deviceAuth.ts';
 
 Deno.serve(async (req) => {
   try {
@@ -33,6 +34,16 @@ Deno.serve(async (req) => {
     // Check expiry
     if (payload.exp && Date.now() / 1000 > payload.exp) {
       return Response.json({ error: 'Token expired — please log in again' }, { status: 401 });
+    }
+
+    // Session-revocation gate (audit N5, 2026-09-23) — see isSessionRevoked in
+    // shared/deviceAuth.ts. A session explicitly ended (forceLogoutAdmin / logout) must
+    // revoke ownership reads for as long as the old WordPress token stays valid. Returns
+    // the same empty-ownership shape a successful sync produces, so no client change is
+    // needed.
+    const wpEmail = payload.data?.user?.email || payload.email;
+    if (wpEmail && await isSessionRevoked(base44.asServiceRole, String(wpEmail).toLowerCase().trim())) {
+      return Response.json({ owned_codes: [], owned_sku_count: 0, walk_count: 0, walks: [] });
     }
 
     const wpUserId = payload.data?.user?.id || payload.user_id || payload.sub;
