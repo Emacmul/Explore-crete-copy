@@ -1927,13 +1927,12 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
             focusBounds={mapFocusBounds}
             locationKey={currentLocationRange ? `${currentLocationRange.startIndex}:${jumpNonce}` : null}
             dimWaypointIndex={dimWaypointIndex}
-            // Same gating as the bounds effect above: only during ordinary browsing
-            // (not playing, not mid pace-test) does the map hide everything outside the
-            // open waypoint's own location. `waypoints`/`triggered`/onWaypointUpdate's
-            // index `i` all stay full-array indices either way — this only controls
-            // which of them get drawn, never which array is passed.
+            // Same gating as the bounds effect above: while playing or mid pace-test
+            // the map shows the whole tour's waypoints, not just the open location's.
             focusRange={!isPlaying && !speedMatchMode ? currentLocationRange : null}
             isNarrator={isNarrator}
+            // While playing, the map pans itself so the car never leaves the screen (Enda, 2026-09-23).
+            followActive={isPlaying}
           />
         </div>
 

@@ -196,6 +196,45 @@ function FocusBounds({ focusBounds, userZoomedRef, locationKey, framedKeyRef }) 
   return null;
 }
 
+// Per Enda (2026-09-23): while a test is actually running (single-location, "Test this
+// subsegment", or the whole "Play Tour So Far" drive — all the same tick engine), the map
+// must follow the car by itself: in live car testing he cannot be reaching over to drag
+// the map while driving, and without this the car simply drove off the bottom edge of
+// the framed area. Whenever the marker leaves a comfortable inner zone (25% margin from
+// every screen edge), the map pans to re-centre it — the user's own ZOOM level is never
+// touched, only the pan, so a manually-chosen zoom still stays exactly where it was.
+// Only active while `active` (isPlaying in TourSimulator); the moment a run pauses or
+// completes, the map is left alone again, and an ordinary jump's own fitBounds still
+// frames the whole span first. Deliberately NOT gated on userZoomedRef (the "never move
+// the map again after a manual touch" rule from 2026-09-19): that rule is about passive
+// browsing re-fits fighting a chosen view — this is the opposite situation, an explicit
+// live-run requirement that the car never leave the screen, which by definition has to
+// win over a manual pan made before/without the run. A manual touch during the run is
+// still respected for zoom (never changed here), and any pan it displaced gets restored
+// on the very next tick the car nears an edge.
+function FollowMarker({ currentPos, active }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!active || !currentPos?.lat || !currentPos?.lng) return;
+    // Guard against reading a stale pixel position while the map container is
+    // mid-animation/mid-layout: latLngToContainerPoint is only meaningful once the
+    // map has a real size, which it always does here after the first fit.
+    const pt = map.latLngToContainerPoint([currentPos.lat, currentPos.lng]);
+    const size = map.getSize();
+    if (!size.x || !size.y) return;
+    const mx = size.x * 0.25;
+    const my = size.y * 0.25;
+    const insideSafeZone = pt.x > mx && pt.x < size.x - mx && pt.y > my && pt.y < size.y - my;
+    if (insideSafeZone) return;
+    // animate rather than snap: at real driving speed the car moves only ~1.4 m per
+    // tick (50 km/h at 100 ms), so a short eased pan keeps the tile grid visibly
+    // gliding instead of stuttering, and repeats only once the car has driven from
+    // the centre back out to the safe-zone edge — no per-tick pan fighting.
+    map.panTo([currentPos.lat, currentPos.lng], { animate: true, duration: 0.5 });
+  }, [map, currentPos, active]);
+  return null;
+}
+
 function FitBounds({ trailPath, waypoints, userZoomedRef, framedKeyRef }) {
   const map = useMap();
   // Per Enda: this used to re-fit (and so re-zoom/re-centre) the map on every single
@@ -362,7 +401,7 @@ function sliceTrailToRange(trailPath, waypoints, focusRange) {
   return slice.length > 1 ? slice : trailPath;
 }
 
-export default function TourSimulatorMap({ trailPath, waypoints, triggered, currentPos, currentBearing, isWalkingTour, onWaypointUpdate, breaks, focusBounds, focusRange, dimWaypointIndex, isNarrator, locationKey }) {
+export default function TourSimulatorMap({ trailPath, waypoints, triggered, currentPos, currentBearing, isWalkingTour, onWaypointUpdate, breaks, focusBounds, focusRange, dimWaypointIndex, isNarrator, locationKey, followActive }) {
   // Per Enda's report: general script/audio browsing should show only the current
   // location's own waypoints and road, not the whole multi-location tour. `waypoints`
   // itself is deliberately left untouched below (still the full array, so `i` in the
@@ -397,6 +436,9 @@ export default function TourSimulatorMap({ trailPath, waypoints, triggered, curr
       <ManualZoomTracker userZoomedRef={userZoomedRef} />
       <FitBounds trailPath={trailPath} waypoints={waypoints} userZoomedRef={userZoomedRef} framedKeyRef={framedKeyRef} />
       <FocusBounds focusBounds={focusBounds} userZoomedRef={userZoomedRef} locationKey={locationKey} framedKeyRef={framedKeyRef} />
+      {/* Auto-follow only during an actual run (see followActive in TourSimulator.jsx):
+          paused/browsing still leaves the map exactly where the user put it. */}
+      <FollowMarker currentPos={currentPos} active={!!followActive} />
 
       {displayTrailPath.length > 1 &&
         // `breaks` holds indices into the FULL trailPath — meaningless against a
