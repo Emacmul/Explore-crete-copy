@@ -285,7 +285,8 @@ export const translations = {
     'drivingNotice.viewAgain': "View again",
     'drivingNotice.title': "Driving Mode — Read Before Starting",
     'drivingNotice.keepOpen': "Keep this app open and the screen on during the tour. Audio triggers may not work if the phone is locked or another app is opened.",
-    'drivingNotice.noOtherApps': "The phone cannot be used for other apps during the tour — switching away pauses GPS tracking and audio playback.",
+    'drivingNotice.noOtherApps': "If you open another app, GPS tracking and audio may pause. Come back to Explore Crete and tap \"Resume narration\" to carry on where you left off.",
+    'drivingNotice.photos': "You're welcome to stop somewhere safe and take photos with your phone's camera. While the camera is open, narration and GPS triggers may pause — audio doesn't keep playing in the background on every phone. Come back to Explore Crete and tap \"Resume narration\" to pick up where you left off.",
     'drivingNotice.mountPhone': "Mount your phone on the dashboard so the screen stays visible and GPS signal is strong.",
     'drivingNotice.screenStayingOn': "Screen staying on",
     'drivingNotice.keepScreenOn': "Keep screen on",
@@ -343,6 +344,12 @@ export const translations = {
     // so a driver never has to look at the screen to know what's happening or what to do.
     'player.gpsIssueSpokenNoSignal': "We're experiencing a GPS signal problem due to your surroundings. This is not an app failure. If your narration doesn't resume, press the Play button on your screen to continue listening to your tour.",
     'player.gpsIssueSpokenLowAccuracy': "Your GPS signal is too weak to pinpoint your location right now, due to your surroundings. This is not an app failure. If your narration doesn't resume, press the Play button on your screen to continue listening to your tour.",
+    // "Resume narration" (2026-09-23): playback interrupted by the camera or another
+    // app must never cost a customer their place. Deliberately promises nothing about
+    // audio continuing in the background — that genuinely differs between phones.
+    'player.resumeNarration': "Resume narration",
+    'player.resumeNarrationNote': "Narration was interrupted — for example by opening the camera or another app. Tap to carry on where it left off.",
+    'player.resumeUnavailable': "That narration clip couldn't be loaded, so it can't be resumed. You can still play any stop from the Tour Stops list below.",
 
     'download.savingPct': "Saving {n}%",
     'download.removing': "Removing…",

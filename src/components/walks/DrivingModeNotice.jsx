@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle, Smartphone, Sun, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, Smartphone, Sun, ShieldCheck, Camera } from 'lucide-react';
 import * as wakeLockService from '@/lib/wakeLockService';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 
@@ -83,6 +83,13 @@ export default function DrivingModeNotice() {
           <Smartphone className="w-4 h-4 mt-0.5 shrink-0" />
           <p className="min-w-0 break-words">
             {t('drivingNotice.noOtherApps')}
+          </p>
+        </div>
+
+        <div className="flex items-start gap-2 text-amber-800">
+          <Camera className="w-4 h-4 mt-0.5 shrink-0" />
+          <p className="min-w-0 break-words">
+            {t('drivingNotice.photos')}
           </p>
         </div>
 

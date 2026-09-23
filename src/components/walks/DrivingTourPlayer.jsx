@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Play, Pause, Square, Bug, AlertTriangle, Home, CheckCircle2, Gauge } from 'lucide-react';
 import * as gpsService from '@/lib/gpsService';
 import * as audioService from '@/lib/audioService';
+import { loadResumeSnapshot, saveResumeSnapshot, touchResumeTime, clearResumeSnapshot } from '@/lib/drivingResume';
 import * as tourLogService from '@/lib/tourLogService';
 import { calculateBearing, isBearingInRange } from '@/lib/routeExport';
 import * as speedHint from '@/lib/speedHint';
@@ -360,6 +361,30 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
   // "last known position" comment above) — restored from this device's storage on open,
   // so it survives the app being closed and reopened.
   const [passedSecondaryIds, setPassedSecondaryIds] = useState(() => loadPassedSecondaryIds(walk.id));
+  // "Resume narration" (Enda, 2026-09-23): customers use the same phone as their camera.
+  // While a clip plays, its tour, stop and playback position are kept on this device
+  // (src/lib/drivingResume.js), so opening the camera — or the browser reloading /
+  // discarding the tab while the camera is in front — never costs a customer their
+  // place. Deliberately separate from "Stop tour": only an explicit Stop, or a clip
+  // that finishes normally, clears it. The stops already played are persisted
+  // separately (playedStorageKey) and restored on mount, so a resume never replays
+  // a completed stop either.
+  const [resumeSnap, setResumeSnap] = useState(() => loadResumeSnapshot(walk.id));
+  // True when the phone itself paused the clip mid-playback (camera opened, app
+  // backgrounded, a call arriving) — set from the audio element's own 'pause'
+  // event, cleared again on 'play'. Nothing in this code ever calls pause() on a
+  // narration clip, so any 'pause' mid-clip is an interruption from outside.
+  const [audioPausedMidClip, setAudioPausedMidClip] = useState(false);
+  // Set when a resume attempt couldn't load the clip (bad/missing audio file or a
+  // stop that no longer exists after a tour edit). Rendered via t() below, with the
+  // Tour Stops list's existing manual Play buttons named as the fallback.
+  const [resumeError, setResumeError] = useState(false);
+  // Live refs for callbacks created once and re-used across re-renders — queue
+  // playback must always write against the CURRENT tour, never a stale closure.
+  const walkIdRef = useRef(walk.id);
+  walkIdRef.current = walk.id;
+  const draftPreviewRef = useRef(walk._is_draft_preview === true);
+  draftPreviewRef.current = walk._is_draft_preview === true;
 
   const watchIdRef = useRef(null);
   const prevPosRef = useRef(null);
@@ -700,13 +725,20 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
     // waypoint 2's "Next stop" card can wait for it — every other caller (GPS
     // auto-trigger, the Tour Stops list's own manual Play button) passes nothing
     // here and this is a complete no-op for them, unchanged from before.
-    const { wp, wpKey, onFinished } = next;
+    const { wp, wpKey, onFinished, startAtSec } = next;
     currentlyPlayingWpRef.current = wp;
 
     const player = audioService.createPlayer(wp.audio_clip_url);
     playerRef.current = player;
     // A clip that starts while a spoken alert is talking starts quietly too.
     if (narrationDuckCountRef.current > 0) player.setVolume(NARRATION_DUCK_VOLUME);
+    // "Resume narration" only: a restored clip seeks to just before its saved
+    // position once the file's metadata is loaded (seeking earlier than that is
+    // silently ignored by some phones), so the customer re-hears roughly the last
+    // second for context instead of missing a word.
+    if (Number.isFinite(startAtSec) && startAtSec > 1) {
+      player.onLoaded(() => player.seek(Math.max(0, startAtSec - 1)));
+    }
 
     // What the phone itself knows about this clip - see tourLogService.logClipInfo.
     const clipName = wp.segment_title || wp.name || wp.segment_id || 'clip';
@@ -719,8 +751,21 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
         tourLogService.logClipInfo(clipName, info.kind, info.bytes, el.duration, info.headerSeconds);
       });
       el.addEventListener('pause', () => {
-        if (!el.ended) tourLogService.logClipEvent(clipName, 'paused', el.currentTime, el.duration, narrationDuckCountRef.current);
+        if (!el.ended) {
+          tourLogService.logClipEvent(clipName, 'paused', el.currentTime, el.duration, narrationDuckCountRef.current);
+          // A mid-clip pause with this code never calling pause() itself means the
+          // phone/browser interrupted playback (camera opened, app backgrounded, a
+          // call) — show the "Resume narration" card, and pin the saved position at
+          // this exact moment. The card only appears while a snapshot exists, so the
+          // pause that handleStop/unmount trigger (which clears or has just saved
+          // everything) can never leave a stale card behind.
+          if (currentlyPlayingWpRef.current) {
+            setAudioPausedMidClip(true);
+            touchResumeTime(walkIdRef.current, el.currentTime);
+          }
+        }
       });
+      el.addEventListener('play', () => setAudioPausedMidClip(false));
       el.addEventListener('error', () => {
         tourLogService.logClipEvent(clipName, `error code ${el.error?.code ?? '?'}`, el.currentTime, el.duration, narrationDuckCountRef.current);
       });
@@ -736,12 +781,28 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
       }
       tourLogService.logAudioPlay(wp, wp.audio_clip_url);
       onFinished?.();
+      // The clip finished normally — with nothing else queued there is no longer
+      // anything to resume, so the saved snapshot goes. Any interruption (camera,
+      // background, reload) keeps it; a deliberate Stop clears it in handleStop.
+      if (audioQueueRef.current.length === 0) {
+        clearResumeSnapshot(walkIdRef.current);
+        setResumeSnap(null);
+        setAudioPausedMidClip(false);
+      }
       playNextQueuedAudio();
     });
 
     player.play().then(() => {
       tourLogService.logAudioPlay(wp, wp.audio_clip_url);
       setLastTriggered(wp.segment_id || wp.name || wpKey);
+      // Start of a fresh clip: this is now the clip a "Resume narration" would
+      // restore. Never saved for an admin draft preview — its snapshots would
+      // otherwise leak to a customer after the tour is later published.
+      if (!draftPreviewRef.current) {
+        saveResumeSnapshot(walkIdRef.current, { wpKey, timeSec: 0 });
+        setResumeSnap({ wpKey, timeSec: 0, savedAt: Date.now() });
+      }
+      setAudioPausedMidClip(false);
     }).catch((err) => {
       tourLogService.logAudioSkip(wp, `playback_error: ${err?.message || 'unknown'}`);
       // A clip that fails to load/play must not jam every trigger queued behind it —
@@ -750,11 +811,19 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
       // "done" for whatever was waiting on it, so a broken waypoint 1 clip can never
       // permanently strand waypoint 2's Play button from ever appearing.
       onFinished?.();
+      // Nothing ended up playing that could be resumed — drop the snapshot so a clip
+      // that failed to load doesn't leave a resume button that can never work. For a
+      // RESTORED clip specifically (startAtSec set), also tell the customer plainly
+      // and point them at the existing manual Play option (resumeError, rendered via
+      // t() in the resume card below).
+      clearResumeSnapshot(walkIdRef.current);
+      setResumeSnap(null);
+      if (Number.isFinite(startAtSec)) setResumeError(true);
       playNextQueuedAudio();
     });
   }, []);
 
-  const playTriggerAudio = useCallback((wp, wpKey, onFinished) => {
+  const playTriggerAudio = useCallback((wp, wpKey, onFinished, startAtSec) => {
     // Per the comment on audioQueueRef/currentlyPlayingWpRef above: queue this behind
     // whatever's currently playing rather than stopping it — this is what lets BOR1a's
     // full introduction actually be heard even though BOR1b sits at the identical spot
@@ -772,6 +841,9 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
     audioQueueRef.current.push({
       wp,
       wpKey,
+      // "Resume narration" only: seek the restored clip near its saved position (see
+      // playNextQueuedAudio). Undefined for every ordinary GPS/manual play.
+      startAtSec,
       onFinished: () => {
         onFinished?.();
         if (isFinalStop) setTourComplete(true);
@@ -1031,6 +1103,47 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
     handleStart([...new Set([...seedKeys, ...Array.from(triggeredRef.current)])]);
   };
 
+  // "Resume narration" — restores the clip that was playing when playback was
+  // interrupted (camera open, app switched away, the phone locking, the browser
+  // reloading or discarding the tab). Two shapes:
+  //   1. the same page is still open and the clip's audio element was merely paused
+  //      by the phone — un-pause it exactly where it stopped;
+  //   2. the page reloaded / the tab was discarded — rebuild the session from this
+  //      device's saved state: handleStart re-marks every stop that already played
+  //      (so completed stops are NEVER replayed, and the welcome never repeats) and
+  //      restarts GPS, then the interrupted clip is queued at its saved position.
+  //      It is registered as the playing clip synchronously, BEFORE GPS's first fix
+  //      can possibly arrive, so any stop that triggers while it plays queues behind
+  //      it in route order (the existing audio queue) instead of cutting in.
+  const handleResumeNarration = () => {
+    const snap = resumeSnap;
+    if (!snap) return;
+    setResumeError(false);
+    const el = playerRef.current?.getElement?.();
+    if (el && !el.ended && currentlyPlayingWpRef.current) {
+      playerRef.current.play().then(() => setAudioPausedMidClip(false)).catch(() => {
+        setResumeError(true);
+      });
+      return;
+    }
+    const wp = (walk.waypoints || []).find(w => wpKeyFor(w) === snap.wpKey);
+    if (!wp || !wp.audio_clip_url) {
+      // The tour changed since the interruption (stop removed, audio unset) — say so
+      // plainly and leave the customer the manual Play option in the Tour Stops list.
+      setResumeError(true);
+      return;
+    }
+    // If the interrupted clip was waypoint 1's welcome, its "waypoint 2's card may
+    // now appear" handoff must survive the interruption too (see handleStartTour /
+    // waypoint1AudioFinished) — handleStart has just reset that flag.
+    const firstWp = triggerWaypoints[0];
+    const onFinished = firstWp && wpKeyFor(firstWp) === snap.wpKey
+      ? () => setWaypoint1AudioFinished(true)
+      : undefined;
+    handleStart(Array.from(triggeredRef.current));
+    playTriggerAudio(wp, snap.wpKey, onFinished, snap.timeSec);
+  };
+
   // The timed speed (km/h) of the leg being driven right now: the most recently triggered stop's
   // own recorded speed, or, if it has none, the nearest earlier stop that does. 0 (a stationary
   // stop, or nothing triggered yet) means "no speed hints".
@@ -1102,6 +1215,12 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
     spokenGpsIssueRef.current = false;
     offRouteStreakRef.current = 0;
     offRouteAnnouncedRef.current = false;
+    // A deliberate "Stop tour" is NOT an interruption — nothing is offered for
+    // resume afterwards. This is the one and only "customer chose to stop" path.
+    clearResumeSnapshot(walk.id);
+    setResumeSnap(null);
+    setAudioPausedMidClip(false);
+    setResumeError(false);
     tourLogService.stopSession();
     setStatus('idle');
     setCurrentPos(null);
@@ -1301,12 +1420,45 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
     }
   }, [offRoute, status, speakOffRouteAlert]);
 
+  // Keeps the saved playback position of the interrupted clip current while the tour
+  // is active — including while the app is in the background, where the browser
+  // throttles this interval but still runs it. The visibility/pagehide handlers pin an
+  // exact save at the moments the app is hidden or the page is being discarded (the
+  // camera opening being exactly such a moment). touchResumeTime writes nothing
+  // unless a snapshot already exists, so this is a no-op whenever no clip is playing.
+  useEffect(() => {
+    if (status !== 'running' && status !== 'paused') return undefined;
+    const saveTime = () => {
+      const el = playerRef.current?.getElement?.();
+      if (el && !el.ended && currentlyPlayingWpRef.current) {
+        touchResumeTime(walkIdRef.current, el.currentTime);
+      }
+    };
+    const timer = setInterval(saveTime, 5000);
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') saveTime();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pagehide', saveTime);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pagehide', saveTime);
+    };
+  }, [status]);
+
   useEffect(() => {
     return () => {
       if (watchIdRef.current !== null) {
         gpsService.clearWatch(watchIdRef.current);
       }
+      // Leaving the tour screen mid-clip (without a deliberate Stop) counts as an
+      // interruption too — pin the saved position before the player is torn down.
       if (playerRef.current) {
+        const el = playerRef.current.getElement?.();
+        if (el && !el.ended && currentlyPlayingWpRef.current) {
+          touchResumeTime(walkIdRef.current, el.currentTime);
+        }
         playerRef.current.destroy();
       }
       if (typeof window !== 'undefined' && window.speechSynthesis) {
@@ -1346,6 +1498,16 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
   // so it marks the stop as triggered — GPS won't also fire it again later if it
   // recovers, and ordinary auto-triggering just continues on from there.
   const nextStop = triggerWaypoints.find(wp => wp.audio_clip_url && !triggeredWpIds.has(wpKeyFor(wp)));
+
+  // "Resume narration" card data — the snapshot is per-tour and lives on this device
+  // (see the resumeSnap state comment). resumeWp is looked up fresh each render so a
+  // tour edited since the interruption shows a truthful card (or the plain
+  // "couldn't be loaded" explanation on tap, never a silent failure).
+  const resumeWp = resumeSnap
+    ? (walk.waypoints || []).find(w => wpKeyFor(w) === resumeSnap.wpKey)
+    : null;
+  const showResumeCard = !!resumeSnap && !tourComplete
+    && (status === 'idle' || audioPausedMidClip);
 
   // Per Enda's follow-up 164 clarification: "this should ONLY happen with waypoint 1,
   // nowhere else" — so this check is deliberately narrow. It only ever compares
@@ -1389,6 +1551,37 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
           </div>
         )}
       </div>
+
+      {/* "Resume narration" — shown when narration was interrupted (camera, another
+          app, the phone locking, a page reload) and nothing is playing right now.
+          While the tour is running and the phone merely paused the clip, this appears
+          the moment that pause is detected; after a reload it appears as soon as the
+          tour screen is opened again. A deliberate Stop never leaves one behind. */}
+      {showResumeCard && (
+        <div className="mx-4 mb-3 flex items-center justify-between gap-3 bg-blue-900/30 border border-blue-500 rounded-lg px-3 py-2">
+          <div className="min-w-0">
+            <p className="text-xs text-blue-300 break-words">{t('player.resumeNarrationNote')}</p>
+            {resumeWp && (
+              <p className="text-sm font-medium text-blue-100 truncate">
+                {resumeWp.segment_title || resumeWp.name || resumeWp.segment_id}
+              </p>
+            )}
+            {resumeError && (
+              <p className="text-xs text-red-300 mt-0.5 break-words">{t('player.resumeUnavailable')}</p>
+            )}
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            onClick={handleResumeNarration}
+            disabled={status === 'idle' && !canStart}
+            title={status === 'idle' && !canStart ? (!savedOffline ? t('player.mustSaveFirst') : t('player.mustConfirmSafetyFirst')) : undefined}
+            className="shrink-0 gap-1.5 bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Play className="w-3.5 h-3.5" /> {t('player.resumeNarration')}
+          </Button>
+        </div>
+      )}
 
       {/* "Next stop" card — see the comment above nextStop/nextStopActive for why this is
           always here rather than only appearing once trouble is detected. Tapping Play
@@ -1510,7 +1703,7 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
           phone was used as a camera) the stops that already played are remembered on this device,
           and this picks the tour back up WITHOUT replaying any of them or the welcome. Shown only
           while idle with played stops on record; the ordinary Start still begins a fresh tour. */}
-      {status === 'idle' && !tourComplete && !lastKnownWaypoint && triggeredWpIds.size > 0 && (
+      {status === 'idle' && !tourComplete && !lastKnownWaypoint && !showResumeCard && triggeredWpIds.size > 0 && (
         <div className="mx-4 mb-3 flex items-center justify-between gap-3 bg-blue-900/20 border border-blue-700/40 rounded-lg px-3 py-2">
           <p className="text-xs text-blue-300 min-w-0 break-words">{t('player.continueTourNote')}</p>
           <Button
