@@ -40,7 +40,7 @@ export default function Admin() {
       <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white px-4">
         <div className="text-center space-y-4">
           <p className="text-slate-400">Please log in to the front end first.</p>
-          <Link to={createPageUrl('Home')}><Button>Go to front end</Button></Link>
+          <Link to={createPageUrl('Home')}><Button className="bg-amber-500 hover:bg-amber-600 text-white">Go to front end</Button></Link>
         </div>
       </div>
     );
