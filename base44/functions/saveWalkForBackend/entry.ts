@@ -11,7 +11,7 @@ import { wrapClientWithRetry } from '../../shared/withEntityRetry.ts';
 // NARRATOR_WAYPOINT_FIELDS -> NARRATOR_WAYPOINT_WRITE_FIELDS to make the
 // read/write split explicit at every call site below; behaviour is
 // unchanged, only the names and where they're declared.
-import { NARRATOR_WALK_WRITE_FIELDS, NARRATOR_WAYPOINT_WRITE_FIELDS } from '../../shared/narratorWalkFields.ts';
+import { NARRATOR_WALK_WRITE_FIELDS, NARRATOR_WAYPOINT_WRITE_FIELDS, SYSTEM_MESSAGE_AUDIO_FIELDS } from '../../shared/narratorWalkFields.ts';
 // Per Enda's follow-up 146: the moment an English tour is actually published,
 // every current admin/narrator gets it for free — see narratorFreeTours.ts for
 // the full reasoning.
@@ -144,6 +144,23 @@ export default async function(req) {
               return Response.json({
                 error: `Cannot publish — ${notReady.length} waypoint(s) still have the AI draft narration. Use "Update Audio" to replace them with the final PCV narration first.`,
               }, { status: 400 });
+            }
+
+            // Per Enda's follow-up request: the tour's spoken system messages (off-route,
+            // GPS trouble, driving too fast) must all be real PCV audio — not the phone's
+            // robotic built-in voice — before a driving_audio_tour can go live, same
+            // unbypassable gate as the per-waypoint check just above. Only meaningful for
+            // a driving_audio_tour (a plain walk/hike tour has none of these alerts at
+            // all, so it's never blocked by this).
+            const routeType = ('route_type' in patch) ? patch.route_type : existingBeforeSave.route_type;
+            if (routeType === 'driving_audio_tour') {
+              const merged = { ...existingBeforeSave, ...patch };
+              const missingSystemAudio = SYSTEM_MESSAGE_AUDIO_FIELDS.filter((f) => !merged[f]);
+              if (missingSystemAudio.length > 0) {
+                return Response.json({
+                  error: `Cannot publish — ${missingSystemAudio.length} system voice message(s) (off-route/GPS/speed alerts) still need PCV audio generated. Open Narration & Simulate to generate them in the narrator's own voice first.`,
+                }, { status: 400 });
+              }
             }
           }
         }
