@@ -58,62 +58,33 @@ Deno.serve(async (req) => {
       return Response.json({ owned_codes: [], owned_sku_count: 0, walk_count: 0, walks: [] });
     }
 
-    if (!wpUserId) {
-      return Response.json({ error: 'Could not determine user from token' }, { status: 401 });
-    }
-
-    // --- Fetch WooCommerce orders for this customer ---
-    const siteUrl = Deno.env.get("WC_SITE_URL");
-    const consumerKey = Deno.env.get("WC_CONSUMER_KEY");
-    const consumerSecret = Deno.env.get("WC_CONSUMER_SECRET");
-
-    if (!siteUrl || !consumerKey || !consumerSecret) {
-      return Response.json({ error: 'Server not configured for WooCommerce' }, { status: 500 });
-    }
-
-    const authHeader = btoa(`${consumerKey}:${consumerSecret}`);
-
-    const ordersResponse = await fetch(
-      `${siteUrl}/wp-json/wc/v3/orders?customer=${wpUserId}&status=completed&per_page=100`,
-      {
-        headers: { 'Authorization': `Basic ${authHeader}` }
-      }
-    );
-
-    if (!ordersResponse.ok) {
-      const errText = await ordersResponse.text();
-      return Response.json({
-        error: 'Failed to fetch orders from WooCommerce',
-        details: errText
-      }, { status: 502 });
-    }
-
-    const orders = await ordersResponse.json();
-
-    // --- Extract product SKUs from all completed order line items ---
-    const ownedSkus = new Set();
-    for (const order of orders) {
-      for (const item of order.line_items || []) {
-        if (item.sku) ownedSkus.add(item.sku);
-      }
-    }
+    // --- Ownership comes from the app's own Purchase records, NOT WooCommerce ---
+    // Per Enda (2026-09-24): the WordPress store is a product brochure only — customers
+    // can't buy there. Real purchases arrive via the Creem payment webhook
+    // (purchaseRecorder.ts), which records each one with the buyer's email, the product
+    // id and the resolved walk id. The old version fetched WooCommerce orders here,
+    // which could only ever return an empty set — and needed the WooCommerce API
+    // credentials (WC_CONSUMER_KEY/SECRET) to do it.
+    const purchases = await base44.asServiceRole.entities.Purchase.filter({ buyer_email: gateEmail });
+    const eligiblePurchases = purchases.filter(p => p.status !== 'revoked');
+    const ownedProductIds = new Set(eligiblePurchases.map(p => p.creem_product_id).filter(Boolean));
+    const ownedWalkIds = new Set(eligiblePurchases.map(p => p.walk_id).filter(Boolean));
 
     // --- Fetch all walks and determine which ones the user owns ---
     // Service role: no Base44 user session exists (auth is via WordPress JWT)
     const allWalks = await base44.asServiceRole.entities.Walk.list('-created_date', 200);
 
-    // Owned walks = walks whose code matches a purchased SKU, plus free sample walks
-    const ownedWalks = allWalks.filter(w =>
-      w.is_sample_walk || (w.code && ownedSkus.has(w.code))
-    );
+    // Owned walks = walks this account holds an eligible Purchase for, plus free samples
+    const isPurchased = (w) => ownedProductIds.has(w.creem_product_id) || ownedWalkIds.has(w.id);
+    const ownedWalks = allWalks.filter(w => w.is_sample_walk || isPurchased(w));
 
     const purchasedCodes = allWalks
-      .filter(w => w.code && ownedSkus.has(w.code))
+      .filter(w => w.code && isPurchased(w))
       .map(w => w.code);
 
     return Response.json({
       owned_codes: purchasedCodes,
-      owned_sku_count: ownedSkus.size,
+      owned_sku_count: ownedProductIds.size,
       walk_count: ownedWalks.length,
       walks: ownedWalks.map(w => ({
         id: w.id,
@@ -129,8 +100,8 @@ Deno.serve(async (req) => {
         region: w.region
       })),
       user: {
-        id: wpUserId,
-        email: wpUserEmail
+        id: wpUserId ?? null,
+        email: wpUserEmail ?? gateEmail ?? null
       }
     });
   } catch (error) {
