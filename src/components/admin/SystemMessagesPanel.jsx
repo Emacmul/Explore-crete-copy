@@ -1,18 +1,20 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Languages, Loader2, AlertTriangle, Mic, Volume2, CheckCircle2 } from 'lucide-react';
+import { Languages, Loader2, AlertTriangle, Upload, Volume2, CheckCircle2 } from 'lucide-react';
 import { getNarratorAuthPayload, useNarratorApiKeys } from '@/lib/useNarratorApiKeys';
 import { translateWalkField, stillMatchesMaster } from '@/lib/fieldTranslation';
-import { generateSystemMessageAudio } from '@/lib/systemMessageAudio';
+import { blobToBase64 } from '@/lib/audioCombiner';
+import { base44 } from '@/api/base44Client';
 import { getFnErrorMessage } from '@/lib/utils';
 
 // Per Enda (follow-up, 2026-09-22): the spoken off-route/GPS/speed alerts use the
 // phone's own built-in robotic voice (browser speechSynthesis, English-only) — "sound
 // disgustingly horrible". This panel is where a tour gets real PCV (Professional Cloned
 // Voice) audio for those four messages instead, in the narrator's own voice, in the
-// tour's own language: edit/translate the text below, then "Generate PCV audio" turns
-// today's box text into a real audio file via ElevenLabs. Publishing a driving tour is
+// tour's own language: edit/translate the text below, then import the real .wav file
+// produced for that text in ElevenLabs (the PCV recording itself is made in their system
+// — this app never generates it). Publishing a driving tour is
 // blocked server-side (saveWalkForBackend) until all four have audio — see that
 // function's own comment.
 //
@@ -28,7 +30,7 @@ const MESSAGES = [
 export default function SystemMessagesPanel({ form, set, masterWalk }) {
   const { keys: apiKeys } = useNarratorApiKeys();
   const [translating, setTranslating] = useState(null); // field currently translating, or null
-  const [generating, setGenerating] = useState(null); // field currently generating audio, or null
+  const [importing, setImporting] = useState(null); // field currently uploading an imported .wav, or null
   const [errors, setErrors] = useState({});
   const [playingField, setPlayingField] = useState(null);
 
@@ -59,25 +61,34 @@ export default function SystemMessagesPanel({ form, set, masterWalk }) {
     setTranslating(null);
   };
 
-  const handleGenerateAudio = async (field, audioField) => {
+  // Per Enda (2026-09-24): the PCV recording for these messages is made in ElevenLabs'
+  // own system, not here — download the finished audio from ElevenLabs as a .wav and
+  // import it with the button below. The upload goes through uploadNarrationAudio, which
+  // re-checks the caller's identity (admin session or narrator email+token) and that the
+  // file genuinely is a WAV before storing it.
+  const handleImportAudio = async (field, audioField, file) => {
     setErrors(prev => ({ ...prev, [field]: '' }));
-    const text = (form[field] || '').trim();
-    if (!text) {
-      setErrors(prev => ({ ...prev, [field]: 'Nothing to generate audio for — fill in the text first.' }));
+    if (!file) return;
+    const isWav = file.name.toLowerCase().endsWith('.wav')
+      || ['audio/wav', 'audio/x-wav', 'audio/wave'].includes(file.type);
+    if (!isWav) {
+      setErrors(prev => ({ ...prev, [field]: 'Only .wav files are accepted — download the audio from ElevenLabs as WAV and select that file.' }));
       return;
     }
-    if (!apiKeys.elevenlabs_api_key || !apiKeys.elevenlabs_voice_id) {
-      setErrors(prev => ({ ...prev, [field]: 'Add your ElevenLabs API key and voice ID under "API Keys" in the header first.' }));
-      return;
-    }
-    setGenerating(field);
+    setImporting(field);
     try {
-      const url = await generateSystemMessageAudio({ text, apiKeys, authPayload: getNarratorAuthPayload() });
-      set(audioField, url);
+      const audioBase64 = await blobToBase64(file);
+      const res = await base44.functions.invoke('uploadNarrationAudio', {
+        audioBase64,
+        mimeType: 'audio/wav',
+        ...getNarratorAuthPayload(),
+      });
+      if (res?.data?.error) throw new Error(res.data.error);
+      set(audioField, res?.data?.url || '');
     } catch (err) {
-      setErrors(prev => ({ ...prev, [field]: getFnErrorMessage(err, 'Could not generate audio.') }));
+      setErrors(prev => ({ ...prev, [field]: getFnErrorMessage(err, 'Could not import the audio file.') }));
     }
-    setGenerating(null);
+    setImporting(null);
   };
 
   const handlePlay = (field, url) => {
@@ -95,8 +106,9 @@ export default function SystemMessagesPanel({ form, set, masterWalk }) {
         <h3 className="text-sm font-semibold text-white">Spoken System Messages</h3>
         <p className="text-xs text-slate-400 mt-0.5">
           The off-route, GPS and speed alerts a customer hears while driving this tour.
-          Edit the text below for this tour's language, then generate real PCV audio in
-          your own voice. A driving tour can't be published until all four have audio.
+          Edit the text below for this tour's language, then import the matching PCV
+          audio (.wav) you created for it in ElevenLabs. A driving tour can't be
+          published until all four have audio.
         </p>
       </div>
 
@@ -151,15 +163,20 @@ export default function SystemMessagesPanel({ form, set, masterWalk }) {
               className="bg-slate-700 border-slate-600 text-white text-sm resize-none"
             />
             <div className="flex items-center gap-2">
-              <Button
-                type="button" size="sm"
-                onClick={() => handleGenerateAudio(field, audioField)}
-                disabled={generating === field}
-                className="bg-purple-700/40 hover:bg-purple-700/60 border border-purple-600/50 text-purple-200 gap-1.5 h-7 text-xs"
-              >
-                {generating === field ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mic className="w-3.5 h-3.5" />}
-                {generating === field ? 'Generating…' : hasAudio ? 'Regenerate PCV audio' : 'Generate PCV audio'}
-              </Button>
+              <label className={`inline-flex items-center gap-1.5 h-7 text-xs font-medium rounded-md bg-purple-700/40 hover:bg-purple-700/60 border border-purple-600/50 text-purple-200 px-3 cursor-pointer transition-colors ${importing === field ? 'opacity-60 pointer-events-none' : ''}`}>
+                {importing === field ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                {importing === field ? 'Importing…' : hasAudio ? 'Replace with another .wav' : 'Import PCV audio (.wav)'}
+                <input
+                  type="file"
+                  accept=".wav,audio/wav,audio/x-wav,audio/wave"
+                  className="hidden"
+                  disabled={importing === field}
+                  onChange={e => {
+                    handleImportAudio(field, audioField, e.target.files[0]);
+                    e.target.value = '';
+                  }}
+                />
+              </label>
               {hasAudio && (
                 <Button
                   type="button" size="sm" variant="outline"
@@ -178,7 +195,7 @@ export default function SystemMessagesPanel({ form, set, masterWalk }) {
       })}
       <p className="text-xs text-slate-500">
         Remember to press <span className="text-amber-400 font-medium">Save Route</span> after
-        generating audio — like every other change here, it only becomes real once saved.
+        importing audio — like every other change here, it only becomes real once saved.
       </p>
     </div>
   );
