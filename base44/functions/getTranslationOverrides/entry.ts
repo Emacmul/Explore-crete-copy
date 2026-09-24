@@ -11,13 +11,17 @@ import { wrapClientWithRetry } from '../../shared/withEntityRetry.ts';
 // of narrator-facing functionality in this app routes through a dedicated function using
 // asServiceRole instead. This was the one place that hadn't been, which is exactly why a
 // narrator's save appeared to work (saveTranslation already correctly used asServiceRole)
-// but the very next reload silently failed to show it back to her, making it look like the
-// save itself hadn't taken.
+// but the very next reload silently failed to show it back to her, making it look like
+// the save itself hadn't taken.
 //
-// No extra restriction needed beyond just being reachable — Translation's own RLS already
-// allows public read (the live customer-facing app relies on that same openness to show
-// corrected translations to everyone), so this just serves the same already-public data
-// through a path that actually works for a narrator's session too.
+// Security (2026-09-24 review, "public data leak" finding): this endpoint is deliberately
+// unauthenticated — every customer's app loads UI overrides through it, with no Base44
+// session of their own — so it must serve ONLY the public override fields
+// (key/lang/value). The stored records also carry edited_by_email and internal
+// description notes; those never leave the server through this path, so an anonymous
+// caller can't harvest narrator/admin email addresses. The admin/narrator editing tool
+// doesn't need them either (it displays only key/lang/value), and any genuine need for
+// "who edited this" can go through an auth-checked admin function later.
 //
 // The 1000-row cap this used to have was a real bug, not a safe default: Enda hit it head-on
 // (2026-09-03) once enough languages had been auto-translated to push the Translation table
@@ -37,7 +41,13 @@ export default async function(req) {
   try {
     const base44 = wrapClientWithRetry(createClientFromRequest(req));
     const list = await base44.asServiceRole.entities.Translation.list('-updated_date', 20000);
-    return Response.json({ translations: list || [] });
+    const translations = (list || []).map(r => ({
+      id: r.id,
+      key: r.key,
+      lang: r.lang,
+      value: r.value
+    }));
+    return Response.json({ translations });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
   }

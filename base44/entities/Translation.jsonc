@@ -41,7 +41,7 @@
     },
     "edited_by_email": {
       "type": "string",
-      "description": "Email of the admin/narrator who last saved this override."
+      "description": "Email of the admin/narrator who last saved this override. Never served to clients \u2014 getTranslationOverrides (the only read path, used by the customer app and the editing tool alike) strips it from every response (2026-09-24 security review), and direct entity reads are admin-only via RLS."
     },
     "description": {
       "type": "string",
@@ -55,7 +55,11 @@
     "value"
   ],
   "rls": {
-    "read": {},
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
     "create": {
       "user_condition": {
         "role": "admin"
