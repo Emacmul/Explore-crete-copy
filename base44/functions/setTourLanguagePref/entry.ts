@@ -1,5 +1,6 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 import { verifyEmailFromToken } from '../../shared/wpToken.ts';
+import { isSessionRevoked } from '../../shared/deviceAuth.ts';
 
 // The ONLY place a customer's locked tour language ever changes after their first-time
 // default is set. Called from a real "Do you want to swap?" prompt in the app — never
@@ -16,6 +17,15 @@ export default async function(req) {
 
     const email = await verifyEmailFromToken(token, Deno.env.get('WC_SITE_URL'));
     if (!email) {
+      return Response.json({ error: 'Not authorized' }, { status: 403 });
+    }
+
+    // Session-revocation gate (2026-09-24 review, "revoked sessions"): a WordPress token
+    // stays valid after this account's app session was ended (force-logout or an explicit
+    // logout) — a revoked session must not keep changing the customer's locked language
+    // choices. Fails closed, the same way the read paths (syncLibrary,
+    // getMembershipStatus) already do.
+    if (await isSessionRevoked(base44.asServiceRole, email, token)) {
       return Response.json({ error: 'Not authorized' }, { status: 403 });
     }
     if (!walkId || !language || (action !== 'accept' && action !== 'decline')) {

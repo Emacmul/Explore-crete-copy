@@ -1,5 +1,6 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 import { verifyEmailFromToken, isTokenGenuine } from '../../shared/wpToken.ts';
+import { isSessionRevoked } from '../../shared/deviceAuth.ts';
 
 // Saves the "Audit Log" of an ADMIN's test drive of a draft tour, so it can be read afterwards
 // without the admin touching the phone while driving (per Enda, 2026-09-20 - BOR3 road test).
@@ -46,6 +47,16 @@ export default async function (req) {
       } catch { /* fall through */ }
     }
     if (!row || !(row.role === 'admin' || row.role === 'super_admin')) {
+      return Response.json({ error: 'Not authorized' }, { status: 403 });
+    }
+
+    // Session-revocation gate (2026-09-24 review, "revoked sessions"): a WordPress token
+    // stays cryptographically valid after this account's app session was ended (an admin
+    // force-logout, or an explicit logout) — the write must stop with it, the same way
+    // the read paths (syncLibrary, getMembershipStatus, getWalkCatalog) already fail
+    // closed. Staff logins create the same ActiveSession rows customers do (see
+    // loginWithDeviceCheck's staff bypass), so the check is safe for admins too.
+    if (await isSessionRevoked(svc, String(row.email).toLowerCase(), token)) {
       return Response.json({ error: 'Not authorized' }, { status: 403 });
     }
 

@@ -75,13 +75,14 @@ Deno.serve(async (req) => {
     const allWalks = await base44.asServiceRole.entities.Walk.list('-created_date', 200);
 
     // Owned walks = walks this account holds an eligible Purchase for, plus free samples.
-    // Published walks ONLY (2026-09-24 security review, "draft metadata" finding): an
-    // unpublished walk's name/description must never reach a customer through this path —
-    // a sample still being drafted is filtered out exactly like an unpublished purchased
-    // walk. `approved !== false` treats the schema default and legacy records lacking the
-    // field as published, the same convention getWalkCatalog uses. Admins preview drafts
-    // through their own gated paths, never here.
-    const isPublished = (w) => w.approved !== false;
+    // Published walks ONLY, mirroring the customer catalogue's rule exactly (2026-09-24
+    // security review, "draft metadata" + "publication gate" findings): `approved` must
+    // be genuinely true — a missing/null value is a draft, not the "default published"
+    // reading the earlier `approved !== false` gave it — and a translation clone must
+    // also be finished, so an unfinished clone of a purchased/sample tour can't leak its
+    // name/description through the library. Admins preview drafts through their own
+    // gated paths, never here.
+    const isPublished = (w) => w.approved === true && (!w.clone_of || w.finished === true);
     const isPurchased = (w) => ownedProductIds.has(w.creem_product_id) || ownedWalkIds.has(w.id);
     const ownedWalks = allWalks.filter(w => isPublished(w) && (w.is_sample_walk || isPurchased(w)));
 

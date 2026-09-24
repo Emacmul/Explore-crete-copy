@@ -1,5 +1,6 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 import { resolveActor } from '../../shared/backendActor.ts';
+import { pickNarratorReadableWalk } from '../../shared/narratorWalkFields.ts';
 // Per Enda / Base44 support: retries a real 429 (pooled rate limit) with a short backoff —
 // see withEntityRetry.ts's own header comment for the full reasoning.
 import { wrapClientWithRetry } from '../../shared/withEntityRetry.ts';
@@ -185,7 +186,15 @@ export default async function(req) {
     };
 
     const saved = await base44.asServiceRole.entities.Walk.create(clone);
-    return Response.json({ ok: true, walk: saved });
+    // Read-side twin of the write rules (2026-09-24 review, "narrator data leak"): this
+    // clone is the narrator's OWN clone, so a narrator actor gets back exactly the
+    // fields getWalksForBackend already serves for their own clones
+    // (NARRATOR_WALK_READ_FIELDS / NARRATOR_WAYPOINT_READ_FIELDS) — never the full
+    // stored record with pricing/checkout, publish state and the master's other
+    // withheld fields. An admin actor (native or wearing the Narr hat) gets the full
+    // record, same as their unrestricted list.
+    const walkOut = actor.kind === 'narrator' ? pickNarratorReadableWalk(saved) : saved;
+    return Response.json({ ok: true, walk: walkOut });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
   }

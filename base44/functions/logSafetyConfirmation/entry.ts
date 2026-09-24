@@ -1,5 +1,6 @@
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.40";
 import { verifyEmailFromToken } from "../../shared/wpToken.ts";
+import { isSessionRevoked } from "../../shared/deviceAuth.ts";
 
 // Per Enda (follow-up 184): "Before You Set Off" (safety_notes) is exactly the kind of
 // thing people scroll past without reading — until something goes wrong, and then the
@@ -30,6 +31,14 @@ export default async function (req: Request): Promise<Response> {
 
     const base44 = createClientFromRequest(req);
     const svc = base44.asServiceRole;
+
+    // Session-revocation gate (2026-09-24 review, "revoked sessions"): a WordPress token
+    // stays valid after this account's app session was ended (force-logout or an explicit
+    // logout) — a revoked session must not keep writing confirmations. Fails closed, the
+    // same way the read paths (syncLibrary, getMembershipStatus) already do.
+    if (await isSessionRevoked(svc, email, token)) {
+      return Response.json({ error: "Not authorized" }, { status: 403 });
+    }
 
     await svc.entities.SafetyConfirmation.create({
       buyer_email: email,

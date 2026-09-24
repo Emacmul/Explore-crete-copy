@@ -79,7 +79,17 @@ export default async function (req) {
       }
     }
 
-    return Response.json({ ok: true, user: updated });
+    // Security (urgent finding, 2026-09-24 review): the save response used to echo the
+    // ENTIRE updated AppUser row. An ordinary Admin making an unrelated edit (date of
+    // birth, etc.) on a Super Admin's account got back that Super Admin's live narrator
+    // session token, password hash and personal API keys — and a leaked
+    // narr_session_token is accepted by the Super Admin gate (resolveNarrSession in
+    // appUserAuth.ts), i.e. a full account takeover via an otherwise-permitted edit.
+    // The restricted list response (listAppUsersAdmin) never protected this save
+    // response. Nothing legitimate needs the record here: UsersManager ignores the
+    // response entirely and refetches through listAppUsersAdmin, which serves only the
+    // safe fields — so the save now confirms without echoing anything sensitive.
+    return Response.json({ ok: true });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
   }

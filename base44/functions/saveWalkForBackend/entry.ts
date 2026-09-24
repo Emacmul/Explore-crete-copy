@@ -11,7 +11,7 @@ import { wrapClientWithRetry } from '../../shared/withEntityRetry.ts';
 // NARRATOR_WAYPOINT_FIELDS -> NARRATOR_WAYPOINT_WRITE_FIELDS to make the
 // read/write split explicit at every call site below; behaviour is
 // unchanged, only the names and where they're declared.
-import { NARRATOR_WALK_WRITE_FIELDS, NARRATOR_WAYPOINT_WRITE_FIELDS, SYSTEM_MESSAGE_AUDIO_FIELDS } from '../../shared/narratorWalkFields.ts';
+import { NARRATOR_WALK_WRITE_FIELDS, NARRATOR_WAYPOINT_WRITE_FIELDS, SYSTEM_MESSAGE_AUDIO_FIELDS, pickNarratorReadableWalk } from '../../shared/narratorWalkFields.ts';
 // One shared public predicate for read + write paths (audit N2, 2026-09-23) — see its own
 // header comment for the mismatch this closes.
 import { isWalkPublic } from '../../shared/walkPublish.ts';
@@ -321,7 +321,14 @@ export default async function(req) {
     }
 
     const saved = await base44.asServiceRole.entities.Walk.update(String(id), allowed);
-    return Response.json({ ok: true, walk: saved });
+    // Read-side twin of the write whitelist (2026-09-24 review, "narrator data leak"):
+    // getWalksForBackend trims a narrator's own clone down to NARRATOR_WALK_READ_FIELDS,
+    // but this save used to return the full stored record — every field deliberately
+    // withheld there (pricing/checkout, publish state, route metrics,
+    // final_audio_applied, ...) went straight back to the narrator's browser on every
+    // save. The response now goes through the exact same allowlist, so the boundary
+    // holds in both directions. Admins take the admin branch above and are unaffected.
+    return Response.json({ ok: true, walk: pickNarratorReadableWalk(saved) });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
   }
