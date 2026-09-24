@@ -41,13 +41,22 @@ Deno.serve(async (req) => {
     // revoke ownership reads for as long as the old WordPress token stays valid. Returns
     // the same empty-ownership shape a successful sync produces, so no client change is
     // needed.
-    const wpEmail = payload.data?.user?.email || payload.email;
-    if (wpEmail && await isSessionRevoked(base44.asServiceRole, String(wpEmail).toLowerCase().trim(), token)) {
-      return Response.json({ owned_codes: [], owned_sku_count: 0, walk_count: 0, walks: [] });
-    }
-
+    // Session-revocation gate — now for EVERY genuine token, email-free ones included
+    // (audit 2026-09-24): a token carrying a WordPress user ID but no email used to skip
+    // this check entirely and keep pulling purchase/library metadata even after its
+    // session was revoked. When the payload has no email, the account's email is
+    // resolved from AppUser by WordPress user ID (set at onboarding); if that fails too,
+    // the gate fails CLOSED — an identity we can't resolve is treated as revoked.
     const wpUserId = payload.data?.user?.id || payload.user_id || payload.sub;
     const wpUserEmail = payload.data?.user?.email || payload.email;
+    let gateEmail = wpUserEmail ? String(wpUserEmail).toLowerCase().trim() : null;
+    if (!gateEmail && wpUserId) {
+      const appUser = await base44.asServiceRole.entities.AppUser.filter({ user_id: String(wpUserId) });
+      gateEmail = appUser[0]?.email || null;
+    }
+    if (!gateEmail || await isSessionRevoked(base44.asServiceRole, gateEmail, token)) {
+      return Response.json({ owned_codes: [], owned_sku_count: 0, walk_count: 0, walks: [] });
+    }
 
     if (!wpUserId) {
       return Response.json({ error: 'Could not determine user from token' }, { status: 401 });

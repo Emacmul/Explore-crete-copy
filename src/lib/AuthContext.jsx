@@ -40,21 +40,55 @@ export const AuthProvider = ({ children }) => {
     const storedToken = localStorage.getItem(TOKEN_KEY);
     const storedUser = localStorage.getItem(USER_KEY);
 
+    // A locally stored, unexpired token is NOT enough to be signed in (audit 2026-09-24):
+    // after an admin forces a logout, the customer could still reload into a signed-in
+    // interface riding on that stale token, with protected requests failing underneath.
+    // The server gets the final word: sessionHeartbeat (which verifies the token with
+    // WordPress and checks the session row) must confirm this token still holds an
+    // active session before the stored login is trusted.
     if (storedToken && isTokenValid(storedToken) && storedUser) {
+      let userData = null;
       try {
-        const userData = JSON.parse(storedUser);
-        setUser(userData);
-        setToken(storedToken);
-        setIsAuthenticated(true);
+        userData = JSON.parse(storedUser);
       } catch {
         localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem(USER_KEY);
+        setIsLoadingAuth(false);
+        return;
       }
+      const restore = async () => {
+        try {
+          const response = await base44.functions.invoke('sessionHeartbeat', {
+            token: storedToken,
+            device_id: getDeviceId(),
+          });
+          if (response?.data?.valid) {
+            setUser(userData);
+            setToken(storedToken);
+            setIsAuthenticated(true);
+          } else {
+            // Server says this token's session is gone (logout / force-logout) — the
+            // local copy is stale and is discarded, so the user lands on the login screen.
+            localStorage.removeItem(TOKEN_KEY);
+            localStorage.removeItem(USER_KEY);
+          }
+        } catch {
+          // Couldn't reach the server (offline / transient). Keep the local session:
+          // every protected read still fails closed server-side, so holding the shell
+          // open cannot leak anything — it only avoids punishing a reload on a flaky
+          // connection with an unnecessary re-login.
+          setUser(userData);
+          setToken(storedToken);
+          setIsAuthenticated(true);
+        }
+        setIsLoadingAuth(false);
+      };
+      restore();
     } else {
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(USER_KEY);
+      setIsLoadingAuth(false);
     }
-    setIsLoadingAuth(false);
   }, []);
 
   // Finishes a successful login (either straight through, or after a device code was

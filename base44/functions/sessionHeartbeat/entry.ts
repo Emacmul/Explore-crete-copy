@@ -1,6 +1,6 @@
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.40";
-import { isoNow } from "../../shared/deviceAuth.ts";
-import { verifyEmailFromToken, getTokenIatFromToken } from "../../shared/wpToken.ts";
+import { isoNow, getTokenFingerprint, sessionMatchesToken } from "../../shared/deviceAuth.ts";
+import { verifyEmailFromToken } from "../../shared/wpToken.ts";
 
 // SECURITY: only ever acts on the email a genuine WordPress token actually belongs to —
 // never an arbitrary email + device_id passed in the request. Without this, anyone at all
@@ -30,24 +30,26 @@ export default async function (req: Request): Promise<Response> {
     const base44 = createClientFromRequest(req);
     const svc = base44.asServiceRole;
 
+    const fp = await getTokenFingerprint(token);
     const sessions = await svc.entities.ActiveSession.filter({ user_email: email, device_id });
     const session = sessions[0];
     if (!session) {
-      // Nothing to refresh (e.g. admin force-logged them out). Ignore silently — the
-      // client treats heartbeats as fire-and-forget either way.
-      return Response.json({ ok: true });
+      // Nothing to refresh (e.g. admin force-logged them out). Ignore silently for the
+      // fire-and-forget heartbeat interval — but report valid:false so the client's
+      // reload-restore check can detect a revoked session (audit 2026-09-24).
+      return Response.json({ ok: true, valid: false });
     }
     // Never reactivate an inactive session (U1) — and never refresh on behalf of an
-    // older token generation (U2).
+    // older token generation (U2), now bound to the exact token hash rather than the
+    // iat claim (2026-09-24: same-second logins share an iat; see deviceAuth.ts).
     if (session.active !== true) {
-      return Response.json({ ok: true, refreshed: false });
+      return Response.json({ ok: true, valid: false });
     }
-    const iat = getTokenIatFromToken(token);
-    if (session.token_issued_at != null && session.token_issued_at !== iat) {
-      return Response.json({ ok: true, refreshed: false });
+    if (!sessionMatchesToken(session, fp)) {
+      return Response.json({ ok: true, valid: false });
     }
     await svc.entities.ActiveSession.update(session.id, { heartbeat_at: isoNow() });
-    return Response.json({ ok: true });
+    return Response.json({ ok: true, valid: true });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
   }

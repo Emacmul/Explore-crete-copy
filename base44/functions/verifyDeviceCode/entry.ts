@@ -5,7 +5,6 @@ import {
   isoNow, isoPlusMinutes, findDevice, listDevicesForUser, getActiveSessionForUser, upsertSession,
   deactivateOtherSessions, fetchWpToken,
 } from "../../shared/deviceAuth.ts";
-import { getTokenIatFromToken } from "../../shared/wpToken.ts";
 
 export default async function (req: Request): Promise<Response> {
   try {
@@ -74,10 +73,6 @@ export default async function (req: Request): Promise<Response> {
     } catch (err: any) {
       return Response.json({ error: err.message || "Invalid email or password" }, { status: 401 });
     }
-    // The fresh token's iat — stamped onto the session row below so it belongs to this
-    // one login "generation" (audit U1/U2, 2026-09-23; see deviceAuth.ts).
-    const tokenIat = getTokenIatFromToken(wpData.token);
-
     // Re-check concurrent session right before completing (another device may have logged in meanwhile).
     const activeSession = await getActiveSessionForUser(svc, email);
     if (activeSession && activeSession.device_id !== device_id) {
@@ -116,7 +111,7 @@ export default async function (req: Request): Promise<Response> {
     // Activate the session, stamped with this login's token generation, and end any
     // session rows this account still holds on OTHER devices (audit U2 — same reasoning
     // as loginWithDeviceCheck's known-device path; this flow is customer-only).
-    await upsertSession(svc, email, device_id, tokenIat);
+    await upsertSession(svc, email, device_id, wpData.token);
     await deactivateOtherSessions(svc, email, device_id);
 
     return Response.json({ status: "ok", token: wpData.token, user: wpData.user });

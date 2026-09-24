@@ -20,9 +20,13 @@
       "default": true,
       "description": "Whether this session is considered active"
     },
+    "token_hash": {
+      "type": "string",
+      "description": "SHA-256 hex of the EXACT WordPress JWT string whose login created (or last re-authenticated) this session row \u2014 the authoritative login-'generation' binding (audit 2026-09-24). Content reads, heartbeats and logouts only count for this row when the caller's own token hashes to this same value. This replaced the earlier iat-based binding (token_issued_at): two logins of one account minted within the same second share an iat claim, so an older same-second token matched a newer login's row. Two tokens only match under the hash when they are byte-for-byte the same credential. Rows written before this field existed fall back to token_issued_at (2026-09-23/24 era), then to the legacy bridge \u2014 see sessionMatchesToken in shared/deviceAuth.ts."
+    },
     "token_issued_at": {
       "type": "number",
-      "description": "The `iat` claim of the exact WordPress JWT whose login created (or last re-authenticated) this session row \u2014 that login's 'generation'. Content reads and heartbeats only count when the caller's own token carries this same iat, so an older still-valid token (from before a forced logout, a logout, or a newer login on any device) no longer matches the row and stays revoked (audit U1/U2, 2026-09-23). Rows created before this field existed have it unset and are treated as legacy."
+      "description": "The `iat` claim of the WordPress JWT whose login created (or last re-authenticated) this session row \u2014 the FIRST generation binding (audit U1/U2, 2026-09-23), superseded one day later by token_hash after the same-second-iat collision was found. Still stamped on every new row for continuity, and still the binding for rows last touched during the iat-only era until their account's next login re-stamps them with a hash. Rows created before this field existed have it unset and are treated as legacy."
     },
     "description": {
       "type": "string",

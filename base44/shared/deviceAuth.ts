@@ -107,18 +107,23 @@ export async function getActiveSessionForUser(svc: any, email: string) {
   return list.find((s: any) => new Date(s.heartbeat_at).getTime() > cutoff) || null;
 }
 
-// Records (or re-activates) the session row for one login. tokenIat is the `iat` claim of
-// the exact WordPress JWT this login minted (audit U1/U2, 2026-09-23): stamping it on the
-// row makes the row belong to that one login "generation", so an older token still lying
-// around elsewhere can no longer ride on it — a newer login by the same account leaves
-// the old token permanently mismatched against the row.
-export async function upsertSession(svc: any, email: string, deviceId: string, tokenIat: number | null) {
+// Records (or re-activates) the session row for one login. The row is stamped with the
+// SHA-256 of the exact WordPress JWT this login minted (audit U1/U2 2026-09-23, hardened
+// 2026-09-24): that makes the row belong to this one login "generation", so an older
+// token still lying around elsewhere can no longer ride on it. The full-token hash — not
+// the token's `iat` claim — is the binding: two logins of the same account minted within
+// the same second share an iat, so an iat-only binding let an older same-second token
+// match a newer login's row (audit 2026-09-24). Under the hash, two tokens match only
+// when they are byte-for-byte the same credential. The iat is still stamped alongside for
+// continuity with rows written during the iat-only era — see sessionMatchesToken below.
+export async function upsertSession(svc: any, email: string, deviceId: string, token: string) {
+  const fp = await getTokenFingerprint(token);
   const existing = await svc.entities.ActiveSession.filter({ user_email: email, device_id: deviceId });
   const now = isoNow();
   if (existing[0]) {
-    await svc.entities.ActiveSession.update(existing[0].id, { active: true, heartbeat_at: now, token_issued_at: tokenIat });
+    await svc.entities.ActiveSession.update(existing[0].id, { active: true, heartbeat_at: now, token_hash: fp.hash, token_issued_at: fp.iat });
   } else {
-    await svc.entities.ActiveSession.create({ user_email: email, device_id: deviceId, active: true, heartbeat_at: now, token_issued_at: tokenIat });
+    await svc.entities.ActiveSession.create({ user_email: email, device_id: deviceId, active: true, heartbeat_at: now, token_hash: fp.hash, token_issued_at: fp.iat });
   }
 }
 
@@ -137,17 +142,54 @@ export async function deactivateOtherSessions(svc: any, email: string, keepDevic
   }
 }
 
+// ---- Token fingerprint: how one login's credential is told apart from another ----
+// (audit U1/U2 2026-09-23; hardened 2026-09-24 after the iat-only binding was found
+// matchable across same-second logins.)
+//
+// The fingerprint is the SHA-256 hash of the FULL token string, plus its iat claim for
+// continuity. Hashing the whole token means a session row matches only the byte-identical
+// credential that created it: any difference in ANY claim — a different iat second, a
+// different expiry, anything — is a different fingerprint. The iat claim alone could not
+// do this: WordPress mints tokens whose payloads differ only by iat/exp, so two logins
+// inside the same second produced identical claims and an older same-second token matched
+// a newer login's row.
+export async function hashToken(token: string): Promise<string | null> {
+  try {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+    return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  } catch {
+    return null;
+  }
+}
+
+export async function getTokenFingerprint(token: string) {
+  return { iat: getTokenIatFromToken(token), hash: await hashToken(token) };
+}
+
+// Whether one session row belongs to the same login generation as a token fingerprint:
+//  - rows stamped with a token_hash (every login since 2026-09-24) match on the exact hash;
+//  - rows from the iat-only era (2026-09-23/24) still match on iat — their account's next
+//    login re-stamps the row with a hash and closes this window for good;
+//  - rows from before either field existed can't be tied to a generation at all — while
+//    such a row is active, any genuine token for that email still matches it. A one-time
+//    legacy bridge for customers already logged in at deploy time; an explicit logout or
+//    force-logout flips the row inactive in the meantime, as always.
+export function sessionMatchesToken(s: any, fp: { iat: number | null; hash: string | null }): boolean {
+  if (s.token_hash != null) return s.token_hash === fp.hash;
+  if (s.token_issued_at != null) return s.token_issued_at === fp.iat;
+  return true;
+}
+
 // ---- Session-revocation check for token-authenticated reads ----
-// (audit N5, 2026-09-23; reworked the same day for U1 + U2.)
+// (audit N5, 2026-09-23; reworked the same day for U1 + U2; hardened 2026-09-24.)
 //
 // A session row only counts when it is BOTH still active AND belongs to the same login
-// generation as the caller's own token — the row's token_issued_at must equal the token's
-// own `iat` claim. That binds content access to the exact login that earned it, instead
-// of to the email:
+// generation as the caller's own token — see sessionMatchesToken. That binds content
+// access to the exact login that earned it, instead of to the email:
 //  - a token whose session was ended (forceLogoutAdmin, or the customer's own logout)
 //    stays revoked even after ANOTHER device for the same email logs back in, because
-//    that new login stamps a NEW iat onto the row — the old token no longer matches
-//    (audit U2: validity is never inferred from someone else's active row);
+//    that new login stamps a NEW fingerprint onto the row — the old token no longer
+//    matches (audit U2: validity is never inferred from someone else's active row);
 //  - a caller with NO session rows at all IS revoked, fail closed. Every real login
 //    through this app creates a row, so a valid WordPress token with no row was never
 //    issued through the app's login flow — e.g. minted directly against WordPress's own
@@ -157,16 +199,9 @@ export async function deactivateOtherSessions(svc: any, email: string, keepDevic
 // explicit logout) must keep working when the customer returns hours later, so only an
 // EXPLICIT flip (their own logout, or an admin force-logout) — or a newer login of the
 // same account on another device — revokes; never heartbeat staleness.
-//
-// Rows created before token_issued_at existed have no stamp; while such a row is active
-// it can't be tied to a generation, so any genuine token for that email still matches it.
-// That is a one-time legacy bridge for customers already logged in at deploy time — the
-// account's very next login stamps the row and closes the window for good, and an
-// explicit logout or force-logout flips the row inactive in the meantime, as always.
 export async function isSessionRevoked(svc: any, email: string, token: string): Promise<boolean> {
-  const iat = getTokenIatFromToken(token);
+  const fp = await getTokenFingerprint(token);
   const list = await svc.entities.ActiveSession.filter({ user_email: email });
   if (!Array.isArray(list) || list.length === 0) return true; // fail closed — see above
-  return !list.some((s: any) =>
-    s.active === true && (s.token_issued_at == null || s.token_issued_at === iat));
+  return !list.some((s: any) => s.active === true && sessionMatchesToken(s, fp));
 }
