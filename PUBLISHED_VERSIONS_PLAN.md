@@ -80,9 +80,23 @@ Therefore the proposal is: **no numeric cap in the publish function.** Publish v
 
 ### Confirmed invariants (explicit answers to your three confirmations)
 
-1. **Migration only snapshots.** The backfill creates new `PublishedTour` records and performs **no write of any kind to any existing Walk record** — no field changes, no flag resets, no deletes. Verified during the migration by exporting all Walk records before and after and diffing them (empty diff = pass), reported to you with the migration table.
+1. **Migration only snapshots.** The backfill creates new `PublishedTour` records and performs **no write of any kind to any existing Walk record** — no field changes, no flag resets, no deletes. Verified during the migration by hashing every Walk record before and after and comparing (empty diff = pass), reported to you with the migration table. The before/after copies stay in private storage; only the pass/fail summary and the comparison result are published — never the content.
 2. **A replacement version goes live only after checks pass.** `publishTourVersion` runs the server-side audio-readiness gate on the candidate (final PCV audio usable and applied on every triggered waypoint, plus the system-alert audio for driving tours) — nothing reaches customers failing it. The one part that is human is the real-app preview: it stays the Admin's manual step on the candidate, and the publish dialog will require an explicit "tested in preview" confirmation (recorded with the publish audit trail) rather than pretending a server verified a human looked.
 3. **Rollback is scoped to one language.** It flips `active ↔ retired` **only within the affected (family, language)** — every other language's active version, all source records, entitlements and offline slots are untouched, and the rolled-back-from version is retained as retired, not deleted.
+
+### Version-switch atomicity (interrupt safety — explicit protocol)
+
+Platform fact: entity writes are individually atomic, but there is **no cross-record transaction** — so "create the new active version" and "retire the superseded one" cannot be a single database operation, and an interruption could in principle leave two actives or none. The protocol below makes both failure states impossible-by-construction or self-healing:
+
+**Rule 1 — Activate before retire, always.** Every state change (publish and rollback) writes the NEW active first, and only then retires the superseded version(s). A crash can therefore only ever leave **too many** actives — never **zero**: the language always has something to serve, at every instant, in every scenario.
+
+**Rule 2 — Deterministic read-side tie-break.** Every version row carries `status_changed_at`, stamped on every status write. If a (family, language) ever has more than one active version, every reader deterministically serves the one with the **latest `status_changed_at`** — one consistent version, no flicker, no coin-flip — and logs the anomaly (`DebugCatalogLog`) so it's visible rather than silent.
+
+**Rule 3 — Worst case equals the intended outcome.** Publish's new-active write is one atomic create; if the process dies before the retire step runs, the tie-break serves the **new** version — which is exactly what the interrupted publish was trying to achieve. The leftover older active is stale data, not a serving error.
+
+**Rule 4 — Self-healing normalization.** Every `publishTourVersion` / `rollbackTourVersion` call begins by normalizing the (family, language) pair: retire every active row except the intended one (a single bulk update — one write, not a loop). So any anomaly from a past crash is physically repaired by the very next admin action, and the retire step of a normal publish is itself this same one-write normalization. A scheduled reconciliation workflow (the same normalization across all pairs, logging anything it repairs) is available as an optional belt-and-braces if you want continuous repair without waiting for an admin action.
+
+**Zero-active is impossible** from these flows in any interleaving: the only multi-step sequence is activate→retire, and retiring the previous active never happens while it is the sole active. The catalogue's legacy fallback additionally keeps serving the approved Walk records for any unmigrated family, so even a hypothetical zero-active pair for a migrated family would degrade to the pre-migration serving path during the transition rather than to an empty listing.
 
 ### New backend functions
 
@@ -106,7 +120,7 @@ Admin testing before publication is unchanged: the candidate IS the clone (Updat
 
 ## 4. Migration (phased, additive, no bulk overwrite/delete)
 
-1. **Backup first:** full export of every Walk record to a JSON file in the repo before any change.
+1. **Backup first — private storage, never the repository:** the repo is public, and tour scripts, routes and audio links must not be committed. The export runs server-side (service role) and writes the full Walk-record JSON to the app's **private file storage**. **Restorability is verified, not assumed:** the backup is round-trip-restored into a temporary scratch area and compared record-by-record against the live data (record count + per-record content hash); the scratch copy is then deleted. Only the summary is published — record counts, per-family sizes, and the restore-verification result. Zero tour content (scripts, routes, audio URLs) goes into the repo, a doc file, or chat.
 2. Create the entity + functions (Phase 1) — customers see zero change.
 3. **One-time backfill (Phase 2, idempotent, runs only after your approval):**
    - master with `approved === true` → English `PublishedTour` v1 (snapshot of the master, active).
@@ -135,6 +149,7 @@ Admin testing before publication is unchanged: the candidate IS the clone (Updat
 8. A pre-existing Purchase on the family still grants access across v1→v2 (entitlement unchanged).
 9. Rollback → v1 served again, v2 retained.
 10. Negative: with a non-admin caller, no unpublished master/clone and no retired/candidate version ever appears in the catalogue, and no protected field is downloadable.
+11. Interrupt safety: two active versions are deliberately created for a test family/language (direct data setup on test records only) — **assertions: the catalogue deterministically serves the latest `status_changed_at`; the anomaly is logged; and the next publish/rollback call physically normalizes the pair back to exactly one active.** Plus a restore drill on the private backup: restore → compare → confirm restorable, summary only.
 
 Test data will be clearly-named test records, cleaned up after; real tours are never used as test subjects. Customer-session-dependent steps (a real purchaser's catalogue view) need a real customer login — I'll cover what's automatable and flag precisely what needs a two-minute check on your side.
 
@@ -147,7 +162,7 @@ Test data will be clearly-named test records, cleaned up after; real tours are n
 
 ### Revised implementation sequence (after your go-ahead)
 
-0. Full Walk-record backup export (diffed empty after migration).
+0. Full Walk-record backup to **private storage** + verified test restore; only a summary + before/after comparison (proving sources unchanged) is published.
 1. Entity + `publishTourVersion` / `rollbackTourVersion` / `listTourVersionsAdmin` + shared readiness module.
 2. Narrator submission lock in `saveWalkForBackend` (backend-enforced on every save).
 3. One-time idempotent migration → per-family table + Walk diff report for your review.
