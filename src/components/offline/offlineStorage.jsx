@@ -15,6 +15,21 @@ export const getOfflineWalk = offlineStorageService.getWalkData;
 export const getAllOfflineWalks = offlineStorageService.getAllWalkData;
 export const removeOfflineWalk = offlineStorageService.removeWalkData;
 export const isWalkSavedOffline = offlineStorageService.isWalkDataSaved;
+
+// True when the saved copy of `walkId` may be managed (replaced/removed) by THIS account.
+// Every saved record carries the downloader's email as `_owner_email` (see saveWalkData),
+// so on a shared phone a second account looking at a tour it doesn't own must NOT delete
+// the first account's download — the record belongs to someone else, and that owner's own
+// next login (where the access checks below actually apply to them) handles its cleanup.
+// Records saved before owner-stamping existed have no `_owner_email`; those can only have
+// been downloaded by whoever used this browser before, so they're treated as the current
+// account's — keeping the original U-04 cleanup working for the owner's own login.
+export async function isWalkSavedOfflineFor(walkId, ownerEmail) {
+  const saved = await offlineStorageService.getWalkData(walkId);
+  if (!saved) return false;
+  const owner = (ownerEmail || '').toLowerCase().trim() || null;
+  return saved._owner_email == null || saved._owner_email === owner;
+}
 export const isWalkOutdated = offlineStorageService.isWalkDataOutdated;
 export const cacheTile = offlineStorageService.cacheTile;
 export const getCachedTile = offlineStorageService.getCachedTile;

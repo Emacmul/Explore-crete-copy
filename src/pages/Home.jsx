@@ -11,7 +11,7 @@ import CreteMap from '../components/map/CreteMap';
 import WalkList from '../components/walks/WalkList';
 import WalkDetail from '../components/walks/WalkDetail';
 import UpdateInProgressModal from '../components/offline/UpdateInProgressModal';
-import { isWalkOutdated, replaceWalkOffline, preCacheWalkTiles, preCacheWalkAudio, isWalkSavedOffline, removeWalkFullyOffline } from '../components/offline/offlineStorage';
+import { isWalkOutdated, replaceWalkOffline, preCacheWalkTiles, preCacheWalkAudio, isWalkSavedOfflineFor, removeWalkFullyOffline } from '../components/offline/offlineStorage';
 import SplashScreen from '../components/onboarding/SplashScreen';
 import { TOUR_CATEGORIES } from '../lib/tourCategories';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@/components/ui/select';
@@ -110,14 +110,19 @@ export default function Home() {
       updatingRef.current = true;
 
       for (const serverWalk of walks) {
-        // A walk the caller doesn't own has no protected content to cache — and if it WAS
-        // downloaded earlier and access was since taken away (a refund/chargeback — see
-        // accessRevoker.ts), any offline copy is removed right here so it stops working
-        // once the device goes offline (audit finding U-04, 2026-09-09 review). This only
-        // runs while online (it needs the fresh catalogue to know access changed), so it
-        // catches up the next time the app opens with a connection.
+        // A walk the caller doesn't own has no protected content to cache — and if the
+        // CALLER'S OWN earlier download of it exists here and access was since taken away
+        // (a refund/chargeback — see accessRevoker.ts), that copy is removed right here
+        // so it stops working once the device goes offline (audit finding U-04, 2026-09-09
+        // review). This only runs while online (it needs the fresh catalogue to know access
+        // changed), so it catches up the next time the app opens with a connection.
+        // isWalkSavedOfflineFor (not plain isWalkSavedOffline): on a shared phone this
+        // catalogue includes walks owned by OTHER accounts, and a saved copy of such a walk
+        // belongs to whoever downloaded it — NOT to the caller. Deleting it here would
+        // destroy the other account's offline tour; the check below only ever touches a
+        // copy this very account saved, and each owner's own login cleans up their own.
         if (serverWalk._accessible === false) {
-          if (await isWalkSavedOffline(serverWalk.id)) {
+          if (await isWalkSavedOfflineFor(serverWalk.id, user.email)) {
             await removeWalkFullyOffline(serverWalk.id);
           }
           continue;
@@ -149,10 +154,11 @@ export default function Home() {
 
   const handleWalkSelect = async (walk) => {
     // A locked walk has no protected content to cache — just open its paywall. Same
-    // U-04 cleanup as the bulk update effect above: if it used to be downloaded and no
-    // longer is, remove the stale offline copy instead of leaving it usable offline.
+    // U-04 cleanup as the bulk update effect above (same owner check, same shared-phone
+    // reason — see the comment there): only a copy THIS account downloaded is removed;
+    // another account's saved copy of this walk on the same phone stays where it is.
     if (walk._accessible === false) {
-      if (await isWalkSavedOffline(walk.id)) {
+      if (await isWalkSavedOfflineFor(walk.id, user.email)) {
         await removeWalkFullyOffline(walk.id);
       }
       setSelectedWalk(walk);
