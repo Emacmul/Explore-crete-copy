@@ -24,7 +24,8 @@ import { grantTourToAllNarrators } from '../../shared/narratorFreeTours.ts';
 // play this tour", so a publish and a live-save can never disagree.
 import { isUsableAudioUrl, collectAudioReadinessIssues } from '../../shared/walkReadiness.ts';
 
-// Deploy marker 2026-09-25 09:20 — narrator submission lock re-verification.
+// Deploy marker 2026-09-25 09:46 — narrator submission lock: fresh re-save to trigger
+// redeploy; deployed behavior must reject a submitted narrator's edit with 409.
 // Top-level Walk fields a narrator may change on their own clone. Everything
 // else (region, difficulty, distance_km, duration_hours, elevation_gain_m,
 // start_lat/start_lng, code, default_driving_speed_kmh, trail_path,
