@@ -19,6 +19,10 @@ import { isWalkPublic } from '../../shared/walkPublish.ts';
 // every current admin/narrator gets it for free — see narratorFreeTours.ts for
 // the full reasoning.
 import { grantTourToAllNarrators } from '../../shared/narratorFreeTours.ts';
+// Audio-readiness gate, now shared with the new publishTourVersion function
+// (published-versions plan) — one strict definition of "could a customer actually
+// play this tour", so a publish and a live-save can never disagree.
+import { isUsableAudioUrl, collectAudioReadinessIssues } from '../../shared/walkReadiness.ts';
 
 // Top-level Walk fields a narrator may change on their own clone. Everything
 // else (region, difficulty, distance_km, duration_hours, elevation_gain_m,
@@ -83,7 +87,7 @@ function mergeNarratorSegmentScripts(existingScripts: any[], incomingScripts: an
       combined_audio_url: 'combined_audio_url' in incoming ? incoming.combined_audio_url : current.combined_audio_url,
       final_script: 'final_script' in incoming ? incoming.final_script : current.final_script,
       final_audio_url: 'final_audio_url' in incoming ? incoming.final_audio_url : current.final_audio_url,
-      // Never taken from a narrator payload, regardless of what's sent.
+      // Never taken from a narrator payload, regardless of what is sent.
       finished_audio_url: current.finished_audio_url,
       status: current.status ?? 'draft',
     };
@@ -100,34 +104,8 @@ function mergeNarratorSegmentScripts(existingScripts: any[], incomingScripts: an
   });
 }
 
-// Audio-readiness of ONE record (the existing one, the incoming patch, or both merged):
-// which audio-triggered waypoints still carry the AI draft narration, and which spoken
-// system messages (off-route / GPS / speed alerts) still lack their PCV audio. System
-// messages only apply to a driving_audio_tour — a plain walk/hike tour has none of those
-// alerts, so it is never blocked by that half of the check.
-// A URL the customer's phone could actually fetch and play (2026-09-25 review,
-// "publication readiness gap"): a real https URL, not an empty string or arbitrary
-// text. The editor resets final_audio_applied whenever a clip changes, which reduces
-// accidental cases — but the backend gate itself must not count a waypoint or system
-// message as ready on the strength of a flag (or a non-URL string field) alone.
-function isUsableAudioUrl(value: any): boolean {
-  if (typeof value !== 'string' || !value.trim()) return false;
-  try {
-    const u = new URL(value);
-    return u.protocol === 'https:';
-  } catch {
-    return false;
-  }
-}
-
-function collectAudioReadinessIssues(record: any) {
-  const waypoints = (record && Array.isArray(record.waypoints)) ? record.waypoints : [];
-  const notReady = waypoints.filter((wp: any) => wp && wp.trigger_audio && (!wp.final_audio_applied || !isUsableAudioUrl(wp.audio_clip_url)));
-  const missingSystemAudio = (record && record.route_type === 'driving_audio_tour')
-    ? SYSTEM_MESSAGE_AUDIO_FIELDS.filter((f: string) => !isUsableAudioUrl(record[f]))
-    : [];
-  return { notReady, missingSystemAudio };
-}
+// Audio-readiness (isUsableAudioUrl + collectAudioReadinessIssues) moved to
+// shared/walkReadiness.ts — see the import at the top.
 
 // Stable identity for comparing "the same waypoint" between the existing record and the
 // incoming patch — segment_id is the real key; the index/name fallback only covers legacy
@@ -324,6 +302,19 @@ export default async function(req) {
     }
     if ((existing.assigned_narrator_email || '').toLowerCase() !== actor.email.toLowerCase()) {
       return Response.json({ error: 'This clone belongs to a different narrator.' }, { status: 403 });
+    }
+
+    // Narrator clone submission lock (published-versions plan): once a clone is
+    // submitted for review (finished: true) it is READ-ONLY for its narrator — every
+    // save through this narrator branch is rejected until an Admin pushes it back
+    // (finished: false, set through the unrestricted admin branch above — the same
+    // pushback the Admin panel already uses, which re-opens the clone for exactly
+    // this assigned narrator). Submission itself is unaffected: the save that flips
+    // finished false->true lands while the record is still unlocked. Backend-enforced
+    // here for every field, whatever the payload touches — the Studio UI's lock is
+    // only a convenience on top of this.
+    if (existing.finished === true) {
+      return Response.json({ error: 'This clone is submitted for review and locked — an Admin must push it back before it can be edited again.' }, { status: 409 });
     }
 
     const allowed: any = {};

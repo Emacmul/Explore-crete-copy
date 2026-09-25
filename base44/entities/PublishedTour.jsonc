@@ -1,0 +1,87 @@
+{
+  "name": "PublishedTour",
+  "type": "object",
+  "properties": {
+    "source_walk_id": {
+      "type": "string",
+      "description": "The Walk record this snapshot was taken from (the English master for English versions, the assigned narrator's submitted clone for translation versions). Never edited after creation \u2014 corrections publish a NEW version."
+    },
+    "family_id": {
+      "type": "string",
+      "description": "The stable tour-family id (the ORIGINAL tour's own id \u2014 the same stable identity getWalkCatalog's _family_id uses). Versions are grouped, numbered and normalized PER (family_id, language): one active version per pair, never per family and never per app."
+    },
+    "family_code": {
+      "type": "string",
+      "description": "Snapshot of the tour's code at publish time, for admin-facing listings."
+    },
+    "language": {
+      "type": "string",
+      "description": "The narration language of this version, e.g. 'English', 'German'. Must be one of the app's supported languages (shared/publishedTours.ts SUPPORTED_TOUR_LANGUAGES, mirroring src/lib/languages.js \u2014 23 total, English included). Versions of the same language never count as additional languages."
+    },
+    "version_number": {
+      "type": "number",
+      "description": "1, 2, 3\u2026 per (family_id, language) \u2014 counts every version ever published for that pair, retired ones included. The next publish for a pair is always max+1."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "retired"
+      ],
+      "default": "active",
+      "description": "active = the version customers are served; retired = superseded by a newer publish or rolled back FROM, retained (never deleted) so it can be rolled back TO. Exactly one active per (family_id, language) is maintained by the activate-before-retire protocol in shared/publishedTours.ts: state changes write the new active FIRST and only then retire the superseded row, so an interruption can only ever leave too many actives, never zero."
+    },
+    "status_changed_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this row last changed status (stamped on every publish/rollback write). THE deterministic tie-break: if an interruption ever leaves more than one active row for a pair, every reader serves the one with the latest status_changed_at \u2014 one consistent version, and for a publish crash exactly the version the interrupted publish intended. Anomalies are logged to DebugCatalogLog and physically repaired (retired back to exactly one) by the normalization that opens every publish/rollback call."
+    },
+    "published_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this version was published (creation time; never changes)."
+    },
+    "published_by_email": {
+      "type": "string",
+      "description": "Email of the Admin/Super Admin who published this version (or 'admin (Base44 session)' when published through a native Base44 session)."
+    },
+    "content": {
+      "type": "object",
+      "description": "Immutable full snapshot of the source Walk record at publish time \u2014 everything customer-serving: name, description, safety notes, route (trail_path/trail_breaks), waypoints, system alerts and their PCV audio, segment scripts, difficulty, image, pricing/checkout snapshot, category flags. Internal-only fields (import_files, assigned_narrator_email) are stripped by buildVersionContent before storing. This is the ONLY thing customers will be served after cutover; the source Walk records stay working copies for admins/narrators."
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 1000,
+      "description": "Optional free-text notes for internal reference (e.g. publish context)."
+    }
+  },
+  "required": [
+    "source_walk_id",
+    "family_id",
+    "language",
+    "status",
+    "status_changed_at"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}
