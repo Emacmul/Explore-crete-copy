@@ -65,8 +65,10 @@ export default async function(req) {
         // base44/shared/groqKeyRotation.ts. Never required; blank means "no backup set".
         groq_api_key_2: record?.groq_api_key_2 || '',
         // Per Enda's follow-up request: system voice messages (off-route/GPS/speed alerts)
-        // now need to be generated in this narrator's own PCV (ElevenLabs cloned voice)
-        // instead of the phone's robotic built-in voice — see generateSystemMessageAudio.
+        // need to be spoken in this narrator's own PCV (ElevenLabs cloned voice) instead
+        // of the phone's robotic built-in voice. Since 2026-09-25 the finished .wav files
+        // are imported directly in Narration & Simulate — the generateSystemMessageAudio
+        // endpoint and its frontend helper were removed in that cleanup.
         // Each narrator has their own separate ElevenLabs account (Enda has permissioned
         // access to all of them, but each key/voice is still stored per-account here,
         // same as every other key on this record). Optional — blank until a narrator/admin
