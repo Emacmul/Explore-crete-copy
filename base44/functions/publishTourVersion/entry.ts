@@ -7,6 +7,9 @@ import { collectAudioReadinessIssues } from '../../shared/walkReadiness.ts';
 import {
   buildVersionContent, isLanguageSupported, normalizeActiveVersion, nextVersionNumber,
 } from '../../shared/publishedTours.ts';
+// Per-(master tour, language) mutual exclusion — see shared/publishLock.ts's header
+// for the zero-actives race this closes (concurrency fix, 2026-09-25).
+import { acquirePairLock, releasePairLock } from '../../shared/publishLock.ts';
 
 // Publish a new customer-facing version of one tour in one language (published-versions
 // plan). Admins/Super Admins only. Takes a SOURCE Walk record (the English master, or a
@@ -95,41 +98,62 @@ export default async function (req: Request): Promise<Response> {
       }, { status: 400 });
     }
 
-    const version_number = await nextVersionNumber(svc, familyId, language);
-    const now = new Date().toISOString();
-    const publisher = String(body?.email || 'admin (Base44 session)');
+    // Concurrency fix (2026-09-25): per-(master tour, language) mutual exclusion.
+    // Two publishes racing on one pair both read the same version count (duplicate
+    // version numbers) and each retired the other's freshly-created active row, so
+    // the pair ended with ZERO active versions — the activate-before-retire protocol
+    // held against crashes but not against overlap, and a final "if zero, reactivate"
+    // check would race the same way. Every state change for a pair now runs under a
+    // PublishLock grant: racing requests serialize here, each proceeding only after
+    // the previous one fully completed. A request that dies mid-action keeps its
+    // grant until the TTL, after which the next action reclaims it — and whatever
+    // orphaned active row it left is retired by the normalization below, the same
+    // self-heal that has always opened the next publish.
+    const lockToken = await acquirePairLock(svc, familyId, language);
+    if (!lockToken) {
+      return Response.json({
+        error: 'Another publish or rollback for this tour and language is still in progress — wait a few seconds and try again.',
+      }, { status: 409 });
+    }
+    try {
+      const version_number = await nextVersionNumber(svc, familyId, language);
+      const now = new Date().toISOString();
+      const publisher = String(body?.email || 'admin (Base44 session)');
 
-    // Rule 1 — activate before retire: the new version is born ACTIVE (one atomic write).
-    const created = await svc.entities.PublishedTour.create({
-      source_walk_id: source.id,
-      family_id: familyId,
-      family_code: source.code || '',
-      language,
-      version_number,
-      status: 'active',
-      status_changed_at: now,
-      published_at: now,
-      published_by_email: publisher,
-      content: buildVersionContent(source),
-      description: `Published by ${publisher}; real-app preview confirmed before publishing.`,
-    });
-
-    // Rule 4 — retire every other active version for THIS pair only (single bulk write).
-    // Also self-heals any leftover anomaly from a previously interrupted action.
-    const retired = await normalizeActiveVersion(svc, familyId, language, created.id);
-
-    return Response.json({
-      ok: true,
-      published: {
-        id: created.id,
+      // Rule 1 — activate before retire: the new version is born ACTIVE (one atomic write).
+      const created = await svc.entities.PublishedTour.create({
+        source_walk_id: source.id,
         family_id: familyId,
-        family_code: created.family_code,
+        family_code: source.code || '',
         language,
         version_number,
         status: 'active',
-      },
-      retired_previous: retired,
-    });
+        status_changed_at: now,
+        published_at: now,
+        published_by_email: publisher,
+        content: buildVersionContent(source),
+        description: `Published by ${publisher}; real-app preview confirmed before publishing.`,
+      });
+
+      // Rule 4 — retire every other active version for THIS pair only (single bulk write).
+      // Also self-heals any leftover anomaly from a previously interrupted action.
+      const retired = await normalizeActiveVersion(svc, familyId, language, created.id);
+
+      return Response.json({
+        ok: true,
+        published: {
+          id: created.id,
+          family_id: familyId,
+          family_code: created.family_code,
+          language,
+          version_number,
+          status: 'active',
+        },
+        retired_previous: retired,
+      });
+    } finally {
+      await releasePairLock(svc, familyId, language, lockToken);
+    }
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
   }

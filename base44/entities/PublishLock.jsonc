@@ -1,0 +1,49 @@
+{
+  "name": "PublishLock",
+  "type": "object",
+  "properties": {
+    "pair_key": {
+      "type": "string",
+      "description": "The (family_id||language) pair this lock guards \u2014 one row per tour-family + language combination, so publish/rollback requests serialize PER PAIR while different tours or different languages stay fully independent. Built by pairKeyOf in shared/publishLock.ts."
+    },
+    "holder": {
+      "type": "string",
+      "description": "Grant token of the action currently holding the lock; empty string means free. Set only by the compare-and-swap acquire in shared/publishLock.ts (never a blind overwrite) and cleared by the holder's own release \u2014 a late release from an expired grant matches nothing and cannot clobber a newer holder."
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the current grant goes stale \u2014 a request that died mid-action keeps the lock only until this moment. Past it, the next acquire reclaims the lock by a CAS on the EXACT stale (holder, expires_at) values, so a live concurrent action can never be stolen from. Epoch (1970) means free."
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 1000,
+      "description": "Optional free-text notes for internal reference."
+    }
+  },
+  "required": [
+    "pair_key"
+  ],
+  "rls": {
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}
