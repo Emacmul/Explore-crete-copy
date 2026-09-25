@@ -1,6 +1,8 @@
 import { createClientFromRequest } from "npm:@base44/sdk@0.8.40";
 import { verifyEmailFromToken } from "../../shared/wpToken.ts";
 import { isSessionRevoked } from "../../shared/deviceAuth.ts";
+import { isWalkPublic } from "../../shared/walkPublish.ts";
+import { DEFAULT_SAFETY_NOTES } from "../../shared/defaultSafetyNotes.ts";
 
 // Per Enda (follow-up 184): "Before You Set Off" (safety_notes) is exactly the kind of
 // thing people scroll past without reading — until something goes wrong, and then the
@@ -62,20 +64,39 @@ export default async function (req: Request): Promise<Response> {
       return Response.json({ error: "Unknown walk" }, { status: 400 });
     }
 
-    // The language record the catalogue would serve for this caller: the published clone
-    // matching the language they were reading, else the original itself. Whatever this
-    // resolves to, the snapshot below is the DATABASE's text for that record — never
-    // anything the request carried.
+    // The language record the catalogue would actually have SERVED this caller — same
+    // eligibility rule and same priority order as getWalkCatalog (2026-09-25 review,
+    // "the log could snapshot an unpublished clone"): a clone only counts when it is
+    // BOTH finished and published, an unfinished/unpublished clone was never shown to
+    // any customer and must never be snapshotted as "the text they confirmed". Priority:
+    // the finished+published clone matching the caller's language, else the published
+    // original, else the first other finished+published clone alphabetically. Nothing
+    // eligible at all -> the customer cannot have been shown this tour in that language,
+    // so there is nothing genuine to confirm and the request is rejected.
     const clones = await svc.entities.Walk.filter({ clone_of: original.id });
     const lang = String(active_lang || 'English');
-    const active = (Array.isArray(clones) && clones.find((c: any) => c.target_language === lang)) || original;
+    const eligible = (Array.isArray(clones) ? clones : []).filter((c: any) => c && c.finished === true && isWalkPublic(c));
+    const otherPublished = [...eligible].sort((a: any, b: any) =>
+      String(a.target_language || '').localeCompare(String(b.target_language || '')));
+    const active =
+      eligible.find((c: any) => c.target_language === lang) ||
+      (isWalkPublic(original) ? original : null) ||
+      otherPublished[0] ||
+      null;
+    if (!active) {
+      return Response.json({ error: "This tour is not published in that language." }, { status: 400 });
+    }
 
     await svc.entities.SafetyConfirmation.create({
       buyer_email: email,
       walk_id: original.id,
       walk_code: active.code || original.code || '',
       walk_name: active.name || original.name || '',
-      safety_notes_snapshot: active.safety_notes || '',
+      // When the record still has a blank Safety Notes field, the customer's screen fell
+      // back to the shared default safety text (see src/lib/defaultSafetyNotes.js) — so
+      // THAT is what they actually read and confirmed, and that is what gets snapshotted,
+      // never an empty string.
+      safety_notes_snapshot: active.safety_notes || DEFAULT_SAFETY_NOTES,
       confirmed_at: new Date().toISOString(),
       device_id: device_id || '',
     });

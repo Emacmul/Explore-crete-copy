@@ -11,7 +11,7 @@ import CreteMap from '../components/map/CreteMap';
 import WalkList from '../components/walks/WalkList';
 import WalkDetail from '../components/walks/WalkDetail';
 import UpdateInProgressModal from '../components/offline/UpdateInProgressModal';
-import { isWalkOutdated, replaceWalkOffline, preCacheWalkTiles, preCacheWalkAudio, isWalkSavedOfflineFor, removeWalkFullyOffline } from '../components/offline/offlineStorage';
+import { isWalkOutdated, replaceWalkOffline, preCacheWalkTiles, preCacheWalkAudio, isWalkSavedOfflineFor, removeWalkFullyOffline, getAllOfflineWalks } from '../components/offline/offlineStorage';
 import SplashScreen from '../components/onboarding/SplashScreen';
 import { TOUR_CATEGORIES } from '../lib/tourCategories';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@/components/ui/select';
@@ -131,6 +131,13 @@ export default function Home() {
         const outdated = await isWalkOutdated(serverWalk);
 
         if (outdated) {
+          // Shared-phone guard (2026-09-25 review, "one account can replace another's
+          // offline tour"): isWalkOutdated keys on the walk ID alone, but the saved copy
+          // in that slot may belong to a DIFFERENT account on this phone — account B's
+          // newer server copy must never replace account A's download (different
+          // language, different audio) with B's version. A saved copy someone else owns
+          // is left exactly as its owner left it; that owner's own login updates it.
+          if (!(await isWalkSavedOfflineFor(serverWalk.id, user.email))) continue;
           setUpdatingWalkName(serverWalk.name);
           // Audio first, and the new version only replaces the saved one once EVERY clip is
           // proven complete (2026-09-21): this used to replace first and ignore the audio result,
@@ -144,6 +151,25 @@ export default function Home() {
 
           setSelectedWalk(prev => prev?.id === serverWalk.id ? serverWalk : prev);
         }
+      }
+
+      // Withdrawal catch-up (2026-09-25 review, "downloaded tours survive unpublishing"):
+      // the loop above only ever examines tours the catalogue still returns, so a tour
+      // that was unpublished (or deleted) server-side — and is therefore absent from the
+      // catalogue entirely — could linger forever in this account's offline list and
+      // keep playing from its download. Now that the fresh catalogue is in hand, every
+      // saved tour of THIS account that it no longer contains at all is removed right
+      // here (same owner discipline as the _accessible cleanup above: another account's
+      // saved copy is never touched). This only runs online — there is no way to reach a
+      // phone that never reconnects, and the next app open with a connection is when the
+      // withdrawal lands; that's as immediate as offline withdrawal can ever be.
+      const catalogIds = new Set(walks.map(w => String(w.id)));
+      const savedWalks = await getAllOfflineWalks();
+      for (const saved of savedWalks) {
+        const savedId = String(saved?.id || '');
+        if (!savedId || catalogIds.has(savedId)) continue;
+        if (!(await isWalkSavedOfflineFor(savedId, user.email))) continue;
+        await removeWalkFullyOffline(savedId);
       }
 
       updatingRef.current = false;
@@ -169,14 +195,20 @@ export default function Home() {
     const outdated = await isWalkOutdated(walk);
 
     if (outdated) {
-      setUpdatingWalkName(walk.name);
-      // Same rule as the bulk update above: only replace the saved copy once every clip is complete.
-      await preCacheWalkTiles(walk, () => {});
-      const audio = await preCacheWalkAudio(walk, () => {});
-      if (audio.cached >= audio.total) {
-        await replaceWalkOffline(walk, user.email);
+      // Same shared-phone guard as the bulk update effect above: the saved copy in this
+      // slot may belong to another account on this phone — it is never replaced with
+      // this account's version. Only this account's own copy (or a legacy unstamped one)
+      // is refreshed.
+      if (await isWalkSavedOfflineFor(walk.id, user.email)) {
+        setUpdatingWalkName(walk.name);
+        // Same rule as the bulk update above: only replace the saved copy once every clip is complete.
+        await preCacheWalkTiles(walk, () => {});
+        const audio = await preCacheWalkAudio(walk, () => {});
+        if (audio.cached >= audio.total) {
+          await replaceWalkOffline(walk, user.email);
+        }
+        setUpdatingWalkName(null);
       }
-      setUpdatingWalkName(null);
     }
 
     setSelectedWalk(walk);

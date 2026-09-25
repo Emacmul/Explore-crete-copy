@@ -1370,7 +1370,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 className={`h-7 text-xs gap-1.5 ${form.approved === false ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-slate-600 hover:bg-slate-500'}`}
                 title={form.approved === false
                   ? 'Publish — blocked until every audio-triggered waypoint has its final PCV audio applied (see Update Audio).'
-                  : 'Unpublish — hides this tour from customers again.'}
+                  : 'Unpublish — hides this tour from customers again. Already-downloaded offline copies are NOT removed instantly: they stop working the next time that phone opens the app with a connection (it cannot be forced while the phone is offline).'}
               >
                 {togglingPublish
                   ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
