@@ -133,12 +133,14 @@ export default function WalkDetail({ walk, onClose, accessible = true, allWalks 
     if (safetyConfirmed || confirmSubmitting) return;
     setConfirmSubmitting(true);
     try {
+      // Only the tour identity and the language being read are sent — the server reads
+      // the tour's own code, name and safety-notes text from the database itself, so the
+      // stored record can never be a client-forged "confirmed text" (2026-09-25 review,
+      // "safety record can be falsified").
       await base44.functions.invoke('logSafetyConfirmation', {
         token,
         walk_id: walk.id,
-        walk_code: walk.code,
-        walk_name: walk.name,
-        safety_notes: walk.safety_notes || t('detail.defaultSafetyNotes'),
+        active_lang: walk._active_lang || 'English',
         device_id: getDeviceId(),
       });
     } catch (err) {

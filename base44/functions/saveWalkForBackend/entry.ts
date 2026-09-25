@@ -105,11 +105,26 @@ function mergeNarratorSegmentScripts(existingScripts: any[], incomingScripts: an
 // system messages (off-route / GPS / speed alerts) still lack their PCV audio. System
 // messages only apply to a driving_audio_tour — a plain walk/hike tour has none of those
 // alerts, so it is never blocked by that half of the check.
+// A URL the customer's phone could actually fetch and play (2026-09-25 review,
+// "publication readiness gap"): a real https URL, not an empty string or arbitrary
+// text. The editor resets final_audio_applied whenever a clip changes, which reduces
+// accidental cases — but the backend gate itself must not count a waypoint or system
+// message as ready on the strength of a flag (or a non-URL string field) alone.
+function isUsableAudioUrl(value: any): boolean {
+  if (typeof value !== 'string' || !value.trim()) return false;
+  try {
+    const u = new URL(value);
+    return u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 function collectAudioReadinessIssues(record: any) {
   const waypoints = (record && Array.isArray(record.waypoints)) ? record.waypoints : [];
-  const notReady = waypoints.filter((wp: any) => wp && wp.trigger_audio && !wp.final_audio_applied);
+  const notReady = waypoints.filter((wp: any) => wp && wp.trigger_audio && (!wp.final_audio_applied || !isUsableAudioUrl(wp.audio_clip_url)));
   const missingSystemAudio = (record && record.route_type === 'driving_audio_tour')
-    ? SYSTEM_MESSAGE_AUDIO_FIELDS.filter((f: string) => !record[f])
+    ? SYSTEM_MESSAGE_AUDIO_FIELDS.filter((f: string) => !isUsableAudioUrl(record[f]))
     : [];
   return { notReady, missingSystemAudio };
 }
@@ -190,12 +205,12 @@ export default async function(req) {
             // tour can't have its readiness quietly downgraded.
             if (issues.notReady.length > 0) {
               return Response.json({
-                error: `Cannot publish — ${issues.notReady.length} waypoint(s) still have the AI draft narration. Use "Update Audio" to replace them with the final PCV narration first.`,
+                error: `Cannot publish — ${issues.notReady.length} waypoint(s) still have the AI draft narration or no usable final audio clip. Use "Update Audio" to replace them with the final PCV narration first.`,
               }, { status: 400 });
             }
             if (issues.missingSystemAudio.length > 0) {
               return Response.json({
-                error: `Cannot publish — ${issues.missingSystemAudio.length} system voice message(s) (off-route/GPS/speed alerts) still need PCV audio generated. Open Narration & Simulate to generate them in the narrator's own voice first.`,
+                error: `Cannot publish — ${issues.missingSystemAudio.length} system voice message(s) (off-route/GPS/speed alerts) still need their PCV audio file imported. Open Narration & Simulate to import the finished .wav for each in the narrator's own voice first.`,
               }, { status: 400 });
             }
           } else {
@@ -211,13 +226,15 @@ export default async function(req) {
             // tour while its audio is being edited.
             const prevUnreadyAudioByKey = new Map();
             (Array.isArray(existingBeforeSave.waypoints) ? existingBeforeSave.waypoints : []).forEach((wp: any, i: number) => {
-              if (wp && wp.trigger_audio && !wp.final_audio_applied) {
+              if (wp && wp.trigger_audio && (!wp.final_audio_applied || !isUsableAudioUrl(wp.audio_clip_url))) {
                 prevUnreadyAudioByKey.set(waypointKey(wp, i), waypointAudioKey(wp));
               }
             });
             const newUnready: any[] = [];
             (Array.isArray(merged.waypoints) ? merged.waypoints : []).forEach((wp: any, i: number) => {
-              if (!(wp && wp.trigger_audio && !wp.final_audio_applied)) return;
+              // Same readiness predicate as collectAudioReadinessIssues above, so a live
+              // tour can't swap in a missing/invalid clip under a still-set flag either.
+              if (!(wp && wp.trigger_audio && (!wp.final_audio_applied || !isUsableAudioUrl(wp.audio_clip_url)))) return;
               const prevAudio = prevUnreadyAudioByKey.get(waypointKey(wp, i));
               // Not previously unready at all, or previously unready but its audio
               // changed: either way, a new unresolved problem on a live tour.
@@ -227,7 +244,7 @@ export default async function(req) {
             });
             if (newUnready.length > 0) {
               return Response.json({
-                error: `This tour is already live — the change would put ${newUnready.length} waypoint(s) on (or back on) the AI draft narration. Replace them with the final PCV narration via "Update Audio" first, or unpublish the tour while editing.`,
+                error: `This tour is already live — the change would put ${newUnready.length} waypoint(s) on (or back on) the AI draft narration, or leave them without a usable final audio clip. Replace them with the final PCV narration via "Update Audio" first, or unpublish the tour while editing.`,
               }, { status: 400 });
             }
             const existingIssues = collectAudioReadinessIssues(existingBeforeSave);

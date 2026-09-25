@@ -165,8 +165,24 @@ self.addEventListener('fetch', (event) => {
     url.pathname.startsWith('/@react-refresh');
   if (isDevArtifact) return;
 
-  // Stale-while-revalidate for same-origin static assets
-  if (url.origin === self.location.origin) {
+  // Stale-while-revalidate for same-origin STATIC ASSETS ONLY.
+  //
+  // Cache boundary (2026-09-25 review): this branch describes itself as static-asset
+  // caching but used to fire for EVERY successful same-origin GET — including any
+  // authenticated response served under this origin. Whatever the service worker stores
+  // in its cache is reused for ANY later request to the same URL, regardless of which
+  // account makes it, so an authenticated same-origin GET would have been replayable
+  // across accounts. No customer data path is a same-origin GET today (backend function
+  // invokes go through POST), so nothing was actually leaking — but the boundary is
+  // closed anyway: only genuine static assets (the content-hashed bundles under
+  // /assets/, plus scripts/styles/images/fonts/manifests the browser itself requests as
+  // assets) are cached or served from the cache. Every other same-origin request —
+  // anything under /functions/ or /api/ especially — always goes straight to the network
+  // and is never stored here.
+  const isStaticAsset =
+    url.pathname.startsWith('/assets/') ||
+    ['script', 'style', 'image', 'font', 'manifest'].includes(request.destination);
+  if (url.origin === self.location.origin && isStaticAsset) {
     event.respondWith(
       (async () => {
         const cache = await caches.open(STATIC_CACHE);
