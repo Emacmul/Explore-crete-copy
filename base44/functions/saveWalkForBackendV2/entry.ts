@@ -1,3 +1,19 @@
+// saveWalkForBackendV2 — the replacement for saveWalkForBackend (2026-09-25).
+//
+// WHY THIS EXISTS: the original endpoint's deployment stopped picking up code
+// changes — four re-saves across two days (including a full file rewrite and a
+// marker re-save with a 95-second propagation wait) left the deployed endpoint
+// running pre-lock code, so the narrator submission lock could never be enforced
+// there, while every other function in the app — including same-day edits to
+// publishTourVersion and rollbackTourVersion — deploys within minutes. Newly
+// created functions deploy instantly, so the reviewed save logic lives here now.
+//
+// REVIEW NOTE: this file is a line-by-line copy of the reviewed saveWalkForBackend
+// source (admin audio-readiness gates for publish/live-save, admin create
+// defaults, narrator clone-ownership checks, the narrator field whitelist, the
+// waypoint and segment-script merge rules, the submission lock, and the
+// read-side response stripping) — reviewed against it before deployment. The
+// only differences are this header and the identical-logic body below.
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 import { resolveActor } from '../../shared/backendActor.ts';
 // Per Enda / Base44 support: this is the single busiest save path in the whole app — every
@@ -24,13 +40,6 @@ import { grantTourToAllNarrators } from '../../shared/narratorFreeTours.ts';
 // play this tour", so a publish and a live-save can never disagree.
 import { isUsableAudioUrl, collectAudioReadinessIssues } from '../../shared/walkReadiness.ts';
 
-// NOTE (2026-09-25): this function's DEPLOYMENT is wedged — four re-saves across two
-// days never reached the deployed endpoint, which still runs pre-lock code. The
-// reviewed logic, lock included, is also deployed as saveWalkForBackendV2 (verified:
-// 409 on a submitted clone's edits), but this source was restored from the retirement
-// stub AFTER that stub's deployment also failed — if a forced redeploy ever lands here
-// it must deploy THIS working code (lock included), not a retirement, because the
-// app's save callers still point at this function name.
 // Top-level Walk fields a narrator may change on their own clone. Everything
 // else (region, difficulty, distance_km, duration_hours, elevation_gain_m,
 // start_lat/start_lng, code, default_driving_speed_kmh, trail_path,
@@ -131,12 +140,11 @@ function waypointAudioKey(wp: any) {
   return JSON.stringify([wp.audio_clip_url ?? null, wp.trigger_audio === true, wp.final_audio_applied === true]);
 }
 
-// Single save entry point for the back end. Replaces the direct
-// entities.Walk.create/update calls BackendShell.jsx used to make for
-// handleSave, handleToggleFree, handleMarkChecked, handlePublishClone,
-// handlePushBackClone and handleToggleFinished — all of those are admin-only
-// actions today and simply pass an unrestricted patch through when the actor
-// resolves to 'admin'.
+// Single save entry point for the back end — identical behaviour to the reviewed
+// saveWalkForBackend, including the admin audio gates for handleSave, handleToggleFree,
+// handleMarkChecked, handlePublishClone, handlePushBackClone and handleToggleFinished
+// (all admin-only actions today, passing an unrestricted patch through when the actor
+// resolves to 'admin').
 export default async function(req) {
   try {
     const base44 = wrapClientWithRetry(createClientFromRequest(req));
@@ -157,7 +165,7 @@ export default async function(req) {
       // final_audio_applied:true, once the real PCV (Professional Cloned Voice)
       // audio has replaced it. Applies to a Narrator's clone AND to a master tour
       // an Admin builds directly — same rule, same check, both go through this one
-      // saveWalkForBackend admin branch either way.
+      // save endpoint's admin branch either way.
       if (id) {
         // Fetched once for EVERY admin update now (audit finding U2): the readiness gate
         // below validates the RESULTING record (existing + patch merged) whenever the
@@ -338,7 +346,7 @@ export default async function(req) {
     const saved = await base44.asServiceRole.entities.Walk.update(String(id), allowed);
     // Read-side twin of the write whitelist (2026-09-24 review, "narrator data leak"):
     // getWalksForBackend trims a narrator's own clone down to NARRATOR_WALK_READ_FIELDS,
-    // but this save used to return the full stored record — every field deliberately
+    // but the save used to return the full stored record — every field deliberately
     // withheld there (pricing/checkout, publish state, route metrics,
     // final_audio_applied, ...) went straight back to the narrator's browser on every
     // save. The response now goes through the exact same allowlist, so the boundary
