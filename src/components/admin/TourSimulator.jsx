@@ -1073,6 +1073,24 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     setJumpNonce(n => n + 1);
   };
 
+  // Per Enda's request: the "Narrate & Simulate" buttons in the Waypoints tab's location
+  // dividers switch to this tab and must land the simulator directly on that location —
+  // the exact same "Jump to location…" experience the dropdown at the top already gives,
+  // so nothing has to be re-picked after arriving here. The index passed in is the RAW
+  // index in form.waypoints (the Waypoints tab has no filtered list of its own);
+  // translate it through waypointsWithIndex, since every index inside this component is
+  // a position in the FILTERED list. If the target waypoint is mid-edit with blank
+  // coordinates (filtered out above), no jump happens — the tab just opens as usual on
+  // the first unfinished waypoint. onJumpRequestHandled always fires so the parent
+  // clears the request and the same button can trigger a fresh jump again later.
+  useEffect(() => {
+    if (jumpRequestIndex == null) return;
+    const filteredIndex = waypointsWithIndex.findIndex((e) => e.rawWaypointIndex === jumpRequestIndex);
+    if (filteredIndex !== -1) jumpToLocation(filteredIndex);
+    onJumpRequestHandled?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jumpRequestIndex]);
+
   // Per Enda's report while finishing BOR1's waypoints: "Jump to location…" above already
   // drives through a whole finished location's real saved audio, start to finish — exactly
   // what's needed to check "does the audio work properly throughout the location" — but
