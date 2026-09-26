@@ -1200,6 +1200,12 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // waypoint (or which location it's in) changes, including on first load. Left alone
   // entirely while a run is actually playing, so this never fights a live full-tour
   // drive or a "Jump to location…" scoped run's own view.
+  // Per Enda's follow-up report ("Narrate & Simulate" divider buttons, Waypoints tab):
+  // read via a ref inside the map-focus effect below, deliberately NOT added to that
+  // effect's dependency list — see the guard inside it for why.
+  const jumpRequestRef = useRef(jumpRequestIndex);
+  jumpRequestRef.current = jumpRequestIndex;
+
   useEffect(() => {
     const locStart = currentLocationRange ? currentLocationRange.startIndex : null;
     // Per Enda's report (2026-09-20): an explicit "Jump to location…" has already set the
@@ -1213,6 +1219,19 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
       lastFramedLocationRef.current = locStart;
       return;
     }
+    // Per Enda's follow-up report: when this tab mounts with a "Narrate & Simulate"
+    // jump already pending (jumpRequestIndex set by the Waypoints tab's divider
+    // button), the jump effect further up has JUST queued this jump's own
+    // target-location bounds (jumpToLocation) — but this effect's own mount pass
+    // still runs with the PRE-jump render's state (the default
+    // first-unfinished-waypoint location the tab would have opened on), and would
+    // overwrite those bounds a moment later, leaving the map framed on the default
+    // location while the editor beside it shows the jumped-to one. Skip this pass
+    // entirely while a jump request is pending: the next pass sees the bumped
+    // jumpNonce and takes the "handled" early-return above, so the jump's own
+    // bounds survive untouched. Read via a ref (not a dependency) so handling the
+    // request (jumpRequestIndex → null) doesn't re-trigger this effect either.
+    if (jumpRequestRef.current != null) return;
     if (isPlaying) return;
     // Per Enda's report (2026-09-19): reads waypointsRef.current, NOT the `waypoints`
     // array itself, and `waypoints` is deliberately left out of the dependency list
