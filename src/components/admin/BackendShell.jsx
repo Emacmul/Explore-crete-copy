@@ -14,6 +14,8 @@ import { useNarratorApiKeys } from '@/lib/useNarratorApiKeys';
 import DisputesManager from './DisputesManager';
 import TranslationsManager from './TranslationsManager';
 import UpdateAudioTool from './UpdateAudioTool';
+import PublishedVersionsPanel from './PublishedVersionsPanel';
+import PublishVersionDialog from './PublishVersionDialog';
 import { getRouteTypeForCategory, defaultPriceForCategory } from '@/lib/tourCategories';
 import { toast } from '@/components/ui/use-toast';
 import { translateWalkField } from '@/lib/fieldTranslation';
@@ -34,6 +36,12 @@ export default function BackendShell({ user, userRole, isSuperAdmin, authMode, u
   const [showApiKeysDialog, setShowApiKeysDialog] = useState(false);
   const [walks, setWalks] = useState([]);
   const [walksLoading, setWalksLoading] = useState(true);
+  // Pending publish confirmation (published-versions plan): a Publish click first opens
+  // the confirm dialog below — the version only goes out once the Admin explicitly
+  // confirms they tested the tour in the real app. Holds
+  // { kind: 'clone'|'master', walkId, name, language }.
+  const [pendingPublish, setPendingPublish] = useState(null);
+  const [publishingVersion, setPublishingVersion] = useState(false);
 
   // Narr Studio sessions (real narrators, and admins wearing the Narr hat) carry
   // no real Base44 identity of their own — every Walk-related call below has to
@@ -296,13 +304,13 @@ export default function BackendShell({ user, userRole, isSuperAdmin, authMode, u
       });
       return;
     }
-    try {
-      await callWalkFn('saveWalkForBackend', { id: walkId, patch: { approved: true, finished: true, pushback_reason: '' } });
-      setWalks((prev) => prev.map(w => w.id === walkId ? { ...w, approved: true, finished: true, pushback_reason: '' } : w));
-      toast({ title: 'Published', description: 'The translation is now a standalone public tour.' });
-    } catch (err) {
-      toast({ variant: 'destructive', title: 'Publish failed', description: err?.message || 'Could not publish this tour.' });
-    }
+    // Published-versions plan: publishing no longer just flips `approved` on the clone —
+    // it freezes an immutable customer-facing version via publishTourVersion, behind the
+    // explicit "tested in the real app" confirmation dialog below. The record flags are
+    // still written alongside (display/bookkeeping only post-cutover) so the clone leaves
+    // the review list and the badges stay truthful.
+    const walk = walks.find(w => w.id === walkId);
+    setPendingPublish({ kind: 'clone', walkId, name: walk?.name || 'this translation', language: walk?.target_language || '' });
   };
 
   // Publish/Unpublish for a master (non-clone) tour, from WalkEditor's top bar.
@@ -333,18 +341,76 @@ export default function BackendShell({ user, userRole, isSuperAdmin, authMode, u
         return false;
       }
     }
+    // Published-versions plan:
+    //  - Publish freezes an immutable customer-facing English version via
+    //    publishTourVersion, behind the same "tested in the real app" confirmation as a
+    //    clone publish; `approved` is kept in sync as a display flag only.
+    //  - Unpublish withdraws the English pair's active version (customers stop seeing
+    //    the English version — every other language keeps its own) and clears the display
+    //    flag, which also closes the legacy fallback. Versions are retained, so an
+    //    unpublish can be rolled back from the Published Versions panel.
+    if (nextApproved) {
+      const walk = walks.find(w => w.id === walkId);
+      setPendingPublish({ kind: 'master', walkId, name: walk?.name || 'this tour', language: 'English' });
+      // The dialog's confirm handler reports its own result; the editor's badge flips
+      // there, only once the version is genuinely published.
+      return false;
+    }
     try {
-      await callWalkFn('saveWalkForBackend', { id: walkId, patch: { approved: nextApproved } });
-      setWalks((prev) => prev.map(w => w.id === walkId ? { ...w, approved: nextApproved } : w));
+      await callWalkFn('withdrawTourVersion', { family_id: walkId, language: 'English' });
+      await callWalkFn('saveWalkForBackend', { id: walkId, patch: { approved: false } });
+      setWalks((prev) => prev.map(w => w.id === walkId ? { ...w, approved: false } : w));
+      setEditingWalk((prev) => (prev && prev.id === walkId ? { ...prev, approved: false } : prev));
       toast({
-        title: nextApproved ? 'Published' : 'Unpublished',
-        description: nextApproved ? 'This tour is now visible to customers.' : 'This tour is now hidden from customers.',
+        title: 'Unpublished',
+        description: 'The English version is withdrawn from customers. Other languages keep their published versions.',
       });
       return true;
     } catch (err) {
-      toast({ variant: 'destructive', title: nextApproved ? 'Publish failed' : 'Unpublish failed', description: err?.message || 'Could not update this tour.' });
+      toast({ variant: 'destructive', title: 'Unpublish failed', description: err?.message || 'Could not update this tour.' });
       return false;
     }
+  };
+
+  // Runs when the Admin confirms the "tested in the real app" dialog: publishes the new
+  // customer-facing version (the record's display flags are written FIRST, so the frozen
+  // snapshot is a clean record and the clone leaves the review list), then reports the
+  // version number that just went live. On failure the display flags are reverted so the
+  // list never shows a publish that didn't happen.
+  const confirmPublishVersion = async () => {
+    if (!pendingPublish || publishingVersion) return;
+    setPublishingVersion(true);
+    const { kind, walkId } = pendingPublish;
+    try {
+      if (kind === 'clone') {
+        await callWalkFn('saveWalkForBackend', { id: walkId, patch: { approved: true, finished: true, pushback_reason: '' } });
+        const data = await callWalkFn('publishTourVersion', { source_walk_id: walkId, preview_confirmed: true });
+        setWalks((prev) => prev.map(w => w.id === walkId ? { ...w, approved: true, finished: true, pushback_reason: '' } : w));
+        toast({
+          title: `Published — version ${data?.published?.version_number}`,
+          description: `${data?.published?.language || 'Translation'} customers now see this version. The narrator's clone stays as the editable source; changes reach customers when you publish again.`,
+        });
+      } else {
+        await callWalkFn('saveWalkForBackend', { id: walkId, patch: { approved: true } });
+        const data = await callWalkFn('publishTourVersion', { source_walk_id: walkId, preview_confirmed: true });
+        setWalks((prev) => prev.map(w => w.id === walkId ? { ...w, approved: true } : w));
+        setEditingWalk((prev) => (prev && prev.id === walkId ? { ...prev, approved: true } : prev));
+        toast({
+          title: `Published — version ${data?.published?.version_number}`,
+          description: 'English customers now see this version. The master stays editable; changes reach customers when you publish again.',
+        });
+      }
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Publish failed', description: err?.message || 'Could not publish this version.' });
+      try {
+        // Revert the display flags so the review/draft lists reflect reality again. A
+        // pushed-back clone keeps finished: true (still submitted/locked for its narrator).
+        await callWalkFn('saveWalkForBackend', { id: walkId, patch: { approved: false } });
+        setWalks((prev) => prev.map(w => w.id === walkId ? { ...w, approved: false } : w));
+      } catch { /* the error toast above is the user-facing signal */ }
+    }
+    setPublishingVersion(false);
+    setPendingPublish(null);
   };
 
   // Persists a single waypoint's replacement audio (Update Audio tool). Marking
@@ -513,6 +579,17 @@ export default function BackendShell({ user, userRole, isSuperAdmin, authMode, u
         onSaved={reloadMyApiKeys}
       />
 
+      {/* The explicit "tested in the real app" gate before any new customer-facing
+          version is published — see handlePublishClone/handleTogglePublish above. */}
+      <PublishVersionDialog
+        open={!!pendingPublish}
+        tourName={pendingPublish?.name || ''}
+        language={pendingPublish?.language || ''}
+        loading={publishingVersion}
+        onConfirm={confirmPublishVersion}
+        onOpenChange={() => !publishingVersion && setPendingPublish(null)}
+      />
+
       {!apiKeysLoadedOk ? (
         // Don't know yet whether this person has both keys saved — avoid flashing the
         // real tour list/editor for a moment before potentially locking it right back up.
@@ -560,6 +637,8 @@ export default function BackendShell({ user, userRole, isSuperAdmin, authMode, u
           <DisputesManager isSuperAdmin={isSuperAdmin} narrAuth={narrAuth} />
         ) : view === 'translations' ? (
           <TranslationsManager authMode={authMode} user={user} />
+        ) : view === 'versions' && isAdmin ? (
+          <PublishedVersionsPanel callWalkFn={callWalkFn} />
         ) : view === 'updateAudio' && isAdmin ? (
           // Admin-only, same defense-in-depth pattern as the 'walks' guard just below —
           // the real boundary is final_audio_applied never being a narrator-settable
@@ -627,6 +706,7 @@ export default function BackendShell({ user, userRole, isSuperAdmin, authMode, u
             onManageDisputes={() => setView('disputes')}
             onManageTranslations={() => setView('translations')}
             onUpdateAudio={() => setView('updateAudio')}
+            onManageVersions={() => setView('versions')}
             onManageWalks={() => setView('walks')}
             onCloneTour={handleCloneTour}
             onPublishClone={handlePublishClone}

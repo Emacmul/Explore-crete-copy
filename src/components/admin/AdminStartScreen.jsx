@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import {
   Footprints, MapPin, Car, ChevronRight, Mic,
   LayoutDashboard, List, Users, Plus, AlertCircle, Volume2,
-  Languages, CheckCircle2, Send, AlertTriangle, AudioLines, Trash2, Loader2,
+  Languages, CheckCircle2, Send, AlertTriangle, AudioLines, Trash2, Loader2, History,
 } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { toast } from '@/components/ui/use-toast';
@@ -200,6 +200,7 @@ export default function AdminStartScreen({
   onManageDisputes,
   onManageTranslations,
   onUpdateAudio,
+  onManageVersions,
   unrestricted = false,
 }) {
   const isNarrator = userRole === 'narrator';
@@ -418,6 +419,10 @@ export default function AdminStartScreen({
           <Button variant="outline" onClick={onUpdateAudio} className="bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 gap-2 h-auto py-3 justify-start">
             <AudioLines className="w-5 h-5 text-amber-400 shrink-0" />
             <div className="text-left min-w-0 whitespace-normal"><p className="font-medium">Update Audio</p><p className="text-xs text-slate-400">Swap in final PCV narration before publishing</p></div>
+          </Button>
+          <Button variant="outline" onClick={onManageVersions} className="bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 gap-2 h-auto py-3 justify-start">
+            <History className="w-5 h-5 text-emerald-400 shrink-0" />
+            <div className="text-left min-w-0 whitespace-normal"><p className="font-medium">Published Versions</p><p className="text-xs text-slate-400">Live versions, rollback, withdraw</p></div>
           </Button>
         </div>
       </div>

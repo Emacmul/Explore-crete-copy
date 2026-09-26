@@ -10,23 +10,24 @@ import { isWalkPublic } from '../../shared/walkPublish.ts';
 
 // The walk catalogue, collapsed to one STABLE entry per tour (not per language).
 //
-// A translated tour is stored as its own Walk record (a "clone") pointing back to the
+// A translated tour is stored as its own Walk record (a "clone") pointing back at the
 // original via `clone_of`. But a customer buys the EXPERIENCE once — which narration
 // language plays is a preference, not a separate purchase — and their library and offline
 // downloads are one slot per tour, never one per language. So this function collapses every
 // tour family into a single record keyed by the ORIGINAL's id (the stable identity), filled
-// with whichever language record is "active" for this caller right now:
-//   1. a published clone (finished + approved) whose target_language matches the caller's
-//      narration preference, if one exists; otherwise
-//   2. the approved English original (only if it's currently published — a tour is never
-//      hidden just because its English version is paused for edits); otherwise
-//   3. every other published clone, alphabetically by language; otherwise
-//   4. nothing — the tour is dropped ONLY if genuinely nothing is published in any language.
-// The active record's CONTENT (name, narration, audio, route) is served; the original's
-// identity, price, checkout link and creem product id are attached, so entitlement is "do you
-// own the original of this family" and a language swap is a genuine replacement at the same
-// stable id (downloads overwrite into the same slot, they don't orphan a second copy beside
-// the first).
+// with whichever language record is "active" for this caller right now.
+//
+// PUBLISHED-VERSIONS CUTOVER (plan §3): for CUSTOMERS, the active record is now served per
+// (family, language) PAIR — the pair's ACTIVE PublishedTour snapshot first (the immutable
+// customer-facing version), with the legacy published Walk record as a per-pair fallback so
+// nothing goes dark if the migration misses a record. Priority across pairs: the caller's
+// narration preference, then English, then every other language alphabetically. A snapshot
+// is served with the version's publish time as `updated_date` (so a new version
+// auto-refreshes offline downloads) and the version id as `_active_id` (so a version change
+// replaces the offline copy in the same slot). The admin draft-preview path is deliberately
+// UNCHANGED: an admin is testing working records, so they keep seeing the live Walk records
+// (masters and clones, current edits included), badged as drafts — the snapshot machinery
+// only affects what customers are served.
 //
 // Protected content is withheld from non-entitled callers (the paywall-is-just-CSS fix):
 // teaser fields only for walks the caller doesn't own. The caller is identified from the
@@ -42,7 +43,7 @@ import { isWalkPublic } from '../../shared/walkPublish.ts';
 //
 // Admin draft preview (per Enda, follow-up 159): a tour like "Battle of the Rivers" needs
 // to be tested inside the REAL customer app — the actual listing, map, paywall unlock and
-// driving player — before it's published to everyone. Previously the only way to do that
+// driving player — before it is published to everyone. Previously the only way to do that
 // was to flip `approved` to true first, which means publishing it. Now, an admin caller
 // (AppUser.role 'admin' or 'super_admin' — same definition isAppAdmin/isSuperAdmin use
 // elsewhere) additionally sees every draft: an unapproved original, or a clone that isn't
@@ -161,23 +162,55 @@ export default async function(req) {
 
     const all = await base44.asServiceRole.entities.Walk.list('-created_date', 1000);
 
+    // ---- Active published versions, grouped per (family, language) pair ----
+    // One deterministic winner per pair (same total order as resolveActiveVersion in
+    // shared/publishedTours.ts: latest status_changed_at, then latest published_at, then
+    // id) — with more than one active row, every read deterministically serves the same
+    // version, and the anomaly is logged to DebugCatalogLog so it's visible, never silent.
+    const publishedRows = await base44.asServiceRole.entities.PublishedTour.list('-published_at', 1000);
+    const publishedActive = (Array.isArray(publishedRows) ? publishedRows : []).filter(v => v && v.status === 'active');
+    const versionsByFamily = new Map(); // familyId -> Map(language -> winning version)
+    const pairActiveCounts = new Map(); // "familyId||language" -> active row count
+    for (const v of publishedActive) {
+      const pairKey = `${v.family_id}||${v.language}`;
+      pairActiveCounts.set(pairKey, (pairActiveCounts.get(pairKey) || 0) + 1);
+      let byLang = versionsByFamily.get(v.family_id);
+      if (!byLang) { byLang = new Map(); versionsByFamily.set(v.family_id, byLang); }
+      const prev = byLang.get(v.language);
+      const t = (x) => new Date(x || 0).getTime();
+      const newer = !prev
+        || t(v.status_changed_at) > t(prev.status_changed_at)
+        || (t(v.status_changed_at) === t(prev.status_changed_at)
+          && (t(v.published_at) > t(prev.published_at)
+            || (t(v.published_at) === t(prev.published_at) && String(v.id).localeCompare(String(prev.id)) > 0)));
+      if (newer) byLang.set(v.language, v);
+    }
+    for (const [pairKey, count] of pairActiveCounts) {
+      if (count > 1) {
+        try {
+          await base44.asServiceRole.entities.DebugCatalogLog.create({
+            note: `PublishedTour anomaly: ${count} active versions for pair ${pairKey} — serving the latest status_changed_at (getWalkCatalog read).`,
+          });
+        } catch { /* logging must never break serving */ }
+      }
+    }
+
     const originals = all.filter(w => !w.clone_of);
     const clones = all.filter(w => !!w.clone_of);
     const originalsById = new Map(originals.map(o => [o.id, o]));
 
-    // A record reaches a customer when (one shared predicate — see walkPublish.ts, audit N2):
-    //  - original: isWalkPublic (explicitly approved === true)
-    //  - clone: finished === true AND public (only swap once finished + published)
-    // An admin additionally sees every draft (see the header comment above) — every original
-    // and every clone, regardless of approved/finished — so they can open and test it in the
-    // real app before it's published to anyone else.
+    // A legacy Walk record reaches a customer when (one shared predicate — see walkPublish.ts,
+    // audit N2): original: isWalkPublic (explicitly approved === true); clone: finished ===
+    // true AND public. An admin additionally sees every draft (see the header comment
+    // above) — every original and every clone, regardless of approved/finished — so they
+    // can open and test it in the real app before it's published to anyone.
     const approvedOriginals = isAdmin ? originals : originals.filter(w => isWalkPublic(w));
     const eligibleClones = isAdmin ? clones : clones.filter(w => w.finished === true && isWalkPublic(w));
 
-    // Group into families keyed by the original's id (the stable identity). `original` holds
-    // the APPROVED original only — null when the English source is paused for edits or gone —
-    // so a family can survive on its published clones alone. A tour never vanishes just
-    // because its English version is mid-edit while another language is live and published.
+    // Group into families keyed by the original's id (the stable identity). For customers,
+    // a family is also created for any family with an ACTIVE published version even when
+    // its Walk sources are currently unpublished — the snapshot, not the source's flag, is
+    // what decides a customer ever sees.
     const families = new Map(); // familyId -> { original, clones: [] }
     for (const o of approvedOriginals) families.set(o.id, { original: o, clones: [] });
     for (const c of eligibleClones) {
@@ -185,60 +218,125 @@ export default async function(req) {
       if (!families.has(fid)) families.set(fid, { original: null, clones: [] });
       families.get(fid).clones.push(c);
     }
+    if (!isAdmin) {
+      for (const fid of versionsByFamily.keys()) {
+        if (!families.has(fid)) families.set(fid, { original: null, clones: [] });
+      }
+    }
 
+    // Legacy-fallback visibility (plan §3): pairs still served from the legacy record
+    // rather than a snapshot — logged once per call so the transition is observable and
+    // the fallback can later be retired once DebugCatalogLog shows nobody needs it.
+    const legacyFallbackPairs = [];
     const walks = [];
     for (const [familyId, fam] of families) {
-      // Real priority list — never stop at the second step:
-      //   1. a published clone matching the caller's narration preference
-      //   2. the approved English original
-      //   3. every other published clone, alphabetically by language
-      //   4. give up ONLY if nothing is published in any language at all
-      const otherClones = [...fam.clones].sort((a, b) =>
-        (a.target_language || '').localeCompare(b.target_language || ''));
-      // Per Enda (2026-09-20): a narrator's English "clone" of an English tour is a second English
-      // version of the same tour, and it used to win over the master, so an admin testing the master
-      // was shown the old copy. For an ADMIN asking for English, the master (when it exists) now wins.
-      // Customers and every other language are unchanged.
-      const adminWantsMaster = isAdmin && fam.original && String(narrationLang).toLowerCase() === 'english';
-      const active =
-        (adminWantsMaster ? fam.original : null) ||
-        fam.clones.find(c => c.target_language === narrationLang) ||
-        fam.original ||
-        otherClones[0] ||
-        null;
-      if (!active) continue;
-
       const metaOriginal = originalsById.get(familyId) || null;
 
-      const out = { ...active };
+      let out;
+      let isDraftPreview = false;
+      let served = null; // customer path: { lang, kind, content, version }
+
+      if (isAdmin) {
+        // ---- Admin draft preview: UNCHANGED behaviour (see header) — working records,
+        // current edits included, drafts badged. Priority as before: a published clone
+        // matching the caller's narration preference, then the approved English original,
+        // then every other published clone alphabetically; for an ADMIN asking English the
+        // master wins (so an admin testing the master is never shown an old English clone).
+        const otherClones = [...fam.clones].sort((a, b) =>
+          (a.target_language || '').localeCompare(b.target_language || ''));
+        const adminWantsMaster = isAdmin && fam.original && String(narrationLang).toLowerCase() === 'english';
+        const active =
+          (adminWantsMaster ? fam.original : null) ||
+          fam.clones.find(c => c.target_language === narrationLang) ||
+          fam.original ||
+          otherClones[0] ||
+          null;
+        if (!active) continue;
+        out = { ...active };
+
+        // Would this exact active record have made it through the normal, non-admin gate
+        // above? If not, it's only here because the caller is an admin — mark it so the
+        // frontend can badge it clearly as a draft, not a real published tour.
+        const passesNormalGate = active.clone_of
+          ? (active.finished === true && isWalkPublic(active))
+          : isWalkPublic(active);
+        isDraftPreview = isAdmin && !passesNormalGate;
+
+        out._active_id = active.id;
+        out._active_lang = active.target_language || 'English';
+        out._available_langs = Array.from(new Set([
+          ...(fam.original ? ['English'] : []),
+          ...fam.clones.map(c => c.target_language).filter(Boolean),
+        ]));
+      } else {
+        // ---- Customer: per-(family, language) pair, snapshot first, legacy fallback ----
+        const snapshotLangs = versionsByFamily.get(familyId) || new Map();
+        // The legacy records that would be served today, per language: published clones
+        // newest-first (an English clone wins the English pair over the master, matching
+        // both the pre-cutover catalogue and the migration), else the approved original.
+        const legacyByLang = new Map();
+        const eligibleSorted = [...fam.clones].sort((a, b) =>
+          new Date(b.updated_date || 0).getTime() - new Date(a.updated_date || 0).getTime());
+        for (const c of eligibleSorted) {
+          const l = String(c.target_language || '').trim();
+          if (l && !legacyByLang.has(l)) legacyByLang.set(l, c);
+        }
+        if (fam.original && !legacyByLang.has('English')) legacyByLang.set('English', fam.original);
+
+        const langs = new Set([...snapshotLangs.keys(), ...legacyByLang.keys()]);
+        if (langs.size === 0) continue;
+        // Real priority list, same as before the cutover: the caller's narration
+        // preference, then English, then every other available language alphabetically —
+        // give up ONLY if nothing is published in any language at all.
+        const order = [];
+        for (const l of [narrationLang, 'English', ...[...langs].sort((a, b) => a.localeCompare(b))]) {
+          if (!order.includes(l)) order.push(l);
+        }
+        for (const l of order) {
+          const version = snapshotLangs.get(l);
+          if (version) { served = { lang: l, kind: 'published', content: version.content || {}, version }; break; }
+          const legacy = legacyByLang.get(l);
+          if (legacy) { served = { lang: l, kind: 'legacy', content: legacy, version: null }; break; }
+        }
+        if (!served) continue;
+        if (served.kind === 'legacy') {
+          legacyFallbackPairs.push(`${metaOriginal ? (metaOriginal.code || familyId) : familyId}/${served.lang}`);
+        }
+
+        out = { ...served.content };
+        out._active_lang = served.lang;
+        if (served.kind === 'published') {
+          // A published version is live by definition, whatever its source record's flags
+          // say now (the source may have been edited or unpublished since) — this is what
+          // keeps Home's listing filter and the frontend badges correct for customers.
+          out.approved = true;
+          // A new version auto-refreshes offline downloads: updated_date is the version's
+          // publish time, and _active_id the version id, so an offline copy made from v1 is
+          // replaced in the same slot the moment v2 is served (see offlineStorage.jsx's
+          // marker-swap check).
+          out.updated_date = served.version.published_at || served.version.status_changed_at || null;
+          out._active_id = served.version.id;
+        } else {
+          out._active_id = served.content.id;
+        }
+        out._available_langs = [...langs].sort((a, b) => a.localeCompare(b));
+      }
+
       // Stable identity: the catalog record's id IS the original's id, so the library, the
       // offline downloads and the "is it downloaded" check all key on a value that never
       // changes when the active language record swaps. The active record's own id is kept
       // aside in _active_id.
       out.id = familyId;
       out._family_id = familyId;
-      out._active_id = active.id;
-      out._active_lang = active.target_language || 'English';
-      out._available_langs = Array.from(new Set([
-        ...(fam.original ? ['English'] : []),
-        ...fam.clones.map(c => c.target_language).filter(Boolean),
-      ]));
+      out._is_draft_preview = isDraftPreview;
 
       // Pricing, checkout and product id belong to the ORIGINAL — a clone is never a separate
-      // sellable product (point 1: one purchase per tour, not per language).
-      out.creem_product_id = metaOriginal?.creem_product_id ?? active.creem_product_id ?? null;
-      out.price_eur = metaOriginal?.price_eur ?? active.price_eur;
-      out.checkout_url = metaOriginal?.checkout_url ?? active.checkout_url;
-      out.is_sample_walk = metaOriginal?.is_sample_walk ?? active.is_sample_walk ?? false;
-
-      // Would this exact active record have made it through the normal, non-admin gate
-      // above? If not, it's only here because the caller is an admin — mark it so the
-      // frontend can badge it clearly as a draft, not a real published tour.
-      const passesNormalGate = active.clone_of
-        ? (active.finished === true && isWalkPublic(active))
-        : isWalkPublic(active);
-      const isDraftPreview = isAdmin && !passesNormalGate;
-      out._is_draft_preview = isDraftPreview;
+      // sellable product (point 1: one purchase per tour, not per language), and commerce is
+      // always read live so a price change needs no republish.
+      out.creem_product_id = metaOriginal?.creem_product_id ?? out.creem_product_id ?? null;
+      out.price_eur = metaOriginal?.price_eur ?? out.price_eur;
+      out.checkout_url = metaOriginal?.checkout_url ?? out.checkout_url;
+      out.is_sample_walk = metaOriginal?.is_sample_walk ?? out.is_sample_walk ?? false;
 
       // Per Enda (follow-up 180): the map "icon"/marker for a walk must sit at WP1 (the
       // walk's own first waypoint), not at the free-typed/auto-derived start_lat/start_lng.
@@ -274,6 +372,14 @@ export default async function(req) {
       }
       out._accessible = accessible;
       walks.push(out);
+    }
+
+    if (!isAdmin && legacyFallbackPairs.length > 0) {
+      try {
+        await base44.asServiceRole.entities.DebugCatalogLog.create({
+          note: `Legacy fallback serving (no active published version): ${legacyFallbackPairs.join(', ')}`,
+        });
+      } catch { /* logging must never break serving */ }
     }
 
     return Response.json({ walks });

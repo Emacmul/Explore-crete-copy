@@ -3,6 +3,7 @@ import { verifyEmailFromToken } from "../../shared/wpToken.ts";
 import { isSessionRevoked } from "../../shared/deviceAuth.ts";
 import { isWalkPublic } from "../../shared/walkPublish.ts";
 import { DEFAULT_SAFETY_NOTES } from "../../shared/defaultSafetyNotes.ts";
+import { resolveServingVersion } from "../../shared/publishedTours.ts";
 
 // Per Enda (follow-up 184): "Before You Set Off" (safety_notes) is exactly the kind of
 // thing people scroll past without reading — until something goes wrong, and then the
@@ -75,17 +76,28 @@ export default async function (req: Request): Promise<Response> {
     // so there is nothing genuine to confirm and the request is rejected.
     const clones = await svc.entities.Walk.filter({ clone_of: original.id });
     const lang = String(active_lang || 'English');
-    const eligible = (Array.isArray(clones) ? clones : []).filter((c: any) => c && c.finished === true && isWalkPublic(c));
-    const otherPublished = [...eligible].sort((a: any, b: any) =>
-      String(a.target_language || '').localeCompare(String(b.target_language || '')));
-    const active =
-      eligible.find((c: any) => c.target_language === lang) ||
-      (isWalkPublic(original) ? original : null) ||
-      otherPublished[0] ||
-      null;
-    if (!active) {
+    // Published-versions cutover: resolve what the catalogue would actually have SERVED
+    // this caller, per (family, language) pair — the pair's ACTIVE PublishedTour snapshot
+    // first (content straight from the immutable version), the legacy published Walk
+    // record as the fallback — walking the same language priority getWalkCatalog uses:
+    // the caller's language, then English, then every other published language
+    // alphabetically. Nothing resolvable at all -> this tour was never shown to any
+    // customer in any language, so there is nothing genuine to confirm.
+    const family = { original, clones: Array.isArray(clones) ? clones : [] };
+    const eligibleLangs = family.clones
+      .filter((c: any) => c && c.finished === true && isWalkPublic(c) && c.target_language)
+      .map((c: any) => String(c.target_language))
+      .sort((a: any, b: any) => a.localeCompare(b));
+    const candidateLangs = [...new Set([lang, 'English', ...eligibleLangs])];
+    let serving: any = null;
+    for (const candidate of candidateLangs) {
+      const res = await resolveServingVersion(svc, original.id, family, candidate);
+      if (res.kind !== 'none') { serving = { ...res, lang: candidate }; break; }
+    }
+    if (!serving) {
       return Response.json({ error: "This tour is not published in that language." }, { status: 400 });
     }
+    const active = serving.kind === 'published' ? (serving.version.content || {}) : serving.walk;
 
     await svc.entities.SafetyConfirmation.create({
       buyer_email: email,

@@ -1,6 +1,7 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.38';
 import { isTokenGenuine } from '../../shared/wpToken.ts';
 import { isSessionRevoked } from '../../shared/deviceAuth.ts';
+import { isWalkPublic } from '../../shared/walkPublish.ts';
 
 Deno.serve(async (req) => {
   try {
@@ -70,43 +71,113 @@ Deno.serve(async (req) => {
     const ownedProductIds = new Set(eligiblePurchases.map(p => p.creem_product_id).filter(Boolean));
     const ownedWalkIds = new Set(eligiblePurchases.map(p => p.walk_id).filter(Boolean));
 
-    // --- Fetch all walks and determine which ones the user owns ---
-    // Service role: no Base44 user session exists (auth is via WordPress JWT)
-    const allWalks = await base44.asServiceRole.entities.Walk.list('-created_date', 200);
+    // --- Fetch all walks, group into families, and determine what this account owns ---
+    // Service role: no Base44 user session exists (auth is via WordPress JWT).
+    //
+    // PUBLISHED-VERSIONS CUTOVER: a family reaches this account's library when it is
+    // owned (a non-revoked Purchase on the family's product id, or a free sample) AND
+    // customer-visible in at least one language — per (family, language) pair: the
+    // pair's ACTIVE PublishedTour snapshot first, the legacy published Walk record
+    // (approved original / finished+approved clone) as the fallback, mirroring
+    // getWalkCatalog exactly. The teaser fields come from the pair the catalogue would
+    // serve (English preference, then alphabetical), so the library never advertises a
+    // version customers can't actually open. Output shape is unchanged for the client.
+    const allWalks = await base44.asServiceRole.entities.Walk.list('-created_date', 1000);
 
-    // Owned walks = walks this account holds an eligible Purchase for, plus free samples.
-    // Published walks ONLY, mirroring the customer catalogue's rule exactly (2026-09-24
-    // security review, "draft metadata" + "publication gate" findings): `approved` must
-    // be genuinely true — a missing/null value is a draft, not the "default published"
-    // reading the earlier `approved !== false` gave it — and a translation clone must
-    // also be finished, so an unfinished clone of a purchased/sample tour can't leak its
-    // name/description through the library. Admins preview drafts through their own
-    // gated paths, never here.
-    const isPublished = (w) => w.approved === true && (!w.clone_of || w.finished === true);
-    const isPurchased = (w) => ownedProductIds.has(w.creem_product_id) || ownedWalkIds.has(w.id);
-    const ownedWalks = allWalks.filter(w => isPublished(w) && (w.is_sample_walk || isPurchased(w)));
+    const originals = allWalks.filter(w => !w.clone_of);
+    const clones = allWalks.filter(w => !!w.clone_of);
+    const originalsById = new Map(originals.map(o => [o.id, o]));
 
-    const purchasedCodes = allWalks
-      .filter(w => w.code && isPublished(w) && isPurchased(w))
-      .map(w => w.code);
+    // Active published versions grouped per (family, language) pair — same deterministic
+    // winner rule as getWalkCatalog / resolveActiveVersion (latest status_changed_at,
+    // then published_at, then id).
+    const publishedRows = await base44.asServiceRole.entities.PublishedTour.list('-published_at', 1000);
+    const publishedActive = (Array.isArray(publishedRows) ? publishedRows : []).filter(v => v && v.status === 'active');
+    const versionsByFamily = new Map(); // familyId -> Map(language -> winning version)
+    for (const v of publishedActive) {
+      let byLang = versionsByFamily.get(v.family_id);
+      if (!byLang) { byLang = new Map(); versionsByFamily.set(v.family_id, byLang); }
+      const prev = byLang.get(v.language);
+      const t = (x) => new Date(x || 0).getTime();
+      const newer = !prev
+        || t(v.status_changed_at) > t(prev.status_changed_at)
+        || (t(v.status_changed_at) === t(prev.status_changed_at)
+          && (t(v.published_at) > t(prev.published_at)
+            || (t(v.published_at) === t(prev.published_at) && String(v.id).localeCompare(String(prev.id)) > 0)));
+      if (newer) byLang.set(v.language, v);
+    }
+
+    // Families: every original, plus families that only exist through clones or versions.
+    const families = new Map(); // familyId -> { original, clones }
+    for (const o of originals) families.set(o.id, { original: o, clones: [] });
+    for (const c of clones) {
+      if (!families.has(c.clone_of)) families.set(c.clone_of, { original: null, clones: [] });
+      families.get(c.clone_of).clones.push(c);
+    }
+    for (const fid of versionsByFamily.keys()) {
+      if (!families.has(fid)) families.set(fid, { original: null, clones: [] });
+    }
+
+    const ownedWalks = [];
+    const purchasedCodes = [];
+
+    for (const [familyId, fam] of families) {
+      const master = originalsById.get(familyId) || fam.original || null;
+      const ownedByPurchase = !!(master?.creem_product_id && ownedProductIds.has(master.creem_product_id))
+        || ownedWalkIds.has(familyId);
+      const isSample = master?.is_sample_walk === true;
+      if (!isSample && !ownedByPurchase) continue;
+
+      // Languages this family is customer-visible in, and the record to serve teasers
+      // from: snapshot first, legacy fallback — English preference, then alphabetical,
+      // exactly the catalogue's default priority.
+      const snapshotLangs = versionsByFamily.get(familyId) || new Map();
+      const legacyByLang = new Map();
+      const eligibleSorted = [...fam.clones]
+        .filter(c => c.finished === true && isWalkPublic(c))
+        .sort((a, b) => new Date(b.updated_date || 0).getTime() - new Date(a.updated_date || 0).getTime());
+      for (const c of eligibleSorted) {
+        const l = String(c.target_language || '').trim();
+        if (l && !legacyByLang.has(l)) legacyByLang.set(l, c);
+      }
+      if (fam.original && isWalkPublic(fam.original) && !legacyByLang.has('English')) {
+        legacyByLang.set('English', fam.original);
+      }
+
+      const langs = new Set([...snapshotLangs.keys(), ...legacyByLang.keys()]);
+      if (langs.size === 0) continue; // owned, but nothing published in any language yet
+
+      let served = null;
+      for (const l of ['English', ...[...langs].sort((a, b) => a.localeCompare(b))]) {
+        const version = snapshotLangs.get(l);
+        if (version) { served = version.content || {}; break; }
+        const legacy = legacyByLang.get(l);
+        if (legacy) { served = legacy; break; }
+      }
+      if (!served) continue;
+
+      const code = master?.code || served.code || '';
+      ownedWalks.push({
+        id: familyId,
+        code,
+        name: served.name,
+        description: served.description,
+        tour_category: served.tour_category,
+        difficulty: served.difficulty,
+        distance_km: served.distance_km,
+        duration_hours: served.duration_hours,
+        image_url: served.image_url,
+        is_sample_walk: isSample,
+        region: served.region
+      });
+      if (code && ownedByPurchase) purchasedCodes.push(code);
+    }
 
     return Response.json({
       owned_codes: purchasedCodes,
       owned_sku_count: ownedProductIds.size,
       walk_count: ownedWalks.length,
-      walks: ownedWalks.map(w => ({
-        id: w.id,
-        code: w.code,
-        name: w.name,
-        description: w.description,
-        tour_category: w.tour_category,
-        difficulty: w.difficulty,
-        distance_km: w.distance_km,
-        duration_hours: w.duration_hours,
-        image_url: w.image_url,
-        is_sample_walk: w.is_sample_walk || false,
-        region: w.region
-      })),
+      walks: ownedWalks,
       user: {
         id: wpUserId ?? null,
         email: wpUserEmail ?? gateEmail ?? null

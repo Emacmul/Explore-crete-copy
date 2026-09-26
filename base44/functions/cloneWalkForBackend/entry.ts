@@ -106,11 +106,21 @@ export default async function(req) {
       }
     }
 
-    const alreadyPublished = allClonesOfThis.some(
-      (w: any) => w.finished && w.approved && (w.target_language || '').toLowerCase() === lang.toLowerCase()
+    // Published-versions cutover: this language already has a customer-facing version when
+    // EITHER an ACTIVE PublishedTour exists for the (family, language) pair (the new
+    // source of truth — the source Walk record's flags are irrelevant to customers now) OR
+    // a legacy finished+approved clone does (the pre-cutover signal, kept so nothing that
+    // was live before the cutover becomes cloneable again).
+    const pairVersions = await base44.asServiceRole.entities.PublishedTour.filter({ family_id: original.id });
+    const langLower = lang.toLowerCase();
+    const hasActiveVersion = (Array.isArray(pairVersions) ? pairVersions : []).some(
+      (v: any) => v.status === 'active' && String(v.language || '').toLowerCase() === langLower,
     );
-    if (alreadyPublished) {
-      return Response.json({ error: `A finished, published ${lang} version already exists for this tour.` }, { status: 409 });
+    const hasLegacyPublished = allClonesOfThis.some(
+      (w: any) => w.finished && w.approved && (w.target_language || '').toLowerCase() === langLower,
+    );
+    if (hasActiveVersion || hasLegacyPublished) {
+      return Response.json({ error: `A published ${lang} version already exists for this tour.` }, { status: 409 });
     }
 
     const clone = {
