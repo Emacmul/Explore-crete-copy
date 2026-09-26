@@ -13,6 +13,7 @@ import NarrationTtsEditor from './NarrationTtsEditor';
 import { toast } from '@/components/ui/use-toast';
 import { useNarratorApiKeys, getNarratorAuthPayload } from '@/lib/useNarratorApiKeys';
 import { translateWalkField, stillMatchesMaster } from '@/lib/fieldTranslation';
+import { testSpanStartDist, testSpanEndDist } from '@/lib/simulatorSpans';
 
 const ROLE_LABEL = { primary_start: 'Start', primary_stop: 'Stop', secondary: 'Point' };
 
@@ -379,6 +380,12 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   const intervalRef = useRef(null);
   const distRef = useRef(0);
   const prevPosRef = useRef(trailPath[0] || null);
+  // Heading anchor: the position the car's current heading was last computed FROM.
+  // Movement accumulates against it ACROSS ticks (see the heading block inside
+  // tickRef.current for the low-speed heading freeze that closes), and it's reset
+  // to the car's position alongside prevPosRef at every jump/reset/stop so a
+  // teleport can never produce a bogus cross-jump heading.
+  const lastHeadingPosRef = useRef(trailPath[0] || null);
   const triggeredRef = useRef({});
   // Per Enda's report (2026-09-19): dragging a waypoint's trigger-radius handle on the
   // map (or any other field edit) zoomed the map back out to the whole location,
@@ -495,174 +502,11 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     return cumDist;
   };
 
-  // Nearest trailPath index to a given lat/lng — the same "closest point on the route"
-  // search cumDistForWaypoint (above) already does, factored out here so
-  // testSpanStartDist/testSpanEndDist (below) can walk a SPECIFIC forward stretch of the
-  // route between two waypoints, not just land on one point's own cumulative distance.
-  const nearestPathIndex = (point) => {
-    let nearestIdx = 0, minD = Infinity;
-    trailPath.forEach((pt, i) => {
-      const d = haversine(point.lat, point.lng, pt.lat, pt.lng);
-      if (d < minD) { minD = d; nearestIdx = i; }
-    });
-    return nearestIdx;
-  };
-
-  // Cumulative distance (same coordinate system as distRef/posAtDistance — respects
-  // trail_breaks cuts) from the very start of the path up to a given trailPath index.
-  // Same summation cumDistForWaypoint (above) already does for its own nearest index,
-  // pulled out here so it can be reused at an ARBITRARY index, not just a waypoint's own.
-  const cumDistAtPathIndex = (idx) => {
-    let cumDist = 0;
-    for (let i = 1; i <= idx; i++) {
-      if (breakSet.has(i - 1)) continue;
-      cumDist += haversine(trailPath[i - 1].lat, trailPath[i - 1].lng, trailPath[i].lat, trailPath[i].lng);
-    }
-    return cumDist;
-  };
-
-  // Interpolates the cumulative distance where distance-to-target crosses `radius`,
-  // between trailPath index i-1 (dBefore) and i (dAfter) — a straight-line
-  // approximation across that one short segment, the same precision level the rest of
-  // this file's own geometry already uses (it never does true circle/line intersection
-  // maths either). Works the same whether crossing INTO the radius (dBefore > radius >
-  // dAfter) or OUT of it (dBefore < radius < dAfter). Shared by testSpanStartDist and
-  // testSpanEndDist below — both are the same "where does distance-to-a-fixed-point
-  // cross a threshold" calculation, just applied to different waypoint pairs.
-  const interpolateCrossing = (i, dBefore, dAfter, radius) => {
-    const segLen = haversine(trailPath[i - 1].lat, trailPath[i - 1].lng, trailPath[i].lat, trailPath[i].lng);
-    if (segLen <= 0 || dBefore === dAfter) return cumDistAtPathIndex(i - 1);
-    const t = Math.min(1, Math.max(0, (dBefore - radius) / (dBefore - dAfter)));
-    return cumDistAtPathIndex(i - 1) + t * segLen;
-  };
-
-  // Per Enda's report while testing BOR1: "Test this subsegment" used to start the car
-  // parked exactly ON the first waypoint being tested's own pin — not a real approach at
-  // all, so it never actually showed whether this waypoint's own trigger point was
-  // right. It now starts from where the route genuinely ENTERS curWp's own trigger
-  // radius, coming from the PREVIOUS waypoint (prevWp, the one right before whichever
-  // waypoint the test actually starts at) — UNLESS prevWp's own trigger radius overlaps
-  // into curWp's (the two circles overlap along the route), in which case it starts
-  // where prevWp's own radius ends instead: a real customer is still "inside" prevWp's
-  // own zone up to that moment, so curWp's own audio wouldn't realistically be the one
-  // under test yet before that.
-  //
-  // Per Enda's later correction: this is NOT limited to single-waypoint tests. For "Test
-  // 2/3 in a row", curWp here is the FIRST waypoint of whichever 1/2/3 are being tested
-  // (see onTestSubsegment below) — the whole point of testing several in a row is
-  // hearing the real drive through them, so the very first one's own approach needs to
-  // be just as real as a single-waypoint test's.
-  //
-  // Falls back to curWp's own exact position (cumDistForWaypoint — today's original
-  // behaviour) whenever the geometry can't be trusted: no previous waypoint, either
-  // waypoint missing lat/lng, the two waypoints are out of order along the route (a
-  // data problem, not something to paper over here), or the route never actually comes
-  // within curWp's own configured trigger radius at all between the two waypoints (a
-  // sign the radius/position may be worth checking, not something to silently search
-  // further afield for).
-  const testSpanStartDist = (prevWp, curWp) => {
-    const fallback = () => cumDistForWaypoint(curWp);
-    if (!prevWp?.lat || !prevWp?.lng || !curWp?.lat || !curWp?.lng) return fallback();
-
-    const prevIdx = nearestPathIndex(prevWp);
-    const curIdx = nearestPathIndex(curWp);
-    if (curIdx <= prevIdx) return fallback();
-
-    const curRadius = Number(curWp.trigger_radius_m) || 30;
-    const prevRadius = Number(prevWp.trigger_radius_m) || 30;
-
-    let dCurLast = haversine(trailPath[prevIdx].lat, trailPath[prevIdx].lng, curWp.lat, curWp.lng);
-    let dPrevLast = haversine(trailPath[prevIdx].lat, trailPath[prevIdx].lng, prevWp.lat, prevWp.lng);
-    let entryDist = dCurLast <= curRadius ? cumDistAtPathIndex(prevIdx) : null;
-    let wasInsidePrev = dPrevLast <= prevRadius;
-    let prevExitDist = null;
-
-    // Walks forward from prevIdx. Must NOT stop exactly at curIdx (curWp's own pin) —
-    // prevWp's radius can still be overlapping curWp's radius PAST curWp's own pin
-    // position (e.g. prevWp radius 60m reaches further than curWp's pin is from prevWp),
-    // and that exit point is still a valid, in-radius start point per Enda's report as
-    // long as it's within curWp's own radius. So keep walking until we're both at/past
-    // curIdx AND outside curWp's own radius — i.e. curWp's own radius has been fully
-    // covered — before stopping.
-    for (let i = prevIdx + 1; i < trailPath.length; i++) {
-      const dCur = haversine(trailPath[i].lat, trailPath[i].lng, curWp.lat, curWp.lng);
-      const dPrev = haversine(trailPath[i].lat, trailPath[i].lng, prevWp.lat, prevWp.lng);
-      const isInsidePrev = dPrev <= prevRadius;
-
-      if (entryDist === null && dCur <= curRadius) {
-        entryDist = interpolateCrossing(i, dCurLast, dCur, curRadius);
-      }
-      if (wasInsidePrev && !isInsidePrev) {
-        // Just crossed OUT of the previous waypoint's own radius — its exit point.
-        // Keeps overwriting on every such crossing, so a winding road that re-enters
-        // and exits more than once still ends up with the LAST genuine exit.
-        prevExitDist = interpolateCrossing(i, dPrevLast, dPrev, prevRadius);
-      } else if (isInsidePrev) {
-        // Re-entered (or never left) — no exit has actually happened yet.
-        prevExitDist = null;
-      }
-
-      dCurLast = dCur;
-      dPrevLast = dPrev;
-      wasInsidePrev = isInsidePrev;
-
-      if (i >= curIdx && dCur > curRadius) break;
-    }
-
-    if (entryDist === null) return fallback();
-    // Overlap case: the route enters curWp's own radius while still inside prevWp's —
-    // start at prevWp's own exit point instead (it's further along than entryDist).
-    if (prevExitDist !== null && prevExitDist > entryDist) return prevExitDist;
-    return entryDist;
-  };
-
-  // Per Anoushka (relayed by Enda): the STOP point needs the same real-world grounding
-  // as the start point already got. It used to drive all the way to the boundary
-  // waypoint's own exact pin before pausing — but a real customer's audio for curWp
-  // actually stops mattering the moment the car enters the NEXT waypoint's own trigger
-  // radius, since that's when the next point's own audio could fire. That gap — from
-  // where curWp's audio starts, to where nextWp's radius begins — is the real usable
-  // "space" for curWp's speech, and testing all the way to nextWp's pin was giving a
-  // falsely generous window.
-  //
-  // Per Enda's later correction: this is NOT limited to single-waypoint tests. For "Test
-  // 2/3 in a row", curWp here is the LAST waypoint of whichever 1/2/3 are being tested,
-  // and nextWp is the very next one after that whole run (see onTestSubsegment below) —
-  // obviously so, per Enda: otherwise the multi-waypoint test wouldn't reflect the real
-  // usable space either.
-  //
-  // Falls back to nextWp's own exact position (cumDistForWaypoint — today's original
-  // behaviour) whenever the geometry can't be trusted: either waypoint missing lat/lng,
-  // the two waypoints out of order along the route, or the route never actually comes
-  // within nextWp's own configured trigger radius between the two — same fallback
-  // philosophy as testSpanStartDist above.
-  const testSpanEndDist = (curWp, nextWp) => {
-    const fallback = () => cumDistForWaypoint(nextWp);
-    if (!curWp?.lat || !curWp?.lng || !nextWp?.lat || !nextWp?.lng) return fallback();
-
-    const curIdx = nearestPathIndex(curWp);
-    const nextIdx = nearestPathIndex(nextWp);
-    if (nextIdx <= curIdx) return fallback();
-
-    const nextRadius = Number(nextWp.trigger_radius_m) || 30;
-
-    let dNextLast = haversine(trailPath[curIdx].lat, trailPath[curIdx].lng, nextWp.lat, nextWp.lng);
-    let endDist = dNextLast <= nextRadius ? cumDistAtPathIndex(curIdx) : null;
-
-    // Entry into nextWp's own radius must happen by nextIdx at the latest (distance to
-    // nextWp is exactly 0 there), so — unlike the start-side search above — there's no
-    // need to walk any further than that.
-    for (let i = curIdx + 1; i <= nextIdx; i++) {
-      const dNext = haversine(trailPath[i].lat, trailPath[i].lng, nextWp.lat, nextWp.lng);
-      if (endDist === null && dNext <= nextRadius) {
-        endDist = interpolateCrossing(i, dNextLast, dNext, nextRadius);
-      }
-      dNextLast = dNext;
-    }
-
-    if (endDist === null) return fallback();
-    return endDist;
-  };
+  // nearestPathIndex / cumDistAtPathIndex / interpolateCrossing and the two "real
+  // usable window" calculators testSpanStartDist / testSpanEndDist now live in
+  // @/lib/simulatorSpans.js — extracted 2026-09-26 so this file stays under the
+  // platform's editable size limit. Behaviour is unchanged; the call sites below
+  // pass trailPath/breakSet and the fallback cumulative distance explicitly.
 
   // Per Enda's request: right where a narrator sees their last saved audio for a
   // waypoint, they also need to see how well that audio's real length matches the real
@@ -675,8 +519,8 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // naive pin-to-pin distance, which would ignore trigger radius overlap entirely.
   const prevWpForPace = waypoints[selectedWpIndex - 1] || null;
   const nextWpForPace = waypoints[selectedWpIndex + 1] || null;
-  const paceWindowStartDist = selectedWp ? testSpanStartDist(prevWpForPace, selectedWp) : null;
-  const paceWindowEndDist = (selectedWp && nextWpForPace) ? testSpanEndDist(selectedWp, nextWpForPace) : null;
+  const paceWindowStartDist = selectedWp ? testSpanStartDist(trailPath, breakSet, prevWpForPace, selectedWp, cumDistForWaypoint(selectedWp)) : null;
+  const paceWindowEndDist = (selectedWp && nextWpForPace) ? testSpanEndDist(trailPath, breakSet, selectedWp, nextWpForPace, cumDistForWaypoint(nextWpForPace)) : null;
   // null (rather than 0) whenever there's no next waypoint to measure against — this is
   // the last waypoint in the tour, so "available time" genuinely doesn't apply, and the
   // display below must say so rather than showing a false zero.
@@ -1009,7 +853,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     if (audioRef.current) audioRef.current.pause();
     audioPausedRef.current = false;
     const startPos = trailPath[0];
-    if (startPos) { setCurrentPos(startPos); prevPosRef.current = startPos; }
+    if (startPos) { setCurrentPos(startPos); prevPosRef.current = startPos; lastHeadingPosRef.current = startPos; }
   };
 
   // Jump the simulation straight to any single waypoint — not just a location's own
@@ -1094,7 +938,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     // misleading "Resume", until playback (below, or manually) actually happens.
     setHasPlayed(false);
     setAudioError(null);
-    if (newPos) { setCurrentPos(newPos); prevPosRef.current = newPos; }
+    if (newPos) { setCurrentPos(newPos); prevPosRef.current = newPos; lastHeadingPosRef.current = newPos; }
     lastJumpRef.current = { targetIndex, scopeToThisWaypoint, hasOverride: !!audioOverrideUrl, audioOverrideIndex, locationSpan, waypointSpan, startDistOverride, endDistOverride };
     return true;
   };
@@ -1433,7 +1277,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
       distRef.current = pathData.total;
       setDistTraveled(pathData.total);
       const endPos = trailPath[trailPath.length - 1];
-      if (endPos) { setCurrentPos(endPos); prevPosRef.current = endPos; }
+      if (endPos) { setCurrentPos(endPos); prevPosRef.current = endPos; lastHeadingPosRef.current = endPos; }
       setIsPlaying(false);
       if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
       setTourComplete(true);
@@ -1448,7 +1292,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
       distRef.current = segBoundary;
       setDistTraveled(segBoundary);
       const boundaryPos = posAtDistance(pathData.segments, pathData.total, segBoundary);
-      if (boundaryPos) { setCurrentPos(boundaryPos); prevPosRef.current = boundaryPos; }
+      if (boundaryPos) { setCurrentPos(boundaryPos); prevPosRef.current = boundaryPos; lastHeadingPosRef.current = boundaryPos; }
       setIsPlaying(false);
       if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
       setTourComplete(true);
@@ -1544,12 +1388,29 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
       });
     }
 
-    // Update heading when the car has moved meaningfully
-    if (prevPosRef.current) {
-      const moveDist = haversine(prevPosRef.current.lat, prevPosRef.current.lng, newPos.lat, newPos.lng);
+    // Update heading once the car has moved meaningfully. Per Enda's report (Battle of
+    // the Rivers, 2026-09-26): this used to measure the movement of a SINGLE tick
+    // (previous tick → now) against a 1 m threshold — but at driving speeds below
+    // 36 km/h the car covers less than 1 m per 100 ms tick (BOR5h's 20 km/h = 0.56 m,
+    // BOR6's 30 km/h = 0.83 m), so the moment the run entered a slower speed zone at
+    // the end of location 5, currentBearing simply stopped updating: the car kept the
+    // heading it entered the zone with and visibly slid sideways along the curving
+    // road. The reference point is now the position the heading was last computed
+    // FROM (lastHeadingPosRef), so however slowly the car moves, its movement
+    // accumulates across consecutive ticks until it passes the same 1 m "meaningful"
+    // bar — the car keeps rotating to follow the road at ANY speed. A genuinely
+    // stationary car (the opening parked welcome point, which never reaches this
+    // line while parked anyway) still never rotates: no movement ever accumulates
+    // against the anchor.
+    if (lastHeadingPosRef.current) {
+      const anchor = lastHeadingPosRef.current;
+      const moveDist = haversine(anchor.lat, anchor.lng, newPos.lat, newPos.lng);
       if (moveDist > 1) {
-        setCurrentBearing(calculateBearing(prevPosRef.current.lat, prevPosRef.current.lng, newPos.lat, newPos.lng));
+        setCurrentBearing(calculateBearing(anchor.lat, anchor.lng, newPos.lat, newPos.lng));
+        lastHeadingPosRef.current = newPos;
       }
+    } else {
+      lastHeadingPosRef.current = newPos;
     }
 
     distRef.current = newDist;
@@ -1581,7 +1442,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
         triggeredRef.current = {};
         passedSegmentsRef.current = new Set();
         const startPos = trailPath[0];
-        if (startPos) { setCurrentPos(startPos); prevPosRef.current = startPos; }
+        if (startPos) { setCurrentPos(startPos); prevPosRef.current = startPos; lastHeadingPosRef.current = startPos; }
         setDistTraveled(0);
         setSimTime(0);
         setTriggered({});
@@ -2227,9 +2088,9 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                       // next waypoint after the whole run, instead of driving all the
                       // way to that waypoint's own pin (see testSpanStartDist and
                       // testSpanEndDist above for the full reasoning).
-                      const startDistOverride = testSpanStartDist(waypoints[startIndex - 1], waypoints[startIndex]);
+                      const startDistOverride = testSpanStartDist(trailPath, breakSet, waypoints[startIndex - 1], waypoints[startIndex], cumDistForWaypoint(waypoints[startIndex]));
                       const nextWp = waypoints[selectedWpIndex + 1];
-                      const rawEndDistOverride = nextWp ? testSpanEndDist(waypoints[selectedWpIndex], nextWp) : null;
+                      const rawEndDistOverride = nextWp ? testSpanEndDist(trailPath, breakSet, waypoints[selectedWpIndex], nextWp, cumDistForWaypoint(nextWp)) : null;
                       // Sanity guard: if the next waypoint's own radius is large enough
                       // to reach all the way back past where this run actually starts,
                       // the "real usable space" would come out zero or negative — fall
