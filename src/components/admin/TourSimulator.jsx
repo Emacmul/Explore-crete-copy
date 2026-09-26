@@ -68,7 +68,7 @@ function fmtTime(ms) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
-export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, onSave, saving, onAutoSave, isNarrator, titleEditor, onDepositoryEntry, allWalks = [] }) {
+export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, onSave, saving, onAutoSave, isNarrator, titleEditor, onDepositoryEntry, allWalks = [], jumpRequestIndex = null, onJumpRequestHandled }) {
   const trailPath = form.trail_path || [];
   // Filtering out waypoints with no usable lat/lng means every index used inside this
   // component (selectedWpIndex, the map's per-marker index, jumpToWaypoint's

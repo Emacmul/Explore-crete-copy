@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   Plus, Trash2, ChevronDown, ChevronUp, Info, Loader2,
   Upload, FileCheck, Save, Flag, Square, Circle, GripVertical, Compass,
-  ImagePlus, X, Lock, CheckCircle2,
+  ImagePlus, X, Lock, CheckCircle2, AudioLines,
 } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { getRoleColour, getRoleLabel, buildSegmentId, uniqueWaypointSegmentId, generateWaypointUid, waypointDepositoryKey } from '@/lib/routeExport';
@@ -261,7 +261,7 @@ const routeWaypoints = async (points) => {
   return res.data.trail;
 };
 
-export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCode, tourCategory, onSave, saving, onAutoSave, userRole = 'admin', focusWaypointIndex, onTrailPathChange, defaultDrivingSpeedKmh, targetLanguage, walkId, importFiles = [], onImportFilesChange }) {
+export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCode, tourCategory, onSave, saving, onAutoSave, userRole = 'admin', focusWaypointIndex, onTrailPathChange, defaultDrivingSpeedKmh, targetLanguage, walkId, importFiles = [], onImportFilesChange, onOpenSimulator }) {
   const isNarrator = userRole === 'narrator';
   // WBT is always fixed at 3.5 km/h. DDV falls back to the Admin-set default
   // driving speed from the Details tab (form.default_driving_speed_kmh) until a
@@ -940,6 +940,22 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                   <span className="text-xs font-semibold text-amber-400 tracking-wider uppercase shrink-0">
                     {wp.segment_id || `Segment ${wp.segment_number}`}
                   </span>
+                  {/* Per Enda's request: working deep down a long locations list, getting back
+                      to the simulator meant scrolling all the way up to the tab bar after
+                      every finished location. This opens Narration & Simulate directly from
+                      wherever in the list you are, landing on THIS divider's own location —
+                      same "Jump to location…" experience as inside the simulator itself. */}
+                  {onOpenSimulator && (
+                    <Button
+                      type="button" size="sm" variant="ghost"
+                      onClick={() => onOpenSimulator(index)}
+                      className="h-7 px-2.5 text-xs text-amber-300 hover:text-amber-100 hover:bg-amber-500/20 gap-1.5 shrink-0"
+                      title={`Open Narration & Simulate directly on ${wp.segment_id || `Segment ${wp.segment_number}`}`}
+                    >
+                      <AudioLines className="w-3.5 h-3.5" />
+                      Narrate &amp; Simulate
+                    </Button>
+                  )}
                   <div className="h-px flex-1 bg-amber-500/70" />
                 </div>
               )}

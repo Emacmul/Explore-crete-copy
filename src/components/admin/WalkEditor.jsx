@@ -311,6 +311,12 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
       : isNarrator ? (walk?.route_type === 'driving_audio_tour' ? 'narrate' : 'preview')
       : (walk?.id ? 'waypoints' : 'details')
   );
+  // Per Enda's request: the "Narrate & Simulate" buttons in the Waypoints tab's location
+  // dividers set this to the raw index of that location's first waypoint and switch to
+  // the Narration & Simulate tab in one go; TourSimulator consumes it on open (jumping
+  // straight to that location, exactly like its own "Jump to location…") and hands back
+  // through onJumpRequestHandled so the same button can be clicked again later.
+  const [simulatorJumpIndex, setSimulatorJumpIndex] = useState(null);
   const [interests, setInterests] = useState(DEFAULT_INTERESTS);
   const [editingInterests, setEditingInterests] = useState(false);
   const [newInterest, setNewInterest] = useState('');
@@ -2038,6 +2044,10 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 walkId={form.id}
                 importFiles={form.import_files || []}
                 onImportFilesChange={files => set('import_files', files)}
+                onOpenSimulator={rawIndex => {
+                  setSimulatorJumpIndex(rawIndex);
+                  setActiveTab('narrate');
+                }}
               />
             ) : (
               <WaypointEditor
@@ -2098,7 +2108,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
           // used to have no save mechanism at all — every edit made here only ever
           // lived in this browser tab until you happened to switch to a different tab
           // that had its own Save Route button.
-          <TourSimulator form={form} onWaypointUpdate={(index, fieldOrFields, value) => {
+          <TourSimulator jumpRequestIndex={simulatorJumpIndex} onJumpRequestHandled={() => setSimulatorJumpIndex(null)} form={form} onWaypointUpdate={(index, fieldOrFields, value) => {
             // Per Enda's follow-up 53 report: this now also accepts an object of
             // several field:value pairs applied together in one rebuild, so
             // TourSimulator's onAudioChange (which used to make three separate calls
