@@ -932,6 +932,12 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
              const prevGroup = index > 0
                ? segmentGroups[waypoints[index - 1].segment_id || waypoints[index - 1].segment_number]
                : null;
+             // Per Enda's follow-up: the button only goes live once EVERY waypoint in the
+             // location above it is ticked Done — it stays greyed out while even one is
+             // still unfinished, so the simulator is never jumped to a half-done location.
+             const prevGroupAllDone = prevGroup
+               && prevGroup.waypoints.length > 0
+               && prevGroup.waypoints.every((w) => w.waypoint_done);
              // Per follow-up 142: every actual depository operation below (upload /
              // status-check / fetch) now uses this waypoint's own permanent waypoint_uid
              // instead of that position-based label, so reordering waypoints can never
@@ -956,8 +962,11 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                     <Button
                       type="button" size="sm" variant="ghost"
                       onClick={() => onOpenSimulator(prevGroup.startIndex)}
+                      disabled={!prevGroupAllDone}
                       className="h-7 px-2.5 text-xs text-amber-300 hover:text-amber-100 hover:bg-amber-500/20 gap-1.5 shrink-0"
-                      title={`Open Narration & Simulate on ${prevGroup.segmentNumber} — the location directly above this button`}
+                      title={prevGroupAllDone
+                        ? `Open Narration & Simulate on ${prevGroup.segmentNumber} — the location directly above this button`
+                        : `Unlocks once every waypoint at ${prevGroup.segmentNumber} (directly above) is marked Done`}
                     >
                       <AudioLines className="w-3.5 h-3.5" />
                       Narrate &amp; Simulate
