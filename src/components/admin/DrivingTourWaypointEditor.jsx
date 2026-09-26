@@ -925,6 +925,13 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
              // also calls for the exact same waypoint, rather than each recomputing its
              // own letter — that duplication is exactly how the original bug could have
              // silently drifted apart even after a partial fix.
+             // Per Enda's correction: the divider's "Narrate & Simulate" button jumps to
+             // the location ABOVE it — the one just finished — not the location this
+             // divider introduces. The waypoint directly above a divider always belongs
+             // to that previous location, so its group's startIndex is the jump target.
+             const prevGroup = index > 0
+               ? segmentGroups[waypoints[index - 1].segment_id || waypoints[index - 1].segment_number]
+               : null;
              // Per follow-up 142: every actual depository operation below (upload /
              // status-check / fetch) now uses this waypoint's own permanent waypoint_uid
              // instead of that position-based label, so reordering waypoints can never
@@ -943,14 +950,14 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                   {/* Per Enda's request: working deep down a long locations list, getting back
                       to the simulator meant scrolling all the way up to the tab bar after
                       every finished location. This opens Narration & Simulate directly from
-                      wherever in the list you are, landing on THIS divider's own location —
-                      same "Jump to location…" experience as inside the simulator itself. */}
-                  {onOpenSimulator && (
+                      wherever in the list you are — jumping to the location just ABOVE this
+                      divider, the one just finished. */}
+                  {onOpenSimulator && prevGroup && (
                     <Button
                       type="button" size="sm" variant="ghost"
-                      onClick={() => onOpenSimulator(index)}
+                      onClick={() => onOpenSimulator(prevGroup.startIndex)}
                       className="h-7 px-2.5 text-xs text-amber-300 hover:text-amber-100 hover:bg-amber-500/20 gap-1.5 shrink-0"
-                      title={`Open Narration & Simulate directly on ${wp.segment_id || `Segment ${wp.segment_number}`}`}
+                      title={`Open Narration & Simulate on ${prevGroup.segmentNumber} — the location directly above this button`}
                     >
                       <AudioLines className="w-3.5 h-3.5" />
                       Narrate &amp; Simulate
