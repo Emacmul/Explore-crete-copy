@@ -14,59 +14,13 @@ import { toast } from '@/components/ui/use-toast';
 import { useNarratorApiKeys, getNarratorAuthPayload } from '@/lib/useNarratorApiKeys';
 import { translateWalkField, stillMatchesMaster } from '@/lib/fieldTranslation';
 import { testSpanStartDist, testSpanEndDist } from '@/lib/simulatorSpans';
+// Pure helpers extracted to their own module (2026-09-27) — see that file for why.
+import { TICK_MS, haversine, buildPath, posAtDistance, fmtDist, fmtTime } from '@/lib/simulatorGeometry';
 
 const ROLE_LABEL = { primary_start: 'Start', primary_stop: 'Stop', secondary: 'Point' };
 
-const R_EARTH = 6371000;
-const TICK_MS = 100;
-
-function haversine(lat1, lng1, lat2, lng2) {
-  const toRad = d => (d * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a = Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  return 2 * R_EARTH * Math.asin(Math.sqrt(a));
-}
-
-function buildPath(path, breakSet) {
-  const breaks = breakSet || new Set();
-  const segments = [];
-  let total = 0;
-  for (let i = 0; i < path.length - 1; i++) {
-    // A cut at index i means no path between point i and i+1 — the simulated
-    // vehicle jumps across the gap, so that segment adds no driven distance.
-    if (breaks.has(i)) continue;
-    const dist = haversine(path[i].lat, path[i].lng, path[i + 1].lat, path[i + 1].lng);
-    segments.push({ start: path[i], end: path[i + 1], dist, cumStart: total });
-    total += dist;
-  }
-  return { segments, total };
-}
-
-function posAtDistance(segments, total, dist) {
-  if (dist <= 0) return segments[0]?.start || null;
-  if (dist >= total) return segments[segments.length - 1]?.end || null;
-  for (const seg of segments) {
-    if (dist <= seg.cumStart + seg.dist) {
-      const r = seg.dist > 0 ? (dist - seg.cumStart) / seg.dist : 0;
-      return {
-        lat: seg.start.lat + (seg.end.lat - seg.start.lat) * r,
-        lng: seg.start.lng + (seg.end.lng - seg.start.lng) * r,
-      };
-    }
-  }
-  return segments[segments.length - 1]?.end || null;
-}
-
-function fmtDist(m) {
-  return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(2)} km`;
-}
-
-function fmtTime(ms) {
-  const s = Math.floor(ms / 1000);
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-}
+// haversine/buildPath/posAtDistance/fmtDist/fmtTime/TICK_MS moved to
+// src/lib/simulatorGeometry.js (2026-09-27).
 
 export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, onSave, saving, onAutoSave, isNarrator, titleEditor, onDepositoryEntry, allWalks = [], jumpRequestIndex = null, onJumpRequestHandled }) {
   const trailPath = form.trail_path || [];
@@ -1052,8 +1006,17 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // map framed on the whole location) but opens the editor on that last waypoint.
   // Testing never needs unlocking (the done-lock only gates editing), so with it
   // open the buttons work immediately; further editing still uses "Unlock to edit".
-  const jumpToLocation = (targetIndex, span = 1, { selectLastWaypoint = false } = {}) => {
-    if (narratorJumpLocked) return;
+  const jumpToLocation = (targetIndex, span = 1, { selectLastWaypoint = false, focusTestControls = false, bypassNarratorLock = false } = {}) => {
+    // bypassNarratorLock (Enda, 2026-09-27): only the Waypoints tab's "Narrate &
+    // Simulate" divider buttons pass this. The narrator lock exists so a Narr can't
+    // walk away from unfinished work via the "Jump to location…" dropdown — but the
+    // divider buttons carry their own, stronger gate (the WHOLE target location is
+    // already Done before the button even enables), and per Enda's report testing a
+    // finished location must NOT wait for the entire tour to be finished. Everything
+    // landed on is Done itself, so the lockedWpIndexes snap-back effect above still
+    // protects the out-of-order edge case (a location finished while an earlier one is
+    // still unmarked) exactly as before. The dropdown keeps the full lock.
+    if (narratorJumpLocked && !bypassNarratorLock) return;
     jumpToWaypoint(targetIndex, { locationSpan: span });
     // This is the actual moment a narrator has said "I want to work on this location
     // now" — see the speedMatchMode comment above its declaration. Also snaps the
@@ -1065,7 +1028,14 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     // (to edit wording first), never auto-scrolled to the test button — see
     // autoScrollToTest's own comment above. Explicitly reset here (not just left alone)
     // in case a PRIOR "Test this segment" click left it true.
-    setAutoScrollToTest(false);
+    // Exception (Enda, 2026-09-27): the divider-button path (focusTestControls) IS the
+    // testing path — the whole location is finished and he clicked through specifically
+    // to test it. Landing at the top there buried the "Test Location" button below the
+    // fold, which read like more production work was required first (unlock, regenerate,
+    // re-listen, re-mark) — duplicating what was just finished in the Waypoints tab, and
+    // none of it actually needed, since testing never requires unlocking. So this one
+    // path scrolls straight to the test buttons instead.
+    setAutoScrollToTest(focusTestControls);
     const boundary = locationRangeBoundary(targetIndex, span);
     const endIndex = boundary ? boundary.waypointIndex : waypoints.length;
     // Default: every location's own Primary-Start point IS its own WP1 (WaypointPaceEditor's
@@ -1098,7 +1068,11 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   useEffect(() => {
     if (jumpRequestIndex == null) return;
     const filteredIndex = waypointsWithIndex.findIndex((e) => e.rawWaypointIndex === jumpRequestIndex);
-    if (filteredIndex !== -1) jumpToLocation(filteredIndex, 1, { selectLastWaypoint: true });
+    // focusTestControls: scroll straight to the "Test this subsegment" / "Test Location"
+    // toolbar this click came for (see jumpToLocation's own comment), not the top of
+    // the editor. bypassNarratorLock: the divider button's own all-Done gate replaces the
+    // tour-wide narrator lock on this one path (same comment).
+    if (filteredIndex !== -1) jumpToLocation(filteredIndex, 1, { selectLastWaypoint: true, focusTestControls: true, bypassNarratorLock: true });
     onJumpRequestHandled?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jumpRequestIndex]);
@@ -1703,6 +1677,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
           <span className="flex items-center gap-1.5 text-amber-400 text-xs bg-slate-800/60 rounded-lg border border-slate-600 px-2.5 h-8">
             <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
             Jump to location unlocks once every waypoint is marked Done.
+            {' '}Testing a finished location via its Narrate &amp; Simulate divider button (Waypoints tab) still works.
             {firstUnfinishedLocationLabel ? ` Continue with ${firstUnfinishedLocationLabel}, in order.` : ' Continue in order.'}
           </span>
         )}
@@ -1951,7 +1926,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                 <div className="flex items-center justify-between gap-2 bg-amber-900/20 border border-amber-700/50 rounded-lg px-3 py-2">
                   <span className="text-amber-300 text-xs flex items-center gap-1.5">
                     <Lock className="w-3.5 h-3.5 shrink-0" />
-                    Locked — this waypoint is marked Done.{' '}
+                    Locked — this waypoint is marked Done. The Test buttons below still work — no unlock needed.{' '}
                     {/* Per Enda's follow-up report: after real hands-on testing, a
                         Narrator having to ask an Admin every time they wanted to revise
                         their OWN clone's already-done waypoint was bad for workflow — on
