@@ -104,6 +104,18 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // Passed straight through as WaypointPaceEditor's own autoScrollToTest prop — see
   // that component's testControlsRef/autoScrollToTest comment for the rest of this.
   const [autoScrollToTest, setAutoScrollToTest] = useState(false);
+  // (Enda, 2026-09-27) The index a Waypoints-tab "Narrate & Simulate" divider button
+  // landed the editor on, or null when there was no such landing. The snap-back effect
+  // below exists for real narrator-order protection — but it was silently CANCELLING the
+  // divider jump itself: the button's own gate already guarantees the whole target
+  // location is Done, yet a lone unfinished waypoint ANYWHERE EARLIER in the tour made
+  // lockedWpIndexes[landedIndex] true, so the moment the jump landed, the effect yanked
+  // the selection back to that earlier unfinished waypoint — no Test Location button
+  // there, and the only escape Enda found was redoing the whole earlier location just
+  // to stop the snap-back. While selectedWpIndex still sits on this landing, the effect
+  // leaves it alone; the first time selection moves anywhere else, this is cleared and
+  // the ordinary snap-back protection resumes exactly as before.
+  const [dividerLandingIndex, setDividerLandingIndex] = useState(null);
 
   // Per Enda: the "Waypoint Audio & Break Tags" dropdown below must be worked through
   // top to bottom — a waypoint can't be opened here until every waypoint before it in
@@ -132,15 +144,22 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     // was unticked to go back and fix something), snap back to the furthest waypoint
     // that's still actually unlocked, instead of leaving a locked, unreachable one
     // selected in the editor beside the map.
-    if (lockedWpIndexes[selectedWpIndex]) {
+    // dividerLandingIndex (its declaration comment above): a divider-button landing is
+    // exempt — the jump itself is gated on the whole target location already being Done,
+    // so the snap-back has nothing real to protect there and was only cancelling the
+    // jump (see that comment). Cleared the moment selection moves anywhere else, so
+    // this exemption covers exactly the landed waypoint and nothing more.
+    if (lockedWpIndexes[selectedWpIndex] && selectedWpIndex !== dividerLandingIndex) {
       let lastUnlocked = 0;
       for (let i = 0; i < lockedWpIndexes.length; i++) {
         if (lockedWpIndexes[i]) break;
         lastUnlocked = i;
       }
       setSelectedWpIndex(lastUnlocked);
+    } else if (dividerLandingIndex !== null && selectedWpIndex !== dividerLandingIndex) {
+      setDividerLandingIndex(null);
     }
-  }, [waypoints.length, selectedWpIndex, lockedWpIndexes]);
+  }, [waypoints.length, selectedWpIndex, lockedWpIndexes, dividerLandingIndex]);
   const selectedWp = waypoints[selectedWpIndex] || null;
 
   // Per Enda (follow-up 245): each stop's own name and short description are shown to
@@ -1042,7 +1061,12 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     // own testDisabled already covers location 1's start; it does not stop text editing).
     // selectLastWaypoint (see above): open on this location's own LAST waypoint instead —
     // endIndex is one past it, exactly like isLastWaypointOfLocation's own arithmetic.
-    setSelectedWpIndex(selectLastWaypoint ? Math.max(targetIndex, endIndex - 1) : targetIndex);
+    const landedIndex = selectLastWaypoint ? Math.max(targetIndex, endIndex - 1) : targetIndex;
+    setSelectedWpIndex(landedIndex);
+    // bypassNarratorLock paths (the divider buttons) also pin dividerLandingIndex so the
+    // snap-back effect can't yank the selection off this landing a tick later — see both
+    // declaration comments above for why that's safe (the whole location is Done).
+    if (bypassNarratorLock) setDividerLandingIndex(landedIndex);
     // Includes the NEXT location's Start point (BORx+1 a-PS): the view is "from this location's
     // Start to the next location's Start", so the whole stretch of road is on screen.
     const locationWaypoints = waypoints.slice(targetIndex, Math.min(endIndex + 1, waypoints.length));
