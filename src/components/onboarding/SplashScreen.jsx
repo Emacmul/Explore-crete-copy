@@ -17,6 +17,13 @@ const isIOS = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(naviga
 export default function SplashScreen({ onDone }) {
   const { t } = useLanguage();
   const [visible, setVisible] = useState(true);
+  // Opaque backdrop + image fade-in (2026-09-27): the overlay used to be fully
+  // transparent until /splash-background.jpg finished downloading, so on a slow
+  // connection the map (and the "update available" toast) briefly showed through
+  // before the splash visibly "appeared". The solid dark backdrop below covers
+  // everything from the very first frame; the photo fades in over it once loaded,
+  // so the app genuinely opens on the Enter splash and nothing behind it leaks.
+  const [imgLoaded, setImgLoaded] = useState(false);
 
   const handleEnter = () => {
     setVisible(false);
@@ -66,7 +73,7 @@ export default function SplashScreen({ onDone }) {
     <AnimatePresence>
       {visible && (
         <motion.div
-          className="fixed inset-0 w-full z-[9999] overflow-hidden overscroll-none"
+          className="fixed inset-0 w-full z-[9999] overflow-hidden overscroll-none bg-slate-900"
           initial={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.4 }}
@@ -75,7 +82,8 @@ export default function SplashScreen({ onDone }) {
           <img
             src={SPLASH_IMAGE}
             alt={t('app.title')}
-            className="absolute inset-0 w-full h-full object-cover object-center"
+            onLoad={() => setImgLoaded(true)}
+            className={`absolute inset-0 w-full h-full object-cover object-center transition-opacity duration-700 ${imgLoaded ? 'opacity-100' : 'opacity-0'}`}
           />
 
           {/* Soft overlay at the top for title readability against the sky */}

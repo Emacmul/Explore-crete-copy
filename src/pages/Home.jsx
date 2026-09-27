@@ -287,27 +287,37 @@ export default function Home() {
   // actually shown when they click through to it.
   const ownedCount = walks.filter(w => w._accessible !== false).length;
 
+  // Splash overlay first (2026-09-27): the app must OPEN on the Enter splash, not on a
+  // brief loading-spinner/map screen before it — so it's rendered above even the loading
+  // early-return below. Until the user taps Enter, nothing behind it (spinner, map,
+  // update-available toast) is visible; SplashScreen's own opaque backdrop covers from
+  // the first frame while its photo loads in.
+  const splashOverlay = showSplash ? (
+    <SplashScreen
+      onDone={() => {
+        sessionStorage.setItem('splash_seen', '1');
+        setShowSplash(false);
+      }}
+    />
+  ) : null;
+
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-amber-50 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="w-10 h-10 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-gray-600">{t('common.loading')}</p>
+      <>
+        {splashOverlay}
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-amber-50 flex items-center justify-center">
+          <div className="text-center">
+            <Loader2 className="w-10 h-10 animate-spin text-blue-600 mx-auto mb-4" />
+            <p className="text-gray-600">{t('common.loading')}</p>
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-amber-50">
-      {showSplash && (
-        <SplashScreen
-          onDone={() => {
-            sessionStorage.setItem('splash_seen', '1');
-            setShowSplash(false);
-          }}
-        />
-      )}
+      {splashOverlay}
 
       <UpdateInProgressModal walkName={updatingWalkName} />
       <InstallPrompt />
