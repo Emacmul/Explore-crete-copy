@@ -30,7 +30,7 @@
       "type": "string"
     },
     "clone_of": {
-      "description": "ID of the original tour this record is a translation clone of. Unset on original/published tours.",
+      "description": "ID of the original tour record this translation clone is of. Unset on original/published tours.",
       "type": "string"
     },
     "code": {
@@ -311,6 +311,14 @@
           },
           "image_url": {
             "type": "string"
+          },
+          "image_urls": {
+            "default": [],
+            "description": "Admin-uploaded reference photos for this waypoint, max 5 (src/lib/waypointImages.js MAX_WAYPOINT_IMAGES), as public storage URLs. Set from the Photos section of the Waypoints tab in EVERY tour type \u2014 Walk/Hike, WalkAbout and DriveAbout alike \u2014 because customers use them as visual navigation aids and points of interest (a rare flower, an ancient water well\u2026) while doing the tour. CRITICAL: this field MUST stay declared here. Base44 silently drops any waypoint field not declared in this schema at save time \u2014 that is exactly what used to happen to waypoint photos (Enda's report, 2026-09-27): they survived in the editor's in-memory form but were discarded on every save, so they were gone the next time the tour loaded. getWaypointImages() reads this field, falling back to the older single image_url.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "lat": {
             "type": "number"

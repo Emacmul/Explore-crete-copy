@@ -15,6 +15,7 @@ import WalkProgressBar from './WalkProgressBar';
 import DrivingModeNotice from './DrivingModeNotice';
 import DrivingTourPlayer from './DrivingTourPlayer';
 import { getWaypointImages } from '@/lib/waypointImages';
+import WaypointPhotoLightbox from './WaypointPhotoLightbox';
 import WalkPaywall from './WalkPaywall';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { useOfflineWalks } from '../offline/useOfflineWalks';
@@ -176,6 +177,13 @@ export default function WalkDetail({ walk, onClose, accessible = true, allWalks 
   React.useEffect(() => {
     setManuallyPlayedKeys(new Set());
   }, [walk?.id]);
+
+  // Per Enda (2026-09-27): waypoint photos were shown as static thumbnails only.
+  // A customer mid-tour needs to tap one for a closer look — it opens as a
+  // full-screen viewer OVERLAYING the current screen (WaypointPhotoLightbox),
+  // so the tour, the narration audio and the GPS watch all keep running
+  // underneath instead of the app navigating away. Null when closed.
+  const [photoViewer, setPhotoViewer] = React.useState(null); // { images: string[], index: number }
 
   // If the offline copy is removed (e.g. from "My Library", to free up phone storage)
   // while this exact tour is still open and already started, the gate must re-lock
@@ -742,12 +750,18 @@ export default function WalkDetail({ walk, onClose, accessible = true, allWalks 
                           {getWaypointImages(waypoint).length > 0 && (
                             <div className="mt-2 flex flex-wrap gap-2">
                               {getWaypointImages(waypoint).map((url, i) => (
-                                <img
+                                <button
                                   key={i}
-                                  src={url}
-                                  alt={displayName}
-                                  className="w-24 h-24 object-cover rounded-lg border"
-                                />
+                                  type="button"
+                                  onClick={() => setPhotoViewer({ images: getWaypointImages(waypoint), index: i })}
+                                  className="w-24 h-24 rounded-lg border overflow-hidden focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                >
+                                  <img
+                                    src={url}
+                                    alt={displayName}
+                                    className="w-full h-full object-cover"
+                                  />
+                                </button>
                               ))}
                             </div>
                           )}
@@ -780,6 +794,16 @@ export default function WalkDetail({ walk, onClose, accessible = true, allWalks 
             )}
           </div>
         </ScrollArea>
+
+        {/* Full-screen photo viewer — overlays the current screen, so narration
+            and GPS tracking continue untouched while it is open. */}
+        {photoViewer && (
+          <WaypointPhotoLightbox
+            images={photoViewer.images}
+            startIndex={photoViewer.index}
+            onClose={() => setPhotoViewer(null)}
+          />
+        )}
       </motion.div>
     </AnimatePresence>
   );
