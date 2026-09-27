@@ -1272,8 +1272,11 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     lastFramedLocationRef.current = locStart;
   }, [selectedWpIndex, speedMatchMode, isPlaying, currentLocationRange, jumpNonce]);
 
-  // Reset when trail path changes
+  // Reset when trail path changes — except while a divider jump is pending (jumpRequestRef): on
+  // that mount this pass runs in the same commit as the jump effect, and stopSim() would exit
+  // speedMatchMode, swapping the landed pace-test panel back for the script editor (2026-09-27).
   useEffect(() => {
+    if (jumpRequestRef.current != null) return;
     stopSim();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trailPath]);
