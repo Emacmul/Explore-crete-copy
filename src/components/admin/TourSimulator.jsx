@@ -1043,7 +1043,16 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // to resume — wording as much as pace — so this must ALWAYS switch into
   // WaypointPaceEditor (speedMatchMode), landing exactly on that location's own WP1,
   // with no separate "go to the ordinary editor first, then Test this segment" detour.
-  const jumpToLocation = (targetIndex, span = 1) => {
+  // selectLastWaypoint (Enda, 2026-09-27): the Waypoints tab's "Narrate & Simulate"
+  // divider buttons exist for one moment — the whole location is finished and the
+  // narrator clicks through to test it. The test toolbar ("Test Location", "Play Tour
+  // So Far") only exists on a location's LAST waypoint (Enda's own earlier rule, see
+  // isLastWaypointOfLocation), so landing on WP1 forced a manual last-waypoint pick
+  // first. This option keeps everything else identical (car at the location start,
+  // map framed on the whole location) but opens the editor on that last waypoint.
+  // Testing never needs unlocking (the done-lock only gates editing), so with it
+  // open the buttons work immediately; further editing still uses "Unlock to edit".
+  const jumpToLocation = (targetIndex, span = 1, { selectLastWaypoint = false } = {}) => {
     if (narratorJumpLocked) return;
     jumpToWaypoint(targetIndex, { locationSpan: span });
     // This is the actual moment a narrator has said "I want to work on this location
@@ -1057,14 +1066,13 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     // autoScrollToTest's own comment above. Explicitly reset here (not just left alone)
     // in case a PRIOR "Test this segment" click left it true.
     setAutoScrollToTest(false);
-    // Per Enda: every location's own Primary-Start point IS its own WP1 — including
-    // location 1's — so this lands directly on targetIndex itself, no +1 special case.
-    // (Location 1's Primary-Start has no driving leg to pace-test against, same as
-    // before — WaypointPaceEditor's own testDisabled already covers that; it does not
-    // stop text editing from working exactly the same way it does everywhere else.)
-    setSelectedWpIndex(targetIndex);
     const boundary = locationRangeBoundary(targetIndex, span);
     const endIndex = boundary ? boundary.waypointIndex : waypoints.length;
+    // Default: every location's own Primary-Start point IS its own WP1 (WaypointPaceEditor's
+    // own testDisabled already covers location 1's start; it does not stop text editing).
+    // selectLastWaypoint (see above): open on this location's own LAST waypoint instead —
+    // endIndex is one past it, exactly like isLastWaypointOfLocation's own arithmetic.
+    setSelectedWpIndex(selectLastWaypoint ? Math.max(targetIndex, endIndex - 1) : targetIndex);
     // Includes the NEXT location's Start point (BORx+1 a-PS): the view is "from this location's
     // Start to the next location's Start", so the whole stretch of road is on screen.
     const locationWaypoints = waypoints.slice(targetIndex, Math.min(endIndex + 1, waypoints.length));
@@ -1083,10 +1091,14 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // coordinates (filtered out above), no jump happens — the tab just opens as usual on
   // the first unfinished waypoint. onJumpRequestHandled always fires so the parent
   // clears the request and the same button can trigger a fresh jump again later.
+  // selectLastWaypoint: the whole location is Done at this point (the divider button's
+  // own gate), so open straight on its LAST waypoint — the panel with the "Test
+  // Location" toolbar the narrator clicked through to use — no manual re-pick, and no
+  // unlock needed to test (2026-09-27).
   useEffect(() => {
     if (jumpRequestIndex == null) return;
     const filteredIndex = waypointsWithIndex.findIndex((e) => e.rawWaypointIndex === jumpRequestIndex);
-    if (filteredIndex !== -1) jumpToLocation(filteredIndex);
+    if (filteredIndex !== -1) jumpToLocation(filteredIndex, 1, { selectLastWaypoint: true });
     onJumpRequestHandled?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jumpRequestIndex]);
