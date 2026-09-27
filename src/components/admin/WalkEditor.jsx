@@ -2047,6 +2047,14 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 onOpenSimulator={rawIndex => {
                   setSimulatorJumpIndex(rawIndex);
                   setActiveTab('narrate');
+                  // Per Enda's request: opening the Narration & Simulate tab from a
+                  // divider button way down the Waypoints list left the page
+                  // scrolled to wherever the button was — so the new tab "opened
+                  // at the bottom end". The editor scrolls with the window (no
+                  // inner scroll container), so snap the window back to the top
+                  // so the tab always opens at its own start, wherever you
+                  // launched it from.
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
               />
             ) : (
