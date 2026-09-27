@@ -11,8 +11,8 @@ import TourSimulatorMap from './TourSimulatorMap';
 import WaypointPaceEditor from './WaypointPaceEditor';
 import NarrationTtsEditor from './NarrationTtsEditor';
 import { toast } from '@/components/ui/use-toast';
-import { useNarratorApiKeys, getNarratorAuthPayload } from '@/lib/useNarratorApiKeys';
-import { translateWalkField, stillMatchesMaster } from '@/lib/fieldTranslation';
+import { stillMatchesMaster } from '@/lib/fieldTranslation';
+import { useStopFieldTranslation } from '@/lib/useStopFieldTranslation';
 import { testSpanStartDist, testSpanEndDist } from '@/lib/simulatorSpans';
 // Pure helpers extracted to their own module (2026-09-27) — see that file for why.
 import { TICK_MS, haversine, buildPath, posAtDistance, fmtDist, fmtTime } from '@/lib/simulatorGeometry';
@@ -162,73 +162,16 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   }, [waypoints.length, selectedWpIndex, lockedWpIndexes, dividerLandingIndex]);
   const selectedWp = waypoints[selectedWpIndex] || null;
 
-  // Per Enda (follow-up 245): each stop's own name and short description are shown to
-  // customers (the "Tour Stops" list, and while driving) just like the tour's overall
-  // Description and Safety Notes — so they need the same "already translated, edit and
-  // correct" treatment a narrator already gets for narration scripts. Unlike Description/
-  // Safety Notes (translated once, the moment the whole clone is created — see
-  // handleCloneTour in BackendShell.jsx), a tour can have dozens of stops, so translating
-  // all of them the instant the clone exists would fire that many Groq calls back to back
-  // and walk straight into Groq's own per-minute rate limit. Instead, each stop's two
-  // fields are auto-translated the moment a narrator actually opens THAT stop here —
-  // spread out naturally over however long they spend working through the tour, the same
-  // "quietly fetch it the moment this waypoint is open" idea TranslationPanel.jsx already
-  // uses for the shared script depository.
-  const { keys: stopFieldApiKeys } = useNarratorApiKeys();
-  const masterWalkForStops = form.clone_of ? allWalks.find(w => w.id === form.clone_of) : null;
+  // The per-stop name/description auto-translate feature (master-stop matching, the
+  // manual Translate buttons and the quiet auto-fire effect — Enda's follow-up 245) now
+  // lives in its own hook, extracted 2026-09-27 purely so this file stays under the
+  // platform's editable size limit. Behaviour is unchanged — see
+  // useStopFieldTranslation.js for the full reasoning (why it translates on-open, not
+  // on-clone).
   const rawIndexForSelected = toRawIndex(selectedWpIndex);
-  const masterWp = masterWalkForStops?.waypoints?.[rawIndexForSelected] || null;
-  const [translatingStopField, setTranslatingStopField] = useState(null); // 'segment_title' | 'description' | null
-  const [stopFieldError, setStopFieldError] = useState({});
-  // Tracks which waypoint+field combinations this browser tab has already tried to
-  // auto-translate, so the effect below never fires twice for the same stop — whether it
-  // succeeded (the box no longer matches the master, so the check below would already
-  // skip it) or failed (a rate limit, no API key yet) and would otherwise retry on every
-  // re-render. Cleared only by leaving and reopening this clone.
-  const autoTranslateAttempted = useRef(new Set());
-
-  const translateStopField = async (field) => {
-    if (!form.id || !form.clone_of || !form.target_language) return;
-    setStopFieldError(prev => ({ ...prev, [field]: '' }));
-    if (!stopFieldApiKeys.groq_api_key) {
-      setStopFieldError(prev => ({ ...prev, [field]: 'No Groq API key found for your account yet. Add your own key via "API Keys" in the header.' }));
-      return;
-    }
-    setTranslatingStopField(field);
-    try {
-      const translated = await translateWalkField({
-        field, waypointIndex: rawIndexForSelected, walkId: form.id,
-        targetLanguage: form.target_language, apiKeys: stopFieldApiKeys, authPayload: getNarratorAuthPayload(),
-      });
-      onWaypointUpdate(rawIndexForSelected, field, translated);
-    } catch (err) {
-      setStopFieldError(prev => ({ ...prev, [field]: err?.message || 'Could not translate this text.' }));
-    }
-    setTranslatingStopField(null);
-  };
-
-  useEffect(() => {
-    if (!form.clone_of || !form.target_language || form.target_language === 'English') return;
-    if (!selectedWp || !masterWp) return;
-    if (!stopFieldApiKeys.groq_api_key) return; // nothing to auto-fire with yet — manual Translate button still works once one's added
-    for (const field of ['segment_title', 'description']) {
-      const attemptKey = `${rawIndexForSelected}:${field}`;
-      if (autoTranslateAttempted.current.has(attemptKey)) continue;
-      if (!stillMatchesMaster(selectedWp[field], masterWp[field])) continue; // already translated or hand-edited
-      autoTranslateAttempted.current.add(attemptKey);
-      translateWalkField({
-        field, waypointIndex: rawIndexForSelected, walkId: form.id,
-        targetLanguage: form.target_language, apiKeys: stopFieldApiKeys, authPayload: getNarratorAuthPayload(),
-      })
-        .then(translated => onWaypointUpdate(rawIndexForSelected, field, translated))
-        .catch(err => console.error(`Auto-translating a stop's ${field} failed (English text left in place, the Translate button still works):`, err));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rawIndexForSelected, form.clone_of, form.target_language, stopFieldApiKeys.groq_api_key]);
-
-  // A stale error from the PREVIOUS stop (e.g. "no API key yet") must not linger and
-  // wrongly appear to be about whichever stop is open now.
-  useEffect(() => { setStopFieldError({}); }, [rawIndexForSelected]);
+  const {
+    masterWp, translatingStopField, stopFieldError, translateStopField,
+  } = useStopFieldTranslation({ form, allWalks, selectedWp, rawIndexForSelected, onWaypointUpdate });
 
   // Per Enda (2026-09-20): an admin often rewrites the English script here in Narrate &
   // Simulate, but only the Waypoints tab's "Mark Waypoint as Done" pushed the script to the
@@ -473,6 +416,25 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
       cumDist += haversine(trailPath[i - 1].lat, trailPath[i - 1].lng, trailPath[i].lat, trailPath[i].lng);
     }
     return cumDist;
+  };
+
+  // Per Enda's report (2026-09-27): a location test used to begin with the car parked
+  // exactly ON the location's first (primary_start) waypoint's own pin — the green dot
+  // itself — so the run started already at the centre of the trigger circle and the
+  // narration fired instantly, giving a false result: it never showed the real approach.
+  // A real customer drives ALONG the route and the narration fires the moment they ENTER
+  // the trigger circle, so every location test now starts there — the exact same
+  // real-approach distance "Test this subsegment" already uses (testSpanStartDist:
+  // trigger-radius entry coming from the previous waypoint, including the
+  // overlapping-radii guard). Falls back to the waypoint's own pin — today's original
+  // behaviour — whenever the geometry can't be trusted (the tour's very first waypoint,
+  // where a real customer genuinely does start on the pin; missing coordinates; the
+  // route never actually coming within the configured radius). Returns null when there's
+  // no waypoint at all, leaving resetToWaypoint's own default completely untouched.
+  const triggerEntryStartDist = (targetIndex) => {
+    const wp = waypoints[targetIndex];
+    if (!wp) return null;
+    return testSpanStartDist(trailPath, breakSet, waypoints[targetIndex - 1], wp, cumDistForWaypoint(wp));
   };
 
   // nearestPathIndex / cumDistAtPathIndex / interpolateCrossing and the two "real
@@ -875,10 +837,11 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     if (!wp) return false;
     // startDistOverride (per Enda's report — see testSpanStartDist above): lets a
     // caller start the car somewhere OTHER than targetIndex's own exact position —
-    // currently only "Test this subsegment" uses this, to start from the real
-    // trigger-radius entry point instead of parked exactly on the first waypoint being
-    // tested's own pin. null (every other caller — Jump to location, Test Location,
-    // Play Tour So Far, a plain waypoint jump) is completely unaffected.
+    // "Test this subsegment" uses this, and since 2026-09-27 so do all the location
+    // tests (Jump to location / Test Location / a fresh scoped Start — see
+    // triggerEntryStartDist above), each to start from the real trigger-radius entry
+    // point instead of parked exactly on the first waypoint being tested's own pin.
+    // null (a plain per-waypoint jump, Play Tour So Far's own tour start) is unaffected.
     const cumDist = startDistOverride ?? cumDistForWaypoint(wp);
     const newPos = posAtDistance(pathData.segments, pathData.total, cumDist);
     distRef.current = cumDist;
@@ -1036,7 +999,10 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     // protects the out-of-order edge case (a location finished while an earlier one is
     // still unmarked) exactly as before. The dropdown keeps the full lock.
     if (narratorJumpLocked && !bypassNarratorLock) return;
-    jumpToWaypoint(targetIndex, { locationSpan: span });
+    // Trigger-circle entry start (Enda, 2026-09-27 — see triggerEntryStartDist above):
+    // every location test/jump starts where the car genuinely ENTERS the location's
+    // first waypoint's own trigger circle along the route, not parked on its green pin.
+    jumpToWaypoint(targetIndex, { locationSpan: span, startDistOverride: triggerEntryStartDist(targetIndex) });
     // This is the actual moment a narrator has said "I want to work on this location
     // now" — see the speedMatchMode comment above its declaration. Also snaps the
     // waypoint dropdown to this location's own start point, so the panel that's about to
@@ -1118,7 +1084,8 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     const locationWaypoints = waypoints.slice(currentLocationRange.startIndex, currentLocationRange.endIndex);
     const bounds = locationWaypoints.filter(wp => wp.lat && wp.lng).map(wp => [wp.lat, wp.lng]);
     if (bounds.length > 0) setMapFocusBounds(bounds);
-    jumpToWaypoint(currentLocationRange.startIndex, { locationSpan: 1, autoplay: true });
+    // Trigger-circle entry start (Enda, 2026-09-27 — see triggerEntryStartDist above).
+    jumpToWaypoint(currentLocationRange.startIndex, { locationSpan: 1, autoplay: true, startDistOverride: triggerEntryStartDist(currentLocationRange.startIndex) });
   };
 
   // Per Anoushka (relayed by Enda): "Play Tour So Far" — drives from the very first
@@ -1553,7 +1520,8 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // untouched — only a genuinely fresh Start click is redirected here.
   const handleStartClick = () => {
     if (!hasPlayed && !tourComplete && !speedMatchMode && currentLocationRange) {
-      jumpToWaypoint(currentLocationRange.startIndex, { autoplay: true });
+      // Trigger-circle entry start (Enda, 2026-09-27 — see triggerEntryStartDist above).
+      jumpToWaypoint(currentLocationRange.startIndex, { autoplay: true, startDistOverride: triggerEntryStartDist(currentLocationRange.startIndex) });
       return;
     }
     startSim();
