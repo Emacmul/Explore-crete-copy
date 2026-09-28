@@ -60,8 +60,32 @@ export default function ApiKeysDialog({ open, onOpenChange, required = false, on
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
       onSaved?.();
+      // When opened manually (not the required lock), a successful save closes the dialog —
+      // per Enda's report (2026-09-28) it used to stay open with no way to tell it worked.
+      // The required case is closed by the parent instead, the moment its reload confirms
+      // both keys are present (needsApiKeySetup flips false), so it's left alone here.
+      if (!required) onOpenChange?.(false);
     } catch (err) {
-      setError(err.message || 'Could not save your keys. Please try again.');
+      const invalid = Array.isArray(err?.invalidFields) ? err.invalidFields : [];
+      if (invalid.length) {
+        // The backend checked the keys against their real provider and refused them —
+        // name the exact fields so the narrator knows which to fix (Enda, 2026-09-28).
+        const names = [];
+        if (invalid.includes('google_tts_api_key')) names.push('Google API key');
+        if (invalid.includes('groq_api_key')) names.push('Groq API key');
+        if (invalid.includes('groq_api_key_2')) names.push('Groq API Key 2');
+        setError(
+          `The ${names.join(' and the ')} ${names.length > 1 ? 'were' : 'was'} rejected by ${
+            names.length > 1 ? 'their' : 'its'
+          } provider (wrong or mistyped key) — nothing was saved. Please check ${names.length > 1 ? 'them' : 'it'} and try again.`
+        );
+      } else if (/409/.test(String(err?.message || ''))) {
+        // Transient platform conflict (a redeploy/publish swap in flight) that outlived
+        // the automatic retries — it always clears on its own within moments.
+        setError('The server was busy at that moment. Please wait a few seconds and click Save again.');
+      } else {
+        setError(err?.message || 'Could not save your keys. Please try again.');
+      }
     }
     setSaving(false);
   };

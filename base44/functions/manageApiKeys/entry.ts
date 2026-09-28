@@ -22,6 +22,42 @@ import { wrapClientWithRetry } from '../../shared/withEntityRetry.ts';
 // CLAUDE_CHANGELOG.md, follow-up 61). Now uses the same resolveActor (email+narrToken
 // checked against AppUser.narr_session_token) every other narrator-facing function in
 // this app already relies on.
+// Key validation (Enda's request, 2026-09-28): a narrator whose saved key is wrong only
+// found out much later, deep inside some tool, from an error that never named the cause.
+// A save now checks the keys against their real provider first and refuses to store the
+// ones the provider rejects — the dialog names exactly which field failed. Only non-empty
+// keys that actually CHANGED are checked, so re-saving untouched keys (or the retry path
+// after a load error) never makes extra provider calls. A provider that can't be reached
+// at all is NOT treated as an invalid key — the save goes through with a warning instead
+// of blocking someone's work over a transient network issue.
+const validateGroqKey = async (key: string): Promise<'valid' | 'invalid' | 'unverified'> => {
+  try {
+    const res = await fetch('https://api.groq.com/openai/v1/models', {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    if (res.ok) return 'valid';
+    if (res.status === 401 || res.status === 403) return 'invalid';
+    return 'unverified';
+  } catch { return 'unverified'; }
+};
+
+const validateGoogleTtsKey = async (key: string): Promise<'valid' | 'invalid' | 'unverified'> => {
+  try {
+    // One character of the cheapest voice — a validation probe, not real generation.
+    const res = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${encodeURIComponent(key)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ input: { text: 'a' }, voice: { languageCode: 'en-US' }, audioConfig: { audioEncoding: 'LINEAR16' } }),
+    });
+    if (res.ok) return 'valid';
+    // 400 "API key not valid" = a typo'd/wrong key. 403 = the key exists but the Cloud
+    // Text-to-Speech API isn't enabled on its project — it can never work for narration,
+    // so it's rejected as invalid too. Anything else (quota, network) = unverified.
+    if (res.status === 400 || res.status === 403) return 'invalid';
+    return 'unverified';
+  } catch { return 'unverified'; }
+};
+
 export default async function(req) {
   try {
     const base44 = wrapClientWithRetry(createClientFromRequest(req));
@@ -86,6 +122,32 @@ export default async function(req) {
     if (elevenlabs_api_key !== undefined) updates.elevenlabs_api_key = elevenlabs_api_key;
     if (elevenlabs_voice_id !== undefined) updates.elevenlabs_voice_id = elevenlabs_voice_id;
 
+    // Validate before writing anything — an invalid key must not be stored, or the
+    // app treats setup as complete and every tool later fails with a mystery error.
+    const invalid_fields: string[] = [];
+    const warnings: string[] = [];
+    if (google_tts_api_key && google_tts_api_key !== (record?.google_tts_api_key || '')) {
+      const verdict = await validateGoogleTtsKey(google_tts_api_key);
+      if (verdict === 'invalid') invalid_fields.push('google_tts_api_key');
+      else if (verdict === 'unverified') warnings.push('Your Google API key could not be checked right now — saved anyway.');
+    }
+    if (groq_api_key && groq_api_key !== (record?.groq_api_key || '')) {
+      const verdict = await validateGroqKey(groq_api_key);
+      if (verdict === 'invalid') invalid_fields.push('groq_api_key');
+      else if (verdict === 'unverified') warnings.push('Your Groq API key could not be checked right now — saved anyway.');
+    }
+    if (groq_api_key_2 && groq_api_key_2 !== (record?.groq_api_key_2 || '')) {
+      const verdict = await validateGroqKey(groq_api_key_2);
+      if (verdict === 'invalid') invalid_fields.push('groq_api_key_2');
+      else if (verdict === 'unverified') warnings.push('Your backup Groq key could not be checked right now — saved anyway.');
+    }
+    if (invalid_fields.length) {
+      return Response.json({
+        error: 'Key(s) rejected by their provider — nothing was saved.',
+        invalid_fields,
+      }, { status: 400 });
+    }
+
     if (record) {
       await base44.asServiceRole.entities.AppUser.update(record.id, updates);
     } else {
@@ -94,7 +156,7 @@ export default async function(req) {
       await base44.asServiceRole.entities.AppUser.create({ email, ...updates });
     }
 
-    return Response.json({ ok: true });
+    return Response.json({ ok: true, warnings });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
   }

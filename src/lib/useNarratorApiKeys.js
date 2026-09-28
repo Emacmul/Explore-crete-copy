@@ -62,8 +62,23 @@ export function useNarratorApiKeys() {
     if (!loadedOk) {
       throw new Error('Your saved keys haven’t loaded yet — please retry loading before saving, so a real key isn’t overwritten by a blank one.');
     }
-    const res = await base44.functions.invoke('manageApiKeys', { action: 'save', ...getNarratorAuthPayload(), ...updates });
-    if (res?.data?.error) throw new Error(res.data.error);
+    let res;
+    try {
+      res = await base44.functions.invoke('manageApiKeys', { action: 'save', ...getNarratorAuthPayload(), ...updates });
+    } catch (err) {
+      // functions.invoke rejects as a plain axios error on a non-2xx response, with the
+      // function's own JSON body (the human-readable reason, plus invalid_fields naming
+      // exactly which keys the provider rejected) nested under err.response.data —
+      // surface that, not the useless "Request failed with status code 400".
+      const e = new Error(err?.response?.data?.error || err?.message || 'Could not save your keys. Please try again.');
+      e.invalidFields = err?.response?.data?.invalid_fields || [];
+      throw e;
+    }
+    if (res?.data?.error) {
+      const e = new Error(res.data.error);
+      e.invalidFields = res.data.invalid_fields || [];
+      throw e;
+    }
     setKeys((prev) => ({ ...prev, ...updates }));
   }, [loadedOk]);
 

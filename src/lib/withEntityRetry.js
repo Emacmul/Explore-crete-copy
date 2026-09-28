@@ -52,14 +52,22 @@ function getRetryAfterMs(err) {
   return Number.isFinite(secs) && secs >= 0 ? secs * 1000 : undefined;
 }
 
-async function callWithRetry(fn) {
+// retryOn409: function invocations additionally retry a 409 (Conflict); entity calls
+// never do — a 409 there has unknown meaning. On invokes it's transient: the platform
+// returns 409 while a redeploy/publish swap of the app's functions is in flight (user
+// 35's reported "error 409" when saving API keys, 2026-09-28 — no 409 exists anywhere in
+// the app's own code on that path), and this app's own publish-lock "busy" 409s are
+// explicitly designed as retryable states (see base44/shared/publishLock.ts).
+async function callWithRetry(fn, retryOn409 = false) {
   let attempt = 0;
   let lastErr;
   while (attempt <= MAX_RETRIES) {
     try {
       return await fn();
     } catch (err) {
-      if (getStatus(err) !== 429 || attempt === MAX_RETRIES) throw err;
+      const status = getStatus(err);
+      const retriable = status === 429 || (retryOn409 && status === 409);
+      if (!retriable || attempt === MAX_RETRIES) throw err;
       lastErr = err;
       const retryAfterMs = getRetryAfterMs(err);
       // Exponential backoff (400ms, 800ms, 1.6s, 3.2s, capped at 4s) when the server
@@ -104,7 +112,7 @@ function wrapFunctionsModule(functionsModule) {
     get(target, prop, receiver) {
       const value = Reflect.get(target, prop, receiver);
       if (prop !== 'invoke' || typeof value !== 'function') return value;
-      return (...args) => callWithRetry(() => value.apply(target, args));
+      return (...args) => callWithRetry(() => value.apply(target, args), true);
     },
   });
 }
