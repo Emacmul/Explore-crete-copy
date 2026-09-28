@@ -1,4 +1,4 @@
-import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
+import { createClientFromRequest } from 'npm:@base44/sdk@0.8.52';
 // Per Enda / Base44 support: retries a real 429 (pooled rate limit) with a short backoff —
 // see withEntityRetry.ts's own header comment for the full reasoning.
 import { wrapClientWithRetry } from '../../shared/withEntityRetry.ts';
@@ -28,20 +28,33 @@ import { wrapClientWithRetry } from '../../shared/withEntityRetry.ts';
 // past 2,000 rows (confirmed live in Base44's own data browser: "Translation (2,129)"). Because
 // the query is sorted by most-recently-updated first, everything past row 1000 just silently
 // vanished from what this tool could show — nothing was actually deleted, but languages
-// translated further back (yesterday's Portuguese, Spanish, German, French, Czech, Dutch)
-// dropped off the visible list entirely the moment enough NEWER rows (this morning's Greek,
-// Polish, Romanian, Hungarian, Russian) pushed them past the cutoff, and looked exactly like
-// freshly-untranslated languages even though the real data was untouched in the database the
-// whole time. 199 keys × every UI language this app supports comfortably exceeds 1000 — the
-// cap was always going to bite eventually, it just took this many languages being done to
-// surface it. Raised generously past any realistic total (199 keys wouldn't hit this even at
-// 100 languages) rather than tuned to just barely cover today's count, so this doesn't quietly
-// resurface again the next time a few more languages get finished.
+// translated further back dropped off the visible list entirely and looked exactly like
+// freshly-untranslated languages even though the real data was untouched in the database
+// the whole time. The fix then (raising the single call's limit to 20000) only worked
+// because the table was still small: the platform caps ANY single list call at 5,000
+// records no matter what limit you ask for, and on 2026-09-28 the table reached 5,640
+// rows — the exact same symptom came back, with Polish and Romanian showing only 64 of
+// their 263 stored strings and Hungarian 220 of 263 in the live response. A cursor loop
+// is the only shape that can't repeat this as the table keeps growing: it pages through
+// every row regardless of total, so no language can ever silently slide off the end again.
 export default async function(req) {
   try {
     const base44 = wrapClientWithRetry(createClientFromRequest(req));
-    const list = await base44.asServiceRole.entities.Translation.list('-updated_date', 20000);
-    const translations = (list || []).map(r => ({
+    const all: any[] = [];
+    let cursor: string | null = null;
+    let pages = 0;
+    do {
+      const page = await base44.asServiceRole.entities.Translation.list({
+        sort: '-updated_date', limit: 1000, cursor,
+        fields: ['key', 'lang', 'value'],
+      });
+      all.push(...(page.items || []));
+      cursor = page.next_cursor;
+      pages++;
+      // 100 pages × 1000 rows = far past any realistic total — a runaway-loop guard only,
+      // never a data cap this tool is expected to reach.
+    } while (cursor && pages < 100);
+    const translations = all.map(r => ({
       id: r.id,
       key: r.key,
       lang: r.lang,
