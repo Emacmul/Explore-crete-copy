@@ -169,14 +169,13 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   };
 
   // Per Enda's follow-up 126 report: he tested this on his own Dutch clone and couldn't
-  // find the "Translate" button at all — it turned out to be sitting in the General tab's
-  // Tour Name field, and General is hidden from narrators entirely (see the `tabs` array
-  // below, follow-up 46). Narration & Simulate is the only screen a narrator (or an admin
-  // testing as one) ever actually opens on a clone, so this same title box + button is
-  // built ONCE here and handed down to TourSimulator as `titleEditor` to render inside
-  // that tab too — same state, same handler, just reachable from where it's actually
-  // needed. Only built for a clone (nothing to translate on a master); undefined otherwise,
-  // which TourSimulator's `{titleEditor}` simply renders as nothing.
+  // find the "Translate" button at all — it turned out to be sitting in the admin General
+  // tab's Tour Name field, hidden from narrators entirely (follow-up 46). Fixed first by
+  // handing it down to TourSimulator as `titleEditor`, then (2026-09-29) by giving
+  // narrators their own condensed General tab (see the `tabs` array below), where this
+  // same title box + button now lives — same state, same handler, one place for all of a
+  // tour's translatable non-location text. Only built for a clone (nothing to translate
+  // on a master); renders as nothing otherwise.
   const tourTitleEditor = form.clone_of && (
     <div className="flex items-center gap-2 bg-slate-800/60 border border-amber-600/30 rounded-lg px-3 py-2">
       <Languages className="w-4 h-4 text-amber-400 shrink-0" />
@@ -215,8 +214,8 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   // NARRATOR_WALK_WRITE_FIELDS/NARRATOR_WALK_READ_FIELDS in narratorWalkFields.ts — this
   // was never actually blocked server-side), but hiding the whole tab left no screen for a
   // narrator to actually reach them. Fixed the same way the title box was: built once here,
-  // rendered on the Preview tab instead (the one tab every narrator has, regardless of tour
-  // type — Narration & Simulate only exists for a driving-audio tour). Each "Translate"
+  // rendered on the narrator's General tab (2026-09-29 — previously the Preview tab). Each
+  // "Translate"
   // button calls translateScript with a `field` param (new — see that function's own
   // comment) so it always translates the TRUE master's current text, not whatever this
   // clone's box currently holds (which may already be a half-finished translation).
@@ -308,7 +307,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   // back to it via the tab bar.
   const [activeTab, setActiveTab] = useState(
     isClonedDrivingTour ? 'narrate'
-      : isNarrator ? (walk?.route_type === 'driving_audio_tour' ? 'narrate' : 'preview')
+      : isNarrator ? (walk?.route_type === 'driving_audio_tour' ? 'narrate' : 'general')
       : (walk?.id ? 'waypoints' : 'details')
   );
   // Per Enda's request: the "Narrate & Simulate" buttons in the Waypoints tab's location
@@ -913,7 +912,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
       // should be unreachable for one in practice (an existing tour they're narrating
       // already has these fields filled in), but redirect somewhere that actually
       // exists for them regardless, rather than assume it can never happen.
-      setActiveTab(isNarrator ? (isDrivingAudioTour ? 'narrate' : 'preview') : 'details');
+      setActiveTab(isNarrator ? (isDrivingAudioTour ? 'narrate' : 'general') : 'details');
       return false;
     }
 
@@ -1268,10 +1267,16 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   // Per Enda's follow-up 46 report: General, Route Path (GPS), and Waypoints are admin
   // tools — a narrator must never be able to reach any of them. Route Path was already
   // gated (showTrailTab, above); General and Waypoints were not — both rendered
-  // unconditionally regardless of role, so a narrator could open either one. Narration &
-  // Simulate and Preview are the only two tabs a narrator gets now.
+  // unconditionally regardless of role, so a narrator could open either one.
+  // Per Enda's request (2026-09-29): narrators now get their OWN condensed 'General'
+  // tab (id 'general', below) — NOT the admin one (id 'details'): it holds only the
+  // customer-facing pieces a narrator translates (Tour Title, About this walk, Before
+  // You Set Off, and the Spoken System Messages for a driving tour) and nothing else.
+  // Everything on the admin General tab that isn't translatable text (Route Type, Code,
+  // GPX import, pricing/checkout, Region/Difficulty, interests, coordinates) stays
+  // invisible to narrators, exactly as before.
   const tabs = [
-    ...(isNarrator ? [] : [{ id: 'details', label: 'General' }]),
+    ...(isNarrator ? [{ id: 'general', label: 'General' }] : [{ id: 'details', label: 'General' }]),
     ...(showTrailTab ? [{ id: 'trail', label: 'Route Path (GPS)' }] : []),
     ...(isNarrator ? [] : [{ id: 'waypoints', label: `Waypoints${form.waypoints.length ? ` (${form.waypoints.length})` : ''}` }]),
     ...(isDrivingAudioTour ? [{ id: 'narrate', label: 'Narration & Simulate' }] : []),
@@ -1994,6 +1999,27 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
           </div>
         )}
 
+        {activeTab === 'general' && (
+          <div className="space-y-5">
+            {/* The narrator's condensed General tab (see the `tabs` array above for the
+                why): only customer-facing text a narrator translates — Tour Title,
+                About this walk, Before You Set Off, and (a driving tour only) the four
+                Spoken System Messages, once per tour rather than appearing under every
+                location in Narration & Simulate, where they read as if they needed
+                filling in per stop. The real save boundary stays the narrator write
+                whitelist in narratorWalkFields.ts — everything else on the admin
+                General tab (Route Type, Code, pricing, Region, interests…) never
+                reaches a narrator's browser at all. */}
+            {tourTitleEditor}
+            {tourDescriptionEditor}
+            {tourSafetyNotesEditor}
+            {isDrivingAudioTour && (
+              <SystemMessagesPanel form={form} set={set} masterWalk={masterWalk} />
+            )}
+            <SaveButton onSave={triggerSave} saving={saving} canSave={canSave} />
+          </div>
+        )}
+
         {activeTab === 'trail' && (
           <div className="space-y-4">
             <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
@@ -2096,8 +2122,9 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
 
         {activeTab === 'preview' && (
           <div className="space-y-4">
-            {tourDescriptionEditor}
-            {tourSafetyNotesEditor}
+            {/* The Description/Safety Notes translate boxes used to live here — moved
+                to the narrator's General tab (see activeTab === 'general' above), so all
+                of a tour's translatable non-location text sits in one place. */}
             <AdminPreviewMap walk={form} />
             {/* Backup export is an Admin-only action — narrators can view/test the
                 preview and simulator, but never generate a GPX/KML backup file. This
@@ -2156,16 +2183,9 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
             }));
             editVersionRef.current += 1;
             setDirty(true);
-          }} targetLanguage={form.target_language || ''} onSave={triggerSave} saving={saving} onAutoSave={requestAutoSave} isNarrator={isNarrator} titleEditor={tourTitleEditor} onDepositoryEntry={(entry) => setForm(prev => ({ ...prev, import_files: [...(prev.import_files || []).filter(f => f.segment_id !== entry.segment_id), entry] }))} allWalks={allWalks} />
+          }} targetLanguage={form.target_language || ''} onSave={triggerSave} saving={saving} onAutoSave={requestAutoSave} isNarrator={isNarrator} onDepositoryEntry={(entry) => setForm(prev => ({ ...prev, import_files: [...(prev.import_files || []).filter(f => f.segment_id !== entry.segment_id), entry] }))} allWalks={allWalks} />
         )}
 
-        {activeTab === 'narrate' && isDrivingAudioTour && (
-          // Rendered once per tour, not per-waypoint — these are tour-level spoken
-          // alerts, unrelated to which stop is currently selected in TourSimulator.
-          <div className="mt-4">
-            <SystemMessagesPanel form={form} set={set} masterWalk={masterWalk} />
-          </div>
-        )}
       </div>
     </div>
   );

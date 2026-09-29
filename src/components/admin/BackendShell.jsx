@@ -215,10 +215,13 @@ export default function BackendShell({ user, userRole, isSuperAdmin, authMode, u
         // auto-generated here — ElevenLabs audio only gets created when the narrator
         // presses "Generate PCV audio" themselves in Narration & Simulate, after
         // reviewing/editing the translated text.
-        for (const field of ['safety_notes', 'description', 'off_route_text', 'gps_no_signal_text', 'gps_low_accuracy_text', 'speed_hint_text']) {
+        // The tour NAME goes through translateScript's titleOnly mode (same as the Tour
+        // Title box's own "Translate" button) — 'name' isn't one of its walk-level
+        // fields, so it's flagged specially here.
+        for (const field of ['name', 'safety_notes', 'description', 'off_route_text', 'gps_no_signal_text', 'gps_low_accuracy_text', 'speed_hint_text']) {
           try {
             const translatedText = await translateWalkField({
-              field, walkId: saved.id, targetLanguage: lang, apiKeys: myApiKeys, authPayload: narrAuth,
+              field, titleOnly: field === 'name', walkId: saved.id, targetLanguage: lang, apiKeys: myApiKeys, authPayload: narrAuth,
             });
             const saveResponse = await callWalkFn('saveWalkForBackend', { id: saved.id, patch: { [field]: translatedText } });
             saved = saveResponse.walk;
@@ -300,7 +303,7 @@ export default function BackendShell({ user, userRole, isSuperAdmin, authMode, u
       toast({
         variant: 'destructive',
         title: 'System voice messages not ready',
-        description: `${missingSystemAudio.length} spoken alert${missingSystemAudio.length === 1 ? '' : 's'} (off-route/GPS/speed) still need${missingSystemAudio.length === 1 ? 's' : ''} PCV audio. Generate ${missingSystemAudio.length === 1 ? 'it' : 'them'} in Narration & Simulate before publishing.`,
+        description: `${missingSystemAudio.length} spoken alert${missingSystemAudio.length === 1 ? '' : 's'} (off-route/GPS/speed) still need${missingSystemAudio.length === 1 ? 's' : ''} PCV audio. Import ${missingSystemAudio.length === 1 ? 'it' : 'them'} on the tour\'s General tab (Spoken System Messages) before publishing.`,
       });
       return;
     }
@@ -336,7 +339,7 @@ export default function BackendShell({ user, userRole, isSuperAdmin, authMode, u
         toast({
           variant: 'destructive',
           title: 'System voice messages not ready',
-          description: `${missingSystemAudio.length} spoken alert${missingSystemAudio.length === 1 ? '' : 's'} (off-route/GPS/speed) still need${missingSystemAudio.length === 1 ? 's' : ''} PCV audio. Generate ${missingSystemAudio.length === 1 ? 'it' : 'them'} in Narration & Simulate before publishing.`,
+          description: `${missingSystemAudio.length} spoken alert${missingSystemAudio.length === 1 ? '' : 's'} (off-route/GPS/speed) still need${missingSystemAudio.length === 1 ? 's' : ''} PCV audio. Import ${missingSystemAudio.length === 1 ? 'it' : 'them'} on the tour\'s General tab (Spoken System Messages) before publishing.`,
         });
         return false;
       }

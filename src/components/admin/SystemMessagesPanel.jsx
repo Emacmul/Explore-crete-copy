@@ -18,8 +18,10 @@ import { getFnErrorMessage } from '@/lib/utils';
 // blocked server-side (saveWalkForBackend) until all four have audio — see that
 // function's own comment.
 //
-// Rendered ONCE per tour inside the Narration & Simulate tab (not per-waypoint) —
-// these are tour-level messages, not tied to any one stop.
+// Rendered ONCE per tour, on the tour's General tab (since 2026-09-29 — previously
+// it sat under the whole Narration & Simulate screen, where it read as if it needed
+// filling in for every location). These are tour-level messages, not tied to any one
+// stop: they're set once here and pulled from the tour wherever an event triggers them.
 const MESSAGES = [
   { field: 'off_route_text', audioField: 'off_route_audio_url', label: 'Off-route alert' },
   { field: 'gps_no_signal_text', audioField: 'gps_no_signal_audio_url', label: 'No GPS signal alert' },

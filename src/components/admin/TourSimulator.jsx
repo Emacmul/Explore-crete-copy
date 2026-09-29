@@ -1725,11 +1725,11 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
           translate its title at all — the "Translate" button (follow-up 125) sits in the
           General tab's Tour Name field, but General is admin-only (see the `tabs` array in
           WalkEditor.jsx, follow-up 46) — a narrator, or an admin testing as one, never
-          reaches it. This tab (Narration & Simulate) is the ONLY screen a narrator ever
-          actually opens on their own clone, so that's where this needs to live too.
-          WalkEditor.jsx builds this whole block (it already owns the translate handler and
-          the `form.name` state) and just hands it down ready-made — renders nothing when
-          this isn't a clone (titleEditor is only ever passed for one). */}
+          reaches it. It lived here from follow-up 126 until 2026-09-29, when narrators
+          got their OWN condensed General tab in WalkEditor.jsx (Tour Title, About this
+          walk, Before You Set Off, and the Spoken System Messages all in one place) and
+          this block moved there. The prop is kept (renders nothing when not passed) so
+          nothing else here needs to change. */}
       {titleEditor}
 
       {/* Per Enda's report: nothing on this tab actually showed which locations were

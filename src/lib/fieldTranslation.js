@@ -15,9 +15,12 @@ import { LANGUAGE_CODE_BY_NAME, getGoogleTranslateCode } from '@/lib/i18n';
 // trusts whatever the clone's own box currently holds) — see translateScript/entry.ts.
 // Throws a plain Error with a human-readable message on any failure; callers decide for
 // themselves whether that should surface to the narrator or fail silently (best-effort).
-export async function translateWalkField({ field, walkId, waypointIndex, targetLanguage, apiKeys, authPayload }) {
+export async function translateWalkField({ field, titleOnly, walkId, waypointIndex, targetLanguage, apiKeys, authPayload }) {
   const response = await base44.functions.invoke('translateScript', {
-    field,
+    // titleOnly: translate the master tour's NAME (the auto-translate-on-clone in
+    // BackendShell uses it) — translateScript's own titleOnly mode, not `field`,
+    // because 'name' isn't one of its walk-level fields.
+    ...(titleOnly ? { titleOnly: true } : { field }),
     ...(Number.isInteger(waypointIndex) ? { waypointIndex } : {}),
     walkId,
     target_language: targetLanguage,
