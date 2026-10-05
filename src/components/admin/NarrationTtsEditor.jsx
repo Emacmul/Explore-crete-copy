@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { getNarratorAuthPayload } from '@/lib/useNarratorApiKeys';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -252,7 +252,18 @@ function hasWordingChange(originalSegs, attemptedText) {
 // SegmentScriptEditor) never hides it this way, so the default of `true` leaves them
 // completely unaffected.
 export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, onAudioChange, onAutoSave, fixedLanguage, waypointSegmentId, waypointSegmentTitle, doneLocked = false, currentWalkId, onTestSegment, isNarrator = false, visible = true, paceDistanceM = null, paceAvailableSec = null, paceSpeedKmh = null, paceAudioDurationSec = null, paceHasNext = null }) {
-  const { keys: apiKeys } = useNarratorApiKeys();
+  const { keys: apiKeys, reload: reloadApiKeys } = useNarratorApiKeys();
+  // Per the 2026-10-05 report ("No Google TTS API key found" shown twice in an hour to
+  // narrators whose key was definitely saved): the hook's copy of the keys can be
+  // transiently empty after a failed load. Every key-gated action here therefore falls
+  // back to ONE live reload from the server before giving up — a narrator whose key IS
+  // saved must never be told it isn't. Returns the key string, or null when the server
+  // genuinely confirms there is none.
+  const ensureGoogleKey = useCallback(async () => {
+    if (apiKeys.google_tts_api_key) return apiKeys.google_tts_api_key;
+    const fresh = await reloadApiKeys();
+    return fresh?.google_tts_api_key || null;
+  }, [apiKeys.google_tts_api_key, reloadApiKeys]);
   const [selectedVoice, setSelectedVoice] = useState('NEUTRAL');
   const [selectedLanguage, setSelectedLanguage] = useState(fixedLanguage || 'English');
   const [error, setError] = useState('');
@@ -631,7 +642,8 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     if (isNarrator && hasWordingChange(currentSegs, currentText)) {
       throw new Error(WORDING_CHANGE_ERROR);
     }
-    if (!apiKeys.google_tts_api_key) {
+    const googleKey = await ensureGoogleKey();
+    if (!googleKey) {
       throw new Error('No Google TTS API key found for your account yet. Add your own key via "API Keys" in the header.');
     }
 
@@ -662,7 +674,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
           text: seg.content,
           gender: selectedVoice,
           language_code: languageCode,
-          apiKey: apiKeys.google_tts_api_key,
+          apiKey: googleKey,
           ...getNarratorAuthPayload(),
         }),
         TTS_CALL_TIMEOUT_MS,
@@ -814,7 +826,8 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
       setEditingSegmentId(null);
       return;
     }
-    if (!apiKeys.google_tts_api_key) {
+    const googleKey = await ensureGoogleKey();
+    if (!googleKey) {
       setError('No Google TTS API key found for your account yet. Add your own key via "API Keys" in the header.');
       return;
     }
@@ -851,7 +864,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
             text: seg.content,
             gender: selectedVoice,
             language_code: languageCode,
-            apiKey: apiKeys.google_tts_api_key,
+            apiKey: googleKey,
             ...getNarratorAuthPayload(),
           }),
           TTS_CALL_TIMEOUT_MS,
@@ -945,7 +958,8 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
       setError(`Script exceeds the ${MAX_CHARS} character limit.`);
       return;
     }
-    if (!apiKeys.google_tts_api_key) {
+    const googleKey = await ensureGoogleKey();
+    if (!googleKey) {
       setError('No Google TTS API key found for your account yet. Add your own key via "API Keys" in the header.');
       return;
     }
@@ -1006,7 +1020,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
             text: seg.content,
             gender: selectedVoice,
             language_code: languageCode,
-            apiKey: apiKeys.google_tts_api_key,
+            apiKey: googleKey,
             ...getNarratorAuthPayload(),
           }),
           TTS_CALL_TIMEOUT_MS,
@@ -1218,7 +1232,8 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   // caller can retry — used by both the live preview (handleBuildAndPlay below) and the
   // final save (finalizeAndSave just below), since either can hit the same stale URL.
   const regenerateSegmentAudio = async (seg) => {
-    if (seg.type !== 'text' || !apiKeys.google_tts_api_key) return null;
+    const googleKey = await ensureGoogleKey();
+    if (seg.type !== 'text' || !googleKey) return null;
     try {
       const languageCode = LANG_TO_CODE[selectedLanguage] || 'en-US';
       const response = await withTimeout(
@@ -1226,7 +1241,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
           text: seg.content,
           gender: selectedVoice,
           language_code: languageCode,
-          apiKey: apiKeys.google_tts_api_key,
+          apiKey: googleKey,
           ...getNarratorAuthPayload(),
         }),
         TTS_CALL_TIMEOUT_MS,
@@ -1259,7 +1274,11 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   const finalizeAndSave = async (segmentsOverride, segmentAudiosOverride) => {
     const segsToUse = segmentsOverride || segments;
     const audiosToUse = segmentAudiosOverride || segmentAudios;
+    // A retry of "Mark Segment as Done" after a transient failure must not leave the
+    // previous "Combined audio failed: …" banner on screen once this attempt succeeds —
+    // clear it at the start, the same way the "Try again" path already does.
     setGeneratingCombined(true);
+    setError('');
     addLog('Rendering combined audio file…');
     try {
       const wavBlob = await combineSegmentsToWav(segsToUse, audiosToUse, undefined, { onRegenerateAudio: regenerateSegmentAudio });
