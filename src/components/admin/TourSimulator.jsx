@@ -1023,11 +1023,18 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
     setAutoScrollToTest(focusTestControls);
     const boundary = locationRangeBoundary(targetIndex, span);
     const endIndex = boundary ? boundary.waypointIndex : waypoints.length;
-    // Default: every location's own Primary-Start point IS its own WP1 (WaypointPaceEditor's
-    // own testDisabled already covers location 1's start; it does not stop text editing).
-    // selectLastWaypoint (see above): open on this location's own LAST waypoint instead —
-    // endIndex is one past it, exactly like isLastWaypointOfLocation's own arithmetic.
-    const landedIndex = selectLastWaypoint ? Math.max(targetIndex, endIndex - 1) : targetIndex;
+    // Per Enda's report (2026-10-05): jumping to a FULLY-DONE location must open its
+    // LAST waypoint straight away, so "Test Location"/"Test N subsegments" are usable
+    // immediately — landing on WP1 of an all-Done location only showed the locked box
+    // and no test buttons at all (those exist on a location's last waypoint alone, see
+    // isLastWaypointOfLocation). selectLastWaypoint (the Waypoints-tab divider buttons)
+    // forces this too. Only an INCOMPLETE location still lands on its own WP1 — that's
+    // the wording-editing path, where the last waypoint's test toolbar is meaningless.
+    // endIndex is one past the location's own last waypoint, exactly like
+    // isLastWaypointOfLocation's own arithmetic.
+    const targetLoc = locationStatus.find(l => l.index === targetIndex);
+    const landOnLast = selectLastWaypoint || !!targetLoc?.isComplete;
+    const landedIndex = landOnLast ? Math.max(targetIndex, endIndex - 1) : targetIndex;
     setSelectedWpIndex(landedIndex);
     // bypassNarratorLock paths (the divider buttons) also pin dividerLandingIndex so the
     // snap-back effect can't yank the selection off this landing a tick later — see both

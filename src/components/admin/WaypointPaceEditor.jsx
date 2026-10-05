@@ -375,7 +375,24 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
         setContentReadyTick((n) => n + 1);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      // Per Enda's report (2026-10-05): jumping to any waypoint spun
+      // "Loading this waypoint's audio for editing…" forever, with no error. A
+      // dependency changing mid-load used to leave `loading` stuck true for good:
+      // the loop's own result block is skipped when `cancelled` is true, while
+      // startedRef (still true) blocked every later re-run from starting a fresh
+      // load — so the spinner never ended. And this fires on every SECOND and
+      // later mount of this panel in a browser session: useNarratorApiKeys
+      // re-fetches on mount even when cached keys are present (a deliberate
+      // freshness revalidation), and with cached keys its first render already
+      // has keysLoading=false, so this effect starts BEFORE that refetch flips
+      // keysLoading/loadedOk — cancelling this very loop a moment later. Reset
+      // the guard and the spinner here, so the load simply starts over once the
+      // keys have settled.
+      cancelled = true;
+      startedRef.current = false;
+      setLoading(false);
+    };
   }, [keysLoading, keysLoadedOk, keysError, apiKeys.google_tts_api_key, script, fixedLanguage, loadAttempt]);
 
   // Undoes the guard above so the effect runs again — used only for the "the key check
