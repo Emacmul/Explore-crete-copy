@@ -1,5 +1,3 @@
-
-
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.38';
 import { resolveActor } from '../../shared/backendActor.ts';
 
@@ -48,7 +46,18 @@ Deno.serve(async (req) => {
 
     // Each narrator uses their own Google TTS key (set on their own account) rather than one
     // key shared across everyone — keeps quota and any overage cost personal to them.
-    if (!apiKey || !apiKey.trim()) {
+    // Per the 2026-10-05 report ("No Google TTS API key found" shown twice in an hour to
+    // narrators whose key was definitely saved): the browser's copy of the key can
+    // transiently fail to load, so when a call arrives without one, fall back to the
+    // CALLER's own stored key — resolveActor has already verified exactly who they are,
+    // and only their own row is ever read — before refusing. A narrator with a saved
+    // key can no longer be blocked by a frontend load hiccup.
+    let googleKey = (apiKey || '').trim();
+    if (!googleKey && actor?.email) {
+      const matches = await base44.asServiceRole.entities.AppUser.filter({ email: actor.email });
+      googleKey = (matches[0]?.google_tts_api_key || '').trim();
+    }
+    if (!googleKey) {
       return Response.json({ error: 'No Google TTS API key found for your account. Add your own key under "API Keys" in the Admin Panel header.' }, { status: 400 });
     }
 
@@ -66,7 +75,7 @@ Deno.serve(async (req) => {
 
     // Call Google Cloud Text-to-Speech
     const ttsResponse = await fetch(
-      `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
+      `https://texttospeech.googleapis.com/v1/text:synthesize?key=${googleKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
