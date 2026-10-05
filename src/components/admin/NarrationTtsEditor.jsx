@@ -2032,6 +2032,24 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                       // this is meaningless for one and left false.
                       const needsListenBeforeEdit = seg.type === 'text' && !playedSegmentIds.has(seg.id);
                       const isLastEdited = lastEditedSegmentIds.has(seg.id);
+                      // WHY this line's pencil is locked, in the same priority order as
+                      // the editToggleDisabled expression below — so the message on the
+                      // card always names the reason that is ACTUALLY holding the click.
+                      // Every one of these used to grey the pencil with no message at all
+                      // except the listen-first one, which is how "the pencil is stuck and
+                      // I don't know why" started (Enda's regression report, and the
+                      // follow-up where Anoushka reported never seeing any explanation).
+                      const editLockedReason = doneLocked
+                        ? 'This waypoint is marked Done — untick Done on its row in the Waypoints tab first.'
+                        : busy
+                          ? 'Wait for the current playback or save to finish first.'
+                          : editingSegmentId !== null && editingSegmentId !== seg.id
+                            ? 'Another line\u2019s editor is open \u2014 save or cancel it first.'
+                            : partHasDraft
+                              ? 'This part\u2019s script box has unsaved edits \u2014 use "Save This Part" below first.'
+                              : needsListenBeforeEdit
+                                ? 'Play this line, start to finish, before you can edit it.'
+                                : '';
                       return (
                         <TtsSegmentCard
                           key={seg.id}
@@ -2047,6 +2065,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                           editValue={editingSegmentId === seg.id ? segmentEditText : ''}
                           onEditChange={setSegmentEditText}
                           onToggleEdit={seg.type === 'text' ? () => handleToggleSegmentEdit(seg) : undefined}
+                          editLockedReason={editLockedReason}
                           needsListenBeforeEdit={needsListenBeforeEdit}
                           isLastEdited={isLastEdited}
                           // Per the follow-up 23 audit (Bug C): opening a DIFFERENT

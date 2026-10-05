@@ -58,7 +58,16 @@ export default function TtsSegmentCard({
   onEditChange,
   onToggleEdit,
   editToggleDisabled = false,
-  needsListenBeforeEdit = false,
+  // Why the pencil is locked, in plain words, for every reason that can hold it —
+  // needsListenBeforeEdit (the follow-up 32 listen-first rule) is only ONE of them.
+  // Before this prop existed the other reasons (an unsaved draft in this part's own
+  // script box, another line's editor still open, a playback/save in flight, the
+  // waypoint marked Done) greyed the pencil out with NO message anywhere, which is
+  // exactly how the "the pencil is stuck and I don't know why" confusion started.
+  // The parent computes the reason with the same priority as its own
+  // editToggleDisabled expression, so this can never disagree with what's actually
+  // blocking the click.
+  editLockedReason = '',
   isLastEdited = false,
   onCancelEdit,
   onSaveEdit,
@@ -163,8 +172,8 @@ export default function TtsSegmentCard({
               title={
                 isEditing
                   ? 'Close without saving'
-                  : needsListenBeforeEdit
-                    ? 'Play this line, start to finish, before you can edit it'
+                  : !isEditing && editToggleDisabled && editLockedReason
+                    ? editLockedReason
                     : 'Fix just this line'
               }
               className={`shrink-0 w-8 h-8 flex items-center justify-center rounded-full transition-colors disabled:opacity-30 ${
@@ -180,9 +189,12 @@ export default function TtsSegmentCard({
             fifth or 10th editing attempt" — spelled out here the same way every other
             locked control on this panel explains itself, rather than leaving the
             pencil greyed out with no reason given. */}
-        {!isEditing && needsListenBeforeEdit && (
+        {/* The reason this line's pencil is locked, whatever it is — shown for every
+            lock, not just the listen-first one, so a greyed pencil is never a mystery.
+            When editing is open the pencil acts as "close", so no reason is shown. */}
+        {!isEditing && editToggleDisabled && editLockedReason && (
           <p className="text-xs text-amber-500/80 mt-1 ml-10">
-            Play this line, start to finish, before you can edit it.
+            {editLockedReason}
           </p>
         )}
 
