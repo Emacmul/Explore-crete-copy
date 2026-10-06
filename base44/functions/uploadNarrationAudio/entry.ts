@@ -41,6 +41,7 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'Not authorized' }, { status: 403 });
     }
 
+
     if (!audioBase64 || !String(audioBase64).trim()) {
       return Response.json({ error: 'Missing audio data' }, { status: 400 });
     }
