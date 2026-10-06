@@ -1,4 +1,4 @@
-import { isAppAdmin } from './appUserAuth.ts';
+import { isAppAdmin, resolveNarrSession } from './appUserAuth.ts';
 
 /**
  * Resolves who is actually calling a Walk-related backend function — the same
@@ -36,14 +36,11 @@ export async function resolveActor(base44: any, body: any) {
   const narrToken = body?.narrToken;
   if (!email || !narrToken) return null;
 
-  const normalized = String(email).trim().toLowerCase();
-  const matches = await base44.asServiceRole.entities.AppUser.filter({ email: normalized });
-  const u = Array.isArray(matches) ? matches[0] : null;
+  // Same validator the admin gates use — including its sliding expiry renewal
+  // (see resolveNarrSession in appUserAuth.ts), so a narrator's every Walk save
+  // keeps their session alive too.
+  const u = await resolveNarrSession(base44, body);
   if (!u || (u.role !== 'narrator' && u.role !== 'admin' && u.role !== 'super_admin')) return null;
-
-  const tokenValid = u.narr_session_token && String(u.narr_session_token) === String(narrToken)
-    && u.narr_session_expires_at && new Date(u.narr_session_expires_at).getTime() > Date.now();
-  if (!tokenValid) return null;
 
   if (u.role === 'admin' || u.role === 'super_admin') return { kind: 'admin' as const };
   return { kind: 'narrator' as const, email: u.email };

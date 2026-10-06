@@ -27,7 +27,27 @@ export async function resolveNarrSession(base44: any, body?: any) {
     if (!u) return null;
     const tokenValid = u.narr_session_token && String(u.narr_session_token) === String(narrToken)
       && u.narr_session_expires_at && new Date(u.narr_session_expires_at).getTime() > Date.now();
-    return tokenValid ? u : null;
+    if (!tokenValid) return null;
+    // Sliding renewal (Enda, 2026-10-06 20:13): his 12-hour Narr session expired
+    // mid-work — he logged in that morning, was still actively editing in the
+    // evening, and a line save got a hard "Not authorized" out of nowhere. A
+    // session that is actively used should not die at a fixed wall: whenever a
+    // valid token arrives with less than half its lifetime left, push the expiry
+    // out a fresh 12 hours. The token itself never changes (a renewal cannot
+    // resurrect a logged-out, stolen or superseded token — only extends the one
+    // row that just proved it's live). Best-effort: a failed renewal must never
+    // fail the actual call being authorized.
+    const remaining = new Date(u.narr_session_expires_at).getTime() - Date.now();
+    if (remaining < 6 * 60 * 60 * 1000) {
+      try {
+        await base44.asServiceRole.entities.AppUser.update(u.id, {
+          narr_session_expires_at: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(),
+        });
+      } catch {
+        // Renewal is a convenience, not a gate — ignore failures.
+      }
+    }
+    return u;
   } catch {
     return null;
   }
