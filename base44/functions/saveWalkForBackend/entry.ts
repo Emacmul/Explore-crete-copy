@@ -24,6 +24,7 @@ import { grantTourToAllNarrators } from '../../shared/narratorFreeTours.ts';
 // play this tour", so a publish and a live-save can never disagree.
 import { isUsableAudioUrl, collectAudioReadinessIssues } from '../../shared/walkReadiness.ts';
 
+
 // NOTE (2026-09-25): this function's DEPLOYMENT is wedged — four re-saves across two
 // days never reached the deployed endpoint, which still runs pre-lock code. The
 // reviewed logic, lock included, is also deployed as saveWalkForBackendV2 (verified:
