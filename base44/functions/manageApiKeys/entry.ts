@@ -41,6 +41,7 @@ const validateGroqKey = async (key: string): Promise<'valid' | 'invalid' | 'unve
   } catch { return 'unverified'; }
 };
 
+
 const validateGoogleTtsKey = async (key: string): Promise<'valid' | 'invalid' | 'unverified'> => {
   try {
     // One character of the cheapest voice — a validation probe, not real generation.
