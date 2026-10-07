@@ -123,7 +123,7 @@ const VOICE = 'NEUTRAL';
  * in-browser preview and never saves anything, same reasoning as leaving read-only
  * actions like Download unlocked elsewhere in this codebase.
  */
-export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, onAutoSave, onTestSubsegment, testDisabled, testDisabledReason, maxTestSpan = 1, doneLocked = false, onTestLocation, testLocationDisabled = false, testLocationDisabledReason, onTestTourSoFar, testTourSoFarDisabled = false, testTourSoFarDisabledReason, testCompleted = false, autoScrollToTest = false }) {
+export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, onAutoSave, onTestSubsegment, testDisabled, testDisabledReason, maxTestSpan = 1, doneLocked = false, onTestLocation, testLocationDisabled = false, testLocationDisabledReason, maxLocationTestSpan = 1, onTestTourSoFar, testTourSoFarDisabled = false, testTourSoFarDisabledReason, testCompleted = false, autoScrollToTest = false }) {
   // Per Enda's report (follow-up 59): this panel opened straight to "No Google TTS API
   // key found for your account yet" even with a real key saved. Follow-up 59 fixed the
   // FIRST cause (reading the key before its own async fetch had resolved at all — see
@@ -174,6 +174,16 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
   // TourSimulator's maxWaypointTestSpan), so this can never be set higher than
   // what's genuinely testable right now.
   const [testSpan, setTestSpan] = useState(1);
+  // Per Enda (2026-10-07): the same 1/2/3-in-a-row choice "Test this subsegment" offers
+  // at individual-waypoint granularity (testSpan above) is wanted at whole-location
+  // granularity too — test the location being worked on PLUS the one or two complete
+  // locations before it in one continuous drive, for the same continuity reasons. The
+  // parent (TourSimulator.jsx) caps this at however many consecutive locations ending
+  // at the current one are actually fully Done (maxLocationTestSpan), since a drive
+  // through a still-unfinished earlier location would just play silence, not a real
+  // test — the same rule "Play Tour So Far" already enforces. 1 is the original
+  // single-location "Test Location" behaviour, unchanged.
+  const [locationTestSpan, setLocationTestSpan] = useState(1);
   const [error, setError] = useState('');
   // True only for the "the key CHECK ITSELF failed" case above — distinct from a plain
   // "no key saved" error, since only this one can be fixed by simply trying again
@@ -932,16 +942,35 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
                 looser one — testLocationDisabled/testLocationDisabledReason are computed
                 from that same rule in the parent. */}
             {onTestLocation && (
-              <Button
-                size="sm"
-                onClick={onTestLocation}
-                disabled={loading || testing || saving || testLocationDisabled}
-                title={testLocationDisabled ? testLocationDisabledReason : "Drive through this entire location, from its own start to its end, playing every waypoint's real saved audio — the full listen-through check that everything flows properly."}
-                className="bg-purple-700/30 hover:bg-purple-700/50 border border-purple-600/50 text-white gap-2"
-              >
-                <Route className="w-4 h-4" />
-                Test Location
-              </Button>
+              <>
+                {/* Per Enda (2026-10-07): the span choice for "Test Location" — offered
+                    whenever at least one complete location sits immediately before the
+                    current one (maxLocationTestSpan > 1), otherwise it's just clutter,
+                    same reasoning as the subsegment span picker above. */}
+                {maxLocationTestSpan > 1 && (
+                  <select
+                    value={locationTestSpan}
+                    onChange={(e) => setLocationTestSpan(Number(e.target.value))}
+                    disabled={loading || testing || saving || testLocationDisabled}
+                    title="How many locations back to start the test from — the car starts at that earlier location's trigger point and drives straight through to here, so you can hear how this location flows on from the one before it"
+                    className="bg-slate-700 border border-slate-500 text-white text-sm rounded px-2 h-9 min-w-0"
+                  >
+                    <option value={1}>Test 1 location</option>
+                    {maxLocationTestSpan >= 2 && <option value={2}>Test 2 in a row</option>}
+                    {maxLocationTestSpan >= 3 && <option value={3}>Test 3 in a row</option>}
+                  </select>
+                )}
+                <Button
+                  size="sm"
+                  onClick={() => onTestLocation(locationTestSpan)}
+                  disabled={loading || testing || saving || testLocationDisabled}
+                  title={testLocationDisabled ? testLocationDisabledReason : locationTestSpan > 1 ? `Drive from ${locationTestSpan - 1 === 1 ? 'the location just before this one' : `the ${locationTestSpan - 1} locations before this one`}, straight through to here, playing every waypoint's real saved audio — the full listen-through check that everything flows properly.` : "Drive through this entire location, from its own start to its end, playing every waypoint's real saved audio — the full listen-through check that everything flows properly."}
+                  className="bg-purple-700/30 hover:bg-purple-700/50 border border-purple-600/50 text-white gap-2"
+                >
+                  <Route className="w-4 h-4" />
+                  {locationTestSpan > 1 ? `Test ${locationTestSpan} locations` : 'Test Location'}
+                </Button>
+              </>
             )}
             {/* Per Anoushka (relayed by Enda): audio problems become most apparent when
                 hearing the WHOLE tour drive through, not just one location in isolation.

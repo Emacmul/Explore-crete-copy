@@ -1086,14 +1086,38 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
   // jumpToLocation, this deliberately leaves selectedWpIndex alone — the editor stays right
   // where it is (the last waypoint just being worked on) instead of jumping the editing
   // focus back to the location's own start.
-  const testCurrentLocation = () => {
-    if (!currentLocationRange) return;
-    const locationWaypoints = waypoints.slice(currentLocationRange.startIndex, currentLocationRange.endIndex);
+  const testCurrentLocation = (span = 1) => {
+    if (!currentLocationRange || currentLocationPosition < 0) return;
+    // Per Enda (2026-10-07): the whole-location twin of "Test this subsegment"'s own
+    // backward span (follow-up 170/171) — the drive extends BACKWARD, starting at the
+    // location `span - 1` places before the current one and playing straight through
+    // to here, stopping at this location's own end (the next location's Start). Every
+    // location in the span is already fully Done — locationTestMaxSpan below caps the
+    // choice at exactly that — so the earlier legs always play real, saved audio.
+    // span 1 is the original single-location behaviour, byte-for-byte unchanged.
+    const startPos = Math.max(0, currentLocationPosition - (span - 1));
+    const startLoc = locationStatus[startPos];
+    if (!startLoc) return;
+    const locationWaypoints = waypoints.slice(startLoc.index, currentLocationRange.endIndex);
     const bounds = locationWaypoints.filter(wp => wp.lat && wp.lng).map(wp => [wp.lat, wp.lng]);
     if (bounds.length > 0) setMapFocusBounds(bounds);
     // Trigger-circle entry start (Enda, 2026-09-27 — see triggerEntryStartDist above).
-    jumpToWaypoint(currentLocationRange.startIndex, { locationSpan: 1, autoplay: true, startDistOverride: triggerEntryStartDist(currentLocationRange.startIndex) });
+    jumpToWaypoint(startLoc.index, { locationSpan: span, autoplay: true, startDistOverride: triggerEntryStartDist(startLoc.index) });
   };
+
+  // Per Enda (2026-10-07): caps the "Test Location" span picker at however many
+  // CONSECUTIVE locations ending at the currently open one are fully Done — the same
+  // "an unfinished location would just play silence mid-drive, hiding a real problem"
+  // rule "Play Tour So Far" already enforces. Counts backward from the current
+  // location: 0 when it isn't complete itself (the ordinary "Test Location" gate,
+  // testLocationDisabled, covers that case with its own message), 1 when only it is,
+  // up to 3. WaypointPaceEditor only shows its span picker when this is above 1.
+  const locationTestMaxSpan = useMemo(() => {
+    if (currentLocationPosition < 0) return 0;
+    let span = 0;
+    while (span < 3 && locationStatus[currentLocationPosition - span]?.isComplete) span++;
+    return span;
+  }, [locationStatus, currentLocationPosition]);
 
   // Per Anoushka (relayed by Enda): "Play Tour So Far" — drives from the very first
   // waypoint of the whole tour (location 1's own start) straight through to wherever
@@ -2184,6 +2208,7 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                       && lastJumpRef.current?.audioOverrideIndex === selectedWpIndex
                     }
                     onTestLocation={isLastWaypointOfLocation ? testCurrentLocation : undefined}
+                    maxLocationTestSpan={locationTestMaxSpan}
                     testLocationDisabled={!currentLocationStatus?.isComplete}
                     testLocationDisabledReason={
                       currentLocationStatus && !currentLocationStatus.isComplete
