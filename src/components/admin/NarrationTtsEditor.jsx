@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { getNarratorAuthPayload } from '@/lib/useNarratorApiKeys';
+import useAudioUploadRetry from '@/lib/useAudioUploadRetry';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -253,6 +254,7 @@ function hasWordingChange(originalSegs, attemptedText) {
 // completely unaffected.
 export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, onAudioChange, onAutoSave, fixedLanguage, waypointSegmentId, waypointSegmentTitle, doneLocked = false, currentWalkId, onTestSegment, isNarrator = false, visible = true, paceDistanceM = null, paceAvailableSec = null, paceSpeedKmh = null, paceAudioDurationSec = null, paceHasNext = null }) {
   const { keys: apiKeys, reload: reloadApiKeys } = useNarratorApiKeys();
+  const { uploadWithRetry, retrying: retryingUpload } = useAudioUploadRetry();
   // Per the 2026-10-05 report ("No Google TTS API key found" shown twice in an hour to
   // narrators whose key was definitely saved): the hook's copy of the keys can be
   // transiently empty after a failed load. Every key-gated action here therefore falls
@@ -1284,18 +1286,15 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
       const wavBlob = await combineSegmentsToWav(segsToUse, audiosToUse, undefined, { onRegenerateAudio: regenerateSegmentAudio });
       addLog(`Combined audio rendered (${(wavBlob.size / 1024 / 1024).toFixed(2)} MB). Uploading…`);
       const audioBase64 = await blobToBase64(wavBlob);
-      // A longer ceiling than the per-line/per-segment calls above — this uploads the
-      // WHOLE combined file in one request, which can legitimately take a while longer
-      // on a slow connection, but must still have SOME limit rather than none at all.
-      const response = await withTimeout(
+      // Reuse the rendered file and filename on retries; don't regenerate paid audio.
+      const filename = `narration_${Date.now()}.wav`;
+      const response = await uploadWithRetry(() =>
         base44.functions.invoke('uploadNarrationAudio', {
           audioBase64,
           mimeType: 'audio/wav',
-          filename: `narration_${Date.now()}.wav`,
+          filename,
           ...getNarratorAuthPayload(),
-        }),
-        TTS_CALL_TIMEOUT_MS * 2,
-        'Uploading the combined audio took too long (check your connection) — nothing has been lost, just try again.'
+        })
       );
       if (response.data?.url) {
         onAudioChange(response.data.url);
@@ -1324,6 +1323,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
         setError('Combined audio failed: upload did not return a file URL.');
       }
     } catch (err) {
+      if (err?.name === 'AbortError') return;
       const msg = getFnErrorMessage(err);
       addLog(`Combined audio ERROR: ${msg}`);
       setError(`Combined audio failed: ${msg}`);
@@ -1836,6 +1836,11 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
         </div>
       )}
 
+      {retryingUpload && (
+        <p role="status" className="text-sm text-muted-foreground">
+          Connection interrupted. Retrying automatically until the audio is uploaded — keep this editor open.
+        </p>
+      )}
       {error && (
         <div ref={errorRef} className="text-red-400 text-sm bg-red-900/30 border border-red-700/50 rounded-lg px-3 py-2">
           {error}

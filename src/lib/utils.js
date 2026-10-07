@@ -68,7 +68,7 @@ export function isRecognizedFnErrorMessage(raw) {
 // explanation above rather than being shown as-is.
 export function humanizeFnError(raw) {
   const msg = String(raw || '').trim();
-  if (!msg) return 'The app hit an unexpected snag, with no reason given. Try again — if it keeps happening, tell Enda.';
+  if (!msg) return 'The action could not be completed, with no reason given. Please try again.';
   if (/^not authori[sz]ed$/i.test(msg)) {
     return 'Your Narr Studio login session has expired or wasn\'t recognised. Log out and back in, then try again.';
   }
@@ -86,7 +86,7 @@ export function humanizeFnError(raw) {
   // names them, and is caught above) — but since the exact cause can't always be told
   // apart from here, this is deliberately worded as "looks like" rather than a flat
   // claim: still calm and actionable, without asserting more than is actually known.
-  return `This looks like a temporary hiccup talking to the app's own server, not Groq or Google — it usually clears on its own within a minute or two, and nothing is lost. Wait a bit, then try again. If it keeps happening, tell Enda. (Technical detail: "${msg}")`;
+  return `The action could not be completed. Your edits are still in this editor. Please try again. (Technical detail: "${msg}")`;
 }
 
 export function getFnErrorMessage(err, fallback) {
