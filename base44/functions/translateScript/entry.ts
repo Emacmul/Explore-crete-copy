@@ -36,6 +36,7 @@ function findUnpreservedForeignWords(original: string, translated: string): stri
   return missing;
 }
 
+
 export default async function(req) {
   try {
     const base44 = wrapClientWithRetry(createClientFromRequest(req));
