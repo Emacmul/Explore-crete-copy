@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Save, Loader2, Pencil, Check, X, Upload, FileUp, CheckCircle2, AlertTriangle, FileDown, RefreshCw, Send, EyeOff, Languages, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Pencil, Check, X, Upload, FileUp, CheckCircle2, AlertTriangle, FileDown, RefreshCw, Send, EyeOff, Languages, ChevronDown, Images } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { LANGUAGE_CODE_BY_NAME, getGoogleTranslateCode } from '@/lib/i18n';
 import { getFnErrorMessage } from '@/lib/utils';
@@ -1204,6 +1204,28 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
     setTogglingAdminCompleted(false);
   };
 
+  // "Push Images to Clones" — a manual, on-demand run of the same waypoint-image
+  // propagation that already fires automatically on every save of this master tour
+  // (see propagateWaypointImages in base44/shared/waypointImageSync.ts). Handy right
+  // after uploading a batch of photos: instead of re-saving just to trigger the
+  // automatic push, one click sends the master's current images to every clone —
+  // in-progress or already submitted alike. Idempotent on the server (already-matching
+  // clones are skipped), so clicking it repeatedly is harmless.
+  const [syncingImages, setSyncingImages] = useState(false);
+  const handleSyncCloneImages = async () => {
+    if (!form.id || syncingImages) return;
+    setSyncingImages(true);
+    try {
+      const res = await base44.functions.invoke('syncCloneImages', { walk_id: form.id, ...getNarratorAuthPayload() });
+      const { touched, clone_count } = res.data || {};
+      toast({ title: 'Images synced to clones', description: `Pushed to ${touched} of ${clone_count} translation clone(s). Clones that already matched were skipped.` });
+    } catch (e) {
+      toast({ title: 'Image sync failed', description: getFnErrorMessage(e), variant: 'destructive' });
+    } finally {
+      setSyncingImages(false);
+    }
+  };
+
   const [downloadingGpx, setDownloadingGpx] = useState(false);
   const [downloadingBackup, setDownloadingBackup] = useState(false);
   const [backupProgress, setBackupProgress] = useState(null); // { done, total } while running
@@ -1400,6 +1422,22 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                   ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   : <CheckCircle2 className="w-3.5 h-3.5" />}
                 {form.admin_completed ? 'Undo' : 'Mark Admin Completed'}
+              </Button>
+            </div>
+          )}
+          {!isNarrator && !form.clone_of && form.id && (
+            <div className="flex items-center gap-2 bg-slate-700/60 border border-slate-600 rounded-lg px-3 py-1.5">
+              <Button
+                size="sm"
+                onClick={handleSyncCloneImages}
+                disabled={syncingImages}
+                className="h-7 text-xs gap-1.5 bg-slate-600 hover:bg-slate-500"
+                title="Push this tour's current waypoint photos into every translation clone now — clones being edited and clones already submitted alike. Also runs automatically on every save of this tour; this button is for when you've just added a batch of photos and don't want to re-save to trigger it."
+              >
+                {syncingImages
+                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  : <Images className="w-3.5 h-3.5" />}
+                Push Images to Clones
               </Button>
             </div>
           )}
