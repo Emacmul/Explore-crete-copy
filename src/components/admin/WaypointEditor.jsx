@@ -34,7 +34,20 @@ import { compressImage, MAX_WAYPOINT_IMAGES, getWaypointImages } from '@/lib/way
 // structural IDs tied to scripts (unlike WalkAbout/Driving tours, which never use this component).
 function renumberWaypoints(list, code) {
   if (!code) return list;
-  return list.map((wp, i) => ({ ...wp, segment_id: `${code}${i + 1}` }));
+  // A waypoint's own tour-code prefix followed by digits (e.g. "KIS12" for tour KIS)
+  // is a positional code from a previous renumber — safe to overwrite.
+  const escaped = code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const positional = new RegExp(`^${escaped}\\d+$`);
+  // Per Enda's Kissos report (2026-10-12): GPX import stores the waypoint's <name>
+  // (the descriptive text) in segment_id for plain walks, so renumbering on every
+  // drag/add/remove silently REPLACED every description with a meaningless position
+  // code (KIS1, KIS2…). Now, before a code is reassigned, a description still sitting
+  // in the code slot is carried into the waypoint's own `name` field — so it survives
+  // the renumber and the row keeps showing it next to the new code.
+  return list.map((wp, i) => {
+    const name = wp.name || (wp.segment_id && !positional.test(wp.segment_id) ? wp.segment_id : '') || '';
+    return { ...wp, name, segment_id: `${code}${i + 1}` };
+  });
 }
 
 function AddWaypointForm({ newWp, setNewWp, addError, onSave, onCancel, onImageUpload, uploading }) {
