@@ -68,6 +68,12 @@ export const NARRATOR_WAYPOINT_READ_FIELDS = [
   'narration_script', 'audio_clip_url', 'trigger_audio', 'trigger_once',
   'trigger_radius_m', 'use_bearing', 'bearing_direction', 'bearing_tolerance',
   'avg_segment_speed_kmh', 'waypoint_done', 'description', 'image_url', 'type',
+  // Image propagation (2026-10-12, Enda): the Admin's reference photos are pushed
+  // from the master into every clone (see propagateWaypointImages in
+  // saveWalkForBackend.ts), so a narrator's own clone must actually deliver the
+  // photo ARRAY to their browser — image_url alone is the legacy single-photo field
+  // and stays empty for anything added after 2026-09-27.
+  'image_urls',
 ];
 
 // Trims one full Walk record (as stored) down to exactly what a narrator's

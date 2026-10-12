@@ -131,6 +131,72 @@ function waypointAudioKey(wp: any) {
   return JSON.stringify([wp.audio_clip_url ?? null, wp.trigger_audio === true, wp.final_audio_applied === true]);
 }
 
+// --- Waypoint-image propagation (2026-10-12, Enda) ---------------------------------
+// Images are a language-neutral visual navigation aid (see image_urls in the Walk
+// schema): the SAME photo helps a German narrator and an English customer alike, so
+// they are Admin-managed master content, never per-language narrator work. Narrators
+// cannot write image fields at all (NARRATOR_WAYPOINT_WRITE_FIELDS excludes them —
+// checked), so overwriting a clone's images from the master can never destroy
+// narrator work.
+//
+// The problem this solves: a clone copies the master's images only AT CLONE TIME.
+// Enda releases tours to narrators as soon as the text/audio is ready — often before
+// the reference photos are gathered — so clones exist that pre-date images the Admin
+// adds later, and narrators should never have to wait for (or re-enter) them.
+//
+// propagateWaypointImages runs on every admin save of a MASTER (non-clone) tour and
+// pushes each waypoint's image_urls/image_url into every clone of that master,
+// matched by waypointKey (segment_id first — identical between master and clones
+// because cloning preserves it). Clones in ANY state are updated — in-progress AND
+// finished/submitted-locked ones (the submission lock in the narrator branch below
+// only binds narrator saves; this is an admin-initiated server-side write, the same
+// authority handlePushBackClone already uses to flip finished on a locked clone).
+//
+// Rules of thumb:
+//  - Only waypoints the master actually HAS images for are propagated. A master
+//    waypoint with no images at all never clears anything from a clone (so a clone
+//    can never lose images it somehow has and the master doesn't).
+//  - Idempotent: a clone whose images already match the master is skipped entirely
+//    (no write), so a master save that changes nothing costs zero extra writes.
+//  - Best-effort: callers wrap it in try/catch — a propagation failure must never
+//    block or fail the master save itself.
+function waypointImagesKey(wp: any) {
+  return JSON.stringify([wp.image_urls ?? [], wp.image_url ?? '']);
+}
+
+async function propagateWaypointImages(base44: any, master: any) {
+  const clones = await base44.asServiceRole.entities.Walk.filter({ clone_of: master.id });
+  // Master waypoint -> images, keyed the same way the live-tour gate above keys
+  // waypoints (segment_id, name#index fallback). Only waypoints that actually carry
+  // images make it into this map.
+  const masterImages = new Map<string, any>();
+  (Array.isArray(master.waypoints) ? master.waypoints : []).forEach((wp: any, i: number) => {
+    if (!wp) return;
+    const hasImages = (Array.isArray(wp.image_urls) && wp.image_urls.length > 0) || (typeof wp.image_url === 'string' && wp.image_url);
+    if (!hasImages) return;
+    masterImages.set(waypointKey(wp, i), wp);
+  });
+  if (masterImages.size === 0) return 0;
+
+  let touched = 0;
+  for (const clone of clones) {
+    const cloneWaypoints = Array.isArray(clone.waypoints) ? clone.waypoints : [];
+    let changed = false;
+    const next = cloneWaypoints.map((wp: any, i: number) => {
+      const masterWp = masterImages.get(waypointKey(wp, i));
+      if (!masterWp) return wp;
+      if (waypointImagesKey(wp) === waypointImagesKey(masterWp)) return wp;
+      changed = true;
+      return { ...wp, image_urls: masterWp.image_urls ?? [], image_url: masterWp.image_url ?? '' };
+    });
+    if (changed) {
+      await base44.asServiceRole.entities.Walk.update(clone.id, { waypoints: next });
+      touched += 1;
+    }
+  }
+  return touched;
+}
+
 // Single save entry point for the back end. Replaces the direct
 // entities.Walk.create/update calls BackendShell.jsx used to make for
 // handleSave, handleToggleFree, handleMarkChecked, handlePublishClone,
@@ -243,6 +309,22 @@ export default async function(req) {
           }
         }
         const saved = await base44.asServiceRole.entities.Walk.update(String(id), patch);
+
+        // Image propagation (2026-10-12, see waypointImagesKey above): on every admin
+        // save of a MASTER tour, push any waypoint images it carries into every clone
+        // of it — in-progress or finished — so photos gathered after narrators started
+        // (or after they even submitted) reach every edit automatically. Best-effort:
+        // a failure here must never block the master save, so the admin just gets a
+        // console log and can re-save to retry (idempotent — matching clones are
+        // skipped, so a retry only touches whatever was missed).
+        if (!saved.clone_of) {
+          try {
+            const touched = await propagateWaypointImages(base44, saved);
+            if (touched > 0) console.log(`Waypoint images propagated to ${touched} clone(s) of ${saved.code}`);
+          } catch (imgError) {
+            console.error('Waypoint-image propagation failed (master save unaffected):', imgError);
+          }
+        }
 
         // Per Enda (follow-up 146): the moment an English tour (never a translation
         // clone) actually goes live for purchase, every current admin/narrator gets
