@@ -100,6 +100,12 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   const isNarrator = userRole === 'narrator';
   console.log('WalkEditor mounted/rendering');
   const [form, setForm] = useState({ ...EMPTY_WALK, ...walk });
+  // Snapshot of the trail line as it stood at the last successful save (or at load).
+  // Distance/Elevation auto-recompute on save ONLY when the trail line has actually
+  // changed since then — so an admin can type a corrected figure (e.g. a real walked
+  // distance longer than the raw GPX line, per the KIS report) and have it stick,
+  // while an actual trail edit still refreshes the stats automatically.
+  const lastSavedTrailKeyRef = useRef(JSON.stringify(walk?.trail_path || []));
   // The true master tour this clone was made from, if any — used only to show a plain
   // "still shows the English original" warning next to Description/Safety Notes (see
   // fieldEditor below), by comparing this clone's current text against it. Best-effort:
@@ -944,7 +950,11 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
     // the old wrong number just sat there. Recalculating on every save closes that gap for any
     // future edit (adding/removing waypoints, fixing a bad point, re-routing).
     let recalculatedDistanceKm = form.distance_km ? Number(form.distance_km) : undefined;
-    if (!isDrivingAudioTour && form.trail_path && form.trail_path.length > 1) {
+    // Only auto-recompute when the trail line was actually changed since the last save —
+    // a manual correction typed into the Distance field (real walked distance vs. the raw
+    // GPX line's length) must survive the save untouched.
+    const trailChangedSinceSave = lastSavedTrailKeyRef.current !== JSON.stringify(form.trail_path || []);
+    if (!isDrivingAudioTour && trailChangedSinceSave && form.trail_path && form.trail_path.length > 1) {
       const { distanceKm } = computeStats(form.trail_path, [], form.trail_breaks || []);
       if (distanceKm > 0) {
         recalculatedDistanceKm = Math.round(distanceKm * 10) / 10;
@@ -960,7 +970,9 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
     // but they're warned afterwards so they know to double-check it.
     let recalculatedElevationGainM = form.elevation_gain_m ? Number(form.elevation_gain_m) : undefined;
     let elevationRecalcFailed = false;
-    if (!isDrivingAudioTour && form.trail_path && form.trail_path.length > 1) {
+    // Same rule as Distance: only recompute when the trail line itself changed —
+    // also skips a pointless elevation network call when nothing on the trail moved.
+    if (!isDrivingAudioTour && trailChangedSinceSave && form.trail_path && form.trail_path.length > 1) {
       try {
         const elevations = await fetchElevations(form.trail_path);
         const { elevGain } = computeStats(form.trail_path, elevations, form.trail_breaks || []);
@@ -1012,6 +1024,9 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
       if (editVersionRef.current === editVersionAtSaveStart) {
         setDirty(false);
       }
+      // Remember this save's trail line, so the next save only auto-recomputes
+      // Distance/Elevation when the trail itself has changed since now.
+      lastSavedTrailKeyRef.current = JSON.stringify(form.trail_path || []);
       // Keep the form's own id in sync with what was actually persisted, so the *next* save
       // updates this same record instead of accidentally creating a second one.
       if (saved?.id && saved.id !== form.id) {
