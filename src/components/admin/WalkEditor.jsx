@@ -2262,6 +2262,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                   start_lng: Number(form.start_lng || (form.waypoints || [])[0]?.lng),
                 }}
                 accessible={true}
+                previewMode={true}
                 onClose={() => {}}
               />
             </div>

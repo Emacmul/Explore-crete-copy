@@ -78,9 +78,16 @@ function waypointKey(waypoint, index) {
 // backgrounding the app for a phone call, never gets mistaken for "a different day".
 const REACHED_STALE_MS = 18 * 60 * 60 * 1000;
 
-export default function WalkDetail({ walk, onClose, accessible = true, allWalks = [], onSelectRelatedWalk }) {
+// previewMode: used by the Admin/Narrator editor's Preview tab. There, the customer
+// "Start Tour" gate (saved offline + safety notes confirmed) can never be satisfied —
+// the editor has no offline download and no safety-confirmation flow — so without this
+// the map and waypoint list never rendered at all (Enda's report on KIS, 2026-10-12).
+// In preview mode both are always shown; nothing customer-facing changes.
+export default function WalkDetail({ walk, onClose, accessible = true, allWalks = [], onSelectRelatedWalk, previewMode = false }) {
   const [followGps, setFollowGps] = React.useState(false);
   const [started, setStarted] = React.useState(false);
+  // Admin/narrator preview bypasses the Start gate entirely (see previewMode above).
+  const effectiveStarted = started || previewMode;
   const { t } = useLanguage();
   const { token } = useAuth();
   const { isDownloaded } = useOfflineWalks();
@@ -593,7 +600,7 @@ export default function WalkDetail({ walk, onClose, accessible = true, allWalks 
                 offline copy (e.g. from My Library) resets `started` via the effect above,
                 so re-downloading later correctly requires going through this same gate
                 again, not a one-time unlock. */}
-            {!isDrivingTour && !started ? (
+            {!isDrivingTour && !effectiveStarted ? (
               <div className="bg-white border-2 border-dashed border-gray-300 rounded-xl p-5 text-center space-y-3">
                 {!savedOffline && (
                   <p className="text-xs text-amber-700">{t('player.mustSaveFirst')}</p>
@@ -622,7 +629,7 @@ export default function WalkDetail({ walk, onClose, accessible = true, allWalks 
               </div>
             ) : null}
 
-            {waypoints.length > 0 && (isDrivingTour || started) && (
+            {waypoints.length > 0 && (isDrivingTour || effectiveStarted) && (
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <h3 className="font-semibold text-gray-900">
