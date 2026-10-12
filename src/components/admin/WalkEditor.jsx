@@ -20,7 +20,7 @@ import TrailPathMapEditor from './TrailPathMapEditor';
 import AdminPreviewMap from './AdminPreviewMap';
 import { generateWalkGpx, downloadTextFile, buildSegmentId, getRoleColour, generateWaypointUid } from '@/lib/routeExport';
 import { getRouteTypeForCategory, defaultPriceForCategory } from '@/lib/tourCategories';
-import { MAX_WAYPOINT_IMAGES } from '@/lib/waypointImages';
+import { MAX_WAYPOINT_IMAGES, compressImage } from '@/lib/waypointImages';
 import { toast } from '@/components/ui/use-toast';
 import { buildTourBackupZip } from '@/lib/tourBackupZip';
 import { DEFAULT_SAFETY_NOTES } from '@/lib/defaultSafetyNotes';
@@ -219,6 +219,25 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   // button calls translateScript with a `field` param (new — see that function's own
   // comment) so it always translates the TRUE master's current text, not whatever this
   // clone's box currently holds (which may already be a half-finished translation).
+  // Cover Image — one image per tour, shown as the cover at the top of the customer's
+  // tour page (phone/tablet/PC), the same way VoiceMap presents its tours. Admin-only:
+  // it lives on the admin General tab; a narrator's clone simply inherits it and has
+  // nothing to translate here, so it never appears on the narrator's General tab.
+  const [coverUploading, setCoverUploading] = useState(false);
+  const handleCoverUpload = async (file) => {
+    if (!file) return;
+    setCoverUploading(true);
+    try {
+      const compressed = await compressImage(file);
+      const { file_url } = await base44.integrations.Core.UploadPublicFile({ file: compressed });
+      set('image_url', file_url);
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Cover image upload failed', description: getFnErrorMessage(err) });
+    } finally {
+      setCoverUploading(false);
+    }
+  };
+
   const [translatingField, setTranslatingField] = useState(null); // 'description' | 'safety_notes' | null
   const [fieldTranslateError, setFieldTranslateError] = useState({});
   const handleTranslateField = async (field) => {
@@ -1439,6 +1458,54 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
       <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
         {activeTab === 'details' && (
           <div className="space-y-5">
+
+            {/* Cover Image — one image per tour, shown as the cover at the top of the
+                customer's tour page (phone/tablet/PC), the same way VoiceMap presents
+                its tours. Not translatable, so this stays on the admin General tab only;
+                a narrator's clone inherits whatever the original tour has. Uploaded as
+                a public file like waypoint photos — customers (and offline copies) fetch
+                it by URL without signing in. */}
+            <div>
+              <Label className="text-slate-300 mb-1.5 block">Cover Image</Label>
+              <div className="flex items-start gap-4">
+                {form.image_url ? (
+                  <div className="relative shrink-0">
+                    <img src={form.image_url} alt="Tour cover" className="w-56 h-36 object-cover rounded-lg border border-slate-600" />
+                    <button
+                      type="button"
+                      onClick={() => set('image_url', '')}
+                      title="Remove cover image"
+                      className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-slate-900/70 hover:bg-red-600 text-white flex items-center justify-center transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="w-56 h-36 rounded-lg border border-dashed border-slate-600 bg-slate-800/50 flex items-center justify-center text-slate-500 text-xs text-center px-3">
+                    No cover image yet
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <p className="text-xs text-slate-500 mb-2">
+                    Shown at the top of the tour page customers open, on phone, tablet and PC — the tour's cover photo. One image only; landscape photos work best.
+                  </p>
+                  <input
+                    id="cover-image-input"
+                    type="file"
+                    accept="image/*"
+                    className="sr-only"
+                    onChange={(e) => { handleCoverUpload(e.target.files && e.target.files[0]); e.target.value = ''; }}
+                  />
+                  <label
+                    htmlFor="cover-image-input"
+                    className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium bg-slate-700 hover:bg-slate-600 text-white cursor-pointer"
+                  >
+                    {coverUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                    {coverUploading ? 'Uploading…' : (form.image_url ? 'Replace image' : 'Choose image')}
+                  </label>
+                </div>
+              </div>
+            </div>
 
             {/* Route Type, Code, and GPX import are all structural/admin-only — a narrator
                 works inside a clone whose category and code are already set at cloning

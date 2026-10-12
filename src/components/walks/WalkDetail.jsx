@@ -425,6 +425,19 @@ export default function WalkDetail({ walk, onClose, accessible = true, allWalks 
           </div>
         </div>
 
+        {/* Tour cover image — the one image admins set on the General tab, shown
+            full-width at the top of the tour page (phone/tablet/PC) the same way
+            VoiceMap presents its tours. Hidden when a tour has no cover image yet. */}
+        {walk.image_url && (
+          <div className="shrink-0">
+            <img
+              src={walk.image_url}
+              alt={walk.name || 'Tour cover'}
+              className="w-full h-48 sm:h-64 object-cover"
+            />
+          </div>
+        )}
+
         <ScrollArea className="flex-1">
           <div className="p-4 space-y-4">
             {/* Admin-only draft preview banner (follow-up 159) — always shown, whether or
