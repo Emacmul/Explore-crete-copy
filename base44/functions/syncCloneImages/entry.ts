@@ -26,7 +26,6 @@ export default async function(req) {
       return Response.json({ error: 'Only Admins can sync images to clones.' }, { status: 403 });
     }
 
-
     const walkId = String(body?.walk_id || '');
     if (!walkId) return Response.json({ error: 'walk_id is required' }, { status: 400 });
 
