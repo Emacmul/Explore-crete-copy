@@ -17,7 +17,7 @@ import DrivingTourExportPanel from './DrivingTourExportPanel';
 import TourSimulator from './TourSimulator';
 import TrailPathEditor from './TrailPathEditor';
 import TrailPathMapEditor from './TrailPathMapEditor';
-import AdminPreviewMap from './AdminPreviewMap';
+import WalkDetail from '../walks/WalkDetail';
 import { generateWalkGpx, downloadTextFile, buildSegmentId, getRoleColour, generateWaypointUid } from '@/lib/routeExport';
 import { getRouteTypeForCategory, defaultPriceForCategory } from '@/lib/tourCategories';
 import { MAX_WAYPOINT_IMAGES, compressImage } from '@/lib/waypointImages';
@@ -2207,7 +2207,26 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
             {/* The Description/Safety Notes translate boxes used to live here — moved
                 to the narrator's General tab (see activeTab === 'general' above), so all
                 of a tour's translatable non-location text sits in one place. */}
-            <AdminPreviewMap walk={form} />
+            {/* The Preview tab shows the REAL customer tour page (WalkDetail) — header
+                band, cover image, stats, map, description, safety notes, waypoints —
+                rendered from the CURRENT draft (unsaved edits included), not just the
+                map as before. An admin/narrator can only judge the presentation by
+                seeing the whole page exactly as a customer does. accessible is forced
+                true (paywall never shows to staff) and Close is a no-op: this page has
+                nowhere to "go back" to — the editor tab itself is the way out. */}
+            <div className="h-[80vh] min-h-[560px] rounded-xl overflow-hidden border border-slate-600 bg-white">
+              <WalkDetail
+                walk={{
+                  ...form,
+                  // Same coordinate fallback the old map-only preview used: fall back to
+                  // the first waypoint when the tour has no explicit start point yet.
+                  start_lat: Number(form.start_lat || (form.waypoints || [])[0]?.lat),
+                  start_lng: Number(form.start_lng || (form.waypoints || [])[0]?.lng),
+                }}
+                accessible={true}
+                onClose={() => {}}
+              />
+            </div>
             {/* Backup export is an Admin-only action — narrators can view/test the
                 preview and simulator, but never generate a GPX/KML backup file. This
                 tab itself has no narrator restriction (unlike the Route Path tab,
