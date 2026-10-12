@@ -49,6 +49,7 @@ export const NARRATOR_WAYPOINT_WRITE_FIELDS = [
   'narration_script', 'audio_clip_url', 'trigger_audio',
   'trigger_radius_m', 'trigger_once', 'use_bearing',
   'bearing_direction', 'bearing_tolerance', 'waypoint_done',
+  'name', 'description',
 ];
 
 export const NARRATOR_WALK_READ_FIELDS = [

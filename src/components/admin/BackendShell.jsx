@@ -19,6 +19,7 @@ import PublishVersionDialog from './PublishVersionDialog';
 import { getRouteTypeForCategory, defaultPriceForCategory } from '@/lib/tourCategories';
 import { toast } from '@/components/ui/use-toast';
 import { translateWalkField } from '@/lib/fieldTranslation';
+import prepareWalkingWaypoints from '@/lib/prepareWalkingWaypoints';
 
 /**
  * Shared back-end shell used by both the Admin route and the Narr route. Both
@@ -186,14 +187,16 @@ export default function BackendShell({ user, userRole, isSuperAdmin, authMode, u
     try {
       const data = await callWalkFn('cloneWalkForBackend', { originalId: original.id, targetLanguage: lang });
       let saved = data.walk;
-      setWalks((prev) => [saved, ...prev]);
+      const walkingMaster = { ...original, waypoints: saved.waypoints };
+      setWalks((prev) => [saved, ...prev.map(w => w.id === original.id && saved.route_type !== 'driving_audio_tour' ? { ...w, waypoints: (walkingMaster.waypoints || []).map(wp => ({ name: wp.name || '', description: wp.description || '' })) } : w)]);
       toast({ title: 'Clone created', description: `Translating “${original.name}” into ${lang}.` });
 
       // Per Enda (follow-up 190, extended follow-up 245): every piece of customer-facing
       // tour-level text should already be translated into the target language the
       // moment the clone is created, not left in English until the narrator remembers to
       // hit "Translate" themselves — Safety Notes worked this way already; Description
-      // now does too. Per-waypoint text (each stop's own name/description) is NOT
+      // now does too. Walking-clone waypoint names/descriptions are prepared below.
+      // Driving-tour per-waypoint text (each stop's own name/description) is NOT
       // translated here in one big batch — a driving tour can have dozens of stops, and
       // firing that many Groq calls back to back the instant a clone is created would hit
       // Groq's own per-minute rate limit almost immediately (see TranslationsManager.jsx
@@ -232,6 +235,14 @@ export default function BackendShell({ user, userRole, isSuperAdmin, authMode, u
         }
       }
 
+      if (saved.route_type !== 'driving_audio_tour') {
+        const prepared = await prepareWalkingWaypoints({ walk: saved, master: walkingMaster, apiKeys: myApiKeys, authPayload: narrAuth });
+        if (JSON.stringify(prepared.waypoints) !== JSON.stringify(saved.waypoints)) {
+          saved = (await callWalkFn('saveWalkForBackend', { id: saved.id, patch: { waypoints: prepared.waypoints } })).walk;
+          setWalks(prev => prev.map(w => w.id === saved.id ? saved : w));
+        }
+        if (prepared.errors.length) toast({ variant: 'destructive', title: 'Some waypoint translations need retrying', description: 'Open Waypoints to finish automatic preparation; existing translations and edits are preserved.' });
+      }
       return saved;
     } catch (err) {
       toast({ variant: 'destructive', title: 'Clone failed', description: err?.message || 'Could not create the clone. A tour with this code may already exist.' });

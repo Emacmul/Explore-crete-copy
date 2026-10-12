@@ -47,6 +47,7 @@ const NARRATOR_WALK_FIELDS = NARRATOR_WALK_WRITE_FIELDS;
 
 // Per-waypoint sub-fields a narrator may change. lat, lng, waypoint_role,
 // segment_number, segment_title and avg_segment_speed_kmh always come from
+// the stored waypoint; name/description are now editable translation text. They, like
 // the server's own copy of the waypoint, never the client's — speed in
 // particular must never be settable by anyone but an Admin, anywhere.
 // final_audio_applied is deliberately absent — see the comment on the admin
@@ -56,7 +57,7 @@ const NARRATOR_WAYPOINT_FIELDS = NARRATOR_WAYPOINT_WRITE_FIELDS;
 // Narrators can't reorder/add/remove waypoints in the UI today (drag is
 // disabled, and the add/delete controls are admin-only) — so waypoint count
 // and order are safe invariants to enforce here, not just assume.
-function mergeNarratorWaypoints(existingWaypoints: any[], incomingWaypoints: any) {
+function mergeNarratorWaypoints(existingWaypoints: any[], incomingWaypoints: any, allowWalkingText: boolean) {
   const existing = existingWaypoints || [];
   if (!Array.isArray(incomingWaypoints)) return existing;
   if (incomingWaypoints.length !== existing.length) {
@@ -66,6 +67,7 @@ function mergeNarratorWaypoints(existingWaypoints: any[], incomingWaypoints: any
     const incoming = incomingWaypoints[i] || {};
     const merged = { ...wp };
     for (const f of NARRATOR_WAYPOINT_FIELDS) {
+      if ((f === 'name' || f === 'description') && !allowWalkingText) continue;
       if (f in incoming) merged[f] = incoming[f];
     }
     return merged;
@@ -339,7 +341,7 @@ export default async function(req) {
       if (f in patch) allowed[f] = patch[f];
     }
     if ('waypoints' in patch) {
-      allowed.waypoints = mergeNarratorWaypoints(existing.waypoints, patch.waypoints);
+      allowed.waypoints = mergeNarratorWaypoints(existing.waypoints, patch.waypoints, existing.route_type !== 'driving_audio_tour');
     }
     if ('segment_scripts' in patch) {
       allowed.segment_scripts = mergeNarratorSegmentScripts(existing.segment_scripts, patch.segment_scripts);

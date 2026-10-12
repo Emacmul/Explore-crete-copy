@@ -12,6 +12,7 @@ import { getFnErrorMessage } from '@/lib/utils';
 import { translateWalkField, stillMatchesMaster } from '@/lib/fieldTranslation';
 import FitParser from 'fit-file-parser';
 import WaypointEditor from './WaypointEditor';
+import WalkingCloneWaypointEditor from '@/components/admin/WalkingCloneWaypointEditor';
 import DrivingTourWaypointEditor from './DrivingTourWaypointEditor';
 import DrivingTourExportPanel from './DrivingTourExportPanel';
 import TourSimulator from './TourSimulator';
@@ -1334,7 +1335,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   const tabs = [
     ...(isNarrator ? [{ id: 'general', label: 'General' }] : [{ id: 'details', label: 'General' }]),
     ...(showTrailTab ? [{ id: 'trail', label: 'Route Path (GPS)' }] : []),
-    ...(isNarrator ? [] : [{ id: 'waypoints', label: `Waypoints${form.waypoints.length ? ` (${form.waypoints.length})` : ''}` }]),
+    ...(!isNarrator || (form.clone_of && !isDrivingAudioTour) ? [{ id: 'waypoints', label: `Waypoints${form.waypoints.length ? ` (${form.waypoints.length})` : ''}` }] : []),
     ...(isDrivingAudioTour ? [{ id: 'narrate', label: 'Narration & Simulate' }] : []),
     { id: 'preview', label: 'Preview' },
   ];
@@ -2172,7 +2173,9 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
 
         {activeTab === 'waypoints' && (
           <div className="space-y-4">
-            {isDrivingAudioTour ? (
+            {form.clone_of && !isDrivingAudioTour ? (
+              <WalkingCloneWaypointEditor walk={form} master={masterWalk} onChange={wps => set('waypoints', wps)} onAutoSave={requestAutoSave} />
+            ) : isDrivingAudioTour ? (
               <DrivingTourWaypointEditor
                 waypoints={form.waypoints}
                 onChange={wps => set('waypoints', wps)}

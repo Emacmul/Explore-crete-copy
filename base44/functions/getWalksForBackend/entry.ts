@@ -48,6 +48,9 @@ export default async function(req) {
 
     const email = actor.email.toLowerCase();
 
+    // Only the text source needed to prepare this narrator's walking clones;
+    // master coordinates, route data and admin fields remain withheld.
+    const ownWalkingMasterIds = new Set(all.filter(w => w.clone_of && w.route_type !== 'driving_audio_tour' && (w.assigned_narrator_email || '').toLowerCase() === email).map(w => w.clone_of));
     const masters = all
       .filter((w) => !w.clone_of)
       .map((w) => ({
@@ -64,6 +67,7 @@ export default async function(req) {
         // the `actor.kind === 'admin'` branch above and gets the full,
         // unredacted `all` list instead.
         admin_completed: w.admin_completed,
+        ...(ownWalkingMasterIds.has(w.id) ? { waypoints: (w.waypoints || []).map(wp => ({ name: wp.name || '', description: wp.description || '' })) } : {}),
       }));
 
     const ownClones = all

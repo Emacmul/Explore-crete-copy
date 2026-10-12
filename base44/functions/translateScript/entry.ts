@@ -36,7 +36,7 @@ function findUnpreservedForeignWords(original: string, translated: string): stri
   return missing;
 }
 
-Deno.serve(async (req) => {
+export default async function(req) {
   try {
     const base44 = wrapClientWithRetry(createClientFromRequest(req));
 
@@ -76,7 +76,7 @@ Deno.serve(async (req) => {
       speed_hint_text: "A friendly note: you're driving a little faster than this tour is timed for. If you ease off a bit, the story will stay in step with the road. You can switch these reminders off on the screen, and I won't mention it again for a good while.",
     };
     const WALK_LEVEL_FIELDS = ['description', 'safety_notes', ...SYSTEM_MESSAGE_FIELDS];
-    const WAYPOINT_LEVEL_FIELDS = ['segment_title', 'description'];
+    const WAYPOINT_LEVEL_FIELDS = ['segment_title', 'name', 'description'];
     const isWaypointField = field && Number.isInteger(waypointIndex) && waypointIndex >= 0;
     const SYSTEM_MESSAGE_LABELS: Record<string, string> = {
       off_route_text: 'off-route voice message',
@@ -85,7 +85,7 @@ Deno.serve(async (req) => {
       speed_hint_text: 'driving-too-fast voice message',
     };
     function fieldLabel(f: string, waypointScoped: boolean): string {
-      if (waypointScoped) return f === 'segment_title' ? "stop's name" : "stop's short description";
+      if (waypointScoped) return (f === 'segment_title' || f === 'name') ? "stop's name" : "stop's short description";
       if (f in SYSTEM_MESSAGE_LABELS) return SYSTEM_MESSAGE_LABELS[f];
       return f === 'safety_notes' ? 'safety notes ("Before You Set Off")' : 'description ("About this walk")';
     }
@@ -210,7 +210,7 @@ ${promptText}`
       : field
       ? `Translate the following customer-facing text into ${target_language}. This is ${
           isWaypointField
-            ? (field === 'segment_title' ? 'the short name of one stop along the tour, shown to a customer' : 'a short description of one stop along the tour, shown to a customer')
+            ? ((field === 'segment_title' || field === 'name') ? 'the short name of one stop along the tour, shown to a customer' : 'a short description of one stop along the tour, shown to a customer')
             : (field === 'safety_notes' ? 'a safety notice a customer reads before setting off on the tour' : 'a short description of the tour, shown to a customer browsing the app')
         }. Keep it natural and clear in ${target_language}, in the same tone as the original, rather than a stiff word-for-word translation. Keep the same paragraph breaks as the original.${markersPresent ? ' The text may contain a token like xxbrandphrase0xx — copy it through EXACTLY as written, never translate or explain it.' : ''}
 
@@ -330,4 +330,4 @@ ${promptText}`;
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
   }
-});
+}
