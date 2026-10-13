@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Slider } from '@/components/ui/slider';
-import { Textarea } from '@/components/ui/textarea';
+import AutoGrowTextarea from '@/components/admin/AutoGrowTextarea';
 import { Play, Clock, Type, Loader2, Volume2, Pencil, X, Check, MapPin, Trash2, BookOpen } from 'lucide-react';
 import PronunciationDictionaryDialog from './PronunciationDictionaryDialog';
 
@@ -200,7 +200,7 @@ export default function TtsSegmentCard({
 
         {isEditing && (
           <div className="mt-3 pt-3 border-t border-slate-700 space-y-2">
-            <Textarea
+            <AutoGrowTextarea
               ref={editTextareaRef}
               value={editValue}
               onChange={(e) => onEditChange(e.target.value)}

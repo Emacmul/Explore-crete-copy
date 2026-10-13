@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { getNarratorAuthPayload } from '@/lib/useNarratorApiKeys';
 import useAudioUploadRetry from '@/lib/useAudioUploadRetry';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
+import AutoGrowTextarea from '@/components/admin/AutoGrowTextarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { base44 } from '@/api/base44Client';
@@ -1745,7 +1745,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
               & Generate (no segments yet), since that's the only way to import/write the
               script in the first place. */}
           <div>
-            <Textarea
+            <AutoGrowTextarea
               ref={textareaRef}
               value={script || ''}
               onChange={handleScriptEdit}
@@ -2128,7 +2128,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
                         block. */}
                     <div>
                       <Label className="text-amber-200/80 text-xs mb-1 block">Edit this part's script</Label>
-                      <Textarea
+                      <AutoGrowTextarea
                         value={subsectionTexts?.[si] ?? rebuildScript(subsectionSegments)}
                         onChange={(e) => handleSubsectionScriptEdit(si, e.target.value)}
                         rows={4}

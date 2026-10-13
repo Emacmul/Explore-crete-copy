@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import AutoGrowTextarea from '@/components/admin/AutoGrowTextarea';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, Save, RotateCcw, Languages, Wand2, AlertTriangle } from 'lucide-react';
 import { toast } from '@/components/ui/use-toast';
@@ -609,7 +610,7 @@ export default function TranslationsManager({ authMode, user }) {
               </div>
               <p className="text-xs text-slate-500 mb-1.5">EN: {englishSource(key)}</p>
               <div className="flex items-start gap-2">
-                <textarea
+                <AutoGrowTextarea
                   value={draftValue(activeLang, key)}
                   onChange={e => setDraft(activeLang, key, e.target.value)}
                   rows={1}

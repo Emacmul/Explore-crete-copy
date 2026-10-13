@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
+import AutoGrowTextarea from '@/components/admin/AutoGrowTextarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Play, Pause, Square, Gauge, Clock, Volume2, AlertTriangle, CheckCircle2, MapPin, Radio, Flag, ChevronDown, ChevronUp, Save, Loader2, Lock, SkipBack, ArrowLeft, Languages } from 'lucide-react';
 import { calculateBearing, isBearingInRange, uniqueWaypointSegmentId, waypointDepositoryKey } from '@/lib/routeExport';
@@ -2035,12 +2035,12 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
                       </span>
                     )}
                   </div>
-                  <Textarea
+                  <AutoGrowTextarea
                     value={selectedWp.description || ''}
                     onChange={e => onWaypointUpdate(toRawIndex(selectedWpIndex), 'description', e.target.value)}
                     placeholder="A short description of this stop, as shown to a customer"
                     rows={3}
-                    className="bg-slate-700 border-slate-600 text-white text-sm resize-none"
+                    className="bg-slate-700 border-slate-600 text-white text-sm"
                   />
                   {stopFieldError.description && <p className="text-xs text-red-400">{stopFieldError.description}</p>}
                 </div>

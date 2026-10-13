@@ -2,7 +2,7 @@ import React from 'react';
 import { Badge } from '@/components/ui/badge';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { Textarea } from '@/components/ui/textarea';
+import AutoGrowTextarea from '@/components/admin/AutoGrowTextarea';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Trash2, Mountain, Loader2, MapPin, Pencil, CalendarCheck, AlertTriangle, RefreshCw, Undo2, Languages } from 'lucide-react';
@@ -419,7 +419,7 @@ export default function WalkAdminList({ walks, isLoading, onEdit, onDelete, onMa
               and re-published.
             </DialogDescription>
           </DialogHeader>
-          <Textarea
+          <AutoGrowTextarea
             value={pushBackReason}
             onChange={e => setPushBackReason(e.target.value)}
             placeholder="What needs fixing? e.g. 'The word for church on waypoint 3 is misspelled' or 'The safety notes paragraph reads awkwardly'"

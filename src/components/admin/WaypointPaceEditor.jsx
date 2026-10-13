@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
+import AutoGrowTextarea from '@/components/admin/AutoGrowTextarea';
 import { Slider } from '@/components/ui/slider';
 import { Loader2, Play, AlertTriangle, Clock, Trash2, X, Check, BookOpen, CheckCircle2, Route, History } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
@@ -818,7 +818,7 @@ export default function WaypointPaceEditor({ waypoint, fixedLanguage, onSave, on
                 {/* Per Anoushka/Enda (follow-up 77): editable, not just displayed —
                     same pastel yellow as every other editable script box in this app,
                     so it's never ambiguous this one can be typed into. */}
-                <Textarea
+                <AutoGrowTextarea
                   ref={(el) => { textareaRefs.current[seg.id] = el; }}
                   value={seg.content}
                   onChange={(e) => handleTextChange(seg.id, e.target.value)}

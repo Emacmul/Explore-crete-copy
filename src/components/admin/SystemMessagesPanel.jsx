@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
+import AutoGrowTextarea from '@/components/admin/AutoGrowTextarea';
 import { Languages, Loader2, AlertTriangle, Upload, Volume2, CheckCircle2 } from 'lucide-react';
 import { getNarratorAuthPayload, useNarratorApiKeys } from '@/lib/useNarratorApiKeys';
 import { translateWalkField, stillMatchesMaster } from '@/lib/fieldTranslation';
@@ -153,7 +153,7 @@ export default function SystemMessagesPanel({ form, set, masterWalk }) {
                 </span>
               )}
             </div>
-            <Textarea
+            <AutoGrowTextarea
               value={form[field] || ''}
               onChange={e => {
                 set(field, e.target.value);

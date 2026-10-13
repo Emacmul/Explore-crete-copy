@@ -1703,12 +1703,12 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
 
             <div>
               <Label className="text-slate-300 mb-1.5 block">Description *</Label>
-              <Textarea
+              <AutoGrowTextarea
                 value={form.description}
                 onChange={e => set('description', e.target.value)}
                 placeholder="Describe the route, experience, highlights, and what to expect..."
                 rows={5}
-                className={`bg-slate-700 text-white resize-none ${!form.description?.trim() ? 'border-amber-500/70 focus-visible:ring-amber-500' : 'border-slate-600'}`}
+                className={`bg-slate-700 text-white ${!form.description?.trim() ? 'border-amber-500/70 focus-visible:ring-amber-500' : 'border-slate-600'}`}
               />
             </div>
 
@@ -1769,12 +1769,12 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 ⚠️ Safety Notes *
                 <span className="ml-2 text-xs text-slate-500 font-normal">Shown to customers as "Before You Set Off"</span>
               </Label>
-              <Textarea
+              <AutoGrowTextarea
                 value={form.safety_notes || ''}
                 onChange={e => set('safety_notes', e.target.value)}
                 placeholder={`e.g. This route passes through unmarked terrain and maquis. You must download the GPX file and load it into a navigation app before departure.\n\nEssential equipment: sun hat, sturdy walking shoes or boots, walking poles, and a minimum of 2 litres of water per person. Mobile signal is unreliable on this route.\n\nNote: Under Greek law, the cost of any search and rescue operation is charged to the individual. Do not attempt this walk unprepared.`}
                 rows={6}
-                className={`bg-slate-700 text-white resize-none text-sm ${!form.safety_notes?.trim() ? 'border-amber-500/70 focus-visible:ring-amber-500' : 'border-slate-600'}`}
+                className={`bg-slate-700 text-white text-sm ${!form.safety_notes?.trim() ? 'border-amber-500/70 focus-visible:ring-amber-500' : 'border-slate-600'}`}
               />
             </div>
 
