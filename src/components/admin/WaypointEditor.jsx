@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
+import AutoGrowTextarea from '@/components/admin/AutoGrowTextarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Trash2, ChevronDown, ChevronUp, Info, ImagePlus, Loader2, X, GripVertical, Save, Download } from 'lucide-react';
@@ -113,12 +113,12 @@ function AddWaypointForm({ newWp, setNewWp, addError, onSave, onCancel, onImageU
 
       <div>
         <Label className="text-slate-400 text-xs mb-1 block">Description</Label>
-        <Textarea
+        <AutoGrowTextarea
           value={newWp.description}
           onChange={e => setNewWp(p => ({ ...p, description: e.target.value }))}
           placeholder="What should the walker know about this point?"
           rows={2}
-          className="bg-slate-700 border-slate-500 text-white resize-none"
+          className="bg-slate-700 border-slate-500 text-white"
         />
       </div>
 
@@ -383,11 +383,11 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving, co
                     </div>
                     <div>
                       <Label className="text-slate-400 text-xs mb-1 block">Description</Label>
-                      <Textarea
+                      <AutoGrowTextarea
                         value={wp.description}
                         onChange={e => updateWaypoint(index, 'description', e.target.value)}
                         rows={2}
-                        className="bg-slate-700 border-slate-500 text-white resize-none text-sm"
+                        className="bg-slate-700 border-slate-500 text-white text-sm"
                       />
                     </div>
                     <div>
