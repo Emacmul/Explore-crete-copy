@@ -13,6 +13,7 @@ import { translateWalkField, stillMatchesMaster } from '@/lib/fieldTranslation';
 import FitParser from 'fit-file-parser';
 import WaypointEditor from './WaypointEditor';
 import WalkingCloneWaypointEditor from '@/components/admin/WalkingCloneWaypointEditor';
+import AutoGrowTextarea from '@/components/admin/AutoGrowTextarea';
 import DrivingTourWaypointEditor from './DrivingTourWaypointEditor';
 import DrivingTourExportPanel from './DrivingTourExportPanel';
 import TourSimulator from './TourSimulator';
@@ -306,13 +307,13 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
             </span>
           )}
         </div>
-        <Textarea
+        <AutoGrowTextarea
           value={form[field] || ''}
           onChange={e => set(field, e.target.value)}
           rows={rows}
-          // Drag the bottom-right corner to grow/shrink the box freely instead of
-          // scrolling inside a fixed-height one (Enda's request).
-          className="bg-slate-700 border-slate-600 text-white text-sm resize-y min-h-[120px] max-h-[70vh] leading-relaxed"
+          // Always tall enough for the whole text — no scrollbar; the bottom-right
+          // corner can still be dragged to make the box bigger (Enda's request).
+          className="bg-slate-700 border-slate-600 text-white text-sm min-h-[120px] leading-relaxed"
         />
         {fieldTranslateError[field] && <p className="text-xs text-red-400">{fieldTranslateError[field]}</p>}
       </div>
