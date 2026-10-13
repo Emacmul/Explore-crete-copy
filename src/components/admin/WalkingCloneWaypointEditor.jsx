@@ -40,6 +40,20 @@ export default function WalkingCloneWaypointEditor({ walk, master, onChange, onA
       <label className="block text-sm text-slate-300">Name<Input aria-label={`Waypoint ${index + 1} name`} value={wp.name || ''} disabled={locked} onChange={event => update(index, 'name', event.target.value)} className="bg-slate-700 border-slate-600 text-white" /></label>
       <label className="block text-sm text-slate-300">Description<AutoGrowTextarea aria-label={`Waypoint ${index + 1} description`} value={wp.description || ''} disabled={locked} onChange={event => update(index, 'description', event.target.value)} rows={3} className="bg-slate-700 border-slate-600 text-white" /></label>
       <div className="flex flex-wrap gap-2">{(wp.image_urls?.length ? wp.image_urls : wp.image_url ? [wp.image_url] : []).map(url => <img key={url} src={url} alt={wp.name || 'Waypoint reference'} className="w-20 h-20 rounded object-cover" />)}</div>
+      {/* One save control per location block, per Enda's request — saves the WHOLE
+          walk through the editor's shared save mechanism (onAutoSave), so a save
+          requested here never races another one and always reads the latest edits. */}
+      <div className="flex justify-end pt-1 border-t border-slate-700">
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => onAutoSave && onAutoSave()}
+          disabled={locked || !onAutoSave}
+          className="bg-amber-500 hover:bg-amber-600 gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Save Route
+        </Button>
+      </div>
     </section>)}
   </div>;
 }
