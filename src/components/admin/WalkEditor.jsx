@@ -310,7 +310,9 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
           value={form[field] || ''}
           onChange={e => set(field, e.target.value)}
           rows={rows}
-          className="bg-slate-700 border-slate-600 text-white text-sm resize-none"
+          // Drag the bottom-right corner to grow/shrink the box freely instead of
+          // scrolling inside a fixed-height one (Enda's request).
+          className="bg-slate-700 border-slate-600 text-white text-sm resize-y min-h-[120px] max-h-[70vh] leading-relaxed"
         />
         {fieldTranslateError[field] && <p className="text-xs text-red-400">{fieldTranslateError[field]}</p>}
       </div>
