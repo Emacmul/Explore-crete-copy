@@ -127,7 +127,7 @@ export const translations = {
     'list.nextPage': "Next page",
     'list.buggyFriendly': "Buggy-Friendly",
     'list.routeOfFaith': "Route of Faith",
-    'card.sampleWalk': "Sample Walk",
+    'card.freeWalk': "Free",
     'card.buggyFriendly': "Buggy-Friendly",
     'card.routeOfFaith': "Route of Faith",
     'card.buy': "Buy",

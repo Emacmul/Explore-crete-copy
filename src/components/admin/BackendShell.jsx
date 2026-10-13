@@ -365,19 +365,28 @@ export default function BackendShell({ user, userRole, isSuperAdmin, authMode, u
     //    unpublish can be rolled back from the Published Versions panel.
     if (nextApproved) {
       const walk = walks.find(w => w.id === walkId);
-      setPendingPublish({ kind: 'master', walkId, name: walk?.name || 'this tour', language: 'English' });
+      // A translation clone opened in the editor publishes in its own language, under
+      // the clone publish flow; a master tour publishes its English version. Same
+      // dialog, same audio gates, either way.
+      setPendingPublish({
+        kind: walk?.clone_of ? 'clone' : 'master',
+        walkId,
+        name: walk?.name || 'this tour',
+        language: walk?.target_language || 'English',
+      });
       // The dialog's confirm handler reports its own result; the editor's badge flips
       // there, only once the version is genuinely published.
       return false;
     }
     try {
-      await callWalkFn('withdrawTourVersion', { family_id: walkId, language: 'English' });
+      const walk = walks.find(w => w.id === walkId);
+      await callWalkFn('withdrawTourVersion', { family_id: walk?.clone_of || walkId, language: walk?.target_language || 'English' });
       await callWalkFn('saveWalkForBackend', { id: walkId, patch: { approved: false } });
       setWalks((prev) => prev.map(w => w.id === walkId ? { ...w, approved: false } : w));
       setEditingWalk((prev) => (prev && prev.id === walkId ? { ...prev, approved: false } : prev));
       toast({
         title: 'Unpublished',
-        description: 'The English version is withdrawn from customers. Other languages keep their published versions.',
+        description: 'This version is withdrawn from customers. Versions in other languages are not affected.',
       });
       return true;
     } catch (err) {

@@ -60,7 +60,7 @@ export default function WalkCard({ walk, onClick, isSelected, accessible = true 
 
               {walk.is_sample_walk && (
                 <Badge variant="outline" className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200 flex items-center gap-1">
-                  <Sparkles className="w-3 h-3" /> {t('card.sampleWalk')}
+                  <Sparkles className="w-3 h-3" /> {t('card.freeWalk')}
                 </Badge>
               )}
 

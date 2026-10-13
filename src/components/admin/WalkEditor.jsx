@@ -1176,16 +1176,19 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   }, [pendingAutoSave]);
   const requestAutoSave = () => setPendingAutoSave(true);
 
-  // Publish/Unpublish for a master (non-clone) tour — the same "must not go live
-  // with AI-drafted audio still in place" rule a Narrator's clone already gets via
-  // the Review/Publish flow, now applied to a tour an Admin builds directly too.
-  // onTogglePublish does the actual audio check + save (and its own error toast on
-  // failure) in BackendShell, returning true only once it's genuinely persisted —
-  // don't flip the local badge optimistically before that's confirmed.
+  // Publish / Republish / Unpublish for any tour an Admin has open in the editor —
+  // a master (non-clone) tour they built directly, or a narrator's translation clone.
+  // The same "must not go live with AI-drafted audio still in place" rule applies to
+  // both (a Narrator's clone gets it via the Review/Publish flow). onTogglePublish in
+  // BackendShell does the actual audio check + dialog + version publish (and its own
+  // error toast on failure), returning true only once an Unpublish is genuinely
+  // persisted — don't flip the local badge optimistically before that's confirmed.
+  // Republish is the everyday action once a tour is live: master edits and narrator
+  // corrections only reach customers when a new version is published, and this makes
+  // that one click in the editor instead of unpublish-then-publish or the review list.
   const [togglingPublish, setTogglingPublish] = useState(false);
-  const handleTogglePublish = async () => {
+  const handleTogglePublish = async (nextApproved) => {
     if (!form.id || !onTogglePublish || togglingPublish) return;
-    const nextApproved = form.approved === false;
     setTogglingPublish(true);
     const ok = await onTogglePublish(form.id, nextApproved);
     if (ok) setForm(prev => ({ ...prev, approved: nextApproved }));
@@ -1445,25 +1448,52 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
               </Button>
             </div>
           )}
-          {!isNarrator && !form.clone_of && form.id && onTogglePublish && (
+          {!isNarrator && form.id && onTogglePublish && (
             <div className="flex items-center gap-2 bg-slate-700/60 border border-slate-600 rounded-lg px-3 py-1.5">
               <span className={`text-xs font-medium ${form.approved === false ? 'text-red-300' : 'text-emerald-300'}`}>
                 {form.approved === false ? 'Draft — not visible to customers' : 'Published'}
               </span>
-              <Button
-                size="sm"
-                onClick={handleTogglePublish}
-                disabled={togglingPublish}
-                className={`h-7 text-xs gap-1.5 ${form.approved === false ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-slate-600 hover:bg-slate-500'}`}
-                title={form.approved === false
-                  ? 'Publish — blocked until every audio-triggered waypoint has its final PCV audio applied (see Update Audio).'
-                  : 'Unpublish — hides this tour from customers again. Already-downloaded offline copies are NOT removed instantly: they stop working the next time that phone opens the app with a connection (it cannot be forced while the phone is offline).'}
-              >
-                {togglingPublish
-                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  : (form.approved === false ? <Send className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />)}
-                {form.approved === false ? 'Publish' : 'Unpublish'}
-              </Button>
+              {form.approved === false ? (
+                <Button
+                  size="sm"
+                  onClick={() => handleTogglePublish(true)}
+                  disabled={togglingPublish}
+                  className="h-7 text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700"
+                  title="Publish — blocked until every audio-triggered waypoint has its final PCV audio applied (see Update Audio)."
+                >
+                  {togglingPublish
+                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    : <Send className="w-3.5 h-3.5" />}
+                  Publish
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    size="sm"
+                    onClick={() => handleTogglePublish(true)}
+                    disabled={togglingPublish}
+                    className="h-7 text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700"
+                    title="Republish — freezes the current content as a new customer-facing version. The old version is kept so you can roll back. Master edits and narrator corrections only reach customers through this."
+                  >
+                    {togglingPublish
+                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      : <Send className="w-3.5 h-3.5" />}
+                    Republish
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => handleTogglePublish(false)}
+                    disabled={togglingPublish}
+                    className="h-7 text-xs gap-1.5 bg-slate-600 hover:bg-slate-500"
+                    title="Unpublish — hides this version from customers again. Already-downloaded offline copies are NOT removed instantly: they stop working the next time that phone opens the app with a connection (it cannot be forced while the phone is offline)."
+                  >
+                    {togglingPublish
+                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      : <EyeOff className="w-3.5 h-3.5" />}
+                    Unpublish
+                  </Button>
+                </>
+              )}
             </div>
           )}
           {/* Per Enda's follow-up 47 report: found while auditing what narrators can
