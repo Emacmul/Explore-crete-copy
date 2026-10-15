@@ -27,11 +27,33 @@ const MAX_ATTEMPTS = 5;
 const LOCKOUT_MIN = 15;
 const GENERIC_ERROR = 'Invalid email or password.';
 
+// Failed-login audit (2026-10-15): a rejected attempt — an email with no account
+// at all, an account that has no Narrator/Admin role, a locked account, or a
+// wrong password — is logged with status 'failed' so the Login Log shows illegal
+// login attempts too, not just successful sign-ins. The caller IP is recorded
+// when the platform passes an x-forwarded-for header (best-effort: it may be
+// empty or a load balancer's address). Best-effort overall: logging must never
+// block, delay or break the response.
+async function logFailedAttempt(base44: any, email: string, ip: string | null, reason: string) {
+  try {
+    await base44.asServiceRole.entities.LoginLog.create({
+      user_email: email,
+      role: '',
+      login_type: 'narr_studio',
+      login_at: new Date().toISOString(),
+      status: 'failed',
+      failure_reason: reason,
+      ip: ip || null,
+    });
+  } catch { /* best-effort audit log */ }
+}
+
 Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
     const body = await req.json();
     const { email, password } = body;
+    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null;
 
     if (!email || !password) {
       return Response.json({ ok: false, error: 'Email and password are required' }, { status: 400 });
@@ -46,10 +68,12 @@ Deno.serve(async (req) => {
     // Narrator/Admin — nothing to lock either way, since there's no real account
     // password to be guessed against here.
     if (!match || (match.role !== 'narrator' && match.role !== 'admin' && match.role !== 'super_admin')) {
+      await logFailedAttempt(base44, normalizedEmail, ip, !match ? 'unknown_account' : 'not_staff');
       return Response.json({ ok: false, error: GENERIC_ERROR });
     }
 
     if (match.login_locked_until && new Date(match.login_locked_until).getTime() > Date.now()) {
+      await logFailedAttempt(base44, normalizedEmail, ip, 'account_locked');
       return Response.json({ ok: false, error: 'Too many incorrect attempts. Please wait 15 minutes and try again.' });
     }
 
@@ -62,6 +86,7 @@ Deno.serve(async (req) => {
         patch.login_locked_until = new Date(Date.now() + LOCKOUT_MIN * 60000).toISOString();
       }
       await base44.asServiceRole.entities.AppUser.update(match.id, patch);
+      await logFailedAttempt(base44, normalizedEmail, ip, 'wrong_password');
       return Response.json({ ok: false, error: GENERIC_ERROR });
     }
 
@@ -102,6 +127,8 @@ Deno.serve(async (req) => {
         role: match.role,
         login_type: 'narr_studio',
         login_at: new Date().toISOString(),
+        status: 'success',
+        ip: ip || null,
       });
     } catch { /* best-effort audit log */ }
 

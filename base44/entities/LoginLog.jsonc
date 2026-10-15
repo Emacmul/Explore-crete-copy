@@ -4,7 +4,20 @@
   "properties": {
     "user_email": {
       "type": "string",
-      "description": "Email of the Narrator/Admin who logged in (lowercased)."
+      "description": "Email of the Narrator/Admin who logged in (lowercased) \u2014 or, for FAILED attempts, the email the attempt was made WITH, whether or not any such account exists."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "success",
+        "failed"
+      ],
+      "default": "success",
+      "description": "success = the login fully succeeded; failed = the attempt was rejected (unknown account, account without a Narrator/Admin role, locked account, or wrong password). Rows written before this field existed are successful sign-ins."
+    },
+    "failure_reason": {
+      "type": "string",
+      "description": "For failed attempts only: why the login was rejected \u2014 unknown_account, not_staff, wrong_password or account_locked."
     },
     "login_at": {
       "type": "string",
@@ -13,7 +26,7 @@
     },
     "role": {
       "type": "string",
-      "description": "The staff role held at login time: narrator, admin or super_admin."
+      "description": "The staff role held at login time: narrator, admin or super_admin. Empty on failed attempts (the role is not revealed \u2014 and for an unknown account there is none)."
     },
     "login_type": {
       "type": "string",
@@ -31,6 +44,10 @@
       "type": "string",
       "description": "Friendly browser/OS hint for the device, e.g. 'Chrome on Windows'."
     },
+    "ip": {
+      "type": "string",
+      "description": "Caller IP for narr_studio logins, when the platform passes an x-forwarded-for header \u2014 best-effort, may be empty (or a load balancer's address). Never present for front_end logins, which the app only sees after WordPress has already authenticated the person."
+    },
     "description": {
       "type": "string",
       "maxLength": 1000,
@@ -39,7 +56,6 @@
   },
   "required": [
     "user_email",
-    "role",
     "login_type"
   ],
   "rls": {
