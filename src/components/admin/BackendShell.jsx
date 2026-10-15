@@ -15,6 +15,7 @@ import DisputesManager from './DisputesManager';
 import TranslationsManager from './TranslationsManager';
 import UpdateAudioTool from './UpdateAudioTool';
 import PublishedVersionsPanel from './PublishedVersionsPanel';
+import LoginLogPanel from './LoginLogPanel';
 import PublishVersionDialog from './PublishVersionDialog';
 import { getRouteTypeForCategory, defaultPriceForCategory } from '@/lib/tourCategories';
 import { toast } from '@/components/ui/use-toast';
@@ -654,6 +655,8 @@ export default function BackendShell({ user, userRole, isSuperAdmin, authMode, u
           />
         ) : view === 'users' ? (
           <UsersManager isSuperAdmin={isSuperAdmin} narrAuth={narrAuth} />
+        ) : view === 'loginlog' && isAdmin ? (
+          <LoginLogPanel />
         ) : view === 'dashboard' ? (
           <WalksDashboard walks={walks} />
         ) : view === 'disputes' ? (
@@ -725,6 +728,7 @@ export default function BackendShell({ user, userRole, isSuperAdmin, authMode, u
               setFocusWaypointIndex(wpIndex ?? null);
             }}
             onManageUsers={() => setView('users')}
+            onLoginLog={() => setView('loginlog')}
             onDashboard={() => setView('dashboard')}
             onManageDisputes={() => setView('disputes')}
             onManageTranslations={() => setView('translations')}

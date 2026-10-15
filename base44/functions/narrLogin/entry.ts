@@ -92,6 +92,19 @@ Deno.serve(async (req) => {
     }
     await base44.asServiceRole.entities.AppUser.update(match.id, patch);
 
+    // Login log (2026-10-15): every successful Narrator/Admin backend login is recorded
+    // so admins can see who signed in and when (Admin Panel → Login Log). Logging must
+    // never block or break a login, so a failure here is swallowed — the login itself
+    // has already fully succeeded by the time this runs.
+    try {
+      await base44.asServiceRole.entities.LoginLog.create({
+        user_email: normalizedEmail,
+        role: match.role,
+        login_type: 'narr_studio',
+        login_at: new Date().toISOString(),
+      });
+    } catch { /* best-effort audit log */ }
+
     const name = `${match.first_name || ''} ${match.last_name || ''}`.trim();
     const isAdmin = match.role === 'admin' || match.role === 'super_admin';
     const isSuperAdmin = match.role === 'super_admin';

@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import {
   Footprints, MapPin, Car, ChevronRight, Mic,
   LayoutDashboard, List, Users, Plus, AlertCircle, Volume2,
-  Languages, CheckCircle2, Send, AlertTriangle, AudioLines, Trash2, Loader2, History,
+  Languages, CheckCircle2, Send, AlertTriangle, AudioLines, Trash2, Loader2, History, LogIn,
 } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { toast } from '@/components/ui/use-toast';
@@ -192,7 +192,7 @@ function ReviewCloneRow({ walk, onReview, onPublish }) {
 }
 
 export default function AdminStartScreen({
-  userRole, user, works, onNewTour, onContinueTour, onManageUsers, onDashboard, onManageWalks,
+  userRole, user, works, onNewTour, onContinueTour, onManageUsers, onLoginLog, onDashboard, onManageWalks,
   onCloneTour, onPublishClone, onHandOffClone, onDeleteClone, cloneableTours = [], myClones = [], reviewClones = [],
   hasActiveClone = false,
   pendingPushbackId = null,
@@ -407,6 +407,10 @@ export default function AdminStartScreen({
           <Button variant="outline" onClick={onManageUsers} className="bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 gap-2 h-auto py-3 justify-start">
             <Users className="w-5 h-5 text-purple-400 shrink-0" />
             <div className="text-left min-w-0 whitespace-normal"><p className="font-medium">Manage Users</p><p className="text-xs text-slate-400">Promote / set Narrator passwords</p></div>
+          </Button>
+          <Button variant="outline" onClick={onLoginLog} className="bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 gap-2 h-auto py-3 justify-start">
+            <LogIn className="w-5 h-5 text-emerald-400 shrink-0" />
+            <div className="text-left min-w-0 whitespace-normal"><p className="font-medium">Login Log</p><p className="text-xs text-slate-400">Who signed in, last 7 days</p></div>
           </Button>
           <Button variant="outline" onClick={onManageDisputes} className="bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 gap-2 h-auto py-3 justify-start">
             <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />

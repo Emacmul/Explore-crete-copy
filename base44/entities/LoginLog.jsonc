@@ -1,0 +1,67 @@
+{
+  "name": "LoginLog",
+  "type": "object",
+  "properties": {
+    "user_email": {
+      "type": "string",
+      "description": "Email of the Narrator/Admin who logged in (lowercased)."
+    },
+    "login_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the login actually happened (server time). created_date is when the log row was written \u2014 for backfilled rows reconstructed from older device records, login_at carries the TRUE login time while created_date is the backfill write time."
+    },
+    "role": {
+      "type": "string",
+      "description": "The staff role held at login time: narrator, admin or super_admin."
+    },
+    "login_type": {
+      "type": "string",
+      "enum": [
+        "front_end",
+        "narr_studio"
+      ],
+      "description": "Where the login happened: front_end = the customer WordPress login (loginWithDeviceCheck, staff branch), narr_studio = the backend password login (narrLogin, used by both the Narr button and the Admin page)."
+    },
+    "device_id": {
+      "type": "string",
+      "description": "Device id the front-end login came from (device fingerprints; empty for narr_studio logins, which carry no device id yet)."
+    },
+    "device_label": {
+      "type": "string",
+      "description": "Friendly browser/OS hint for the device, e.g. 'Chrome on Windows'."
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 1000,
+      "description": "Optional free-text notes for internal reference."
+    }
+  },
+  "required": [
+    "user_email",
+    "role",
+    "login_type"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

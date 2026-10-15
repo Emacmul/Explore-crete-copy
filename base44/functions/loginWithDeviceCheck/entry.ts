@@ -54,6 +54,19 @@ export default async function (req: Request): Promise<Response> {
         await svc.entities.Device.create({ user_email: email, device_id, device_label: device_label || "Admin device", first_seen: isoNow(), last_used: isoNow() });
       }
       await upsertSession(svc, email, device_id, wpData.token);
+      // Login log (2026-10-15): record every staff front-end login (who, when, which
+      // device) — see Admin Panel → Login Log. Best-effort: a logging failure must
+      // never block a real login.
+      try {
+        await svc.entities.LoginLog.create({
+          user_email: email,
+          role: staffRecords[0].role,
+          login_type: "front_end",
+          device_id,
+          device_label: device_label || null,
+          login_at: new Date().toISOString(),
+        });
+      } catch { /* best-effort audit log */ }
       return Response.json({ status: "ok", token: wpData.token, user: wpData.user });
     }
 
