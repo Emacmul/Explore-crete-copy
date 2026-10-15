@@ -29,7 +29,17 @@ async function verifySignature(payload, signature, secret) {
   const computed = Array.from(new Uint8Array(sigBuffer))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
-  return computed === signature;
+  // Timing-safe comparison (CWE-208): a plain `===` short-circuits at the first
+  // differing byte, letting an attacker in principle probe the secret byte-by-byte
+  // through response-time differences. XOR-accumulating over the FULL length keeps
+  // the work done independent of where — or whether — the signatures differ.
+  // Same defense passwordHash.ts applies to password hashes.
+  const maxLen = Math.max(computed.length, signature.length);
+  let diff = computed.length ^ signature.length; // unequal lengths differ in every position
+  for (let i = 0; i < maxLen; i++) {
+    diff |= (computed.charCodeAt(i) || 0) ^ (signature.charCodeAt(i) || 0);
+  }
+  return diff === 0;
 }
 
 Deno.serve(async (req) => {

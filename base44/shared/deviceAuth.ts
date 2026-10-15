@@ -21,8 +21,20 @@ export function isoPlusMinutes(min: number): string {
   return new Date(Date.now() + min * 60000).toISOString();
 }
 
+// Cryptographically random 6-digit code (CWE-338): Math.random() is not a CSPRNG,
+// and this code is the second factor that enrolls a new device on an account.
+// crypto.getRandomValues is a Web standard available in both the Deno function
+// runtime and browsers (no npm: import, so this module stays client-safe).
+// Rejection sampling avoids modulo bias: values in the final partial range of
+// 2^32 / 900000 are discarded instead of wrapping the distribution.
 export function generateSixDigitCode(): string {
-  return String(Math.floor(100000 + Math.random() * 900000));
+  const RANGE = 900000; // codes 100000..999999
+  const limit = Math.floor(0x100000000 / RANGE) * RANGE;
+  const buf = new Uint32Array(1);
+  do {
+    crypto.getRandomValues(buf);
+  } while (buf[0] >= limit);
+  return String(100000 + (buf[0] % RANGE));
 }
 
 // ---- WordPress JWT token fetch (shared by login + verify) ----
