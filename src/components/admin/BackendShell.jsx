@@ -655,7 +655,11 @@ export default function BackendShell({ user, userRole, isSuperAdmin, authMode, u
           />
         ) : view === 'users' ? (
           <UsersManager isSuperAdmin={isSuperAdmin} narrAuth={narrAuth} />
-        ) : view === 'loginlog' && isAdmin ? (
+        ) : view === 'loginlog' && isSuperAdmin ? (
+          // Super Admin only (2026-10-15, Enda's request): the login audit shows every
+          // staff sign-in and every rejected illegal-login attempt — too sensitive for a
+          // plain admin. Both the button (AdminStartScreen) and this render gate are
+          // super-admin-gated; the panel itself is also read-protected by RLS.
           <LoginLogPanel />
         ) : view === 'dashboard' ? (
           <WalksDashboard walks={walks} />
@@ -693,6 +697,7 @@ export default function BackendShell({ user, userRole, isSuperAdmin, authMode, u
           <AdminStartScreen
             userRole={userRole}
             unrestricted={unrestricted}
+            isSuperAdmin={isSuperAdmin}
             user={user}
             works={walks}
             onNewTour={(categoryCode) => setEditingWalk({
