@@ -20,7 +20,6 @@ export default async function (req: Request): Promise<Response> {
       return Response.json({ error: "Forbidden" }, { status: 403 });
     }
 
-
     // Same window/filters the screen documents: last 7 days, newest first,
     // optionally narrowed to failed or successful attempts only. The window uses
     // login_at (the true server-stamped login time, present on every row incl.
