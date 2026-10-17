@@ -25,7 +25,6 @@ export default async function (req: Request): Promise<Response> {
     // password is accepted.
     const email = String(rawEmail).toLowerCase().trim();
 
-
     const base44 = createClientFromRequest(req);
     const svc = base44.asServiceRole;
     const siteUrl = secrets.get("WC_SITE_URL");
