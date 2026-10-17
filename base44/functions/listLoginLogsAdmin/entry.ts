@@ -25,29 +25,26 @@ export default async function (req: Request): Promise<Response> {
     // login_at (the true server-stamped login time, present on every row incl.
     // backfilled ones) — created_date on backfilled rows is only the backfill
     // write time.
+    //
+    // QUIRK (found 2026-10-17, verified by in-function probes): in this function
+    // runtime the query layer silently matches NOTHING when a $gte date value
+    // carries a time-of-day component (Date objects and full ISO strings,
+    // millisecond OR whole-second) — only a bare date "YYYY-MM-DD" compares
+    // correctly. And passing ANY options object ({sort, limit, ...}) alongside
+    // the $gte query ALSO returns nothing (the options path re-serializes the
+    // threshold into the broken form). So: bare call, date-only threshold, and
+    // the rows are ordered in code — trivial at this screen's scale (one week of
+    // staff logins for a small team, well under the SDK's default page size).
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const query: Record<string, unknown> = { login_at: { $gte: weekAgo.toISOString() } };
+    const query: Record<string, unknown> = { login_at: { $gte: weekAgo.toISOString().slice(0, 10) } };
     if (body.status === "failed" || body.status === "success") {
       query.status = body.status;
     }
 
-    // The options form returns a page object ({ items, ... }), never an array.
-    const page = await base44.asServiceRole.entities.LoginLog.filter(query, {
-      sort: "-created_date",
-      limit: 500,
-    });
-    const rows: any[] = Array.isArray(page) ? page : (page.items || []);
-    console.log("listLoginLogsAdmin query:", JSON.stringify(query));
-    console.log("listLoginLogsAdmin page raw:", JSON.stringify(page)?.slice(0, 300));
-    const dbg = await base44.asServiceRole.entities.LoginLog.filter({});
-    console.log("listLoginLogsAdmin unfiltered count:", Array.isArray(dbg) ? dbg.length : JSON.stringify(dbg)?.slice(0, 200));
-    const t1 = await base44.asServiceRole.entities.LoginLog.filter({ status: "success" });
-    console.log("listLoginLogsAdmin statusOnly:", Array.isArray(t1) ? t1.length : "?");
-    const t2 = await base44.asServiceRole.entities.LoginLog.filter({ created_date: { $gte: new Date("2000-01-01T00:00:00Z") } });
-    console.log("listLoginLogsAdmin gte1970:", Array.isArray(t2) ? t2.length : "?");
-    const t3 = await base44.asServiceRole.entities.LoginLog.filter({ login_at: { $gte: new Date("2000-01-01T00:00:00Z") } });
-    console.log("listLoginLogsAdmin loginAt2000:", Array.isArray(t3) ? t3.length : "?");
-    console.log("listLoginLogsAdmin seen dates:", JSON.stringify((Array.isArray(dbg) ? dbg : []).map((r: any) => ({ cd: r.created_date, la: r.login_at }))).slice(0, 400));
+    const rows: any[] = await base44.asServiceRole.entities.LoginLog.filter(query);
+    rows.sort((a: any, b: any) =>
+      String(b.login_at || b.created_date || "").localeCompare(String(a.login_at || a.created_date || ""))
+    );
 
     return Response.json({
       logins: rows.map((l: any) => ({
