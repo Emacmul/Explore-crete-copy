@@ -659,8 +659,10 @@ export default function BackendShell({ user, userRole, isSuperAdmin, authMode, u
           // Super Admin only (2026-10-15, Enda's request): the login audit shows every
           // staff sign-in and every rejected illegal-login attempt — too sensitive for a
           // plain admin. Both the button (AdminStartScreen) and this render gate are
-          // super-admin-gated; the panel itself is also read-protected by RLS.
-          <LoginLogPanel />
+          // super-admin-gated; the panel reads through the listLoginLogsAdmin
+          // function (narrAuth session), because this browser has no Base44
+          // session for the RLS-protected entity — a direct read returns nothing.
+          <LoginLogPanel narrAuth={narrAuth} />
         ) : view === 'dashboard' ? (
           <WalksDashboard walks={walks} />
         ) : view === 'disputes' ? (

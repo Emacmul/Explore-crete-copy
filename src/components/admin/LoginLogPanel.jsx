@@ -46,19 +46,20 @@ const FILTERS = [
  * never reach this app, so they cannot appear here — check the WordPress
  * site's own security logs for those.
  */
-export default function LoginLogPanel() {
-  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+export default function LoginLogPanel({ narrAuth = {} }) {
   const [statusFilter, setStatusFilter] = useState('all');
   const { data: logins = [], isLoading } = useQuery({
-    queryKey: ['login-log', statusFilter],
+    queryKey: ['login-log', statusFilter, narrAuth.email],
     queryFn: async () => {
-      const query = { created_date: { $gte: weekAgo } };
-      if (statusFilter !== 'all') query.status = statusFilter;
-      const page = await base44.entities.LoginLog.filter(
-        query,
-        { sort: '-created_date', limit: 500 }
-      );
-      return page.items || [];
+      // Never a direct entity read: the admin/narrator browser has a WordPress
+      // session, not a Base44 one, so RLS silently blocks it and the screen shows
+      // an empty log (2026-10-17). The Super-Admin-gated backend function reads
+      // with the service role instead — same pattern as UsersManager/Disputes.
+      const res = await base44.functions.invoke('listLoginLogsAdmin', {
+        ...narrAuth,
+        status: statusFilter,
+      });
+      return res?.data?.logins || [];
     },
   });
 
