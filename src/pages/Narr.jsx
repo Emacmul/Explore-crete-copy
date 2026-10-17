@@ -59,7 +59,12 @@ export default function Narr() {
     try {
       const res = await base44.functions.invoke('narrLogin', { email: user.email, password });
       if (res?.data?.ok) {
-        const sess = { email: user.email, full_name: res.data.name || user.full_name, role: 'narrator', isAdmin: !!res.data.isAdmin, token: res.data.token };
+        // isSuperAdmin MUST be stored here too: Narr and Admin share this one
+        // sessionStorage session, and the Admin page reuses it without asking for
+        // the password again. A session saved without this flag made a Super Admin
+        // who signed in through the Narr button look like a plain Admin in the
+        // Admin Panel — hiding the Super-Admin-only tools (Login Log, 2026-10-17).
+        const sess = { email: user.email, full_name: res.data.name || user.full_name, role: 'narrator', isAdmin: !!res.data.isAdmin, isSuperAdmin: !!res.data.isSuperAdmin, token: res.data.token };
         sessionStorage.setItem(SESSION_KEY, JSON.stringify(sess));
         setSession(sess);
       } else {

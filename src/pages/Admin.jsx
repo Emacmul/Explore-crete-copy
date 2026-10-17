@@ -28,7 +28,18 @@ export default function Admin() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [session, setSession] = useState(() => {
-    try { return JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null'); } catch { return null; }
+    try {
+      const stored = JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null');
+      // A session saved by an older Narr-page login carries no isSuperAdmin key —
+      // reusing it silently downgraded a Super Admin to plain Admin (missing Login
+      // Log button, 2026-10-17). Discard it once so this visit asks for the backend
+      // password again and stores a complete session.
+      if (stored && !('isSuperAdmin' in stored)) {
+        sessionStorage.removeItem(SESSION_KEY);
+        return null;
+      }
+      return stored;
+    } catch { return null; }
   });
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
