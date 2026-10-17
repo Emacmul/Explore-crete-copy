@@ -149,7 +149,7 @@ function FocusBounds({ focusBounds, userZoomedRef, locationKey, framedKeyRef }) 
           // animate: false — Leaflet silently DROPS a zoom request that arrives while an
           // earlier animated zoom is still running (e.g. the opening whole-trail fit in
           // FitBounds a moment earlier), so an animated fit here could be lost.
-          map.fitBounds(targetBounds, { padding: [30, 30], maxZoom: 17, animate: false });
+          map.fitBounds(targetBounds, { padding: [30, 30], maxZoom: 19, animate: false });
           // Per Enda's report (2026-09-20): after "Jump to location" the map showed
           // roughly three locations instead of just the one. The page layout around the map
           // (the editor next to it) can still change size AFTER this first fit, and Leaflet
@@ -163,7 +163,7 @@ function FocusBounds({ focusBounds, userZoomedRef, locationKey, framedKeyRef }) 
           const refit = () => {
             if (userZoomedRef.current) return;
             map.invalidateSize();
-            map.fitBounds(targetBounds, { padding: [30, 30], maxZoom: 17, animate: false });
+            map.fitBounds(targetBounds, { padding: [30, 30], maxZoom: 19, animate: false });
           };
           let ro = null;
           if (typeof ResizeObserver !== 'undefined') {
@@ -188,7 +188,7 @@ function FocusBounds({ focusBounds, userZoomedRef, locationKey, framedKeyRef }) 
         // up off-screen). If it's already on screen, leave his zoom/pan exactly as he
         // set it. (Does not apply to the first showing of a location — handled above.)
         if (map.getBounds().contains(targetBounds)) return;
-        map.fitBounds(targetBounds, { padding: [60, 60], maxZoom: 17 });
+        map.fitBounds(targetBounds, { padding: [60, 60], maxZoom: 19 });
       });
       return () => cancelAnimationFrame(frame);
     }
@@ -427,11 +427,20 @@ export default function TourSimulatorMap({ trailPath, waypoints, triggered, curr
 
   // zoomSnap 0.1 below: Leaflet normally only fits to WHOLE zoom levels, which can leave a
   // location showing up to twice as wide as needed (Enda, 2026-09-20). Fine steps fit it tightly.
+  // maxZoom 19 — one level PAST the tile server's sharpest zoom (18): Leaflet upscales
+  // the z18 tiles for z19, slightly soft but double the on-screen magnification, which
+  // is exactly what a quay-wall/packed location needs (Enda, 2026-10-17: WAR1's two
+  // walkways only separate visually when zoomed right in). Without maxZoom here the
+  // map just goes blank past the tile layer's own default limit, which reads as "it
+  // doesn't zoom in any closer" rather than as a choice. maxNativeZoom pins the real
+  // tile requests at 18 so z19 never asks the server for tiles it doesn't serve.
   return (
-    <MapContainer center={center} zoom={13} zoomSnap={0.1} className="w-full h-full" style={{ minHeight: '350px' }}>
+    <MapContainer center={center} zoom={13} zoomSnap={0.1} maxZoom={19} className="w-full h-full" style={{ minHeight: '350px' }}>
       <TileLayer
         url="https://tile.openstreetmap.de/{z}/{x}/{y}.png"
         attribution='&copy; OpenStreetMap contributors'
+        maxZoom={19}
+        maxNativeZoom={18}
       />
       <ManualZoomTracker userZoomedRef={userZoomedRef} />
       <FitBounds trailPath={trailPath} waypoints={waypoints} userZoomedRef={userZoomedRef} framedKeyRef={framedKeyRef} />
