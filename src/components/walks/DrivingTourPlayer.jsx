@@ -1822,10 +1822,10 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
             </Button>
             <Button
               onClick={handleStop}
-              variant="outline"
-              className="flex-1 gap-2 border-red-500 text-red-400 hover:bg-red-900/20"
+              size="lg"
+              className="flex-1 gap-2 bg-red-600 hover:bg-red-700 text-white font-bold text-base shadow-lg shadow-red-900/40"
             >
-              <Square className="w-4 h-4" /> {t('player.stop')}
+              <Square className="w-5 h-5" /> {t('player.stop')}
             </Button>
           </>
         )}
@@ -1833,16 +1833,17 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
           <>
             <Button
               onClick={handleResume}
-              className="flex-1 gap-2 bg-green-600 hover:bg-green-700 text-white"
+              size="lg"
+              className="flex-1 gap-2 bg-green-500 hover:bg-green-600 text-white font-bold text-base shadow-lg shadow-green-900/40"
             >
-              <Play className="w-4 h-4" /> {t('player.resume')}
+              <Play className="w-5 h-5" /> {t('player.resume')}
             </Button>
             <Button
               onClick={handleStop}
-              variant="outline"
-              className="flex-1 gap-2 border-red-500 text-red-400 hover:bg-red-900/20"
+              size="lg"
+              className="flex-1 gap-2 bg-red-600 hover:bg-red-700 text-white font-bold text-base shadow-lg shadow-red-900/40"
             >
-              <Square className="w-4 h-4" /> {t('player.stop')}
+              <Square className="w-5 h-5" /> {t('player.stop')}
             </Button>
           </>
         )}
