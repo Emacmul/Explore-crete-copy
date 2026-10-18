@@ -1796,10 +1796,11 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
             <Button
               onClick={handleStartTour}
               disabled={!canStart}
+              size="lg"
               title={!canStart ? (!savedOffline ? t('player.mustSaveFirst') : t('player.mustConfirmSafetyFirst')) : undefined}
-              className="flex-1 gap-2 bg-green-600 hover:bg-green-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 gap-2 bg-green-500 hover:bg-green-600 text-white font-bold text-base shadow-lg shadow-green-900/40 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <Play className="w-4 h-4" /> {t('player.startTour')}
+              <Play className="w-5 h-5" /> {t('player.startTour')}
             </Button>
           )}
           {tourComplete && (
@@ -1814,10 +1815,10 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
           <>
             <Button
               onClick={handlePause}
-              variant="outline"
-              className="flex-1 gap-2 border-amber-500 text-amber-400 hover:bg-amber-900/20"
+              size="lg"
+              className="flex-1 gap-2 bg-amber-500 hover:bg-amber-600 text-amber-950 font-bold text-base shadow-lg shadow-amber-900/40"
             >
-              <Pause className="w-4 h-4" /> {t('player.pause')}
+              <Pause className="w-5 h-5" /> {t('player.pause')}
             </Button>
             <Button
               onClick={handleStop}
