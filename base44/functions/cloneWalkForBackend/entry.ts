@@ -46,7 +46,6 @@ export default async function(req) {
       return Response.json({ error: 'This tour is itself a translation — clone the original instead.' }, { status: 400 });
     }
 
-
     // Per Enda: a narrator may only clone a master tour the Admin has explicitly
     // marked "admin completed" — fully finished editing, ready to hand to a
     // narrator. This is deliberately unrelated to `approved` (published/live for
