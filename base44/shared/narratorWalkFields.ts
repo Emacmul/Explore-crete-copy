@@ -75,6 +75,9 @@ export const NARRATOR_WAYPOINT_READ_FIELDS = [
   // photo ARRAY to their browser — image_url alone is the legacy single-photo field
   // and stays empty for anything added after 2026-09-27.
   'image_urls',
+  // Captions travel with the photos (master-managed, same propagation path) so a
+  // narrator sees the same short caption under each reference photo for context.
+  'image_captions',
 ];
 
 // Trims one full Walk record (as stored) down to exactly what a narrator's

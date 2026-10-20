@@ -320,6 +320,14 @@
             },
             "type": "array"
           },
+          "image_captions": {
+            "default": [],
+            "description": "Short caption per waypoint reference photo, aligned BY INDEX to image_urls (and the legacy single image_url). Optional \u2014 empty string means no caption. Admin-entered in the Photos section of the Waypoints tab; shown to customers under the photo (WalkDetail list + full-screen lightbox) and to narrators as read-only context, exactly like the photos themselves (which are master-managed, never per-language). MUST stay declared here for the same reason as image_urls \u2014 Base44 silently drops any waypoint field not declared in this schema on save. getWaypointCaptions() reads this field, padding to the number of photos.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "lat": {
             "type": "number"
           },

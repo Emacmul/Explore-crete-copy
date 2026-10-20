@@ -44,7 +44,7 @@ export function waypointKey(wp: any, index: number) {
 // The image-bearing state of one waypoint — identity alone can't tell whether a clone's
 // photos already match the master's; this is the comparison key for "same images".
 function waypointImagesKey(wp: any) {
-  return JSON.stringify([wp.image_urls ?? [], wp.image_url ?? '']);
+  return JSON.stringify([wp.image_urls ?? [], wp.image_captions ?? [], wp.image_url ?? '']);
 }
 
 export async function propagateWaypointImages(base44: any, master: any) {
@@ -70,7 +70,12 @@ export async function propagateWaypointImages(base44: any, master: any) {
       if (!masterWp) return wp;
       if (waypointImagesKey(wp) === waypointImagesKey(masterWp)) return wp;
       changed = true;
-      return { ...wp, image_urls: masterWp.image_urls ?? [], image_url: masterWp.image_url ?? '' };
+      return {
+        ...wp,
+        image_urls: masterWp.image_urls ?? [],
+        image_captions: masterWp.image_captions ?? [],
+        image_url: masterWp.image_url ?? '',
+      };
     });
     if (changed) {
       await base44.asServiceRole.entities.Walk.update(clone.id, { waypoints: next });

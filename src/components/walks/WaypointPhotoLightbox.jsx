@@ -11,7 +11,7 @@ import { X, ChevronLeft, ChevronRight } from 'lucide-react';
 // mid-tour must not lose the app, the narration or their GPS. Tapping the
 // backdrop, the X, or (on desktop) pressing Escape closes it and the customer is
 // exactly where they were.
-export default function WaypointPhotoLightbox({ images, startIndex = 0, onClose }) {
+export default function WaypointPhotoLightbox({ images, captions, startIndex = 0, onClose }) {
   const [index, setIndex] = useState(startIndex);
   const count = (images || []).length;
 
@@ -50,12 +50,16 @@ export default function WaypointPhotoLightbox({ images, startIndex = 0, onClose 
 
       {/* The photo itself — tapping the photo does NOT close (stopPropagation),
           so a customer tapping around to zoom/inspect doesn't lose their place. */}
-      <img
-        src={images[safeIndex]}
-        alt=""
-        onClick={(e) => e.stopPropagation()}
-        className="max-w-full max-h-full w-auto h-auto object-contain rounded-lg select-none"
-      />
+      <div className="flex flex-col items-center max-w-full max-h-full" onClick={(e) => e.stopPropagation()}>
+        <img
+          src={images[safeIndex]}
+          alt=""
+          className="max-w-full max-h-[85vh] w-auto h-auto object-contain rounded-lg select-none"
+        />
+        {captions && captions[safeIndex] ? (
+          <p className="mt-3 max-w-2xl text-center text-white/90 text-sm leading-snug px-3">{captions[safeIndex]}</p>
+        ) : null}
+      </div>
 
       {count > 1 && (
         <>

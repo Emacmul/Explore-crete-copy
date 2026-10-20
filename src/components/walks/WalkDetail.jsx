@@ -14,7 +14,7 @@ import { preCacheWalkAudio } from '../offline/offlineStorage';
 import WalkProgressBar from './WalkProgressBar';
 import DrivingModeNotice from './DrivingModeNotice';
 import DrivingTourPlayer from './DrivingTourPlayer';
-import { getWaypointImages } from '@/lib/waypointImages';
+import { getWaypointImages, getWaypointCaptions } from '@/lib/waypointImages';
 import WaypointPhotoLightbox from './WaypointPhotoLightbox';
 import WalkPaywall from './WalkPaywall';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
@@ -768,21 +768,28 @@ export default function WalkDetail({ walk, onClose, accessible = true, allWalks 
                           )}
 
                           {getWaypointImages(waypoint).length > 0 && (
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {getWaypointImages(waypoint).map((url, i) => (
-                                <button
-                                  key={i}
-                                  type="button"
-                                  onClick={() => setPhotoViewer({ images: getWaypointImages(waypoint), index: i })}
-                                  className="w-24 h-24 rounded-lg border overflow-hidden focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                >
-                                  <img
-                                    src={url}
-                                    alt={displayName}
-                                    className="w-full h-full object-cover"
-                                  />
-                                </button>
-                              ))}
+                            <div className="mt-2 flex flex-wrap gap-3 items-start">
+                              {getWaypointImages(waypoint).map((url, i) => {
+                                const cap = getWaypointCaptions(waypoint)[i];
+                                return (
+                                  <div key={i} className="flex flex-col gap-1 w-24 shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => setPhotoViewer({ images: getWaypointImages(waypoint), captions: getWaypointCaptions(waypoint), index: i })}
+                                      className="w-24 h-24 rounded-lg border overflow-hidden focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    >
+                                      <img
+                                        src={url}
+                                        alt={displayName}
+                                        className="w-full h-full object-cover"
+                                      />
+                                    </button>
+                                    {cap ? (
+                                      <p className="text-xs text-gray-600 leading-tight break-words">{cap}</p>
+                                    ) : null}
+                                  </div>
+                                );
+                              })}
                             </div>
                           )}
                         </div>
@@ -820,6 +827,7 @@ export default function WalkDetail({ walk, onClose, accessible = true, allWalks 
         {photoViewer && (
           <WaypointPhotoLightbox
             images={photoViewer.images}
+            captions={photoViewer.captions}
             startIndex={photoViewer.index}
             onClose={() => setPhotoViewer(null)}
           />

@@ -11,7 +11,9 @@ import {
 } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { getRoleColour, getRoleLabel, buildSegmentId, uniqueWaypointSegmentId, generateWaypointUid, waypointDepositoryKey } from '@/lib/routeExport';
-import { compressImage, MAX_WAYPOINT_IMAGES, getWaypointImages } from '@/lib/waypointImages';
+import { compressImage, MAX_WAYPOINT_IMAGES, getWaypointImages, addWaypointImage, removeWaypointImage, setWaypointCaption } from '@/lib/waypointImages';
+import WaypointPhotoGrid from './WaypointPhotoGrid';
+import WaypointPhotoThumbs from '@/components/walks/WaypointPhotoThumbs';
 import { base44 } from '@/api/base44Client';
 import AudioTriggerFields from './AudioTriggerFields';
 import NarrationTtsEditor from './NarrationTtsEditor';
@@ -589,14 +591,13 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
     const { file_url } = await base44.integrations.Core.UploadFile({ file: compressed });
     const current = getWaypointImages(waypoints[index]);
     if (current.length < MAX_WAYPOINT_IMAGES) {
-      updateWaypoint(index, 'image_urls', [...current, file_url]);
+      updateWaypoint(index, addWaypointImage(waypoints[index], file_url));
     }
     setUploadingImageIndex(null);
   };
 
   const removeImage = (index, imgIndex) => {
-    const current = getWaypointImages(waypoints[index]);
-    updateWaypoint(index, 'image_urls', current.filter((_, i) => i !== imgIndex));
+    updateWaypoint(index, removeWaypointImage(waypoints[index], imgIndex));
   };
 
   const onDragEnd = (result) => {
@@ -1088,13 +1089,7 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                         {getWaypointImages(wp).length > 0 && (
                           <div>
                             <Label className="text-slate-400 text-xs mb-1 block">Photos</Label>
-                            <div className="flex flex-wrap gap-2">
-                              {getWaypointImages(wp).map((url, i) => (
-                                <div key={i} className="w-16 h-16 rounded-lg overflow-hidden border border-slate-600 shrink-0">
-                                  <img src={url} alt="waypoint" className="w-full h-full object-cover" />
-                                </div>
-                              ))}
-                            </div>
+                            <WaypointPhotoThumbs waypoint={wp} size="w-16 h-16" />
                           </div>
                         )}
 
@@ -1212,26 +1207,13 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                         </div>
                         <div>
                           <Label className="text-slate-400 text-xs mb-1 block">Photos ({getWaypointImages(wp).length}/{MAX_WAYPOINT_IMAGES})</Label>
-                          <div className="flex flex-wrap gap-2">
-                            {getWaypointImages(wp).map((url, i) => (
-                              <div key={i} className="relative w-20 h-20 rounded-lg overflow-hidden border border-slate-600 shrink-0">
-                                <img src={url} alt="waypoint" className="w-full h-full object-cover" />
-                                <button
-                                  onClick={() => removeImage(index, i)}
-                                  className="absolute top-0.5 right-0.5 bg-black/60 rounded-full p-0.5 text-white hover:bg-black/80"
-                                >
-                                  <X className="w-3 h-3" />
-                                </button>
-                              </div>
-                            ))}
-                            {getWaypointImages(wp).length < MAX_WAYPOINT_IMAGES && (
-                              <label className="flex flex-col items-center justify-center gap-1 cursor-pointer bg-slate-700 border border-dashed border-slate-500 rounded-lg w-20 h-20 shrink-0 text-slate-400 hover:text-white hover:border-slate-400 transition-colors text-xs text-center">
-                                {uploadingImageIndex === index ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
-                                {uploadingImageIndex !== index && 'Add'}
-                                <input type="file" accept="image/*" className="hidden" onChange={e => e.target.files[0] && handleImageUpload(e.target.files[0], index)} disabled={uploadingImageIndex !== null} />
-                              </label>
-                            )}
-                          </div>
+                          <WaypointPhotoGrid
+                            waypoint={wp}
+                            uploading={uploadingImageIndex === index}
+                            onAdd={(file) => handleImageUpload(file, index)}
+                            onRemove={(i) => removeImage(index, i)}
+                            onCaptionChange={(i, val) => updateWaypoint(index, { image_captions: setWaypointCaption(wp, i, val) })}
+                          />
                         </div>
 
                         {/* Narration Script & TTS generation */}

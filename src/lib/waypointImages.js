@@ -39,3 +39,39 @@ export function getWaypointImages(waypoint) {
   }
   return [];
 }
+
+// Reads a waypoint's photo captions as an array aligned BY INDEX to getWaypointImages —
+// '' for any photo with no caption yet, and for any legacy waypoint without image_captions.
+// Captions are short, optional text an admin enters under each reference photo; shown to
+// customers (WalkDetail list + lightbox) and to narrators as read-only context, exactly
+// like the photos themselves. Never longer than getWaypointImages(waypoint).
+export function getWaypointCaptions(waypoint) {
+  const images = getWaypointImages(waypoint);
+  const raw = Array.isArray(waypoint && waypoint.image_captions) ? waypoint.image_captions : [];
+  return images.map((_, i) => (typeof raw[i] === 'string' ? raw[i] : ''));
+}
+
+// Returns the full image_captions array after editing one caption at `index`.
+export function setWaypointCaption(waypoint, index, value) {
+  const captions = getWaypointCaptions(waypoint);
+  captions[index] = value ?? '';
+  return captions;
+}
+
+// Returns the new { image_urls, image_captions } pair after appending an uploaded photo —
+// caption defaults to '' so the two arrays always stay the same length.
+export function addWaypointImage(waypoint, url) {
+  return {
+    image_urls: [...getWaypointImages(waypoint), url],
+    image_captions: [...getWaypointCaptions(waypoint), ''],
+  };
+}
+
+// Returns the new { image_urls, image_captions } pair after removing the photo at `index`,
+// keeping the two arrays aligned.
+export function removeWaypointImage(waypoint, index) {
+  return {
+    image_urls: getWaypointImages(waypoint).filter((_, i) => i !== index),
+    image_captions: getWaypointCaptions(waypoint).filter((_, i) => i !== index),
+  };
+}

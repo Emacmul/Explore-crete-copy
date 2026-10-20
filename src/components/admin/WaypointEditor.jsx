@@ -27,7 +27,8 @@ const WAYPOINT_TYPES = [
 
 const EMPTY_WAYPOINT = { lat: '', lng: '', type: 'landmark', name: '', description: '', image_urls: [] };
 
-import { compressImage, MAX_WAYPOINT_IMAGES, getWaypointImages } from '@/lib/waypointImages';
+import { compressImage, MAX_WAYPOINT_IMAGES, getWaypointImages, addWaypointImage, removeWaypointImage, setWaypointCaption } from '@/lib/waypointImages';
+import WaypointPhotoGrid from './WaypointPhotoGrid';
 
 // Renumbers waypoints sequentially (MXR1, MXR2, MXR3...) based on the tour's code and their current
 // list position — used for plain Walk/Hike tours only, where names are just a running count, not
@@ -124,26 +125,13 @@ function AddWaypointForm({ newWp, setNewWp, addError, onSave, onCancel, onImageU
 
       <div>
         <Label className="text-slate-400 text-xs mb-1 block">Photos (optional, up to {MAX_WAYPOINT_IMAGES})</Label>
-        <div className="flex flex-wrap gap-2">
-          {(newWp.image_urls || []).map((url, i) => (
-            <div key={i} className="relative w-20 h-20 rounded-lg overflow-hidden border border-slate-600 shrink-0">
-              <img src={url} alt="waypoint" className="w-full h-full object-cover" />
-              <button
-                onClick={() => setNewWp(p => ({ ...p, image_urls: p.image_urls.filter((_, idx) => idx !== i) }))}
-                className="absolute top-0.5 right-0.5 bg-black/60 rounded-full p-0.5 text-white hover:bg-black/80"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-          ))}
-          {(newWp.image_urls || []).length < MAX_WAYPOINT_IMAGES && (
-            <label className="flex flex-col items-center justify-center gap-1 cursor-pointer bg-slate-700 border border-dashed border-slate-500 rounded-lg w-20 h-20 shrink-0 text-slate-400 hover:text-white hover:border-slate-400 transition-colors text-xs text-center">
-              {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
-              {!uploading && 'Add'}
-              <input type="file" accept="image/*" className="hidden" onChange={e => e.target.files[0] && onImageUpload(e.target.files[0])} disabled={uploading} />
-            </label>
-          )}
-        </div>
+        <WaypointPhotoGrid
+          waypoint={newWp}
+          uploading={uploading}
+          onAdd={(file) => onImageUpload(file)}
+          onRemove={(i) => setNewWp(p => ({ ...p, ...removeWaypointImage(p, i) }))}
+          onCaptionChange={(i, val) => setNewWp(p => ({ ...p, image_captions: setWaypointCaption(p, i, val) }))}
+        />
         {(newWp.image_urls || []).length > 0 && (
           <p className="text-xs text-slate-500 mt-1">{newWp.image_urls.length}/{MAX_WAYPOINT_IMAGES} photos</p>
         )}
@@ -224,13 +212,13 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving, co
     const { file_url } = await base44.integrations.Core.UploadFile({ file: compressed });
     if (index === undefined) {
       setNewWp(p => {
-        const current = p.image_urls || [];
-        return current.length >= MAX_WAYPOINT_IMAGES ? p : { ...p, image_urls: [...current, file_url] };
+        if ((p.image_urls || []).length >= MAX_WAYPOINT_IMAGES) return p;
+        return { ...p, ...addWaypointImage(p, file_url) };
       });
     } else {
-      const current = getWaypointImages(waypoints[index]);
-      if (current.length < MAX_WAYPOINT_IMAGES) {
-        updateWaypoint(index, 'image_urls', [...current, file_url]);
+      const wp = waypoints[index];
+      if (getWaypointImages(wp).length < MAX_WAYPOINT_IMAGES) {
+        onChange(waypoints.map((w, i) => i === index ? { ...w, ...addWaypointImage(w, file_url) } : w));
       }
     }
     setUploadingIndex(null);
@@ -405,26 +393,13 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving, co
                     </div>
                     <div>
                       <Label className="text-slate-400 text-xs mb-1 block">Photos ({getWaypointImages(wp).length}/{MAX_WAYPOINT_IMAGES})</Label>
-                      <div className="flex flex-wrap gap-2">
-                        {getWaypointImages(wp).map((url, i) => (
-                          <div key={i} className="relative w-20 h-20 rounded-lg overflow-hidden border border-slate-600 shrink-0">
-                            <img src={url} alt="waypoint" className="w-full h-full object-cover" />
-                            <button
-                              onClick={() => updateWaypoint(index, 'image_urls', getWaypointImages(wp).filter((_, idx) => idx !== i))}
-                              className="absolute top-0.5 right-0.5 bg-black/60 rounded-full p-0.5 text-white hover:bg-black/80"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          </div>
-                        ))}
-                        {getWaypointImages(wp).length < MAX_WAYPOINT_IMAGES && (
-                          <label className="flex flex-col items-center justify-center gap-1 cursor-pointer bg-slate-700 border border-dashed border-slate-500 rounded-lg w-20 h-20 shrink-0 text-slate-400 hover:text-white hover:border-slate-400 transition-colors text-xs text-center">
-                            {uploadingIndex === index ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
-                            {uploadingIndex !== index && 'Add'}
-                            <input type="file" accept="image/*" className="hidden" onChange={e => e.target.files[0] && handleImageUpload(e.target.files[0], index)} disabled={uploadingIndex !== null} />
-                          </label>
-                        )}
-                      </div>
+                      <WaypointPhotoGrid
+                        waypoint={wp}
+                        uploading={uploadingIndex === index}
+                        onAdd={(file) => handleImageUpload(file, index)}
+                        onRemove={(i) => onChange(waypoints.map((w, idx) => idx === index ? { ...w, ...removeWaypointImage(w, i) } : w))}
+                        onCaptionChange={(i, val) => onChange(waypoints.map((w, idx) => idx === index ? { ...w, image_captions: setWaypointCaption(w, i, val) } : w))}
+                      />
                     </div>
                     {onSave && (
                       <div className="pt-2 border-t border-slate-600 space-y-2">
