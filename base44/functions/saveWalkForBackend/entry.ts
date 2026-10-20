@@ -28,6 +28,7 @@ import { isUsableAudioUrl, collectAudioReadinessIssues } from '../../shared/walk
 // language-neutral Admin content; clones of any state receive them automatically).
 import { waypointKey, propagateWaypointImages } from '../../shared/waypointImageSync.ts';
 
+
 // NOTE (2026-09-25): this function's DEPLOYMENT is wedged — four re-saves across two
 // days never reached the deployed endpoint, which still runs pre-lock code. The
 // reviewed logic, lock included, is also deployed as saveWalkForBackendV2 (verified:
