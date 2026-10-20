@@ -50,6 +50,10 @@ export const NARRATOR_WAYPOINT_WRITE_FIELDS = [
   'trigger_radius_m', 'trigger_once', 'use_bearing',
   'bearing_direction', 'bearing_tolerance', 'waypoint_done',
   'name', 'description',
+  // Per-language caption text a narrator translates under each reference photo. The
+  // photos themselves (image_urls/image_url) stay Admin-managed and are NEVER writable
+  // here — only the caption text is the narrator's to translate per clone.
+  'image_captions',
 ];
 
 export const NARRATOR_WALK_READ_FIELDS = [
@@ -75,8 +79,11 @@ export const NARRATOR_WAYPOINT_READ_FIELDS = [
   // photo ARRAY to their browser — image_url alone is the legacy single-photo field
   // and stays empty for anything added after 2026-09-27.
   'image_urls',
-  // Captions travel with the photos (master-managed, same propagation path) so a
-  // narrator sees the same short caption under each reference photo for context.
+  // Captions are per-language narrator work: the clone inherits the master's English
+  // captions at clone time, then the narrator translates them. They stay aligned by
+  // index to image_urls (see getWaypointCaptions) and are writable for narrators
+  // (NARRATOR_WAYPOINT_WRITE_FIELDS), so the narrator's own clone must deliver them
+  // to the editor to translate.
   'image_captions',
 ];
 

@@ -4,7 +4,8 @@ import AutoGrowTextarea from '@/components/admin/AutoGrowTextarea';
 import { Button } from '@/components/ui/button';
 import { useNarratorApiKeys, getNarratorAuthPayload } from '@/lib/useNarratorApiKeys';
 import prepareWalkingWaypoints from '@/lib/prepareWalkingWaypoints';
-import WaypointPhotoThumbs from '@/components/walks/WaypointPhotoThumbs';
+import { setWaypointCaption } from '@/lib/waypointImages';
+import WaypointCaptionEditor from '@/components/admin/WaypointCaptionEditor';
 
 export default function WalkingCloneWaypointEditor({ walk, master, onChange, onAutoSave }) {
   const { keys, loadedOk } = useNarratorApiKeys();
@@ -40,7 +41,11 @@ export default function WalkingCloneWaypointEditor({ walk, master, onChange, onA
       <h3 className="font-medium text-white">{wp.segment_id || `Waypoint ${index + 1}`}</h3>
       <label className="block text-sm text-slate-300">Name<Input aria-label={`Waypoint ${index + 1} name`} value={wp.name || ''} disabled={locked} onChange={event => update(index, 'name', event.target.value)} className="bg-slate-700 border-slate-600 text-white" /></label>
       <label className="block text-sm text-slate-300">Description<AutoGrowTextarea aria-label={`Waypoint ${index + 1} description`} value={wp.description || ''} disabled={locked} onChange={event => update(index, 'description', event.target.value)} rows={3} className="bg-slate-700 border-slate-600 text-white" /></label>
-      <WaypointPhotoThumbs waypoint={wp} />
+      <WaypointCaptionEditor
+        waypoint={wp}
+        disabled={locked}
+        onCaptionChange={(i, val) => update(index, 'image_captions', setWaypointCaption(wp, i, val))}
+      />
       {/* One save control per location block, per Enda's request — saves the WHOLE
           walk through the editor's shared save mechanism (onAutoSave), so a save
           requested here never races another one and always reads the latest edits. */}
