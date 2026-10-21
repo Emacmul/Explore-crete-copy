@@ -1619,13 +1619,14 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
           </div>
           <Button
             type="button"
-            size="sm"
-            variant="outline"
             onClick={() => playTriggerAudio(nextStop, wpKeyFor(nextStop))}
             title={t('detail.playStopTitle')}
-            className="shrink-0 border-slate-500 text-slate-200 hover:bg-slate-600 gap-1.5"
+            // Per Enda (2026-10-21): the "Next stop" Play button must be visible at a
+            // glance while driving, not a faint outline a driver has to hunt for. Same
+            // solid high-contrast bold treatment as the Start/Pause/Stop controls below.
+            className="shrink-0 gap-1.5 bg-green-500 hover:bg-green-600 text-white font-bold text-sm px-4 h-10 shadow-lg shadow-green-900/40"
           >
-            <Play className="w-3.5 h-3.5" /> {t('detail.playStop')}
+            <Play className="w-4 h-4" /> {t('detail.playStop')}
           </Button>
         </div>
       )}
