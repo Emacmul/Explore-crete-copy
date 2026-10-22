@@ -159,6 +159,44 @@ export default function BackendShell({ user, userRole, isSuperAdmin, authMode, u
   // assigned_narrator_email / finished / approved server-side and re-runs both
   // checks itself; a hand-crafted call that skips this client logic still gets
   // rejected there.
+  // Best-effort background translation for a freshly created clone. Runs WITHOUT
+  // being awaited by handleCloneTour so the clone modal closes the instant the
+  // clone record exists — each field is translated, saved and reflected in the
+  // tour list as it completes, and the narrator can start editing immediately.
+  // Failures are logged per field (the clone stays fully usable in English); the
+  // narrator's own "Translate" buttons remain available for anything this didn't
+  // finish. Per Enda (2026-10-22): previously this whole pipeline blocked the
+  // modal, so a Hebrew clone (7 tour-level fields + 2 calls per walking waypoint)
+  // could keep the spinner up for several minutes and look permanently stuck.
+  const runCloneAutoTranslation = async (saved, walkingMaster, lang) => {
+    let current = saved;
+    try {
+      for (const field of ['name', 'safety_notes', 'description', 'off_route_text', 'gps_no_signal_text', 'gps_low_accuracy_text', 'speed_hint_text']) {
+        try {
+          const translatedText = await translateWalkField({
+            field, titleOnly: field === 'name', walkId: current.id, targetLanguage: lang, apiKeys: myApiKeys, authPayload: narrAuth,
+          });
+          const saveResponse = await callWalkFn('saveWalkForBackend', { id: current.id, patch: { [field]: translatedText } });
+          current = saveResponse.walk;
+          setWalks((prev) => prev.map(w => w.id === current.id ? current : w));
+        } catch (translateErr) {
+          console.error(`Auto-translating ${field} for the new clone failed (clone still created, English text left in place):`, translateErr);
+        }
+      }
+
+      if (current.route_type !== 'driving_audio_tour') {
+        const prepared = await prepareWalkingWaypoints({ walk: current, master: walkingMaster, apiKeys: myApiKeys, authPayload: narrAuth });
+        if (JSON.stringify(prepared.waypoints) !== JSON.stringify(current.waypoints)) {
+          current = (await callWalkFn('saveWalkForBackend', { id: current.id, patch: { waypoints: prepared.waypoints } })).walk;
+          setWalks(prev => prev.map(w => w.id === current.id ? current : w));
+        }
+        if (prepared.errors.length) toast({ variant: 'destructive', title: 'Some waypoint translations need retrying', description: 'Open Waypoints to finish automatic preparation; existing translations and edits are preserved.' });
+      }
+    } catch (err) {
+      console.error('Background clone auto-translation failed:', err);
+    }
+  };
+
   const handleCloneTour = async (original, targetLanguage) => {
     const lang = (targetLanguage || '').trim();
     if (!lang || !original) return null;
@@ -190,7 +228,7 @@ export default function BackendShell({ user, userRole, isSuperAdmin, authMode, u
       let saved = data.walk;
       const walkingMaster = { ...original, waypoints: saved.waypoints };
       setWalks((prev) => [saved, ...prev.map(w => w.id === original.id && saved.route_type !== 'driving_audio_tour' ? { ...w, waypoints: (walkingMaster.waypoints || []).map(wp => ({ name: wp.name || '', description: wp.description || '' })) } : w)]);
-      toast({ title: 'Clone created', description: `Translating “${original.name}” into ${lang}.` });
+      toast({ title: 'Clone created', description: `Translating “${original.name}” into ${lang} in the background — you can start editing now, and the translated text will appear as it completes.` });
 
       // Per Enda (follow-up 190, extended follow-up 245): every piece of customer-facing
       // tour-level text should already be translated into the target language the
@@ -211,38 +249,17 @@ export default function BackendShell({ user, userRole, isSuperAdmin, authMode, u
       // on the master yet, a rate limit, etc.) — exactly today's behaviour — and the
       // narrator can still translate each one manually afterwards (see the "Translate"
       // buttons on the Preview tab, and the "still English" warning next to each one).
+      // Per Enda (2026-10-22): the clone modal must close the moment the clone
+      // record is created — the best-effort auto-translation (tour-level fields +
+      // walking-clone waypoints) now runs in the background (runCloneAutoTranslation)
+      // instead of blocking the modal, so a multi-field translation (e.g. Hebrew)
+      // no longer keeps the spinner up for several minutes looking permanently
+      // stuck. Each field is saved and reflected in the tour list as it completes;
+      // the narrator can start editing immediately and sees the pre-translation
+      // next time they open the tour. Driving-tour per-stop text still translates on
+      // demand (TourSimulator.jsx), unchanged.
       if (lang.toLowerCase() !== 'english') {
-        // Per Enda's system-voice-messages request: the four spoken alert texts
-        // (off_route_text etc.) are the same kind of "real tour-design content, same
-        // regardless of language" as safety_notes/description, so they get the same
-        // best-effort auto-translate-on-clone treatment. Audio is deliberately NOT
-        // auto-generated here — ElevenLabs audio only gets created when the narrator
-        // presses "Generate PCV audio" themselves in Narration & Simulate, after
-        // reviewing/editing the translated text.
-        // The tour NAME goes through translateScript's titleOnly mode (same as the Tour
-        // Title box's own "Translate" button) — 'name' isn't one of its walk-level
-        // fields, so it's flagged specially here.
-        for (const field of ['name', 'safety_notes', 'description', 'off_route_text', 'gps_no_signal_text', 'gps_low_accuracy_text', 'speed_hint_text']) {
-          try {
-            const translatedText = await translateWalkField({
-              field, titleOnly: field === 'name', walkId: saved.id, targetLanguage: lang, apiKeys: myApiKeys, authPayload: narrAuth,
-            });
-            const saveResponse = await callWalkFn('saveWalkForBackend', { id: saved.id, patch: { [field]: translatedText } });
-            saved = saveResponse.walk;
-            setWalks((prev) => prev.map(w => w.id === saved.id ? saved : w));
-          } catch (translateErr) {
-            console.error(`Auto-translating ${field} for the new clone failed (clone still created, English text left in place):`, translateErr);
-          }
-        }
-      }
-
-      if (saved.route_type !== 'driving_audio_tour') {
-        const prepared = await prepareWalkingWaypoints({ walk: saved, master: walkingMaster, apiKeys: myApiKeys, authPayload: narrAuth });
-        if (JSON.stringify(prepared.waypoints) !== JSON.stringify(saved.waypoints)) {
-          saved = (await callWalkFn('saveWalkForBackend', { id: saved.id, patch: { waypoints: prepared.waypoints } })).walk;
-          setWalks(prev => prev.map(w => w.id === saved.id ? saved : w));
-        }
-        if (prepared.errors.length) toast({ variant: 'destructive', title: 'Some waypoint translations need retrying', description: 'Open Waypoints to finish automatic preparation; existing translations and edits are preserved.' });
+        runCloneAutoTranslation(saved, walkingMaster, lang);
       }
       return saved;
     } catch (err) {
