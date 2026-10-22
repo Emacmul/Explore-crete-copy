@@ -20,7 +20,6 @@ import PublishVersionDialog from './PublishVersionDialog';
 import { getRouteTypeForCategory, defaultPriceForCategory } from '@/lib/tourCategories';
 import { toast } from '@/components/ui/use-toast';
 import { translateWalkField } from '@/lib/fieldTranslation';
-import prepareWalkingWaypoints from '@/lib/prepareWalkingWaypoints';
 
 /**
  * Shared back-end shell used by both the Admin route and the Narr route. Both
@@ -159,42 +158,83 @@ export default function BackendShell({ user, userRole, isSuperAdmin, authMode, u
   // assigned_narrator_email / finished / approved server-side and re-runs both
   // checks itself; a hand-crafted call that skips this client logic still gets
   // rejected there.
-  // Best-effort background translation for a freshly created clone. Runs WITHOUT
-  // being awaited by handleCloneTour so the clone modal closes the instant the
-  // clone record exists — each field is translated, saved and reflected in the
-  // tour list as it completes, and the narrator can start editing immediately.
-  // Failures are logged per field (the clone stays fully usable in English); the
-  // narrator's own "Translate" buttons remain available for anything this didn't
-  // finish. Per Enda (2026-10-22): previously this whole pipeline blocked the
-  // modal, so a Hebrew clone (7 tour-level fields + 2 calls per walking waypoint)
-  // could keep the spinner up for several minutes and look permanently stuck.
+  // Per Enda (2026-10-22): translate EVERYTHING (tour-level fields + every walking-clone
+  // waypoint name/description) in ONE parallel batch during clone creation, then save
+  // ONCE. handleCloneTour awaits this, so the clone editor opens with every field already
+  // in the target language — no "Preparing…" indicator, no fields appearing one-by-one, no
+  // flicker between "saved" / "unsaved" as each field trickles in. Failed fields are left
+  // in English (the clone stays fully usable); the narrator's own "Translate" buttons cover
+  // anything this batch didn't finish. Driving-tour per-stop text still translates on demand
+  // in TourSimulator (a driving tour can have dozens of stops, and firing that many Groq
+  // calls at clone time would hit Groq's per-minute rate limit).
   const runCloneAutoTranslation = async (saved, walkingMaster, lang) => {
     let current = saved;
     try {
-      for (const field of ['name', 'safety_notes', 'description', 'off_route_text', 'gps_no_signal_text', 'gps_low_accuracy_text', 'speed_hint_text']) {
-        try {
-          const translatedText = await translateWalkField({
-            field, titleOnly: field === 'name', walkId: current.id, targetLanguage: lang, apiKeys: myApiKeys, authPayload: narrAuth,
-          });
-          const saveResponse = await callWalkFn('saveWalkForBackend', { id: current.id, patch: { [field]: translatedText } });
-          current = saveResponse.walk;
-          setWalks((prev) => prev.map(w => w.id === current.id ? current : w));
-        } catch (translateErr) {
-          console.error(`Auto-translating ${field} for the new clone failed (clone still created, English text left in place):`, translateErr);
+      const tourFields = ['name', 'safety_notes', 'description', 'off_route_text', 'gps_no_signal_text', 'gps_low_accuracy_text', 'speed_hint_text'];
+      const isWalkingClone = current.route_type !== 'driving_audio_tour';
+      const waypoints = isWalkingClone ? (current.waypoints || []) : [];
+
+      // One translation task per field — all fired in parallel. Each task records where
+      // its result goes so a single patch can be assembled and saved in ONE call.
+      const tasks = [];
+      for (const field of tourFields) {
+        if (!walkingMaster[field]) continue; // master has no text here — nothing to translate
+        tasks.push({ kind: 'tour', field, titleOnly: field === 'name' });
+      }
+      if (isWalkingClone) {
+        for (let i = 0; i < waypoints.length; i++) {
+          for (const field of ['name', 'description']) {
+            if (!walkingMaster.waypoints?.[i]?.[field]) continue;
+            tasks.push({ kind: 'waypoint', index: i, field });
+          }
         }
       }
 
-      if (current.route_type !== 'driving_audio_tour') {
-        const prepared = await prepareWalkingWaypoints({ walk: current, master: walkingMaster, apiKeys: myApiKeys, authPayload: narrAuth });
-        if (JSON.stringify(prepared.waypoints) !== JSON.stringify(current.waypoints)) {
-          current = (await callWalkFn('saveWalkForBackend', { id: current.id, patch: { waypoints: prepared.waypoints } })).walk;
-          setWalks(prev => prev.map(w => w.id === current.id ? current : w));
+      const results = await Promise.allSettled(tasks.map(t => translateWalkField({
+        ...(t.kind === 'tour' ? (t.titleOnly ? { titleOnly: true } : { field: t.field }) : { field: t.field, waypointIndex: t.index }),
+        walkId: current.id,
+        targetLanguage: lang,
+        apiKeys: myApiKeys,
+        authPayload: narrAuth,
+      })));
+
+      const patch = {};
+      const errors = [];
+      results.forEach((r, i) => {
+        const t = tasks[i];
+        if (r.status === 'fulfilled') {
+          if (t.kind === 'tour') patch[t.field] = r.value;
+          else t._value = r.value; // waypoint values applied below
+        } else {
+          errors.push(`${t.kind === 'tour' ? t.field : `Stop ${t.index + 1} ${t.field}`}: ${r.reason?.message || r.reason}`);
         }
-        if (prepared.errors.length) toast({ variant: 'destructive', title: 'Some waypoint translations need retrying', description: 'Open Waypoints to finish automatic preparation; existing translations and edits are preserved.' });
+      });
+
+      if (isWalkingClone) {
+        const newWaypoints = waypoints.map(wp => ({ ...wp }));
+        let wpChanged = false;
+        for (const t of tasks) {
+          if (t.kind === 'waypoint' && t._value != null) {
+            newWaypoints[t.index] = { ...newWaypoints[t.index], [t.field]: t._value };
+            wpChanged = true;
+          }
+        }
+        if (wpChanged) patch.waypoints = newWaypoints;
+      }
+
+      // Save everything in ONE call — one network round trip, one setWalks update, no flicker.
+      if (Object.keys(patch).length > 0) {
+        const saveResponse = await callWalkFn('saveWalkForBackend', { id: current.id, patch });
+        current = saveResponse.walk;
+        setWalks((prev) => prev.map(w => w.id === current.id ? current : w));
+      }
+      if (errors.length) {
+        toast({ variant: 'destructive', title: 'Some translations need retrying', description: 'Open the tour and use each "Translate" button to finish the fields that did not auto-translate. Existing translations and edits are preserved.' });
       }
     } catch (err) {
-      console.error('Background clone auto-translation failed:', err);
+      console.error('Clone auto-translation failed:', err);
     }
+    return current;
   };
 
   const handleCloneTour = async (original, targetLanguage) => {
@@ -228,38 +268,17 @@ export default function BackendShell({ user, userRole, isSuperAdmin, authMode, u
       let saved = data.walk;
       const walkingMaster = { ...original, waypoints: saved.waypoints };
       setWalks((prev) => [saved, ...prev.map(w => w.id === original.id && saved.route_type !== 'driving_audio_tour' ? { ...w, waypoints: (walkingMaster.waypoints || []).map(wp => ({ name: wp.name || '', description: wp.description || '' })) } : w)]);
-      toast({ title: 'Clone created', description: `Translating “${original.name}” into ${lang} in the background — you can start editing now, and the translated text will appear as it completes.` });
-
-      // Per Enda (follow-up 190, extended follow-up 245): every piece of customer-facing
-      // tour-level text should already be translated into the target language the
-      // moment the clone is created, not left in English until the narrator remembers to
-      // hit "Translate" themselves — Safety Notes worked this way already; Description
-      // now does too. Walking-clone waypoint names/descriptions are prepared below.
-      // Driving-tour per-waypoint text (each stop's own name/description) is NOT
-      // translated here in one big batch — a driving tour can have dozens of stops, and
-      // firing that many Groq calls back to back the instant a clone is created would hit
-      // Groq's own per-minute rate limit almost immediately (see TranslationsManager.jsx
-      // for the lengths this app already goes to elsewhere to handle exactly that).
-      // Instead, each stop is auto-translated the moment a narrator actually opens it in
-      // Narration & Simulate — see the effect in TourSimulator.jsx — spreading the same
-      // calls out naturally over however long the narrator spends working through the
-      // tour, instead of all firing in the first few seconds. Best-effort only, field by
-      // field, for the two tour-level fields below: the clone is already
-      // fully usable with the master's English text if any one of these fails (no text
-      // on the master yet, a rate limit, etc.) — exactly today's behaviour — and the
-      // narrator can still translate each one manually afterwards (see the "Translate"
-      // buttons on the Preview tab, and the "still English" warning next to each one).
-      // Per Enda (2026-10-22): the clone modal must close the moment the clone
-      // record is created — the best-effort auto-translation (tour-level fields +
-      // walking-clone waypoints) now runs in the background (runCloneAutoTranslation)
-      // instead of blocking the modal, so a multi-field translation (e.g. Hebrew)
-      // no longer keeps the spinner up for several minutes looking permanently
-      // stuck. Each field is saved and reflected in the tour list as it completes;
-      // the narrator can start editing immediately and sees the pre-translation
-      // next time they open the tour. Driving-tour per-stop text still translates on
-      // demand (TourSimulator.jsx), unchanged.
+      // Per Enda (2026-10-22): ALL translation (tour-level fields + walking-clone
+      // waypoints) is done in ONE parallel batch here, and handleCloneTour AWAITS it —
+      // the clone dialog stays up ("Translating into <language>…") until every field is
+      // translated and saved in a single write, then the editor opens with everything
+      // already in the target language. No per-field saves, no flicker, no fields
+      // appearing one-by-one. Failed fields are left in English; the narrator's own
+      // "Translate" buttons cover them. Driving-tour per-stop text still translates on
+      // demand in TourSimulator (a driving tour can have dozens of stops, and firing
+      // that many Groq calls at clone time would hit Groq's per-minute rate limit).
       if (lang.toLowerCase() !== 'english') {
-        runCloneAutoTranslation(saved, walkingMaster, lang);
+        saved = await runCloneAutoTranslation(saved, walkingMaster, lang);
       }
       return saved;
     } catch (err) {

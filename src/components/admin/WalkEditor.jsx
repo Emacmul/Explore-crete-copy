@@ -1176,47 +1176,6 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   }, [pendingAutoSave]);
   const requestAutoSave = () => setPendingAutoSave(true);
 
-  // Auto-translate tour-level fields on editor open — mirrors the waypoint editor's
-  // mount effect (WalkingCloneWaypointEditor). The background translation
-  // (runCloneAutoTranslation in BackendShell) is fire-and-forget and has been silently
-  // failing on the Narr-hat auth path, leaving tour-level fields in English while
-  // waypoints come through (the waypoint editor has its own effect that works). This
-  // effect closes that gap: when the editor opens with an untranslated clone, every
-  // tour-level field still matching the master is translated and saved, so the narrator
-  // always sees the target language the moment they open the tour — regardless of whether
-  // the background translation reached the same fields first.
-  const tourLevelAutoDoneRef = useRef(false);
-  useEffect(() => {
-    if (tourLevelAutoDoneRef.current) return;
-    if (!form.clone_of || !form.target_language || form.target_language.toLowerCase() === 'english' || form.finished) return;
-    if (!titleTranslateApiKeys.groq_api_key || !masterWalk) return;
-    tourLevelAutoDoneRef.current = true;
-    let cancelled = false;
-    (async () => {
-      for (const [field, titleOnly] of [
-        ['name', true], ['safety_notes', false], ['description', false],
-        ['off_route_text', false], ['gps_no_signal_text', false],
-        ['gps_low_accuracy_text', false], ['speed_hint_text', false],
-      ]) {
-        if (cancelled) return;
-        if (!stillMatchesMaster(form[field], masterWalk[field])) continue;
-        try {
-          const translated = await translateWalkField({
-            field, titleOnly, walkId: form.id, targetLanguage: form.target_language,
-            apiKeys: titleTranslateApiKeys, authPayload: getNarratorAuthPayload(),
-          });
-          if (cancelled) return;
-          set(field, translated);
-          requestAutoSave();
-        } catch (err) {
-          console.error(`Auto-translating ${field} on editor open failed:`, err);
-        }
-      }
-    })();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.id, form.clone_of, form.target_language, form.finished, titleTranslateApiKeys.groq_api_key, masterWalk]);
-
   // Publish / Republish / Unpublish for any tour an Admin has open in the editor —
   // a master (non-clone) tour they built directly, or a narrator's translation clone.
   // The same "must not go live with AI-drafted audio still in place" rule applies to
@@ -2248,7 +2207,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
         {activeTab === 'waypoints' && (
           <div className="space-y-4">
             {form.clone_of && !isDrivingAudioTour ? (
-              <WalkingCloneWaypointEditor walk={form} master={masterWalk} onChange={wps => set('waypoints', wps)} onAutoSave={requestAutoSave} apiKeys={titleTranslateApiKeys} />
+              <WalkingCloneWaypointEditor walk={form} onChange={wps => set('waypoints', wps)} onAutoSave={requestAutoSave} />
             ) : isDrivingAudioTour ? (
               <DrivingTourWaypointEditor
                 waypoints={form.waypoints}

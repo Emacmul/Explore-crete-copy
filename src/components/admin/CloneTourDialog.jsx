@@ -39,7 +39,7 @@ export default function CloneTourDialog({ open, tour, onClose, onConfirm, exclud
         <div className="space-y-3 py-2">
           <div>
             <Label className="text-slate-300 mb-1.5 block">Target language</Label>
-            <Select value={language || undefined} onValueChange={setLanguage}>
+            <Select value={language || undefined} onValueChange={setLanguage} disabled={busy}>
               <SelectTrigger className="bg-slate-700 border-slate-600 text-white"><SelectValue placeholder="Select language" /></SelectTrigger>
               <SelectContent>
                 {availableLanguages.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}
@@ -54,11 +54,21 @@ export default function CloneTourDialog({ open, tour, onClose, onConfirm, exclud
               The new tour's code will be <span className="font-mono text-purple-300">{tour?.code}-{language || 'LANG'}</span>.
             </p>
           </div>
+          {/* Per Enda (2026-10-22): the dialog stays open while ALL fields are translated in
+              one parallel batch, so the editor opens with everything already in the target
+              language — no fields appearing one-by-one, no flicker. This status line tells the
+              narrator exactly what's happening during that wait. */}
+          {busy && language && (
+            <div className="flex items-center gap-2 rounded-lg bg-purple-900/30 border border-purple-700/40 px-3 py-2">
+              <Loader2 className="w-4 h-4 animate-spin text-purple-400 shrink-0" />
+              <p className="text-sm text-purple-200">Translating into {language}…</p>
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose} className="text-slate-400">Cancel</Button>
           <Button onClick={handleConfirm} disabled={!language || busy} className="bg-purple-600 hover:bg-purple-700 gap-2">
-            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Languages className="w-4 h-4" />} Create clone
+            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Languages className="w-4 h-4" />} {busy ? 'Translating…' : 'Create clone'}
           </Button>
         </DialogFooter>
       </DialogContent>
