@@ -2207,7 +2207,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
         {activeTab === 'waypoints' && (
           <div className="space-y-4">
             {form.clone_of && !isDrivingAudioTour ? (
-              <WalkingCloneWaypointEditor walk={form} master={masterWalk} onChange={wps => set('waypoints', wps)} onAutoSave={requestAutoSave} />
+              <WalkingCloneWaypointEditor walk={form} master={masterWalk} onChange={wps => set('waypoints', wps)} onAutoSave={requestAutoSave} apiKeys={titleTranslateApiKeys} />
             ) : isDrivingAudioTour ? (
               <DrivingTourWaypointEditor
                 waypoints={form.waypoints}
