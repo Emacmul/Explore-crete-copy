@@ -313,6 +313,10 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
   // to raise no warning at all, leaving the screen looking reassuring while nothing could
   // ever trigger).
   const [gpsIssue, setGpsIssue] = useState(null);
+  // Live mirror of gpsIssue for the silence watchdog's interval closure (created once per
+  // status change, so it would otherwise see a stale gpsIssue) — see GPS_SILENCE_WARN_MS.
+  const gpsIssueRef = useRef(null);
+  gpsIssueRef.current = gpsIssue;
   const gpsErrorStreakRef = useRef(0);
   const gpsAccuracyStreakRef = useRef(0);
   // Set true the first time THIS device reports a real (finite) accuracy value this page
@@ -906,11 +910,30 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
     startGpsWatch();
   };
   const GPS_SILENCE_RESTART_MS = 15000;
+  // Per Enda's BOR road test (2026-10-24): twice the GPS went TOTALLY silent — no position
+  // fixes AND no error callbacks — so onGpsError's error streak never built up and the
+  // no-signal warning above never fired: no red banner, no spoken alert, nothing triggered,
+  // and the only clue was silence. A driver can't check the screen mid-drive (dangerous),
+  // so ~10 seconds of total silence now raises the SAME no_signal issue the error streak
+  // does. That plays the existing spoken warning — the tour's own PCV (Professional Cloned
+  // Voice) no-signal recording, or the built-in voice as fallback — which already tells the
+  // driver to press the Play button to keep listening, and works offline because "Stay Safe
+  // Offline" keeps both the tour audio and the PCV alert file on the device (the built-in
+  // voice needs no network at all). Once-per-episode is preserved by the existing
+  // spokenGpsIssueRef guard: a second interval tick while the issue is still up does
+  // nothing (gpsIssueRef below), and the warning re-arms automatically once a fix clears it.
+  // Silent-by-design moments never reach it: lastFixAtRef is stamped on Start, on every fix
+  // AND every error callback, and again on each 15s watch restart.
+  const GPS_SILENCE_WARN_MS = 10000;
   useEffect(() => {
     if (status !== 'running' || manualOnlyTour) return undefined;
     const timer = setInterval(() => {
       if (statusRef.current !== 'running') return;
       const silentMs = Date.now() - lastFixAtRef.current;
+      if (silentMs >= GPS_SILENCE_WARN_MS && !gpsIssueRef.current) {
+        tourLogService.logWarning(`No GPS activity for ${Math.round(silentMs / 1000)}s - raising spoken no-signal warning`);
+        setGpsIssue({ kind: 'no_signal', message: t('player.gpsUnavailable') });
+      }
       if (silentMs >= GPS_SILENCE_RESTART_MS) restartGpsWatch(`no GPS activity for ${Math.round(silentMs / 1000)}s`);
     }, 5000);
     // The app coming back to the front after being hidden is the usual moment a phone drops the

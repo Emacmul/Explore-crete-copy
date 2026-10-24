@@ -133,6 +133,20 @@ export function collectWalkAudioUrls(walk) {
     if (s.final_audio_url) urls.add(s.final_audio_url);
     if (s.combined_audio_url) urls.add(s.combined_audio_url);
   });
+  // The spoken system alerts (off-route, GPS lost, GPS weak, driving too fast) — the
+  // driver's ONLY eyes-free warning that the tour has stopped triggering. Per Enda's BOR
+  // road test (2026-10-24): GPS loss and cell-signal loss go together in a gorge, so a
+  // no-signal alert that isn't in the "Stay Safe Offline" download can't stream while
+  // it's needed most and falls back to the built-in voice (or nothing). Cached here,
+  // the tour's own PCV (Professional Cloned Voice) alert plays offline exactly like the
+  // narration. Cleanup paths (removeWalkFullyOffline/replaceWalkOffline) reuse this list,
+  // so these files are removed/swapped with everything else automatically.
+  [
+    walk?.off_route_audio_url,
+    walk?.gps_no_signal_audio_url,
+    walk?.gps_low_accuracy_audio_url,
+    walk?.speed_hint_audio_url,
+  ].forEach(u => { if (u) urls.add(u); });
   return [...urls].filter(Boolean);
 }
 
