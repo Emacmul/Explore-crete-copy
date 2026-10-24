@@ -4,232 +4,24 @@ import { Play, Pause, Square, Bug, AlertTriangle, Home, CheckCircle2, Gauge } fr
 import * as gpsService from '@/lib/gpsService';
 import * as audioService from '@/lib/audioService';
 import { loadResumeSnapshot, saveResumeSnapshot, touchResumeTime, clearResumeSnapshot } from '@/lib/drivingResume';
+// The player's pure, stateless helpers (geometry, GPS-trust rules, per-device storage of
+// played stops / last known position) live in their own module since 2026-10-24 — this
+// file grew past the platform's editable-size limit and the split keeps it editable.
+import {
+  haversine, wpKeyFor, lastPositionStorageKey, loadPlayedKeys, savePlayedKeys,
+  GPS_ACCURACY_HARD_CAP_M, LATE_PLAY_MAX_DISTANCE_M, NARRATION_DUCK_VOLUME, fixIsTrustworthy,
+  GPS_ERROR_STREAK_THRESHOLD, OFF_ROUTE_DISTANCE_M, ON_ROUTE_RECOVER_M,
+  OFF_ROUTE_STREAK_THRESHOLD, nearestTrailDistanceM, loadPassedSecondaryIds,
+} from '@/lib/drivingPlayerHelpers';
 import * as tourLogService from '@/lib/tourLogService';
 import { calculateBearing, isBearingInRange } from '@/lib/routeExport';
 import * as speedHint from '@/lib/speedHint';
 import { createWalkingGuard } from '@/lib/walkingGuard';
 import { startTestLogUpload } from '@/lib/tourLogUpload';
 import TourDebugLog from './TourDebugLog';
+import DrivingPlayerStatusCards from './DrivingPlayerStatusCards';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { useOfflineWalks } from '../offline/useOfflineWalks';
-
-const R_EARTH = 6371000;
-
-function haversine(lat1, lng1, lat2, lng2) {
-  const toRad = d => (d * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a = Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  return 2 * R_EARTH * Math.asin(Math.sqrt(a));
-}
-
-// The same stable per-waypoint key used everywhere below.
-//
-// FIXED 2026-09-20 (Enda's BOR3 road test): this used to be `wp.segment_id || wp.name`. But a
-// segment_id belongs to a whole SEGMENT ("BOR3" is shared by BOR3a-PS, BOR3b, BOR3c ... BOR3f - every
-// real tour stores it that way), so every stop of a segment got the SAME key. The moment the first
-// stop of a segment played, all the others counted as "already played" and never fired; the first two
-// stops made the whole of BOR1 "manual only"; and the tour counted as finished as soon as the first
-// stop of the last segment ended (which then stopped everything). Now each stop's key is its own:
-// segment + name + position.
-function wpKeyFor(wp) {
-  return `${wp.segment_id || ''}|${wp.name || ''}|${wp.lat},${wp.lng}`;
-}
-
-// "Last known position" tracking — per Enda: while driving, the app should quietly
-// remember the most recent secondary waypoint (a point along the route, not the segment
-// start/stop markers) the driver has actually reached, so that if the phone loses signal,
-// gets closed by accident, or overheats and switches itself off, reopening the tour still
-// shows where they got to and offers to pick back up from there — without ever showing
-// the driver a list of every point, just that one. Saved to this device so it survives
-// closing the app. If it's more than 18 hours old, treat it as stale (a different day's
-// drive) and start fresh, the same rule already used for the walk/hike "you were last
-// here" feature.
-const LAST_POSITION_STALE_MS = 18 * 60 * 60 * 1000;
-
-function lastPositionStorageKey(walkId) {
-  return `explore_crete_driving_last_position__${walkId}`;
-}
-
-// Per Enda (2026-09-20): visitors use the same phone as a camera, and a phone can reload a
-// page while another app (the camera) is in front. The set of stops that have ALREADY PLAYED
-// used to live only in memory, so a reload forgot it and stops could play a second time. It is
-// now also kept on this device, per tour, and dropped after the same 18 hours as the last known
-// position. Stored: only stop identifiers. Never speeds or positions.
-function playedStorageKey(walkId) {
-  return `explore_crete_driving_played__${walkId}`;
-}
-
-function loadPlayedKeys(walkId) {
-  if (!walkId) return [];
-  try {
-    const raw = localStorage.getItem(playedStorageKey(walkId));
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!parsed || !Array.isArray(parsed.keys) || Date.now() - (parsed.updatedAt || 0) > LAST_POSITION_STALE_MS) {
-      localStorage.removeItem(playedStorageKey(walkId));
-      return [];
-    }
-    return parsed.keys.filter((k) => typeof k === 'string');
-  } catch {
-    return [];
-  }
-}
-
-function savePlayedKeys(walkId, keysSet) {
-  if (!walkId) return;
-  try {
-    if (!keysSet || keysSet.size === 0) localStorage.removeItem(playedStorageKey(walkId));
-    else localStorage.setItem(playedStorageKey(walkId), JSON.stringify({ keys: Array.from(keysSet), updatedAt: Date.now() }));
-  } catch {
-    /* storage unavailable - repeat protection then only lasts until the page reloads */
-  }
-}
-
-// Per audit finding U-08 (2026-09-09 code review): a GPS fix's accuracy needs to be at
-// least as good as the trigger radius it's being judged against, or the fix can't be
-// trusted to resolve at that distance. Crete's mountains are notorious for weak signal —
-// a plain distance check can't tell a precise fix from a rough one that just happens to
-// land "inside" the radius by chance. GPS_ACCURACY_HARD_CAP_M additionally rejects any
-// fix so imprecise it shouldn't be trusted for ANY waypoint, however large that
-// waypoint's own radius is. Applied to both audio triggers and "last known position".
-const GPS_ACCURACY_HARD_CAP_M = 100;
-
-// Late play (Enda, 2026-09-20): a stop held back by the walking guard (e.g. crawling behind a herd of
-// goats through its whole circle) still plays once the car is clearly driving again, as long as it is
-// still within this distance of that stop. A walker never reaches driving speed, so never triggers it.
-const LATE_PLAY_MAX_DISTANCE_M = 300;
-
-// How quiet the narration goes while a spoken alert talks over it (0 = silent, 1 = full).
-const NARRATION_DUCK_VOLUME = 0.2;
-
-function fixIsTrustworthy(accuracy, radius) {
-  // No accuracy reported at all (not standard, but not every device/browser is
-  // guaranteed to supply it) — behave as before rather than silently blocking every
-  // trigger on an unrelated device quirk.
-  if (accuracy == null || !Number.isFinite(accuracy)) return true;
-  return accuracy <= Math.min(radius, GPS_ACCURACY_HARD_CAP_M);
-}
-
-// Per audit finding U-07: a single dropped GPS fix (a tunnel, a tall building, a brief
-// timeout) is normal in Crete's mountains and driving through them shouldn't alarm the
-// driver — but a RUN of consecutive failures means signal is genuinely gone, and that
-// needs to be visible, not just logged. A denied location permission never recovers on
-// its own, so that one is treated as sustained immediately rather than counted.
-const GPS_ERROR_STREAK_THRESHOLD = 2;
-
-// Off-route detection — per Anoushka/Enda (follow-up 156): a driver can genuinely take a
-// wrong turn (missed a turnoff, inattention) and end up nowhere near the recorded route at
-// all, which is a different problem from GPS being unreliable. This is deliberately a
-// bigger distance than any single waypoint's trigger radius (default 150m) or the GPS
-// accuracy hard cap above (100m), so ordinary road-following/GPS noise near the route
-// never trips it — only being genuinely, sustainedly far from the whole route does.
-// ON_ROUTE_RECOVER_M is smaller than OFF_ROUTE_DISTANCE_M on purpose (hysteresis): once
-// warned, a fix has to come back clearly inside the route, not just barely under the
-// warning line, before the warning clears — otherwise a position sitting right at the
-// boundary could flicker the warning on and off with every fix. A fix landing between the
-// two thresholds doesn't move the state either way.
-const OFF_ROUTE_DISTANCE_M = 400;
-const ON_ROUTE_RECOVER_M = 200;
-// Same reasoning as GPS_ERROR_STREAK_THRESHOLD — one stray fix shouldn't declare a driver
-// lost, only a run of consecutive ones. Set a little higher than that threshold since
-// "you've gone the wrong way" is a bigger claim to make than "signal is weak".
-const OFF_ROUTE_STREAK_THRESHOLD = 3;
-
-// Shortest distance (metres) from a live position to the nearest point ON the recorded
-// route LINE — not just to the nearest recorded dot. Follow-up 157 fix: an earlier version
-// of this measured distance to the nearest trail_path VERTEX only, which over-estimates
-// how far off the route someone is if they're between two recorded points (worst case:
-// standing exactly at the midpoint of a long straight gap, up to half that gap's length
-// away from the nearest single vertex, even though they're right on the line). Checked
-// against real tour data (see the follow-up 156 changelog entry) and the biggest gap on
-// either real driving tour today is under 170m, so this wasn't actually misfiring — but a
-// future tour with sparser geometry (e.g. a long straight road, or a plain GPX import
-// rather than a dense OSRM-routed line) could hit it, so this measures it properly rather
-// than relying on today's data staying dense enough.
-//
-// Follow-up 158 correction: the follow-up 157 comment here was WRONG about trail_breaks —
-// per Walk.jsonc's own field description and every other consumer of this data
-// (WalkDetailMap.jsx, routeExport.js's splitTrailRuns, WalkProgressBar.jsx's
-// progressAlongTrail/trailLength), a break at index b means there is genuinely no road
-// connecting point b to point b+1 — two separate sections of the route, not just a
-// rendering choice. Treating that gap as a valid line segment invents a fictitious "route"
-// straight across it, which could wrongly judge a driver as on-route while they're really
-// well away from either real section. Fixed: a broken segment is never treated as a line —
-// only the two real recorded points either side of the break are considered (as isolated
-// points, not connected to each other), same as every other consumer of trail_breaks
-// already does.
-function distanceToSegmentM(lat, lng, aLat, aLng, bLat, bLng) {
-  // Flat-earth (equirectangular) projection around point A — accurate to well under a
-  // metre of error for segments this short (real route segments measure tens of metres;
-  // even a very sparse future import would realistically be low hundreds of metres), so a
-  // full spherical cross-track-distance calculation isn't needed here.
-  const latRad = (aLat * Math.PI) / 180;
-  const mPerDegLat = 111320;
-  const mPerDegLng = 111320 * Math.cos(latRad);
-  const px = (lng - aLng) * mPerDegLng;
-  const py = (lat - aLat) * mPerDegLat;
-  const bx = (bLng - aLng) * mPerDegLng;
-  const by = (bLat - aLat) * mPerDegLat;
-
-  const segLenSq = bx * bx + by * by;
-  // t is how far along the A→B segment the projection of the live position falls, clamped
-  // to [0,1] so the closest point is never outside the actual recorded segment — a
-  // degenerate zero-length segment (two identical consecutive points) falls back to
-  // distance-to-A, which is correct.
-  const t = segLenSq === 0 ? 0 : Math.max(0, Math.min(1, (px * bx + py * by) / segLenSq));
-  const cx = t * bx;
-  const cy = t * by;
-  const dx = px - cx;
-  const dy = py - cy;
-  return Math.sqrt(dx * dx + dy * dy);
-}
-
-function nearestTrailDistanceM(lat, lng, trailPath, trailBreaks) {
-  // Same break-index validation/shape as splitTrailRuns (routeExport.js) and
-  // WalkProgressBar.jsx's trailLength/progressAlongTrail — a value in this set is the
-  // START index of a segment with no real line, i.e. no road between point i and i+1.
-  const breakSet = new Set(
-    (trailBreaks || []).filter(b => Number.isInteger(b) && b >= 0 && b < trailPath.length - 1)
-  );
-  let best = Infinity;
-  for (let i = 0; i < trailPath.length - 1; i++) {
-    const a = trailPath[i];
-    const b = trailPath[i + 1];
-    if (!a || a.lat == null || a.lng == null || !b || b.lat == null || b.lng == null) continue;
-    if (breakSet.has(i)) {
-      // No real road between these two recorded points — measure distance to each one as
-      // an isolated point instead of inventing a line across the gap.
-      const dA = haversine(lat, lng, a.lat, a.lng);
-      const dB = haversine(lat, lng, b.lat, b.lng);
-      if (dA < best) best = dA;
-      if (dB < best) best = dB;
-      continue;
-    }
-    const d = distanceToSegmentM(lat, lng, a.lat, a.lng, b.lat, b.lng);
-    if (d < best) best = d;
-  }
-  return best;
-}
-
-function loadPassedSecondaryIds(walkId) {
-  if (!walkId) return new Set();
-  try {
-    const raw = localStorage.getItem(lastPositionStorageKey(walkId));
-    if (!raw) return new Set();
-    const saved = JSON.parse(raw);
-    if (!saved || !Array.isArray(saved.ids)) return new Set();
-    const age = Date.now() - (saved.updatedAt || 0);
-    if (age > LAST_POSITION_STALE_MS) {
-      localStorage.removeItem(lastPositionStorageKey(walkId));
-      return new Set();
-    }
-    return new Set(saved.ids);
-  } catch {
-    return new Set();
-  }
-}
 
 // Exposes an imperative handle (playWaypoint) so WalkDetail.jsx's Tour Stops list can play
 // a specific stop's narration on demand — the manual "Play" button. Per Enda: a GPS problem
@@ -376,9 +168,16 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
   const [resumeSnap, setResumeSnap] = useState(() => loadResumeSnapshot(walk.id));
   // True when the phone itself paused the clip mid-playback (camera opened, app
   // backgrounded, a call arriving) — set from the audio element's own 'pause'
-  // event, cleared again on 'play'. Nothing in this code ever calls pause() on a
-  // narration clip, so any 'pause' mid-clip is an interruption from outside.
+  // event, cleared again on 'play'. The ONE deliberate pause this code makes is the
+  // driver's own Pause button, which sets userPausedClipRef first so the 'pause'
+  // listener below can tell the two apart; every other mid-clip 'pause' is an
+  // interruption from outside.
   const [audioPausedMidClip, setAudioPausedMidClip] = useState(false);
+  // True between the driver's Pause button pausing the current narration clip and
+  // Resume continuing it — separates that deliberate pause from an outside
+  // interruption (which must show the "Resume narration" card) inside the audio
+  // element's 'pause' listener. See handlePause/handleResume.
+  const userPausedClipRef = useRef(false);
   // Set when a resume attempt couldn't load the clip (bad/missing audio file or a
   // stop that no longer exists after a tour edit). Rendered via t() below, with the
   // Tour Stops list's existing manual Play buttons named as the fallback.
@@ -757,14 +556,22 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
       el.addEventListener('pause', () => {
         if (!el.ended) {
           tourLogService.logClipEvent(clipName, 'paused', el.currentTime, el.duration, narrationDuckCountRef.current);
-          // A mid-clip pause with this code never calling pause() itself means the
-          // phone/browser interrupted playback (camera opened, app backgrounded, a
-          // call) — show the "Resume narration" card, and pin the saved position at
-          // this exact moment. The card only appears while a snapshot exists, so the
-          // pause that handleStop/unmount trigger (which clears or has just saved
-          // everything) can never leave a stale card behind.
+          // A mid-clip pause comes from exactly one of two places: the driver's own
+          // Pause button (userPausedClipRef set — the player's paused banner carries
+          // its Resume, so no card here) or the phone/browser interrupting playback
+          // (camera opened, app backgrounded, a call) — show the "Resume narration"
+          // card for that one. Both pin the saved position at this exact moment, so
+          // even a deliberate pause that outlives the page (browser killed, reload)
+          // restores near where the clip actually stopped. The card only appears
+          // while a snapshot exists, so the pause that handleStop/unmount trigger
+          // (which clears or has just saved everything) can never leave a stale card
+          // behind.
           if (currentlyPlayingWpRef.current) {
-            setAudioPausedMidClip(true);
+            if (userPausedClipRef.current) {
+              userPausedClipRef.current = false;
+            } else {
+              setAudioPausedMidClip(true);
+            }
             touchResumeTime(walkIdRef.current, el.currentTime);
           }
         }
@@ -1217,12 +1024,34 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
     speedHint.setEnabled(next);
   };
 
+  // Pause must be heard IMMEDIATELY (Enda, 2026-10-24): the driver presses Pause to
+  // pull over and take photos, so the narration still playing to the end of its
+  // clip is both unsafe noise and the very thing that puts the tour out of sync.
+  // The clip is PAUSED (position kept), not stopped, so Resume continues it from
+  // the exact word where it went quiet; anything queued behind it keeps waiting,
+  // and the GPS triggers stay frozen until Resume, exactly as before.
   const handlePause = () => {
     setStatus('paused');
+    const player = playerRef.current;
+    const el = player?.getElement?.();
+    if (el && !el.paused && !el.ended && currentlyPlayingWpRef.current) {
+      userPausedClipRef.current = true;
+      player.pause();
+    }
   };
 
+  // Resume un-freezes the tour AND continues the deliberately-paused clip from
+  // where it stopped. The phone-interruption case needs no handling here: its clip
+  // is restored through its own "Resume narration" card, and the element's 'play'
+  // listener clears that card the moment audio actually starts again.
   const handleResume = () => {
     setStatus('running');
+    userPausedClipRef.current = false;
+    const player = playerRef.current;
+    const el = player?.getElement?.();
+    if (el && el.paused && !el.ended && currentlyPlayingWpRef.current) {
+      player.play().catch(() => { /* a failed start is already logged by the player's error path */ });
+    }
   };
 
   const handleStop = () => {
@@ -1558,131 +1387,30 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
 
   return (
     <div ref={playerRootRef} className="bg-slate-800 rounded-xl border border-slate-600 overflow-hidden">
-      {/* Status bar */}
-      <div className="flex items-center gap-3 px-4 py-3">
-        <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-          gpsIssueActive ? 'bg-red-500 animate-pulse' :
-          status === 'running' ? 'bg-green-400 animate-pulse' :
-          status === 'paused' ? 'bg-amber-400' : 'bg-slate-500'
-        }`} />
-        <div className="flex-1 min-w-0">
-          <div className={`text-sm font-medium ${statusMeta.color}`}>
-            {statusMeta.label}
-          </div>
-          {currentPos && (
-            <div className={`text-xs font-mono ${accuracyIsWeak ? 'text-amber-400' : 'text-slate-500'}`}>
-              {currentPos[0].toFixed(5)}, {currentPos[1].toFixed(5)}
-              {gpsAccuracy != null && ` (±${Math.round(gpsAccuracy)}m)`}
-              {accuracyIsWeak && ` — ${t('player.gpsWeakSignal')}`}
-            </div>
-          )}
-        </div>
-        {lastTriggered && (
-          <div className="text-xs text-green-400 bg-green-900/30 px-2 py-1 rounded-full shrink-0 max-w-[45%] truncate">
-            ▶ {lastTriggered}
-          </div>
-        )}
-      </div>
-
-      {/* "Resume narration" — shown when narration was interrupted (camera, another
-          app, the phone locking, a page reload) and nothing is playing right now.
-          While the tour is running and the phone merely paused the clip, this appears
-          the moment that pause is detected; after a reload it appears as soon as the
-          tour screen is opened again. A deliberate Stop never leaves one behind. */}
-      {showResumeCard && (
-        <div className="mx-4 mb-3 flex items-center justify-between gap-3 bg-blue-900/30 border border-blue-500 rounded-lg px-3 py-2">
-          <div className="min-w-0">
-            <p className="text-xs text-blue-300 break-words">{t('player.resumeNarrationNote')}</p>
-            {resumeWp && (
-              <p className="text-sm font-medium text-blue-100 truncate">
-                {resumeWp.segment_title || resumeWp.name || resumeWp.segment_id}
-              </p>
-            )}
-            {resumeError && (
-              <p className="text-xs text-red-300 mt-0.5 break-words">{t('player.resumeUnavailable')}</p>
-            )}
-          </div>
-          <Button
-            type="button"
-            size="sm"
-            onClick={handleResumeNarration}
-            disabled={status === 'idle' && !canStart}
-            title={status === 'idle' && !canStart ? (!savedOffline ? t('player.mustSaveFirst') : t('player.mustConfirmSafetyFirst')) : undefined}
-            className="shrink-0 gap-1.5 bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Play className="w-3.5 h-3.5" /> {t('player.resumeNarration')}
-          </Button>
-        </div>
-      )}
-
-      {/* A failed resume must never vanish silently: when the restored clip couldn't
-          load, the snapshot is cleared (there is nothing left to resume) and with it
-          the resume card — so this notice lives OUTSIDE the card and keeps showing the
-          way forward. It clears when the customer manually plays a stop, starts a
-          fresh tour, or stops the tour — never because the card disappeared. */}
-      {resumeError && !showResumeCard && (
-        <div className="mx-4 mb-3 flex items-start gap-2 bg-blue-900/30 border border-blue-500 rounded-lg px-3 py-2">
-          <AlertTriangle className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
-          <p className="text-xs text-blue-200 min-w-0 break-words">{t('player.resumeUnavailable')}</p>
-        </div>
-      )}
-
-      {/* "Next stop" card — see the comment above nextStop/nextStopActive for why this is
-          always here rather than only appearing once trouble is detected. Tapping Play
-          queues behind whatever's currently playing (playTriggerAudio) — it never
-          interrupts audio in progress, it only starts once that finishes, exactly like
-          every other trigger path in this player. */}
-      {nextStopActive && (
-        <div className="mx-4 mb-3 flex items-center justify-between gap-3 bg-slate-700/40 border border-slate-600 rounded-lg px-3 py-2">
-          <div className="min-w-0">
-            <p className="text-xs text-slate-400">{t('player.nextStopLabel')}</p>
-            <p className="text-sm font-medium text-slate-100 truncate">
-              {nextStop.segment_title || nextStop.name || nextStop.segment_id}
-            </p>
-          </div>
-          <Button
-            type="button"
-            onClick={() => playTriggerAudio(nextStop, wpKeyFor(nextStop))}
-            title={t('detail.playStopTitle')}
-            // Per Enda (2026-10-21): the "Next stop" Play button must be visible at a
-            // glance while driving, not a faint outline a driver has to hunt for. Same
-            // solid high-contrast bold treatment as the Start/Pause/Stop controls below.
-            className="shrink-0 gap-1.5 bg-green-500 hover:bg-green-600 text-white font-bold text-sm px-4 h-10 shadow-lg shadow-green-900/40"
-          >
-            <Play className="w-4 h-4" /> {t('detail.playStop')}
-          </Button>
-        </div>
-      )}
-
-      {/* GPS sustained-failure / sustained-too-imprecise warning — per audit finding U-07,
-          this must be genuinely hard to miss, not a small status-bar colour change alone.
-          A 'no_signal' issue stays up until a fresh fix of any accuracy comes back in; a
-          'low_accuracy' issue (2026-09-09 re-check) needs a fix that's actually precise
-          enough — see the success callback in handleStart for both. */}
-      {gpsIssueActive && (
-        <div className="mx-4 mb-3 flex items-start gap-2 bg-red-900/30 border border-red-600 rounded-lg px-3 py-2">
-          <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-red-300 break-words">{gpsIssueTitle}</p>
-            <p className="text-xs text-red-300/90 mt-0.5 break-words">{gpsIssue.message}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Off-route warning — per Anoushka/Enda (follow-up 156). Separate from the GPS-issue
-          banner above and can appear at the same time as (or instead of) it; this only ever
-          shows once a fix has been TRUSTED and it's the trusted position itself that's far
-          from the route (see offRoute above). Clears once a trusted fix comes back close
-          enough to the route (ON_ROUTE_RECOVER_M) — see evaluateTriggers. */}
-      {offRouteActive && (
-        <div className="mx-4 mb-3 flex items-start gap-2 bg-amber-900/30 border border-amber-600 rounded-lg px-3 py-2">
-          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-amber-300 break-words">{t('player.offRouteTitle')}</p>
-            <p className="text-xs text-amber-300/90 mt-0.5 break-words">{t('player.offRouteMessage')}</p>
-          </div>
-        </div>
-      )}
+      {/* Status bar + status/warning cards — extracted to DrivingPlayerStatusCards.jsx
+          (2026-10-24) to keep this file under the platform's editable-size limit. */}
+      <DrivingPlayerStatusCards
+        t={t}
+        status={status}
+        statusMeta={statusMeta}
+        gpsIssueActive={gpsIssueActive}
+        gpsIssue={gpsIssue}
+        gpsIssueTitle={gpsIssueTitle}
+        offRouteActive={offRouteActive}
+        currentPos={currentPos}
+        gpsAccuracy={gpsAccuracy}
+        accuracyIsWeak={accuracyIsWeak}
+        lastTriggered={lastTriggered}
+        showResumeCard={showResumeCard}
+        resumeWp={resumeWp}
+        resumeError={resumeError}
+        handleResumeNarration={handleResumeNarration}
+        canStart={canStart}
+        savedOffline={savedOffline}
+        nextStopActive={nextStopActive}
+        nextStop={nextStop}
+        playTriggerAudio={playTriggerAudio}
+      />
 
       {/* Last known position — shows the single most recent point along the route the
           driver has actually reached (never the full list of points), and while the tour
