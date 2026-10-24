@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useImperativeHandle, forwardRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { Play, Pause, Square, Bug, AlertTriangle, Home, CheckCircle2, Gauge } from 'lucide-react';
+import { Play, Pause, Square, Bug, AlertTriangle, Home, CheckCircle2, Gauge, Map } from 'lucide-react';
 import * as gpsService from '@/lib/gpsService';
 import * as audioService from '@/lib/audioService';
 import { loadResumeSnapshot, saveResumeSnapshot, touchResumeTime, clearResumeSnapshot } from '@/lib/drivingResume';
@@ -20,6 +20,7 @@ import { createWalkingGuard } from '@/lib/walkingGuard';
 import { startTestLogUpload } from '@/lib/tourLogUpload';
 import TourDebugLog from './TourDebugLog';
 import DrivingPlayerStatusCards from './DrivingPlayerStatusCards';
+import DrivingPlayerMapModal from './DrivingPlayerMapModal';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { useOfflineWalks } from '../offline/useOfflineWalks';
 
@@ -95,6 +96,8 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
   // a second drive (or a restart) never inherits a stale "finished" from before.
   const [waypoint1AudioFinished, setWaypoint1AudioFinished] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
+  // Full-screen "Show map" overlay (Enda, 2026-10-24) — see handleShowMap below.
+  const [mapOpen, setMapOpen] = useState(false);
   const [gpsAccuracy, setGpsAccuracy] = useState(null);
   // Non-null while GPS has sustained-failed OR sustained-stayed-too-imprecise-to-use (see
   // GPS_ERROR_STREAK_THRESHOLD above) — { kind: 'no_signal' | 'low_accuracy', message }.
@@ -1054,6 +1057,16 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
     }
   };
 
+  // "Show map" (Enda, 2026-10-24): a driver who loses their bearings needs the map without
+  // hunting for it, right in the control row. Opening the map pauses the tour first —
+  // through the exact same handlePause as the Pause button, so narration stops instantly
+  // and GPS triggers freeze — and closing the map does NOT resume: the driver lands back
+  // in the app and presses Resume themselves once they've found their bearings again.
+  const handleShowMap = () => {
+    if (status === 'running') handlePause();
+    setMapOpen(true);
+  };
+
   const handleStop = () => {
     if (watchIdRef.current !== null) {
       gpsService.clearWatch(watchIdRef.current);
@@ -1543,6 +1556,18 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
             {t('player.mustConfirmSafetyFirst')}
           </p>
         )}
+        {/* Show map — full-width on its own row so it's reachable at a glance while
+            driving, above Pause/Resume/Stop. Only offered mid-tour (running or
+            paused): before starting there's no position worth orienting on. */}
+        {(status === 'running' || status === 'paused') && (
+          <Button
+            onClick={handleShowMap}
+            size="lg"
+            className="w-full gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-base shadow-lg shadow-blue-900/40"
+          >
+            <Map className="w-5 h-5" /> {t('player.showMap')}
+          </Button>
+        )}
         <div className="flex items-center gap-2">
           {status === 'idle' && !tourComplete && (
             <Button
@@ -1630,6 +1655,17 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
         <div className="px-4 pb-3">
           <TourDebugLog />
         </div>
+      )}
+
+      {/* Full-screen map overlay — fixed-position, so it renders above everything. */}
+      {mapOpen && (
+        <DrivingPlayerMapModal
+          walk={walk}
+          currentPos={currentPos}
+          gpsAccuracy={gpsAccuracy}
+          t={t}
+          onClose={() => setMapOpen(false)}
+        />
       )}
     </div>
   );
