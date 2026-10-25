@@ -861,8 +861,8 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
         if (statusRef.current === 'running') {
           evaluateTriggers(latitude, longitude, accuracy);
         }
-        // Gentle speed reminder check - see lib/speedHint.js. Runs on every fix, but speaks
-        // only after a clear, sustained overshoot, and at most twice per tour.
+        // Speed warning check - see lib/speedHint.js. Runs on every fix, but speaks only
+        // after more than 50 km/h sustained for 10 seconds, at most twice per tour.
         if (speedHintsOnRef.current) {
           const quiet =
             statusRef.current !== 'running'
@@ -870,7 +870,7 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
             || (typeof window !== 'undefined' && window.speechSynthesis?.speaking === true)
             || spokenGpsIssueRef.current
             || offRouteAnnouncedRef.current;
-          if (speedMonitorRef.current.sample({ nowMs, speedKmh, accuracyM: accuracy, targetKmh: currentLegSpeedKmh(), quiet })) {
+          if (speedMonitorRef.current.sample({ nowMs, speedKmh, accuracyM: accuracy, quiet })) {
             playSystemAlert(walk?.speed_hint_audio_url, t('player.speedHintSpoken'));
           }
         }
@@ -984,21 +984,6 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
       : undefined;
     handleStart(Array.from(triggeredRef.current));
     playTriggerAudio(wp, snap.wpKey, onFinished, snap.timeSec);
-  };
-
-  // The timed speed (km/h) of the leg being driven right now: the most recently triggered stop's
-  // own recorded speed, or, if it has none, the nearest earlier stop that does. 0 (a stationary
-  // stop, or nothing triggered yet) means "no speed hints".
-  const currentLegSpeedKmh = () => {
-    for (let i = triggerWaypoints.length - 1; i >= 0; i--) {
-      if (!triggeredRef.current.has(wpKeyFor(triggerWaypoints[i]))) continue;
-      for (let j = i; j >= 0; j--) {
-        const v = Number(triggerWaypoints[j].avg_segment_speed_kmh);
-        if (Number.isFinite(v) && triggerWaypoints[j].avg_segment_speed_kmh !== null && triggerWaypoints[j].avg_segment_speed_kmh !== '') return v;
-      }
-      return 0;
-    }
-    return 0;
   };
 
   // Admin preview only (draft tours): the tour's locations, i.e. every primary_start, in tour order.

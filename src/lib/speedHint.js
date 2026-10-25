@@ -1,31 +1,28 @@
 /**
- * Gentle speed hint — decides WHEN (rarely) to tell a driver they are clearly faster than a
- * tour leg was timed for, so the narration would fall behind the road.
+ * Speed warning — tells a driver to slow down when they drive over 50 km/h.
  *
- * Per Enda (2026-09-20): this must NEVER become a nag and must never feel like Big Brother.
- * So, by design:
- *  - It only compares the driver to the TOUR's own timing (the leg's recommended speed). It has
- *    nothing to do with legal speed limits and never says anything about them.
+ * Per Enda (2026-10-25): the earlier "compare to the tour leg's own timing" design never
+ * fired on a real drive (90 km/h for a full 20 minutes) — whenever the current leg had
+ * no recorded speed, there was no line to cross at all. The rule is now ABSOLUTE:
+ * more than 50 km/h, sustained for 10 seconds of good GPS fixes → one spoken warning
+ * to slow down.
+ *
+ * Still by design:
  *  - Everything happens on the phone. Speeds are never stored, logged, sent anywhere or shown.
- *  - It needs a CLEAR, SUSTAINED overshoot (well above the timed speed, for a full stretch of
- *    consecutive good GPS fixes), so brief bursts, overtaking and GPS jitter are ignored.
- *  - Quiet at the start of a drive, quiet while anything else is being said, and never again
- *    soon: at most MAX_HINTS per tour, at least MIN_GAP_MS apart. After that it stays silent
- *    for the rest of the tour, even if the driver keeps going fast.
+ *  - Brief bursts and GPS jitter are ignored (needs an unbroken run of good fixes).
+ *  - Quiet while anything else is being said as an alert, or the tour isn't running.
+ *  - Never nags: at most MAX_HINTS per tour, at least MIN_GAP_MS apart.
  *  - The driver can switch it off at any time (see isEnabled/setEnabled), remembered on the device.
  *
  * Pure logic with no browser dependencies except an optional localStorage for the switch.
  */
 
 export const SPEED_HINT_SETTINGS = {
-  // "Clearly faster": at least 25% AND at least 12 km/h above the leg's timed speed.
-  RATIO: 1.25,
-  MIN_EXCESS_KMH: 12,
-  // Every good fix in this window must be over the line before a hint is even considered.
-  SUSTAIN_MS: 30000,
-  MIN_SAMPLES: 5,
-  // Nothing at all in the first minutes of a drive.
-  WARMUP_MS: 3 * 60 * 1000,
+  // Warn above this speed — absolute, nothing to do with the leg's own timing.
+  WARN_ABOVE_KMH: 50,
+  // Every good fix in this window must be over the line before a warning fires.
+  SUSTAIN_MS: 10000,
+  MIN_SAMPLES: 3,
   MAX_HINTS: 2,
   MIN_GAP_MS: 12 * 60 * 1000,
   // Fixes worse than this are ignored (a poor fix says nothing reliable about speed).
@@ -52,49 +49,38 @@ export function setEnabled(on) {
   }
 }
 
-export function warnLineKmh(targetKmh, s = SPEED_HINT_SETTINGS) {
-  return Math.max(targetKmh * s.RATIO, targetKmh + s.MIN_EXCESS_KMH);
-}
-
 /**
  * @param {object} [settings] overrides for tests
  * @returns {{ reset(now:number):void, sample(o):boolean }}
- *   sample({ nowMs, speedKmh, accuracyM, targetKmh, quiet }) returns true exactly when a hint
+ *   sample({ nowMs, speedKmh, accuracyM, quiet }) returns true exactly when a warning
  *   should be spoken NOW. `quiet` must be true whenever anything else is being said or played
  *   as an alert, or the tour is not actively running.
  */
 export function createSpeedHintMonitor(settings = {}) {
   const s = { ...SPEED_HINT_SETTINGS, ...settings };
-  let startedAt = null;
   let lastHintAt = null;
   let hints = 0;
   let window = [];
 
   return {
     reset(nowMs) {
-      startedAt = nowMs;
       lastHintAt = null;
       hints = 0;
       window = [];
     },
-    sample({ nowMs, speedKmh, accuracyM, targetKmh, quiet }) {
-      if (startedAt === null) startedAt = nowMs;
+    sample({ nowMs, speedKmh, accuracyM, quiet }) {
       if (hints >= s.MAX_HINTS) return false;
       // Anything that makes the reading unreliable or the moment inappropriate clears the
-      // evidence completely - a hint needs an unbroken run of good, over-the-line fixes.
+      // evidence completely - a warning needs an unbroken run of good, over-the-line fixes.
       const usable =
         !quiet &&
-        Number.isFinite(speedKmh) && speedKmh >= 0 && speedKmh <= s.MAX_PLAUSIBLE_KMH &&
-        Number.isFinite(targetKmh) && targetKmh > 0 &&
+        Number.isFinite(speedKmh) && speedKmh > s.WARN_ABOVE_KMH && speedKmh <= s.MAX_PLAUSIBLE_KMH &&
         (accuracyM == null || !Number.isFinite(accuracyM) || accuracyM <= s.MAX_ACCURACY_M);
       if (!usable) { window = []; return false; }
-      if (speedKmh <= warnLineKmh(targetKmh, s)) { window = []; return false; }
       window.push(nowMs);
       window = window.filter((t) => nowMs - t <= s.SUSTAIN_MS);
-      if (nowMs - startedAt < s.WARMUP_MS) return false;
       if (lastHintAt !== null && nowMs - lastHintAt < s.MIN_GAP_MS) return false;
-      const spanOk = window.length >= s.MIN_SAMPLES && nowMs - window[0] >= s.SUSTAIN_MS * 0.8;
-      if (!spanOk) return false;
+      if (window.length < s.MIN_SAMPLES || nowMs - window[0] < s.SUSTAIN_MS * 0.8) return false;
       hints += 1;
       lastHintAt = nowMs;
       window = [];

@@ -336,10 +336,9 @@ export const translations = {
     // this can't literally guide anyone back — it prompts them to check their own map.
     'player.offRouteTitle': "Possibly off route",
     'player.offRouteMessage': "Your position looks far from this tour's planned route. Check your map, or turn around to get back on track. The tour will carry on automatically once you're back on the route.",
-    // Gentle speed reminders (Enda, 2026-09-20). Spoken at most twice per tour and only after a
-    // clear, sustained overshoot of the tour's own timing - see lib/speedHint.js. Deliberately
-    // friendly, says nothing about speed limits, and tells the driver how to switch it off.
-    'player.speedHintSpoken': "A friendly note: you're driving a little faster than this tour is timed for. If you ease off a bit, the story will stay in step with the road. You can switch these reminders off on the screen, and I won't mention it again for a good while.",
+    // Speed warning (Enda, 2026-10-25): spoken when the driver goes over 50 km/h for more than
+    // 10 seconds - see lib/speedHint.js. Says slow down plainly; says nothing about speed limits.
+    'player.speedHintSpoken': "You're driving over 50 kilometres an hour. Please slow down, so the story stays in step with the road.",
     'player.speedHintsOn': "Speed reminders: on (tap to turn off)",
     'player.speedHintsOff': "Speed reminders: off (tap to turn on)",
     'player.offRouteSpoken': "It looks like you've gone off the planned route. Please check your map to get back on track. I'll carry on with the tour once you're back on the route.",
