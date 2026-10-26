@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import AutoGrowTextarea from '@/components/admin/AutoGrowTextarea';
@@ -45,8 +45,20 @@ function renumberWaypoints(list, code) {
   // code (KIS1, KIS2…). Now, before a code is reassigned, a description still sitting
   // in the code slot is carried into the waypoint's own `name` field — so it survives
   // the renumber and the row keeps showing it next to the new code.
+  //
+  // Per Enda's MXR report (2026-10-26): the carried text usually begins with the code
+  // token itself ("MXR4 cross and traight into village", "MXR 5 follow left"), because
+  // the GPX <name> was written that way. Stripping that leading code token leaves a
+  // clean name ("cross and traight into village") next to the clean badge ("MXR4"),
+  // rather than the same words twice. If nothing remains after stripping (the slot
+  // held a bare code variant), the original text is kept as-is.
   return list.map((wp, i) => {
-    const name = wp.name || (wp.segment_id && !positional.test(wp.segment_id) ? wp.segment_id : '') || '';
+    let carried = '';
+    if (!wp.name && wp.segment_id && !positional.test(wp.segment_id)) {
+      const stripped = wp.segment_id.replace(/^\s*[A-Za-z]{2,5}\s*\d+\s*[:.\-]?\s*/, '').trim();
+      carried = stripped || wp.segment_id.trim();
+    }
+    const name = wp.name || carried;
     return { ...wp, name, segment_id: `${code}${i + 1}` };
   });
 }
@@ -159,6 +171,25 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving, co
   const [newWp, setNewWp] = useState(EMPTY_WAYPOINT);
   const [addingBeforeIndex, setAddingBeforeIndex] = useState(null); // null = not adding; number = inserting before this position
   const [addError, setAddError] = useState('');
+
+  // Per Enda's MXR report (2026-10-26): GPX import leaves each waypoint's descriptive
+  // text sitting in the CODE slot, which the panel below deliberately shows read-only
+  // ("auto-managed") — so a typo inside imported text had no editable field anywhere:
+  // the Name field sat empty and the code field refused typing. On mount, any
+  // description still in the code slot is carried into the (editable) Name field and
+  // the code slot is reset to the plain positional code — the exact same carry the
+  // renumber below already performs on add/remove/drag, just run up-front so the text
+  // is editable from the first moment the tab opens. Only fires when something
+  // actually needs carrying, so opening an already-clean tour marks nothing dirty.
+  useEffect(() => {
+    if (!code) return;
+    const escaped = code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const positional = new RegExp(`^${escaped}\\d+$`);
+    const needsCarry = waypoints.some(wp => wp.segment_id && !positional.test(wp.segment_id));
+    if (!needsCarry) return;
+    onChange(renumberWaypoints(waypoints, code));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Inserts a new waypoint immediately before `beforeIndex`, then renumbers every
   // following waypoint so the sequence stays gap-free and in order (e.g. inserting
