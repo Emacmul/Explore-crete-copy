@@ -18,6 +18,24 @@ const ENTRY_META = {
   warning: { icon: AlertTriangle, color: 'text-amber-400' },
 };
 
+// The exact code bundle this phone is currently running, read straight off the
+// <script> tag the page itself loaded (Vite stamps a fresh content hash into the
+// bundle filename on every deploy). Sits in the Audit Log header so "which version
+// is this phone actually on?" can be answered on the spot, on the device itself:
+// a phone that keeps serving its stored old copy shows the OLD code here, whatever
+// the server has — the one situation where an uninstall-and-reinstall of the home
+// screen icon isn't enough (the browser's stored copy survives it).
+function currentBuildLabel() {
+  try {
+    const src = document.querySelector('script[type="module"][src*="assets/"]')?.getAttribute('src') || '';
+    const m = src.match(/index-([A-Za-z0-9_-]+)\.js/);
+    if (m) return m[1];
+    return src.includes('/src/') ? 'dev' : null;
+  } catch {
+    return null;
+  }
+}
+
 function fmtElapsed(ms) {
   const totalSec = Math.floor(ms / 1000);
   const m = Math.floor(totalSec / 60);
@@ -91,6 +109,7 @@ function entryLabel(entry) {
 export default function TourDebugLog() {
   const [entries, setEntries] = useState([]);
   const [expanded, setExpanded] = useState(false);
+  const [buildLabel] = useState(currentBuildLabel);
 
   useEffect(() => {
     return tourLogService.subscribe(setEntries);
@@ -112,6 +131,9 @@ export default function TourDebugLog() {
         <span className="text-xs text-slate-500">
           {entries.length} events · {triggerCount} checks · {fireCount} fired · {audioCount} played
         </span>
+        {buildLabel && (
+          <span className="text-xs text-slate-600 font-mono shrink-0">build {buildLabel}</span>
+        )}
         <div className="ml-auto flex items-center gap-1">
           {expanded
             ? <ChevronUp className="w-4 h-4 text-slate-500" />
