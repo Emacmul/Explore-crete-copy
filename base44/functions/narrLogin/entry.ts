@@ -48,6 +48,7 @@ async function logFailedAttempt(base44: any, email: string, ip: string | null, r
   } catch { /* best-effort audit log */ }
 }
 
+
 Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
