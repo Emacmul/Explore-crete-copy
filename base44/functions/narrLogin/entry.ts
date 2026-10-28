@@ -62,13 +62,24 @@ Deno.serve(async (req) => {
     const normalizedEmail = String(email).trim().toLowerCase();
 
     const matches = await base44.asServiceRole.entities.AppUser.filter({ email: normalizedEmail });
-    const match = Array.isArray(matches) ? matches[0] : null;
+    const rows = Array.isArray(matches) ? matches : [];
+
+    // Per the Inbar report (2026-10-28): one person can end up with TWO AppUser rows for one
+    // email — a hand-created Narrator row, plus a stray plain-'user' row that the front-end
+    // onboarding created beside it. Blindly taking rows[0] meant that as soon as the stray
+    // row sorted first, the real account was never even looked at: a narrator whose backend
+    // password was perfectly valid was told "Invalid email or password" on every attempt,
+    // with nothing she could do about it. The staff row that actually holds a backend
+    // password IS the account here.
+    const STAFF_ROLES = ['narrator', 'admin', 'super_admin'];
+    const staffRows = rows.filter((r) => STAFF_ROLES.includes(r.role));
+    const match = staffRows.find((r) => !!r.password) || staffRows[0] || null;
 
     // Same message whether the account doesn't exist at all or just isn't a
     // Narrator/Admin — nothing to lock either way, since there's no real account
     // password to be guessed against here.
-    if (!match || (match.role !== 'narrator' && match.role !== 'admin' && match.role !== 'super_admin')) {
-      await logFailedAttempt(base44, normalizedEmail, ip, !match ? 'unknown_account' : 'not_staff');
+    if (!match) {
+      await logFailedAttempt(base44, normalizedEmail, ip, rows.length ? 'not_staff' : 'unknown_account');
       return Response.json({ ok: false, error: GENERIC_ERROR });
     }
 

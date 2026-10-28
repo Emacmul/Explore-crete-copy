@@ -164,6 +164,22 @@ export default async function (req) {
     // clientEmail (from the wpLogin response) is only a fallback for the rare case the
     // token payload didn't carry one. Either way this only ever creates a row tied to
     // the CALLER's own now-verified wpId, so there's nothing to hijack here.
+    // Per the Inbar report (2026-10-28): this used to create a brand-new plain-'user' row
+    // even when a row for the SAME email already existed (a hand-created Narrator row whose
+    // user_id was never numeric, so the by-id lookup above couldn't find it). That duplicate
+    // then owned the WordPress id, the stray-row reconciliation below flagged it as the real
+    // account on every later login, and the Narrator role was shadowed for good — which also
+    // hid her Narr button. Never create a second row for an email that already has one: with
+    // no email carried inside the token there is no proof the caller owns that staff account,
+    // so its role is simply not echoed back here.
+    const emailToCreate = verifiedEmail || clientEmail || '';
+    if (emailToCreate) {
+      const alreadyThere = await svc.entities.AppUser.filter({ email: emailToCreate });
+      if (Array.isArray(alreadyThere) && alreadyThere.length) {
+        return Response.json({ role: 'user' });
+      }
+    }
+
     let fn = '';
     let ln = '';
     if (display_name) {
