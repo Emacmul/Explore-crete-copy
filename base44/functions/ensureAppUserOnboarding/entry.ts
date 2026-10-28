@@ -1,5 +1,6 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 import { isTokenGenuine, getEmailFromToken } from '../../shared/wpToken.ts';
+import { getTokenFingerprint, sessionMatchesToken } from '../../shared/deviceAuth.ts';
 
 // Customer onboarding — called from Home on login. Identifies the caller by the
 // WordPress user id AND email carried inside their WP JWT (the tMeister token holds
@@ -74,10 +75,56 @@ export default async function (req) {
     // targeted.
     const verifiedEmail = getEmailFromToken(token);
 
+    // Per the Inbar report (2026-10-28): this WordPress JWT plugin's payload carries no
+    // email claim, so `verifiedEmail` is null for EVERY caller — and the client-supplied
+    // email fallback below deliberately refuses to link a narrator/admin row (2026-09-02
+    // audit). So a Narrator row created by hand (which never gets a WordPress user id
+    // linked) could never be recognised: on first front-end login this function created a
+    // DUPLICATE plain-'user' row beside it, that duplicate then owned the WordPress id, and
+    // this function kept answering 'user' — so Home never showed the Narr button.
+    //
+    // Fix: when the token itself carries no email, prove the caller's email another way —
+    // the ActiveSession row written by loginWithDeviceCheck at login. That row exists only
+    // AFTER WordPress itself verified the email+password (fetchWpToken), and it is bound to
+    // this EXACT token by hash (sessionMatchesToken), so its user_email is as trustworthy
+    // as a claim inside the token itself.
+    let sessionEmail = null;
+    if (!verifiedEmail) {
+      try {
+        const fp = await getTokenFingerprint(token);
+        const rows = fp.hash ? await svc.entities.ActiveSession.filter({ token_hash: fp.hash }) : [];
+        const match = (Array.isArray(rows) ? rows : []).find(
+          (r) => r.active !== false && sessionMatchesToken(r, fp)
+        );
+        if (match?.user_email) sessionEmail = String(match.user_email).toLowerCase().trim();
+      } catch {
+        // best-effort — fall back to the existing behaviour below
+      }
+    }
+    // The caller's own email, as proved by either the token payload or their login session.
+    const proofEmail = verifiedEmail || sessionEmail;
+
     const byId = await svc.entities.AppUser.filter({ user_id: String(wpId) });
     let row = Array.isArray(byId) ? byId[0] : null;
-    if (!row && verifiedEmail) {
-      const byEmail = await svc.entities.AppUser.filter({ email: verifiedEmail });
+
+    // Duplicate reconciliation (same report): if the row this WordPress id points at is a
+    // plain customer row but a Narrator/Admin row exists for the same PROVEN email, the
+    // staff row is the real account — use it (and move the WordPress id onto it below)
+    // instead of letting the stray duplicate shadow the role for good.
+    let strayRow = null;
+    if (row && (row.role === 'user' || !row.role) && proofEmail) {
+      const sameEmail = await svc.entities.AppUser.filter({ email: proofEmail });
+      const staff = (Array.isArray(sameEmail) ? sameEmail : []).find(
+        (r) => r.id !== row.id && ['narrator', 'admin', 'super_admin'].includes(r.role)
+      );
+      if (staff) {
+        strayRow = row;
+        row = staff;
+      }
+    }
+
+    if (!row && proofEmail) {
+      const byEmail = await svc.entities.AppUser.filter({ email: proofEmail });
       row = Array.isArray(byEmail) ? byEmail[0] : null;
     } else if (!row && clientEmail) {
       const byEmail = await svc.entities.AppUser.filter({ email: clientEmail });
@@ -89,11 +136,26 @@ export default async function (req) {
 
     if (row) {
       // Link to this WP id + mark complete if not already. Role is never modified.
+      //
+      // The link is also repaired when the stored value isn't a real WordPress id at all
+      // (e.g. a hand-typed name like the "Inbar" that caused the duplicate above) —
+      // otherwise that row can never be found by WordPress id again. A DIFFERENT NUMERIC
+      // id is never overwritten: that would steal another WordPress account's link.
+      const storedId = String(row.user_id || '').trim();
       const patch = {};
-      if (!row.user_id) patch.user_id = String(wpId);
+      if (!storedId || !/^\d+$/.test(storedId)) patch.user_id = String(wpId);
       if (!row.registration_complete) patch.registration_complete = true;
       if (Object.keys(patch).length) {
         await svc.entities.AppUser.update(row.id, patch);
+      }
+      // Detach the stray duplicate so this WordPress id resolves to the staff row from
+      // now on, instead of depending on row ordering.
+      if (strayRow && String(strayRow.user_id || '') === String(wpId)) {
+        try {
+          await svc.entities.AppUser.update(strayRow.id, { user_id: '' });
+        } catch {
+          // best-effort — the staff row is still returned either way
+        }
       }
       return Response.json({ role: row.role || 'user' });
     }
