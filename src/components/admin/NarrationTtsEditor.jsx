@@ -74,10 +74,13 @@ function describeSegmentStart(content) {
   return `${words.slice(0, 7).join(' ')}${words.length > 7 ? '...' : ''}`;
 }
 
-function failedPartsMessage(failed) {
+function failedPartsMessage(failed, detail = '') {
   const shown = failed.slice(0, 3).map((f) => `"${f.preview}"`).join(', ');
   const more = failed.length > 3 ? ` and ${failed.length - 3} more` : '';
-  return `The audio could not be made for ${failed.length === 1 ? 'the part starting' : 'these parts, starting'} ${shown}${more}. This is usually a slow connection. Press Try again - the parts that worked are kept.`;
+  const tail = detail
+    ? `The reason given was: ${detail} Press Try again - the parts that worked are kept.`
+    : 'This is usually a slow connection. Press Try again - the parts that worked are kept.';
+  return `The audio could not be made for ${failed.length === 1 ? 'the part starting' : 'these parts, starting'} ${shown}${more}. ${tail}`;
 }
 
 // How many raw pieces (a narration line and a pause each count as ONE piece toward
@@ -1009,6 +1012,11 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     const audios = {};
 
     const failed = [];
+    // The first real reason a part failed, so the message can name the actual cause
+    // ("No Google TTS API key found…", "Quota exceeded…") instead of blaming the
+    // connection for everything — that generic wording is what made the WAR7 report
+    // (2026-10-28) impossible to diagnose from the screen.
+    let lastError = '';
     setFailedParts([]);
     for (const seg of parsed) {
       if (seg.type !== 'text') continue;
@@ -1038,6 +1046,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
       } catch (err) {
         const msg = getFnErrorMessage(err);
         addLog(`Segment ${seg.id}: ERROR — ${msg}`);
+        if (!lastError) lastError = msg;
         failed.push({ id: seg.id, preview: describeSegmentStart(seg.content) });
       }
     }
@@ -1046,7 +1055,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     setGeneratingSegmentId(null);
     if (failed.length > 0) {
       setFailedParts(failed);
-      setError(failedPartsMessage(failed));
+      setError(failedPartsMessage(failed, lastError));
     }
     addLog(`Done. ${Object.keys(audios).length} segment(s) generated.`);
 
@@ -1079,6 +1088,16 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
     const languageCode = LANG_TO_CODE[selectedLanguage] || 'en-US';
     const stillFailed = [];
     const fresh = {};
+    // Same rule every other key-gated action on this panel already follows: a transiently
+    // empty browser copy of the key must never be reported as a missing key. This retry
+    // path was the one exception — it sent `apiKeys.google_tts_api_key` raw, so once the
+    // local copy was blank EVERY Try again failed identically, forever (WAR7, 2026-10-28).
+    const retryKey = await ensureGoogleKey();
+    if (!retryKey) {
+      setError('No Google TTS API key found for your account. Add your own key via "API Keys" in the header.');
+      return;
+    }
+    let lastError = '';
     for (const part of failedParts) {
       const seg = segments.find((s) => s.id === part.id);
       if (!seg) continue;
@@ -1089,22 +1108,26 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
             text: seg.content,
             gender: selectedVoice,
             language_code: languageCode,
-            apiKey: apiKeys.google_tts_api_key,
+            apiKey: retryKey,
             ...getNarratorAuthPayload(),
           }),
           TTS_CALL_TIMEOUT_MS,
           'Generating this part\'s audio took too long (check your connection) - press Try again.'
         );
         if (response.data?.url) fresh[seg.id] = response.data.url;
-        else stillFailed.push(part);
-      } catch {
+        else {
+          if (!lastError) lastError = response.data?.error || 'no audio was returned';
+          stillFailed.push(part);
+        }
+      } catch (err) {
+        if (!lastError) lastError = getFnErrorMessage(err);
         stillFailed.push(part);
       }
     }
     setGeneratingSegmentId(null);
     if (Object.keys(fresh).length > 0) setSegmentAudios((prev) => ({ ...prev, ...fresh }));
     setFailedParts(stillFailed);
-    if (stillFailed.length > 0) setError(failedPartsMessage(stillFailed));
+    if (stillFailed.length > 0) setError(failedPartsMessage(stillFailed, lastError));
   };
 
   const handleDurationChange = (segmentId, newDuration) => {

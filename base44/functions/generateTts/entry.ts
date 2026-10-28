@@ -52,9 +52,27 @@ Deno.serve(async (req) => {
     // CALLER's own stored key — resolveActor has already verified exactly who they are,
     // and only their own row is ever read — before refusing. A narrator with a saved
     // key can no longer be blocked by a frontend load hiccup.
+    // An admin's actor shape carries no email (just { kind: 'admin' }), so this fallback
+    // could never fire for an admin — and if the browser's copy of the key was missing,
+    // EVERY part failed with "No Google TTS API key found" even though a perfectly valid
+    // key was saved on their own row. That is exactly the WAR7 report (2026-10-28): the
+    // retry loop sent an empty key, and nothing on the server could recover it.
+    let actorEmail = actor?.email || '';
+    if (!actorEmail && actor?.kind === 'admin') {
+      try {
+        const me = await base44.auth.me();
+        if (me?.email) actorEmail = String(me.email).toLowerCase().trim();
+      } catch {
+        // No Base44 session (the admin wearing the Narr hat) — use the body email below.
+      }
+      // resolveActor has already verified this exact email against the narr token for an
+      // admin, so it is the caller's own row, never someone else's.
+      if (!actorEmail && body?.email) actorEmail = String(body.email).toLowerCase().trim();
+    }
+
     let googleKey = (apiKey || '').trim();
-    if (!googleKey && actor?.email) {
-      const matches = await base44.asServiceRole.entities.AppUser.filter({ email: actor.email });
+    if (!googleKey && actorEmail) {
+      const matches = await base44.asServiceRole.entities.AppUser.filter({ email: actorEmail });
       googleKey = (matches[0]?.google_tts_api_key || '').trim();
     }
     if (!googleKey) {
