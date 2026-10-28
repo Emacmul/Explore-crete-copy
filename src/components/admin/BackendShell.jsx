@@ -76,7 +76,19 @@ export default function BackendShell({ user, userRole, isSuperAdmin, authMode, u
   // function is the actual boundary; it decides what this caller is allowed
   // to see/change and does the filtering itself.
   const callWalkFn = async (fnName, payload) => {
-    const res = await base44.functions.invoke(fnName, { ...payload, ...narrAuth });
+    let res;
+    try {
+      res = await base44.functions.invoke(fnName, { ...payload, ...narrAuth });
+    } catch (err) {
+      // A refusal from one of this app's own functions comes back as a non-2xx response,
+      // and functions.invoke rejects on those WITHOUT handing over the body — so the screen
+      // only ever showed the bare status ("Request failed with status code 409") while the
+      // actual explanation was thrown away. Per Enda's report (2026-10-28): a narrator
+      // cloning a tour saw just "409" and had no idea her own unfinished translation was
+      // the thing standing in the way. The server's own words are the useful part here.
+      const serverMessage = err?.response?.data?.error;
+      throw new Error(typeof serverMessage === 'string' && serverMessage ? serverMessage : (err?.message || 'Something went wrong.'));
+    }
     const data = res?.data || {};
     if (data.error) throw new Error(data.error);
     return data;
