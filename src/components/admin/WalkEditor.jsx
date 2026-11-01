@@ -914,6 +914,93 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
     }
   };
 
+  // Re-record-and-refix (Enda's Meronas report, 2026-11-01): his eTrex Solar failed to record
+  // the track, leaving a tour whose route line is wrong — but the waypoints, narration scripts
+  // and generated audio on it are all real work that must survive. The full GPX import above
+  // can't be used for that: it replaces the waypoint list, and every waypoint it builds starts
+  // with an empty narration_script and no audio. So this is a deliberately narrow import: it
+  // reads ONLY the recorded track (or route) line from a GPX and writes nothing but trail_path,
+  // the cleared trail cuts and the two numbers derived from them. Waypoints, scripts, audio,
+  // photos and pricing are not touched at all.
+  const handleLineOnlyImport = (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (files.length === 0) return;
+    setGpxImporting(true);
+
+    Promise.all(files.map(file => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => resolve(ev.target.result);
+      reader.onerror = reject;
+      reader.readAsText(file);
+    }))).then(async (texts) => {
+      const parser = new DOMParser();
+      const docs = texts.map(text => parser.parseFromString(text, 'application/xml'));
+
+      // A recorded Activity gives <trkpt>; a planned route gives <rtept>. A waypoints-only
+      // file has neither — the one thing this mode genuinely cannot work from.
+      const trkpts = docs.flatMap(doc => Array.from(doc.querySelectorAll('trkpt')));
+      const rtepts = docs.flatMap(doc => Array.from(doc.querySelectorAll('rtept')));
+      const pts = trkpts.length > 0 ? trkpts : rtepts;
+
+      if (pts.length < 2) {
+        setGpxImporting(false);
+        toast({
+          variant: 'destructive',
+          title: 'No recorded track in that file',
+          description: 'This needs a GPX with a recorded activity track or a route line in it. A waypoints-only file cannot replace the route.',
+        });
+        return;
+      }
+
+      const trailPath = pts.map(pt => ({
+        lat: parseFloat(pt.getAttribute('lat')),
+        lng: parseFloat(pt.getAttribute('lon')),
+      })).filter(p => !isNaN(p.lat) && !isNaN(p.lng));
+
+      // Elevations for the new line only — used for the distance/elevation figures, never
+      // written back onto the existing waypoints.
+      let elevations = pts.map(pt => parseFloat(pt.querySelector('ele')?.textContent || 'NaN')).filter(x => !isNaN(x));
+      const hasRealElevation = elevations.length >= 2 && elevations.some(x => x > 1);
+      if (!hasRealElevation && trailPath.length > 0) {
+        setGpxImporting(false);
+        setElevFetching(true);
+        try {
+          elevations = await fetchElevations(trailPath);
+        } catch (err) {
+          console.warn('Elevation fetch failed during line-only import:', err);
+          elevations = [];
+        }
+        setElevFetching(false);
+      }
+
+      const { distanceKm, elevGain } = computeStats(trailPath, elevations);
+
+      setForm(prev => ({
+        ...prev,
+        trail_path: trailPath,
+        // The old cut indices point into the OLD line, so they can't carry over.
+        trail_breaks: [],
+        distance_km: distanceKm > 0 ? Math.round(distanceKm * 10) / 10 : prev.distance_km,
+        elevation_gain_m: elevGain > 0 ? Math.round(elevGain) : prev.elevation_gain_m,
+        // Waypoints, narration_script, audio_clip_url, photos and everything else are
+        // deliberately left exactly as they were.
+      }));
+
+      setGpxImporting(false);
+      setGpxImportDone(true);
+      setTimeout(() => setGpxImportDone(false), 4000);
+      toast({
+        title: 'Route line replaced',
+        description: `${trailPath.length} recorded points loaded. Waypoints, narration and audio are untouched — press Save to keep it.`,
+      });
+    }).catch((err) => {
+      console.error('Line-only GPX import failed:', err);
+      setGpxImporting(false);
+      toast({ variant: 'destructive', title: 'Could not read the file', description: err?.message || 'Please check the file and try again.' });
+    });
+  };
+
   const handleSave = async () => {
     // Per Enda's follow-up 51 report: the old guard here (`if (saving) return
     // false`) checked React's own `saving` STATE — fine for a plain double-click,
@@ -1686,6 +1773,25 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                     >
                       <RefreshCw className="w-4 h-4" /> Retry routing
                     </button>
+                  )}
+
+                  {/* Only offered once the tour exists, because it exists to protect work
+                      already done on it (Enda's Meronas report). */}
+                  {walk?.id && (
+                    <>
+                      <input id="gpx-line-input" type="file" accept=".gpx,application/gpx+xml" multiple className="sr-only" disabled={!canImportGpx} onChange={handleLineOnlyImport} />
+                      <label
+                        htmlFor={canImportGpx ? "gpx-line-input" : undefined}
+                        title="Replace only the drawn route with a freshly recorded track — waypoints, narration, audio and photos all stay exactly as they are"
+                        className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors shrink-0 ${
+                          canImportGpx
+                            ? 'bg-slate-700 hover:bg-slate-600 text-white cursor-pointer'
+                            : 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                        }`}
+                      >
+                        <RefreshCw className="w-4 h-4" /> Replace line only
+                      </label>
+                    </>
                   )}
                 </>
               )}
