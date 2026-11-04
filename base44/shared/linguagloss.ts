@@ -32,7 +32,9 @@ export async function getSecret(name: string): Promise<string | null> {
 export async function linguaglossClient() {
   const [appId, apiKey] = await Promise.all([getSecret('LINGUAGLOSS_APP_ID'), getSecret('LINGUAGLOSS_API_KEY')]);
   if (!appId || !apiKey) return null;
-  return wrapClientWithRetry(createClient({ appId, headers: { api_key: apiKey } }));
+  // `token` (not the old `api_key` header): Base44 is replacing account API keys with
+  // personal access tokens, which the SDK sends as an Authorization: Bearer header.
+  return wrapClientWithRetry(createClient({ appId, token: apiKey }));
 }
 
 // Short-lived in-memory cache. A translation is usually one of several in a row (a clone
@@ -68,7 +70,8 @@ export async function fetchPronunciationWords(): Promise<string[] | null> {
 }
 
 // Turns the LinguaGloss client's raw failure into something an admin can act on. Base44
-// retired workspace account API keys, so an old-style LINGUAGLOSS_API_KEY now fails with a
+// retired ACCOUNT API keys (replacing them with personal access tokens), so an old-style
+// LINGUAGLOSS_API_KEY, which was an account key, now fails with a
 // machine error ('account_api_key_blocked') that means nothing to a human — and it fails in
 // BOTH places the dictionary is used: the Pronunciation Dictionary window and translation
 // protection.
