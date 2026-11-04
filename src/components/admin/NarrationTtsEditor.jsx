@@ -30,7 +30,11 @@ const LANG_TO_CODE = {
   Russian: 'ru-RU', Hungarian: 'hu-HU',
 };
 
-const MAX_CHARS = 5000;
+// Per Enda, 2026-11-04: raised from 5000 to 5500 — the old figure mirrored Google TTS's
+// 5,000-byte single-request ceiling, but audio is generated per segment, so that ceiling
+// never actually applied to the whole document and the cap was only making long scripts
+// harder to finish. Translation budgeting (translateScript's max_tokens) still leaves room.
+const MAX_CHARS = 5500;
 
 // Per Enda's request: formats the pace-matching numbers below (distance/time between
 // this waypoint's own trigger circle and the next one's) the same plain way the rest of
