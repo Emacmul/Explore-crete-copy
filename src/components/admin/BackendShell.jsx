@@ -20,6 +20,7 @@ import PublishVersionDialog from './PublishVersionDialog';
 import { getRouteTypeForCategory, defaultPriceForCategory } from '@/lib/tourCategories';
 import { toast } from '@/components/ui/use-toast';
 import { translateWalkField } from '@/lib/fieldTranslation';
+import { isRtlLanguage } from '@/lib/textDirection';
 
 /**
  * Shared back-end shell used by both the Admin route and the Narr route. Both
@@ -688,7 +689,7 @@ export default function BackendShell({ user, userRole, isSuperAdmin, authMode, u
       // walk is open for editing, width is left entirely to WalkEditor's own
       // per-tab sizing instead; every other screen (the tour list, dashboard, etc.)
       // keeps this reading-width cap unchanged.
-      <main className={editingWalk !== null ? 'p-4' : 'max-w-6xl mx-auto p-4'}>
+      <main className={`${editingWalk !== null ? 'p-4' : 'max-w-6xl mx-auto p-4'}${editingWalk !== null && isRtlLanguage(editingWalk.target_language) ? ' rtl-fields' : ''}`}>
         {editingWalk !== null ? (
           <WalkEditor
             walk={editingWalk}

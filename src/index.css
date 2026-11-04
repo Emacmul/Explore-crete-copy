@@ -90,3 +90,16 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Hebrew/Arabic translation clones: the editing surface gets `rtl-fields` (see
+   BackendShell.jsx + lib/textDirection.js), and every free-text field inside it writes
+   right-to-left — caret at the right edge, right-aligned, punctuation in the right place.
+   Only the text fields flip; labels, buttons and layout stay left-to-right, so the tools
+   themselves don't jump around. Number fields (lat/lng, radius, price…) are deliberately
+   excluded and stay left-to-right. */
+.rtl-fields textarea,
+.rtl-fields input[type="text"],
+.rtl-fields input:not([type]) {
+  direction: rtl;
+  text-align: right;
+}
