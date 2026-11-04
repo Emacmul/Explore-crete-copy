@@ -3,7 +3,7 @@ import { resolveActor } from '../../shared/backendActor.ts';
 import { callGroqWithKeyRotation } from '../../shared/groqKeyRotation.ts';
 import { translateWithGoogle } from '../../shared/googleTranslate.ts';
 import { protectPhrases, substituteTitleMentions } from '../../shared/protectedPhrases.ts';
-import { protectDictionaryWords } from '../../shared/pronunciationProtect.ts';
+import { protectDictionaryWords, findLeftoverMarkers } from '../../shared/pronunciationProtect.ts';
 import { fetchPronunciationWords } from '../../shared/linguagloss.ts';
 // Per Enda / Base44 support: retries a real 429 from Base44's OWN entity/database calls
 // (separate from the Groq rate-limit handling above, which is a different, third-party
@@ -343,6 +343,12 @@ ${promptText}`;
     // actually ran, Groq or Google. Order doesn't matter — the two marker kinds never overlap.
     finalText = restoreDict(restoreTitle(restoreBrand(finalText)));
 
+    // Any placeholder marker still present after the swap-back means the engine altered it
+    // beyond recognition (see findLeftoverMarkers). Reported, never silently left in place:
+    // read aloud, "xxpronword0xx" is gibberish in a finished narration, and RTL scripts are
+    // where a Latin token is most likely to come back reshuffled.
+    const leftoverMarkers = findLeftoverMarkers(finalText);
+
     // Best-effort check only (see findUnpreservedForeignWords above for what it can and
     // can't catch) — never fails the translation over it, since the translation itself
     // is very likely still fine and usable; this only flags that ONE named word may need
@@ -360,6 +366,13 @@ ${promptText}`;
       ...(dictionaryUnavailable ? { pronunciation_dictionary_unavailable: true } : {}),
       ...(unpreserved.length > 0 ? {
         preservation_warning: `Double-check the spelling of ${unpreserved.map((w) => `"${w}"`).join(', ')} in the translated text below — it should appear exactly as written in the original script, but couldn't be confirmed automatically. This matters for the pronunciation dictionary to work.`,
+      } : {}),
+      // One of the protection placeholders survived translation — the text below is not
+      // complete and would be spoken as gibberish if used for audio. TranslationPanel.jsx
+      // shows this prominently so it can't be missed.
+      ...(leftoverMarkers.length > 0 ? {
+        leftover_markers: leftoverMarkers,
+        marker_leftover_warning: `Part of this text didn't come through cleanly — ${leftoverMarkers.map((m) => `"${m}"`).join(', ')} ${leftoverMarkers.length > 1 ? 'are' : 'is'} still in the script where a name should be. Please fill that part in from the original before generating audio, or run the translation again.`,
       } : {}),
     });
   } catch (error) {

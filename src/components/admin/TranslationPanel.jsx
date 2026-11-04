@@ -130,6 +130,10 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
   // — the words above were then NOT protected, which the narrator has to know before
   // relying on the script for audio.
   const [dictionaryUnavailable, setDictionaryUnavailable] = useState(false);
+  // Set only when a protection placeholder came back still inside the translated text — a
+  // name is then genuinely missing from that spot, and the marker itself would be spoken
+  // aloud, so this is shown as a warning rather than a hint. See pronunciationProtect.ts.
+  const [markerWarning, setMarkerWarning] = useState('');
   const fileInputRef = useRef(null);
 
   const handleImport = async (e) => {
@@ -267,6 +271,7 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
       setPreservationWarning('');
       setProtectedWords([]);
       setDictionaryUnavailable(false);
+      setMarkerWarning('');
       setCheckDepositoryError('');
       onTranslated(importedText);
       return;
@@ -281,6 +286,7 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
     setDictionaryUnavailable(false);
     setTranslatedViaFallback(false);
     setTitleSubstituted(false);
+    setMarkerWarning('');
     setCheckDepositoryError('');
     setTranslating(true);
     try {
@@ -315,6 +321,7 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
         setTitleSubstituted(!!response.data?.title_substituted);
         setProtectedWords(response.data?.protected_dictionary_words || []);
         setDictionaryUnavailable(!!response.data?.pronunciation_dictionary_unavailable);
+        setMarkerWarning(response.data?.marker_leftover_warning || '');
       } else {
         setError('Translation returned no text.');
       }
@@ -433,6 +440,16 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
         <div className="flex items-start gap-1.5 text-amber-300 text-xs bg-amber-900/20 border border-amber-700/50 rounded-md px-2.5 py-1.5">
           <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
           <span>{preservationWarning}</span>
+        </div>
+      )}
+
+      {/* A protection placeholder survived translation — the script is genuinely incomplete
+          at that spot, so this is stated plainly instead of being left for the narrator to
+          notice (or worse, to hear in the finished audio). */}
+      {markerWarning && (
+        <div className="flex items-start gap-1.5 text-red-300 text-xs bg-red-900/25 border border-red-700/60 rounded-md px-2.5 py-1.5">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+          <span>{markerWarning}</span>
         </div>
       )}
 
