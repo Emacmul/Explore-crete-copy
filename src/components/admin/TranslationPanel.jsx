@@ -121,6 +121,15 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
   // tour's own (already-translated) title somewhere inside this waypoint's script — purely
   // informational, so a narrator can see it happened rather than wondering.
   const [titleSubstituted, setTitleSubstituted] = useState(false);
+  // Per Enda (2026-11-04): the words from the pronunciation dictionary that were held back
+  // from translation and kept exactly as written. Shown below in italics and a distinct
+  // colour so a narrator can actually SEE that the protection happened on this script,
+  // rather than having to take it on trust.
+  const [protectedWords, setProtectedWords] = useState([]);
+  // Set only when the pronunciation dictionary couldn't be read at all for this translation
+  // — the words above were then NOT protected, which the narrator has to know before
+  // relying on the script for audio.
+  const [dictionaryUnavailable, setDictionaryUnavailable] = useState(false);
   const fileInputRef = useRef(null);
 
   const handleImport = async (e) => {
@@ -256,6 +265,8 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
     if (isNoOpTranslation) {
       setError('');
       setPreservationWarning('');
+      setProtectedWords([]);
+      setDictionaryUnavailable(false);
       setCheckDepositoryError('');
       onTranslated(importedText);
       return;
@@ -266,6 +277,8 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
     }
     setError('');
     setPreservationWarning('');
+    setProtectedWords([]);
+    setDictionaryUnavailable(false);
     setTranslatedViaFallback(false);
     setTitleSubstituted(false);
     setCheckDepositoryError('');
@@ -300,6 +313,8 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
           setTranslatedViaFallback(true);
         }
         setTitleSubstituted(!!response.data?.title_substituted);
+        setProtectedWords(response.data?.protected_dictionary_words || []);
+        setDictionaryUnavailable(!!response.data?.pronunciation_dictionary_unavailable);
       } else {
         setError('Translation returned no text.');
       }
@@ -418,6 +433,32 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
         <div className="flex items-start gap-1.5 text-amber-300 text-xs bg-amber-900/20 border border-amber-700/50 rounded-md px-2.5 py-1.5">
           <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
           <span>{preservationWarning}</span>
+        </div>
+      )}
+
+      {/* Per Enda (2026-11-04): visual check that the pronunciation-dictionary words were
+          left exactly as written. Italics + a distinct colour, so it's obvious at a glance
+          rather than something a narrator has to verify word by word against the original. */}
+      {protectedWords.length > 0 && (
+        <div className="text-xs bg-slate-900/50 border border-slate-700 rounded-md px-2.5 py-1.5">
+          <span className="text-slate-400">Left exactly as written (pronunciation dictionary): </span>
+          {protectedWords.map((word, i) => (
+            <span key={`${word}-${i}`}>
+              {i > 0 && <span className="text-slate-500">, </span>}
+              <em className="italic font-semibold text-amber-300">{word}</em>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {dictionaryUnavailable && (
+        <div className="flex items-start gap-1.5 text-amber-300 text-xs bg-amber-900/20 border border-amber-700/50 rounded-md px-2.5 py-1.5">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+          <span>
+            The pronunciation dictionary couldn't be read for this translation, so its words
+            were not protected — check them against the original script before generating audio.
+            An admin may need to reconnect the LinguaGloss access key in Dashboard → Secrets.
+          </span>
         </div>
       )}
 

@@ -3,6 +3,8 @@ import { resolveActor } from '../../shared/backendActor.ts';
 import { callGroqWithKeyRotation } from '../../shared/groqKeyRotation.ts';
 import { translateWithGoogle } from '../../shared/googleTranslate.ts';
 import { protectPhrases, substituteTitleMentions } from '../../shared/protectedPhrases.ts';
+import { protectDictionaryWords } from '../../shared/pronunciationProtect.ts';
+import { fetchPronunciationWords } from '../../shared/linguagloss.ts';
 // Per Enda / Base44 support: retries a real 429 from Base44's OWN entity/database calls
 // (separate from the Groq rate-limit handling above, which is a different, third-party
 // 429) with a short backoff — see withEntityRetry.ts's own header comment.
@@ -198,10 +200,39 @@ export default async function(req) {
       }
     }
 
+    // Pronunciation dictionary protection (Enda, 2026-11-04) — see pronunciationProtect.ts
+    // for the full reasoning. Every word in the LinguaGloss dictionary is swapped for a
+    // marker before it can reach Groq or Google, so it survives translation exactly as
+    // written, whatever alphabet it's in. This is what closes the Italian/Spanish/Turkish
+    // name that used to be translated as if it were ordinary English.
+    //
+    // Best-effort by design: if LinguaGloss can't be reached, the translation still runs,
+    // just without this extra protection — a dictionary outage must never block a narrator.
+    let restoreDict = (s: string) => s;
+    let protectedDictionaryWords: string[] = [];
+    // True only when the dictionary couldn't be read at all — the caller shows this to the
+    // narrator, because "protection didn't run" is something they must know before trusting
+    // the translated script for audio.
+    let dictionaryUnavailable = false;
+    try {
+      const dictionaryWords = await fetchPronunciationWords();
+      if (dictionaryWords === null) {
+        dictionaryUnavailable = true;
+      } else {
+        const dictProtected = protectDictionaryWords(promptText, dictionaryWords);
+        promptText = dictProtected.protectedText;
+        restoreDict = dictProtected.restore;
+        protectedDictionaryWords = dictProtected.found;
+      }
+    } catch {
+      // see above — never fail a translation over the dictionary
+      dictionaryUnavailable = true;
+    }
+
     const markersPresent = promptText !== sourceText;
 
     const prompt = titleOnly
-      ? `Translate this tour title into ${target_language}. It's a short title for an audio tour, not a sentence to translate literally word-for-word — a natural, fitting title in ${target_language} matters more than a mechanical translation.${markersPresent ? ' The text may contain a token like xxbrandphrase0xx — copy it through EXACTLY as written, never translate or explain it.' : ''}
+      ? `Translate this tour title into ${target_language}. It's a short title for an audio tour, not a sentence to translate literally word-for-word — a natural, fitting title in ${target_language} matters more than a mechanical translation.${markersPresent ? ' The text may contain tokens like xxbrandphrase0xx or xxpronword0xx — copy each one through EXACTLY as written, never translate or explain it.' : ''}
 
 Return ONLY the translated title. No quotes, no explanations, no markdown.
 
@@ -212,7 +243,7 @@ ${promptText}`
           isWaypointField
             ? ((field === 'segment_title' || field === 'name') ? 'the short name of one stop along the tour, shown to a customer' : 'a short description of one stop along the tour, shown to a customer')
             : (field === 'safety_notes' ? 'a safety notice a customer reads before setting off on the tour' : 'a short description of the tour, shown to a customer browsing the app')
-        }. Keep it natural and clear in ${target_language}, in the same tone as the original, rather than a stiff word-for-word translation. Keep the same paragraph breaks as the original.${markersPresent ? ' The text may contain a token like xxbrandphrase0xx — copy it through EXACTLY as written, never translate or explain it.' : ''}
+        }. Keep it natural and clear in ${target_language}, in the same tone as the original, rather than a stiff word-for-word translation. Keep the same paragraph breaks as the original.${markersPresent ? ' The text may contain tokens like xxbrandphrase0xx or xxpronword0xx — copy each one through EXACTLY as written, never translate or explain it.' : ''}
 
 Return ONLY the translated text. No quotes, no explanations, no markdown.
 
@@ -226,7 +257,7 @@ CRITICAL RULES:
 3. Only translate the spoken narration text around those preserved words and between the break tags.
 4. Keep the translation natural and conversational, suitable for spoken audio narration.
 5. If the script starts with a title line, translate the title too (still preserving any inline foreign-script words per rule 2).
-6. The text may contain tokens that look like xxbrandphrase0xx or xxtitlephrase0xx (a number in place of 0). These are placeholder markers — one for a protected brand phrase, one standing in for a tour title that's already been translated elsewhere. Copy each one through EXACTLY as written, unchanged, with no translation, explanation, or removal. They'll be swapped back for real text afterward.
+6. The text may contain tokens that look like xxbrandphrase0xx, xxtitlephrase0xx or xxpronword0xx (a number in place of 0). These are placeholder markers — one for a protected brand phrase, one standing in for a tour title that's already been translated elsewhere, and one standing in for a word from the pronunciation dictionary that must stay exactly as it is. Copy each one through EXACTLY as written, unchanged, with no translation, explanation, or removal. They'll be swapped back for real text afterward.
 7. Return ONLY the translated text with break tags, any preserved foreign-script words, and any marker tokens intact. No explanations, no markdown, no commentary — just the translated script.
 
 Script:
@@ -310,7 +341,7 @@ ${promptText}`;
     // Swap the real brand phrase(s) and/or the pre-translated title back in now that both
     // engines are done with the text — see protectedPhrases.ts. Applied to whichever path
     // actually ran, Groq or Google. Order doesn't matter — the two marker kinds never overlap.
-    finalText = restoreTitle(restoreBrand(finalText));
+    finalText = restoreDict(restoreTitle(restoreBrand(finalText)));
 
     // Best-effort check only (see findUnpreservedForeignWords above for what it can and
     // can't catch) — never fails the translation over it, since the translation itself
@@ -323,6 +354,10 @@ ${promptText}`;
       // Purely informational — TranslationPanel.jsx can mention it, never changes behavior.
       ...(usedGoogleFallback ? { translated_via: 'google' } : {}),
       ...(titleSubstituted ? { title_substituted: true } : {}),
+      // The dictionary words that actually appeared in this text and were held back from
+      // translation — TranslationPanel.jsx shows these to the narrator as a visual check.
+      ...(protectedDictionaryWords.length > 0 ? { protected_dictionary_words: protectedDictionaryWords } : {}),
+      ...(dictionaryUnavailable ? { pronunciation_dictionary_unavailable: true } : {}),
       ...(unpreserved.length > 0 ? {
         preservation_warning: `Double-check the spelling of ${unpreserved.map((w) => `"${w}"`).join(', ')} in the translated text below — it should appear exactly as written in the original script, but couldn't be confirmed automatically. This matters for the pronunciation dictionary to work.`,
       } : {}),

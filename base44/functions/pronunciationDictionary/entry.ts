@@ -1,5 +1,8 @@
-import { createClient, createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
+import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 import { resolveActor } from '../../shared/backendActor.ts';
+// The LinguaGloss client + secret lookup now live in shared/linguagloss.ts — translateScript
+// needs the same dictionary access (2026-11-04), so it can't stay private to this function.
+import { linguaglossClient, linguaglossErrorMessage } from '../../shared/linguagloss.ts';
 // Per Enda / Base44 support: retries a real 429 (pooled rate limit) with a short backoff —
 // see withEntityRetry.ts's own header comment for the full reasoning. Applied to BOTH
 // clients below: this app's own (for the resolveActor lookup) and LinguaGloss's (a
@@ -33,22 +36,7 @@ import { wrapClientWithRetry } from '../../shared/withEntityRetry.ts';
 // app. `base44:runtime` may not exist in every app/version, so the dynamic import is
 // wrapped in try/catch rather than a static import, which would crash the whole function
 // on load if that module isn't there.
-async function getSecret(name: string): Promise<string | null> {
-  try {
-    const { secrets } = await import('base44:runtime');
-    const v = secrets?.get?.(name);
-    if (v) return v;
-  } catch {
-    // base44:runtime not available here — fall through to the proven Deno.env.get path.
-  }
-  return Deno.env.get(name) || null;
-}
-
-async function linguaglossClient() {
-  const [appId, apiKey] = await Promise.all([getSecret('LINGUAGLOSS_APP_ID'), getSecret('LINGUAGLOSS_API_KEY')]);
-  if (!appId || !apiKey) return null;
-  return wrapClientWithRetry(createClient({ appId, headers: { api_key: apiKey } }));
-}
+// getSecret + linguaglossClient moved to shared/linguagloss.ts (imported above).
 
 Deno.serve(async (req) => {
   try {
@@ -143,6 +131,6 @@ Deno.serve(async (req) => {
 
     return Response.json({ error: 'action must be "list", "create", or "update"' }, { status: 400 });
   } catch (error) {
-    return Response.json({ error: error.message }, { status: 500 });
+    return Response.json({ error: linguaglossErrorMessage(error) }, { status: 500 });
   }
 });
