@@ -9,7 +9,8 @@ import { wrapClientWithRetry } from './withEntityRetry.ts';
 //
 // Set these two as SECRETS on THIS app (Explore Crete) — Dashboard → Secrets → Add Secret:
 //   LINGUAGLOSS_APP_ID  — LinguaGloss's own Base44 app id
-//   LINGUAGLOSS_API_KEY — an API key generated from LinguaGloss's own dashboard
+//   LINGUAGLOSS_API_KEY — a PERSONAL ACCESS TOKEN from LinguaGloss's workspace
+//                         (Workspace settings → Secrets → Personal access tokens)
 // Never commit either value to the repo, and never send them to the browser.
 //
 // getSecret tries Base44's documented `secrets.get()` from `base44:runtime` first, then
