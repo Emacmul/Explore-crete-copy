@@ -8,6 +8,23 @@ import { wrapClientWithRetry } from '../../shared/withEntityRetry.ts';
 import { isSessionRevoked } from '../../shared/deviceAuth.ts';
 import { isWalkPublic } from '../../shared/walkPublish.ts';
 
+// Anonymous-visitor write amplification (2026-11-04 review): this endpoint is reachable
+// without login and runs with the service role, so an unconditional DebugCatalogLog write
+// meant one new row per anonymous catalog load while any pair still falls back to legacy
+// records — unbounded table growth on the app's hottest read path. Log each distinct note
+// at most once per function instance per hour: plenty for an admin to see the anomaly, and
+// repeated requests can no longer be turned into storage exhaustion.
+const loggedNotes = new Map();
+const LOG_DEDUPE_MS = 60 * 60 * 1000;
+async function logOnce(base44, note) {
+  const last = loggedNotes.get(note);
+  if (last && Date.now() - last < LOG_DEDUPE_MS) return;
+  loggedNotes.set(note, Date.now());
+  try {
+    await base44.asServiceRole.entities.DebugCatalogLog.create({ note });
+  } catch { /* logging must never break serving */ }
+}
+
 // The walk catalogue, collapsed to one STABLE entry per tour (not per language).
 //
 // A translated tour is stored as its own Walk record (a "clone") pointing back at the
@@ -187,11 +204,7 @@ export default async function(req) {
     }
     for (const [pairKey, count] of pairActiveCounts) {
       if (count > 1) {
-        try {
-          await base44.asServiceRole.entities.DebugCatalogLog.create({
-            note: `PublishedTour anomaly: ${count} active versions for pair ${pairKey} — serving the latest status_changed_at (getWalkCatalog read).`,
-          });
-        } catch { /* logging must never break serving */ }
+        await logOnce(base44, `PublishedTour anomaly: ${count} active versions for pair ${pairKey} — serving the latest status_changed_at (getWalkCatalog read).`);
       }
     }
 
@@ -375,11 +388,7 @@ export default async function(req) {
     }
 
     if (!isAdmin && legacyFallbackPairs.length > 0) {
-      try {
-        await base44.asServiceRole.entities.DebugCatalogLog.create({
-          note: `Legacy fallback serving (no active published version): ${legacyFallbackPairs.join(', ')}`,
-        });
-      } catch { /* logging must never break serving */ }
+      await logOnce(base44, `Legacy fallback serving (no active published version): ${legacyFallbackPairs.join(', ')}`);
     }
 
     return Response.json({ walks });

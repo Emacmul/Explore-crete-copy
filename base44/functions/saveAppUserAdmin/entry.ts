@@ -1,5 +1,5 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
-import { isAppAdmin, isSuperAdmin } from '../../shared/appUserAuth.ts';
+import { isAppAdmin, isSuperAdmin, resolveNarrSession } from '../../shared/appUserAuth.ts';
 import { hashPassword } from '../../shared/passwordHash.ts';
 // Per Enda's follow-up 146: the moment someone becomes a narrator/admin/super
 // admin, they get every already-published English tour for free — see
@@ -52,6 +52,35 @@ export default async function (req) {
     for (const k of ['role', 'password', 'date_of_birth', 'gender', 'newsletter_opted_in']) {
       if (k in updates) allowed[k] = updates[k];
     }
+    // Security (2026-11-04 review): setting a PASSWORD on an Admin or Super Admin row is
+    // the same class of action as changing that role, but the guard above only fired when
+    // `role` was in the payload. A regular Admin could therefore reset a Super Admin's
+    // password with an otherwise-unrelated save, sign in as them through narrLogin (which
+    // accepts super_admin rows and issues a real narr session), and isSuperAdmin would
+    // then trust that session — a full escalation into every Super-Admin-only action.
+    // Only a Super Admin may set another Admin/Super Admin's password; everyone can still
+    // change their OWN password. The caller's identity is taken only from a VERIFIED narr
+    // session or the Base44 session — never from a body-supplied email.
+    if (allowed.password) {
+      const passwordTarget = currentBeforeSave || await base44.asServiceRole.entities.AppUser.get(String(id));
+      if (['admin', 'super_admin'].includes(passwordTarget?.role)) {
+        const narrCaller = await resolveNarrSession(base44, body);
+        let callerEmail = String(narrCaller?.email || '').toLowerCase().trim();
+        if (!callerEmail) {
+          try {
+            const me = await base44.auth.me();
+            callerEmail = String(me?.email || '').toLowerCase().trim();
+          } catch {
+            // No Base44 session — leave the caller unknown (not self).
+          }
+        }
+        const isSelf = !!callerEmail && callerEmail === String(passwordTarget?.email || '').toLowerCase().trim();
+        if (!isSelf && !(await isSuperAdmin(base44, body))) {
+          return Response.json({ error: 'Only a Super Admin can set the password of another Admin or Super Admin.' }, { status: 403 });
+        }
+      }
+    }
+
     // Never write a new password in plain text — hash it here, the same as narrLogin
     // does when upgrading an old plain-text row. An admin setting a password also
     // clears any lockout, so it doubles as the recovery path for a locked-out account.

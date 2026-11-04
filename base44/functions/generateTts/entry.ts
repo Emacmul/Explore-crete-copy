@@ -93,7 +93,9 @@ Deno.serve(async (req) => {
 
     // Call Google Cloud Text-to-Speech
     const ttsResponse = await fetch(
-      `https://texttospeech.googleapis.com/v1/text:synthesize?key=${googleKey}`,
+      // Encode the key like manageApiKeys does: the value comes from the request body,
+      // and unencoded it could reshape the request URL (extra query parameters).
+      `https://texttospeech.googleapis.com/v1/text:synthesize?key=${encodeURIComponent(googleKey)}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
