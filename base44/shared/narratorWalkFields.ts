@@ -58,6 +58,14 @@ export const NARRATOR_WAYPOINT_WRITE_FIELDS = [
 
 export const NARRATOR_WALK_READ_FIELDS = [
   'id', 'code', 'name', 'description', 'safety_notes', 'finished',
+  // `assigned_narrator_email` is the narrator's OWN address on their own clone — without
+  // it they couldn't see their clones at all: BackendShell.jsx matches a narrator's
+  // clones by exactly this field (myClones / myClonedMasterIds), so a stripped one left
+  // every narrator with an empty "Clone in Progress" list while an Admin (who never goes
+  // through this projection) saw the clone fine (Enda's Hebrew KIS report, 2026-11-04).
+  // `approved` decides which of those lists a clone belongs in (a published clone is no
+  // longer "in progress"), and the already-cloned-master check depends on it too.
+  'assigned_narrator_email', 'approved',
   'clone_of', 'target_language', 'route_type', 'tour_category',
   'start_lat', 'start_lng', 'region', 'difficulty',
   'default_driving_speed_kmh', 'trail_path', 'trail_breaks',
