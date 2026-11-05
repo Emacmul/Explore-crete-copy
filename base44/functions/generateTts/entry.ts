@@ -1,5 +1,7 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.38';
 import { resolveActor } from '../../shared/backendActor.ts';
+import { fetchPronunciationEntries } from '../../shared/linguagloss.ts';
+import { applyDictionaryPhonemes, languageNameForCode } from '../../shared/dictionaryPronunciation.ts';
 
 // SSML is XML — a literal "&", "<", or ">" in ordinary narration text (e.g. "Fish &
 // Chips", or any stray "<"/">") is completely normal writing but invalid unescaped
@@ -79,11 +81,29 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'No Google TTS API key found for your account. Add your own key under "API Keys" in the Admin Panel header.' }, { status: 400 });
     }
 
-    // Ensure SSML is wrapped in <speak> tags
-    let ssml = escapeSsmlText(text.trim());
-    if (!ssml.startsWith('<speak>')) {
-      ssml = `<speak>${ssml}</speak>`;
+    const escapedText = escapeSsmlText(text.trim());
+
+    // Pronunciation dictionary (Enda, 2026-11-05): a MASTER tour is never translated, so
+    // nothing in its audio path had ever consulted the dictionary — its pronunciation was
+    // purely whatever Google guessed. Every dictionary word in this text is now wrapped in
+    // a real SSML <phoneme> tag carrying the IPA we already store for it, so the generated
+    // audio says the dictionary's pronunciation. See shared/dictionaryPronunciation.ts.
+    // Best-effort by design: an unreachable dictionary just means audio exactly as before.
+    let dictionaryWords: string[] = [];
+    let ssmlBody = escapedText;
+    try {
+      const entries = await fetchPronunciationEntries();
+      if (entries && entries.length > 0) {
+        const applied = applyDictionaryPhonemes(escapedText, entries, languageNameForCode(language_code));
+        ssmlBody = applied.ssmlText;
+        dictionaryWords = applied.words;
+      }
+    } catch {
+      // Dictionary unreachable — generate the narration unchanged.
     }
+
+    // Ensure SSML is wrapped in <speak> tags
+    let ssml = ssmlBody.startsWith('<speak>') ? ssmlBody : `<speak>${ssmlBody}</speak>`;
 
     // Build voice config — Google picks a voice matching the language + gender
     const voice = { languageCode: language_code || 'en-US' };
@@ -91,21 +111,34 @@ Deno.serve(async (req) => {
       voice.ssmlGender = gender;
     }
 
-    // Call Google Cloud Text-to-Speech
-    const ttsResponse = await fetch(
-      // Encode the key like manageApiKeys does: the value comes from the request body,
-      // and unencoded it could reshape the request URL (extra query parameters).
+    // Call Google Cloud Text-to-Speech. The key is encoded like manageApiKeys does: it
+    // comes from the request body, and unencoded it could reshape the request URL (extra
+    // query parameters).
+    const synthesize = (inputSsml: string) => fetch(
       `https://texttospeech.googleapis.com/v1/text:synthesize?key=${encodeURIComponent(googleKey)}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          input: { ssml },
+          input: { ssml: inputSsml },
           voice,
           audioConfig: { audioEncoding: 'MP3', speakingRate: 1.0 },
         }),
       }
     );
+
+    let ttsResponse = await synthesize(ssml);
+
+    // A dictionary entry Google can't express in that voice's IPA set is rejected outright
+    // ("Invalid phoneme"), and one such entry must not cost the narrator the whole line —
+    // so retry that same request once WITHOUT the phoneme tags rather than failing. The
+    // dictionary panel in the editor still shows which words were meant to be steered.
+    if (!ttsResponse.ok && dictionaryWords.length > 0) {
+      const rejection = await ttsResponse.clone().json().catch(() => ({}));
+      if (/phoneme|ipa/i.test(String(rejection?.error?.message || ''))) {
+        ttsResponse = await synthesize(`<speak>${escapedText}</speak>`);
+      }
+    }
 
     if (!ttsResponse.ok) {
       const errData = await ttsResponse.json().catch(() => ({}));

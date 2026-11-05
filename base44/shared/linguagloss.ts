@@ -69,6 +69,33 @@ export async function fetchPronunciationWords(): Promise<string[] | null> {
   }
 }
 
+// Every entry WITH its IPA notation, for the audio path (Enda, 2026-11-05): generateTts
+// wraps dictionary words in SSML <phoneme> tags so the narration actually says the
+// dictionary's pronunciation. Its own cache, same TTL as the words list above.
+let entryCache: { entries: { word: string; ipa: string; language: string }[]; fetchedAt: number } | null = null;
+
+export async function fetchPronunciationEntries(): Promise<{ word: string; ipa: string; language: string }[] | null> {
+  if (entryCache && Date.now() - entryCache.fetchedAt < CACHE_TTL_MS) return entryCache.entries;
+
+  const linguagloss = await linguaglossClient().catch(() => null);
+  if (!linguagloss) return null;
+
+  try {
+    const rows = await linguagloss.entities.PronunciationEntry.list('original_word', 2000);
+    const entries = (Array.isArray(rows) ? rows : [])
+      .map((e: any) => ({
+        word: String(e?.original_word || '').trim(),
+        ipa: String(e?.ipa_notation || '').trim(),
+        language: String(e?.language_origin || '').trim(),
+      }))
+      .filter((e) => e.word);
+    entryCache = { entries, fetchedAt: Date.now() };
+    return entries;
+  } catch {
+    return entryCache?.entries || null;
+  }
+}
+
 // Turns the LinguaGloss client's raw failure into something an admin can act on. Base44
 // retired ACCOUNT API keys (replacing them with personal access tokens), so an old-style
 // LINGUAGLOSS_API_KEY, which was an account key, now fails with a

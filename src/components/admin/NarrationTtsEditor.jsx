@@ -10,6 +10,7 @@ import { LANGUAGES } from '@/lib/languages';
 import { parseScript, rebuildScript, countCharacters, countBreaks } from '@/lib/ttsParser';
 import TtsSegmentCard from './TtsSegmentCard';
 import TranslationPanel from './TranslationPanel';
+import PronunciationCheckPanel from './PronunciationCheckPanel';
 import AudioPlayer from '@/components/ui/AudioPlayer';
 import { Loader2, Sparkles, Pause, Play, Download, Braces, FileText, Square, CheckCircle2, Gauge, RefreshCw } from 'lucide-react';
 import { downloadScriptAsDocx } from '@/lib/docxExporter';
@@ -1792,6 +1793,13 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
           </div>
         </>
       )}
+
+      {/* Per Enda (2026-11-05): a master tour is never translated, so nothing on this panel
+          ever showed which of its names the pronunciation dictionary covers — and the PCV
+          narrator records from exactly this script. Every dictionary word in it is listed
+          here in italic red with its IPA, as the check to read before generating or
+          recording the audio. Report-only: it never edits the script. */}
+      <PronunciationCheckPanel text={script || ''} language={fixedLanguage || selectedLanguage} />
 
       {/* Voice + Language */}
       <div className="grid grid-cols-2 gap-3">
