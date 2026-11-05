@@ -471,6 +471,7 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   useEffect(() => {
     if (!rtlClone || !currentWalkId || !waypointSegmentId) return;
     let cancelled = false;
+    setOriginalLoading(true);
     base44.functions.invoke('manageTourImportFiles', {
       action: 'master_script',
       walkId: currentWalkId,
@@ -484,7 +485,8 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
           setOriginalText((prev) => (prev.trim() ? prev : script));
         }
       })
-      .catch(() => { /* best-effort, see above */ });
+      .catch(() => { /* best-effort, see above */ })
+      .finally(() => { if (!cancelled) setOriginalLoading(false); });
     return () => { cancelled = true; };
   }, [rtlClone, currentWalkId, waypointSegmentId]);
 
@@ -1780,10 +1782,13 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
           above the RTL script box — so a Hebrew/Arabic narrator can compare the two while
           writing or fixing the translation. Shown at every stage (before the first parse and
           through the per-part editing below) because comparing is exactly what's needed in
-          both. "Remove original" clears it for the rest of this waypoint once the narrator is
-          happy with their translation — the translated text below is untouched either way. */}
-      {rtlClone && !originalHidden && originalText.trim() && (
-        <OriginalScriptReference text={originalText} onRemove={() => setOriginalHidden(true)} />
+          both, and shown even while it's still loading or when the master has no English
+          text for this stop — the earlier "only once text has arrived" version made the whole
+          feature invisible on exactly those waypoints. "Remove original" clears it for the
+          rest of this waypoint once the narrator is happy with their translation — the
+          translated text below is untouched either way. */}
+      {rtlClone && !originalHidden && (
+        <OriginalScriptReference text={originalText} loading={originalLoading} onRemove={() => setOriginalHidden(true)} />
       )}
 
       {/* Insert break tags at cursor, and the top script textarea itself, just below.
