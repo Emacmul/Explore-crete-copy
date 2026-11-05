@@ -460,6 +460,33 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   const rtlClone = !!fixedLanguage && isRtlLanguage(fixedLanguage);
   const [originalText, setOriginalText] = useState('');
   const [originalHidden, setOriginalHidden] = useState(false);
+  const [originalLoading, setOriginalLoading] = useState(false);
+
+  // Per Enda (2026-11-05): the reference box only ever filled up when the panel below
+  // imported something — a depository file that only exists for some waypoints, or a file
+  // the narrator picked by hand — so on a clone without one the narrator opened the
+  // waypoint and saw none of the new setup. This fetches the MASTER tour's own English
+  // narration script for this segment, so the reference is there every time, straight
+  // away. Best-effort: if it can't be read, the import path still fills the box as before.
+  useEffect(() => {
+    if (!rtlClone || !currentWalkId || !waypointSegmentId) return;
+    let cancelled = false;
+    base44.functions.invoke('manageTourImportFiles', {
+      action: 'master_script',
+      walkId: currentWalkId,
+      segment_id: waypointSegmentId,
+      ...getNarratorAuthPayload(),
+    })
+      .then((res) => {
+        const script = res?.data?.script || '';
+        if (!cancelled && script.trim()) {
+          // Only fills a still-empty box — never replaces an import the narrator just made.
+          setOriginalText((prev) => (prev.trim() ? prev : script));
+        }
+      })
+      .catch(() => { /* best-effort, see above */ });
+    return () => { cancelled = true; };
+  }, [rtlClone, currentWalkId, waypointSegmentId]);
 
   // Per Enda's follow-up 26 report: on a long document this list can run many screens
   // tall, and every error this panel raises — a per-line save refused for being empty

@@ -61,6 +61,27 @@ export default async function (req) {
       return Response.json({ file: entry ? { file_url: entry.file_url, filename: entry.filename } : null });
     }
 
+    // Per Enda (2026-11-05): the RTL (Hebrew/Arabic) narrator's on-screen English reference
+    // box was empty whenever no depository file happened to exist for that waypoint — the
+    // narrator opened the waypoint and saw none of the new setup at all. This returns the
+    // MASTER tour's own English narration script for one segment, so that box always has
+    // something to compare against. Read-only, same ownership boundary as 'get' above, and
+    // deliberately narrow: only the master's own narration_script text and waypoint name —
+    // nothing else off the master walk ever leaves the backend.
+    if (action === 'master_script') {
+      const segment_id = body.segment_id ? String(body.segment_id) : '';
+      if (!segment_id) return Response.json({ error: 'Missing segment_id' }, { status: 400 });
+      if (!walk.clone_of) return Response.json({ script: '', name: '' });
+
+      const master = await base44.asServiceRole.entities.Walk.get(String(walk.clone_of));
+      if (!master) return Response.json({ script: '', name: '' });
+      const masterWp = (master.waypoints || []).find((wp: any) => wp.segment_id === segment_id);
+      return Response.json({
+        script: (masterWp?.narration_script || '').trim(),
+        name: masterWp?.name || '',
+      });
+    }
+
     // 'upload' and 'remove' both change the depository itself — admin only. A narrator
     // can READ the master's depository (via 'get' above) but never write to it; the
     // depository is always the admin's own master files, never a narrator's.
