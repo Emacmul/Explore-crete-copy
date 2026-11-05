@@ -23,7 +23,7 @@
  * is expected, not a sign something else touched it.)
  */
 
-const CACHE_VERSION = 'explore-crete-build-1793857447320';
+const CACHE_VERSION = 'explore-crete-build-1793857866858';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 
 // Install: cache the app shell FIRST, then activate immediately.

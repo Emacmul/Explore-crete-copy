@@ -6,9 +6,13 @@ import { getFnErrorMessage, withTimeout } from '@/lib/utils';
 // One read of the LinguaGloss pronunciation dictionary for the script editor's own
 // "which of these names are in the dictionary" check. Fetched once per editor mount (the
 // dictionary is a few hundred names, and it only changes when someone edits it in
-// LinguaGloss), never per keystroke.
+// LinguaGloss), never per keystroke — `reload` is called after this panel itself adds or
+// edits an entry, so the check updates immediately. `languages` is the dictionary's own
+// language list, used by the add/edit form so a new entry is tagged the same way existing
+// ones are.
 export default function usePronunciationEntries() {
   const [entries, setEntries] = useState([]);
+  const [languages, setLanguages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -23,6 +27,7 @@ export default function usePronunciationEntries() {
       );
       if (res?.data?.error) throw new Error(res.data.error);
       setEntries(res?.data?.entries || []);
+      setLanguages(res?.data?.languages || []);
     } catch (err) {
       setError(getFnErrorMessage(err, 'Could not load the pronunciation dictionary.'));
     }
@@ -31,5 +36,5 @@ export default function usePronunciationEntries() {
 
   useEffect(() => { load(); }, [load]);
 
-  return { entries, loading, error, reload: load };
+  return { entries, languages, loading, error, reload: load };
 }

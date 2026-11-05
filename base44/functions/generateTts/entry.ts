@@ -1,7 +1,5 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.38';
 import { resolveActor } from '../../shared/backendActor.ts';
-import { fetchPronunciationEntries } from '../../shared/linguagloss.ts';
-import { applyDictionaryPhonemes, languageNameForCode } from '../../shared/dictionaryPronunciation.ts';
 
 // SSML is XML — a literal "&", "<", or ">" in ordinary narration text (e.g. "Fish &
 // Chips", or any stray "<"/">") is completely normal writing but invalid unescaped
@@ -83,27 +81,13 @@ Deno.serve(async (req) => {
 
     const escapedText = escapeSsmlText(text.trim());
 
-    // Pronunciation dictionary (Enda, 2026-11-05): a MASTER tour is never translated, so
-    // nothing in its audio path had ever consulted the dictionary — its pronunciation was
-    // purely whatever Google guessed. Every dictionary word in this text is now wrapped in
-    // a real SSML <phoneme> tag carrying the IPA we already store for it, so the generated
-    // audio says the dictionary's pronunciation. See shared/dictionaryPronunciation.ts.
-    // Best-effort by design: an unreachable dictionary just means audio exactly as before.
-    let dictionaryWords: string[] = [];
-    let ssmlBody = escapedText;
-    try {
-      const entries = await fetchPronunciationEntries();
-      if (entries && entries.length > 0) {
-        const applied = applyDictionaryPhonemes(escapedText, entries, languageNameForCode(language_code));
-        ssmlBody = applied.ssmlText;
-        dictionaryWords = applied.words;
-      }
-    } catch {
-      // Dictionary unreachable — generate the narration unchanged.
-    }
-
-    // Ensure SSML is wrapped in <speak> tags
-    let ssml = ssmlBody.startsWith('<speak>') ? ssmlBody : `<speak>${ssmlBody}</speak>`;
+    // Pronunciation (Enda, 2026-11-05): the script text is deliberately left EXACTLY as
+    // written, with no IPA added — the finished narration is recorded by the ElevenLabs PCV,
+    // which reads the pronunciation dictionary itself, and phoneme markup in the text would
+    // only risk being spoken aloud or muddling that recording. The dictionary's role here is
+    // the editor's red-italic check (PronunciationCheckPanel) and keeping translation from
+    // rewriting those words (translateScript); Google draft audio stays plain.
+    const ssml = escapedText.startsWith('<speak>') ? escapedText : `<speak>${escapedText}</speak>`;
 
     // Build voice config — Google picks a voice matching the language + gender
     const voice = { languageCode: language_code || 'en-US' };
@@ -128,17 +112,6 @@ Deno.serve(async (req) => {
     );
 
     let ttsResponse = await synthesize(ssml);
-
-    // A dictionary entry Google can't express in that voice's IPA set is rejected outright
-    // ("Invalid phoneme"), and one such entry must not cost the narrator the whole line —
-    // so retry that same request once WITHOUT the phoneme tags rather than failing. The
-    // dictionary panel in the editor still shows which words were meant to be steered.
-    if (!ttsResponse.ok && dictionaryWords.length > 0) {
-      const rejection = await ttsResponse.clone().json().catch(() => ({}));
-      if (/phoneme|ipa/i.test(String(rejection?.error?.message || ''))) {
-        ttsResponse = await synthesize(`<speak>${escapedText}</speak>`);
-      }
-    }
 
     if (!ttsResponse.ok) {
       const errData = await ttsResponse.json().catch(() => ({}));

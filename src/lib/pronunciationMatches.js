@@ -1,9 +1,10 @@
-// Per Enda (2026-11-05): the pronunciation dictionary only ever steered TRANSLATION
-// (see base44/shared/pronunciationProtect.ts) — a master tour, which is never translated,
-// got no benefit from it at all, and the admin authoring that script had no way of knowing
-// which of its names the PCV narrator will find in the dictionary. This is the client-side
-// twin of that server matcher, trimmed to just the question the editor asks: which
-// dictionary entries actually occur in this script.
+// Per Enda (2026-11-05): the pronunciation dictionary does two jobs for a script — it tells
+// TRANSLATION which words must survive untranslated (see
+// base44/shared/pronunciationProtect.ts), and it is what the ElevenLabs PCV narrator reads
+// the names from when recording. So the admin authoring a master script needs to see, on the
+// script itself, exactly which words the dictionary already knows — and which ones it is
+// still missing. This is the client-side twin of the server matcher, trimmed to those two
+// questions.
 //
 // Same rules as the server side, deliberately:
 //  - whole word only, never a substring ("Reth" must not match inside "Rethymno");
@@ -20,14 +21,14 @@ function escapeRegex(str) {
 export function findDictionaryMatches(text, entries, languageName) {
   if (!text || !Array.isArray(entries) || entries.length === 0) return [];
 
-  // Entries for the narration's OWN language are skipped, matching what the audio
-  // generator does with them (see base44/shared/dictionaryPronunciation.ts): ordinary
-  // English words like "the" are in the dictionary too, and listing them here would bury
-  // the names that actually need checking.
+  // Entries for the narration's OWN language are skipped: ordinary English words like "the"
+  // are in the dictionary too, and listing them here would bury the names that actually
+  // need checking. Foreign names — Anacamptis, Ahmed, a Greek place name — always show.
   const spoken = String(languageName || '').trim().toLowerCase();
 
   const candidates = entries
     .map((e) => ({
+      id: e?.id || '',
       word: String(e?.original_word || '').trim(),
       ipa: String(e?.ipa_notation || '').trim(),
       language: String(e?.language_origin || '').trim(),
@@ -52,4 +53,28 @@ export function findDictionaryMatches(text, entries, languageName) {
     found.push(c);
   }
   return found;
+}
+
+// Words in the script written in a script OTHER than Latin — Greek, Cyrillic, Hebrew,
+// Arabic — that the dictionary does not have yet. These are the ones an admin can spot
+// mechanically: a name like "Ἀνάκαμψις" or "Ρέθυμνο" sitting in English text is exactly the
+// kind of word the dictionary must carry so it is never translated and the narrator hears
+// the right pronunciation. Latin-script names (Italian, French, German) can't be told apart
+// from ordinary English words automatically, so those are added by hand from this same panel.
+const FOREIGN_SCRIPT_WORD_RE = /[\u0370-\u03FF\u1F00-\u1FFF\u0400-\u04FF\u0590-\u05FF\u0600-\u06FF]{2,}/gu;
+
+export function findUnlistedScriptWords(text, entries) {
+  if (!text) return [];
+  const known = new Set(
+    (Array.isArray(entries) ? entries : [])
+      .map((e) => String(e?.original_word || '').trim().toLowerCase())
+      .filter(Boolean)
+  );
+  const missing = [];
+  for (const m of String(text).matchAll(FOREIGN_SCRIPT_WORD_RE)) {
+    const word = m[0];
+    if (known.has(word.toLowerCase())) continue;
+    if (!missing.includes(word)) missing.push(word);
+  }
+  return missing;
 }
