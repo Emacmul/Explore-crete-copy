@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { SpellCheck, AlertTriangle, Loader2, Pencil, Plus } from 'lucide-react';
+import { SpellCheck, AlertTriangle, Loader2, Pencil, Plus, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import usePronunciationEntries from '@/lib/usePronunciationEntries';
 import { findDictionaryMatches, findUnlistedScriptWords } from '@/lib/pronunciationMatches';
@@ -16,9 +16,13 @@ import PronunciationEntryForm from './PronunciationEntryForm';
 //     name in this script is actually in it — and be able to add the missing ones or fix a
 //     wrong entry on the spot, without leaving the script.
 //
+// Refresh re-reads the dictionary: names are often added in LinguaGloss while this editor
+// is already open, and without that the check kept calling a word missing that had just
+// been added.
+//
 // The script text is never altered here: this only reads it and edits the dictionary.
 export default function PronunciationCheckPanel({ text, language }) {
-  const { entries, languages, loading, error, reload } = usePronunciationEntries();
+  const { entries, languages, loading, refreshing, error, reload } = usePronunciationEntries();
   const [editingId, setEditingId] = useState(null);
   const [adding, setAdding] = useState(null); // prefill word, or '' for a blank form
 
@@ -26,8 +30,9 @@ export default function PronunciationCheckPanel({ text, language }) {
     () => findDictionaryMatches(text, entries, language),
     [text, entries, language]
   );
-  // Names written in Greek/Cyrillic/Hebrew/Arabic that the dictionary doesn't carry yet —
-  // the ones that would otherwise be translated away and mispronounced in the recording.
+  // Names the dictionary doesn't carry yet — written in another script (Greek, Cyrillic,
+  // Hebrew, Arabic) or with Turkish/accented letters. Those would otherwise be translated
+  // away and mispronounced in the recording.
   const unlisted = useMemo(() => findUnlistedScriptWords(text, entries), [text, entries]);
 
   const handleSaved = () => {
@@ -48,14 +53,17 @@ export default function PronunciationCheckPanel({ text, language }) {
     );
   }
 
-  if (error) {
+  if (error && entries.length === 0) {
     return (
-      <div className="flex items-start gap-2 rounded border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-200">
-        <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
-        <span>
-          The pronunciation dictionary couldn’t be read, so this check didn’t run.{' '}
-          <span className="text-amber-300/80">{error}</span>
-        </span>
+      <div className="space-y-1">
+        <div className="flex items-start gap-2 rounded border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-200">
+          <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+          <span>
+            The pronunciation dictionary couldn’t be read, so this check didn’t run.{' '}
+            <span className="text-amber-300/80">{error}</span>
+          </span>
+        </div>
+        <RefreshButton refreshing={refreshing} onClick={reload} />
       </div>
     );
   }
@@ -64,7 +72,7 @@ export default function PronunciationCheckPanel({ text, language }) {
     <div className="rounded border border-red-500/30 bg-red-500/5 p-2 space-y-2">
       <div className="flex items-start gap-2 text-xs text-slate-300">
         <SpellCheck className="w-3.5 h-3.5 mt-0.5 text-red-400 flex-shrink-0" />
-        <span>
+        <span className="flex-1">
           {matches.length > 0 ? (
             <>
               <span className="font-semibold text-red-400">{matches.length}</span>{' '}
@@ -76,7 +84,14 @@ export default function PronunciationCheckPanel({ text, language }) {
             <>No word in this script is in the pronunciation dictionary yet.</>
           )}
         </span>
+        <RefreshButton refreshing={refreshing} onClick={reload} />
       </div>
+
+      {error && (
+        <p className="text-[11px] text-amber-300">
+          Last refresh failed — showing the list loaded earlier. {error}
+        </p>
+      )}
 
       {matches.length > 0 && (
         <div className="flex flex-wrap gap-x-3 gap-y-1">
@@ -151,5 +166,20 @@ export default function PronunciationCheckPanel({ text, language }) {
         />
       )}
     </div>
+  );
+}
+
+function RefreshButton({ refreshing, onClick }) {
+  return (
+    <button
+      type="button"
+      title="Re-read the dictionary — pick up words added in LinguaGloss"
+      onClick={onClick}
+      disabled={refreshing}
+      className="inline-flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-100 disabled:opacity-60"
+    >
+      <RefreshCw className={`w-3 h-3 ${refreshing ? 'animate-spin' : ''}`} />
+      Refresh
+    </button>
   );
 }
