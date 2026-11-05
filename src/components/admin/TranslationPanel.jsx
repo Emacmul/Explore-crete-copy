@@ -88,7 +88,7 @@ function stripWaypointLabelLine(text, segmentId, segmentTitle) {
   return lines.join('\n');
 }
 
-export default function TranslationPanel({ onTranslated, fixedLanguage, disabled = false, waypointSegmentId, waypointSegmentTitle, currentWalkId }) {
+export default function TranslationPanel({ onTranslated, fixedLanguage, disabled = false, waypointSegmentId, waypointSegmentTitle, currentWalkId, onSourceTextChange }) {
   const { keys: apiKeys } = useNarratorApiKeys();
   const [importedText, setImportedText] = useState('');
   const [fileName, setFileName] = useState('');
@@ -135,6 +135,16 @@ export default function TranslationPanel({ onTranslated, fixedLanguage, disabled
   // aloud, so this is shown as a warning rather than a hint. See pronunciationProtect.ts.
   const [markerWarning, setMarkerWarning] = useState('');
   const fileInputRef = useRef(null);
+
+  // Per Enda (2026-11-05): an RTL narrator needs the English master text kept on screen
+  // while they work on the translation. This panel is the only place that text ever
+  // arrives (a manual import or the shared depository), so it reports every change of it
+  // up to the TTS panel, which shows it read-only above the RTL script box. One effect
+  // rather than a call at each assignment, so no path can ever set importedText without
+  // reporting it. Never used to write anything back — this panel stays the only owner.
+  useEffect(() => {
+    if (onSourceTextChange) onSourceTextChange(importedText);
+  }, [importedText, onSourceTextChange]);
 
   const handleImport = async (e) => {
     const file = e.target.files[0];

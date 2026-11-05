@@ -10,6 +10,8 @@ import { LANGUAGES } from '@/lib/languages';
 import { parseScript, rebuildScript, countCharacters, countBreaks } from '@/lib/ttsParser';
 import TtsSegmentCard from './TtsSegmentCard';
 import TranslationPanel from './TranslationPanel';
+import OriginalScriptReference from './OriginalScriptReference';
+import { isRtlLanguage } from '@/lib/textDirection';
 import PronunciationCheckPanel from './PronunciationCheckPanel';
 import AudioPlayer from '@/components/ui/AudioPlayer';
 import { Loader2, Sparkles, Pause, Play, Download, Braces, FileText, Square, CheckCircle2, Gauge, RefreshCw } from 'lucide-react';
@@ -445,6 +447,19 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   useEffect(() => {
     if (fixedLanguage) setSelectedLanguage(fixedLanguage);
   }, [fixedLanguage]);
+
+  // Per Enda (2026-11-05): an RTL (Hebrew/Arabic) narrator translating a clone needs the
+  // English master text kept on screen while they write and fix their own translation —
+  // before this, Translate & Load replaced it on screen and there was nothing left to
+  // compare against. `originalText` is the imported English master (reported up by
+  // TranslationPanel, read-only on screen), shown above the RTL script box; `originalHidden`
+  // is the narrator's own "I'm happy with this" — they remove the reference and keep only
+  // their translation. Scoped to RTL clones only: every other language keeps the previous
+  // behaviour untouched. State lives here rather than in the panel because this component is
+  // remounted per waypoint, so a fresh waypoint always starts with its own reference.
+  const rtlClone = !!fixedLanguage && isRtlLanguage(fixedLanguage);
+  const [originalText, setOriginalText] = useState('');
+  const [originalHidden, setOriginalHidden] = useState(false);
 
   // Per Enda's follow-up 26 report: on a long document this list can run many screens
   // tall, and every error this panel raises — a per-line save refused for being empty
@@ -1643,7 +1658,14 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   // Narrator can pre-emptively rewrite before ever listening to it. Unchanged for an
   // Admin authoring an original master script (fixedLanguage unset) — this remains
   // their only way to write or fix that text at all.
-  const topScriptLocked = doneLocked || busy || (!!segments && editingLocked) || !!fixedLanguage;
+  //
+  // Per Enda (2026-11-05) — the one deliberate exception, RTL clones only: Enda asked for a
+  // box an RTL narrator can actually WRITE their translation in while the English original
+  // sits read-only above it (OriginalScriptReference). So on a Hebrew/Arabic clone this box
+  // stays editable in the pre-parse stage it's shown in, under the same busy/pass locks as
+  // everything else; the listen-before-edit gates further down are untouched. Every non-RTL
+  // clone stays locked exactly as described above.
+  const topScriptLocked = doneLocked || busy || (!!segments && editingLocked) || (!!fixedLanguage && !rtlClone);
 
   // Per Enda (relaying Anoushka, follow-up 75): "if she is given the opportunity to
   // take a shortcut, temptation will at some stage strike" — the per-line and
@@ -1722,7 +1744,20 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
         // the translation and any other unrelated draft.
         // Locked the same way every other segments-mutating control here is.
         disabled={passLocked}
+        // Per Enda (2026-11-05): reports the English master script up, for the read-only
+        // reference box below (RTL clones only).
+        onSourceTextChange={setOriginalText}
       />
+
+      {/* Per Enda (2026-11-05), RTL clones only: the English master text, read-only, directly
+          above the RTL script box — so a Hebrew/Arabic narrator can compare the two while
+          writing or fixing the translation. Shown at every stage (before the first parse and
+          through the per-part editing below) because comparing is exactly what's needed in
+          both. "Remove original" clears it for the rest of this waypoint once the narrator is
+          happy with their translation — the translated text below is untouched either way. */}
+      {rtlClone && !originalHidden && originalText.trim() && (
+        <OriginalScriptReference text={originalText} onRemove={() => setOriginalHidden(true)} />
+      )}
 
       {/* Insert break tags at cursor, and the top script textarea itself, just below.
           Per Enda (follow-up 75): for a translation clone, once a pass exists, this
