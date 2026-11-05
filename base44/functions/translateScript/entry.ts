@@ -283,6 +283,17 @@ ${promptText}`;
         { role: 'user', content: prompt },
       ],
       temperature: 0.3,
+      // Per Enda's Hebrew report (2026-11-05): gpt-oss-120b is a REASONING model — its
+      // internal reasoning trace is charged against the SAME max_tokens allowance as the
+      // answer itself (Groq's own docs: "the trace shares the completion budget with the
+      // answer", and reasoning_effort low/medium/high is supported by GPT-OSS 120B). With
+      // the field budget below at 1200, a long "About this walk" text translated into
+      // Hebrew — which expands noticeably and is tokenised less compactly than English —
+      // could spend the entire allowance on reasoning and come back with an EMPTY answer
+      // and finish_reason "length". That was this bug: not a rate limit, not a bad key,
+      // just a budget too tight for reasoning + text. 'low' is ample for translating a
+      // short piece of prose, and leaves the rest of the allowance for the translation.
+      reasoning_effort: 'low',
       // Groq's "tokens per minute" rate limit is charged against the FULL max_tokens
       // reservation the moment a request is sent, not just the tokens actually used —
       // so 8000 here alone was already almost the entire org's 8000 TPM allowance,
@@ -294,19 +305,48 @@ ${promptText}`;
       // times that much headroom while comfortably fitting under an 8000 TPM ceiling
       // alongside the prompt/instruction overhead. A title is at most a handful of
       // words, so 200 is ample and keeps a title request cheap against the same budget.
-      max_tokens: titleOnly ? 200 : field ? 1200 : 4000,
+      max_tokens: titleOnly ? 400 : field ? 2500 : 4000,
     });
 
     let finalText: string;
     let usedGoogleFallback = false;
 
-    if (result.ok) {
-      const translatedText = result.data?.choices?.[0]?.message?.content;
-      if (!translatedText) {
-        return Response.json({ error: 'No translation returned' }, { status: 500 });
+    // Every Google fallback attempt goes through here, so it can be reached from BOTH
+    // failure shapes: Groq rate-limited, and Groq answering 200 with no text at all (see
+    // the empty-answer branch below). Returns null when it isn't configured or itself fails,
+    // with the reason kept in googleFailure for the message the narrator ends up seeing.
+    let googleFailure = '';
+    const tryGoogleFallback = async (): Promise<string | null> => {
+      if (!(googleApiKey && googleApiKey.trim() && target_lang_code)) return null;
+      const googleResult = await translateWithGoogle([promptText], target_lang_code, googleApiKey, (titleOnly || field) ? 'text' : 'html');
+      if (!googleResult.ok || !googleResult.translations?.[0]) {
+        googleFailure = googleResult.error || 'unknown error';
+        return null;
       }
-      finalText = translatedText.trim();
-    } else if (result.rateLimited && googleApiKey && googleApiKey.trim() && target_lang_code) {
+      usedGoogleFallback = true;
+      return googleResult.translations[0].trim();
+    };
+
+    if (result.ok) {
+      const choice = result.data?.choices?.[0];
+      const translatedText = (choice?.message?.content || '').trim();
+      if (translatedText) {
+        finalText = translatedText;
+      } else {
+        // Groq answered successfully but with NO text — this is what a reasoning model
+        // looks like when it ran out of budget before writing anything (finish_reason
+        // "length"), and it's the failure Enda hit on the Hebrew KIS translation. The
+        // Google fallback still produces a usable translation, so try it before failing.
+        const googleText = await tryGoogleFallback();
+        if (googleText) {
+          finalText = googleText;
+        } else {
+          return Response.json({
+            error: `The translation came back empty — the model used up its whole output allowance before writing any ${target_language} text${choice?.finish_reason === 'length' ? ' (it hit the length limit)' : ''}.${googleFailure ? ` The Google fallback also failed: ${googleFailure}.` : ''} Please try again.`,
+          }, { status: 500 });
+        }
+      }
+    } else if (result.rateLimited) {
       // Per Enda: "use the Groq key whenever possible, but if that jams, switch to the
       // Google key" — reached only after every configured Groq key came back rate-limited
       // (see groqKeyRotation.ts). format='html' tells Google to treat <break> tags as
@@ -315,17 +355,16 @@ ${promptText}`;
       // by instruction. Foreign-script name preservation (rule 2) has no equivalent
       // structural guarantee here, so the same best-effort check below still applies. A
       // title has no <break> tags to worry about, so plain 'text' format is used for it.
-      const googleResult = await translateWithGoogle([promptText], target_lang_code, googleApiKey, (titleOnly || field) ? 'text' : 'html');
-      if (!googleResult.ok || !googleResult.translations?.[0]) {
+      const googleText = await tryGoogleFallback();
+      if (!googleText) {
         const groqWaitHint = result.retryAfterMs
           ? ` Groq says to wait about ${Math.ceil(result.retryAfterMs / 1000)}s before trying again${apiKeys.length > 1 ? ' (both configured keys are currently rate-limited)' : ''}.`
           : '';
         return Response.json({
-          error: `Groq is rate-limited,${groqWaitHint} and the Google fallback also failed: ${googleResult.error || 'unknown error'}.`,
+          error: `Groq is rate-limited,${groqWaitHint}${googleFailure ? ` and the Google fallback also failed: ${googleFailure}.` : ' and no Google fallback is configured for your account.'}`,
         }, { status: 500 });
       }
-      finalText = googleResult.translations[0].trim();
-      usedGoogleFallback = true;
+      finalText = googleText;
     } else {
       // A rate limit with no Google fallback configured, or a real (non-rate-limit) Groq
       // error — a different key/provider wouldn't fix the latter, so this is reported
