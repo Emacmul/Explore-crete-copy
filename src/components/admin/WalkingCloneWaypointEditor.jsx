@@ -4,6 +4,7 @@ import AutoGrowTextarea from '@/components/admin/AutoGrowTextarea';
 import { Button } from '@/components/ui/button';
 import { setWaypointCaption } from '@/lib/waypointImages';
 import WaypointCaptionEditor from '@/components/admin/WaypointCaptionEditor';
+import OriginalWaypointReference from '@/components/admin/OriginalWaypointReference';
 
 // Per Enda (2026-10-22): the editor no longer translates on mount — ALL translation
 // (tour-level fields + every waypoint name/description) is done in ONE parallel batch
@@ -13,7 +14,14 @@ import WaypointCaptionEditor from '@/components/admin/WaypointCaptionEditor';
 // own "Translate" buttons (WalkEditor's General tab) cover any field the batch didn't
 // finish. No "Preparing…" indicator, no per-field saves, no flicker between
 // "saved" / "unsaved" as fields trickle in.
-export default function WalkingCloneWaypointEditor({ walk, onChange, onAutoSave }) {
+// Per Enda (2026-11-05): each stop now also shows the MASTER tour's English name and
+// description, read-only, directly above the editable translated ones — a Walk/Hike clone
+// arrives fully translated, so without this the narrator had only the translation on screen
+// and nothing to check it against. `masterWaypoints` comes from WalkEditor's own masterWalk
+// (getWalksForBackend already returns exactly name/description for a narrator's own walking
+// master); matched by index, which is how clone creation and its translation batch preserve
+// the waypoint list.
+export default function WalkingCloneWaypointEditor({ walk, onChange, onAutoSave, masterWaypoints = null }) {
   const locked = !!walk.finished;
   const update = (index, field, value) => onChange(walk.waypoints.map((wp, i) => i === index ? { ...wp, [field]: value } : wp));
   return <div className="space-y-4">
@@ -22,6 +30,7 @@ export default function WalkingCloneWaypointEditor({ walk, onChange, onAutoSave 
     {!walk.waypoints.length && <p className="text-sm text-slate-400">This walk has no waypoints.</p>}
     {walk.waypoints.map((wp, index) => <section key={index} className="rounded-lg border border-slate-600 bg-slate-800 p-4 space-y-3">
       <h3 className="font-medium text-white">{wp.segment_id || `Waypoint ${index + 1}`}</h3>
+      <OriginalWaypointReference original={masterWaypoints ? masterWaypoints[index] || null : null} />
       <label className="block text-sm text-slate-300">Name<Input aria-label={`Waypoint ${index + 1} name`} value={wp.name || ''} disabled={locked} onChange={event => update(index, 'name', event.target.value)} className="bg-slate-700 border-slate-600 text-white" /></label>
       <label className="block text-sm text-slate-300">Description<AutoGrowTextarea aria-label={`Waypoint ${index + 1} description`} value={wp.description || ''} disabled={locked} onChange={event => update(index, 'description', event.target.value)} rows={3} className="bg-slate-700 border-slate-600 text-white" /></label>
       <WaypointCaptionEditor

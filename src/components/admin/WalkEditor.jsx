@@ -5,7 +5,8 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Save, Loader2, Pencil, Check, X, Upload, FileUp, CheckCircle2, AlertTriangle, FileDown, RefreshCw, Send, EyeOff, Languages, ChevronDown, Images } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Pencil, Check, X, Upload, FileUp, CheckCircle2, AlertTriangle, FileDown, RefreshCw, Send, EyeOff, Languages, ChevronDown, Images, FileText } from 'lucide-react';
+import { isRtlLanguage } from '@/lib/textDirection';
 import { base44 } from '@/api/base44Client';
 import { LANGUAGE_CODE_BY_NAME, getGoogleTranslateCode } from '@/lib/i18n';
 import { getFnErrorMessage } from '@/lib/utils';
@@ -307,6 +308,30 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
             </span>
           )}
         </div>
+        {/* Per Enda (2026-11-05): a Hebrew/Arabic narrator sees this box already filled with
+            the auto-translated text and nothing to check it against. Read-only English
+            original, straight from the master tour, directly above the editable box — same
+            idea as the waypoint reference in WalkingCloneWaypointEditor. Scoped to RTL clones
+            because that's the flow that arrives pre-translated with no other trace of the
+            English; `masterWalk` is best-effort (see its own comment) so a missing master
+            just shows a short note instead of an empty gap. */}
+        {isRtlLanguage(form.target_language) && (
+          <div className="rounded-md border border-slate-600/60 bg-slate-900/70 p-2 space-y-1">
+            <div className="flex items-center gap-2">
+              <FileText className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span className="text-slate-300 text-xs font-medium">
+                Original English (reference only — cannot be edited)
+              </span>
+            </div>
+            {!masterWalk ? (
+              <p className="text-xs text-slate-500">The English original could not be loaded.</p>
+            ) : String(masterWalk[field] || '').trim() ? (
+              <p dir="ltr" className="text-xs text-slate-400 whitespace-pre-wrap">{masterWalk[field]}</p>
+            ) : (
+              <p className="text-xs text-slate-500">No English text is stored for this field.</p>
+            )}
+          </div>
+        )}
         <AutoGrowTextarea
           value={form[field] || ''}
           onChange={e => set(field, e.target.value)}
@@ -2313,7 +2338,7 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
         {activeTab === 'waypoints' && (
           <div className="space-y-4">
             {form.clone_of && !isDrivingAudioTour ? (
-              <WalkingCloneWaypointEditor walk={form} onChange={wps => set('waypoints', wps)} onAutoSave={requestAutoSave} />
+              <WalkingCloneWaypointEditor walk={form} onChange={wps => set('waypoints', wps)} onAutoSave={requestAutoSave} masterWaypoints={masterWalk?.waypoints || null} />
             ) : isDrivingAudioTour ? (
               <DrivingTourWaypointEditor
                 waypoints={form.waypoints}
