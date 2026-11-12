@@ -67,6 +67,18 @@ export default async function(req) {
         // the `actor.kind === 'admin'` branch above and gets the full,
         // unredacted `all` list instead.
         admin_completed: w.admin_completed,
+        // The English text a narrator translates stays visible to them: the two General-tab
+        // boxes (About this walk / Before You Set Off) and the four spoken system messages of
+        // a walkabout/driveabout are shown read-only beside her translation (per the Hebrew
+        // narrator's request, 2026-11-12). Without them the reference panels were found but
+        // empty — "No English text is stored for this field." All six are customer-facing
+        // text, never route or admin data, so nothing sensitive is added here.
+        description: w.description,
+        safety_notes: w.safety_notes,
+        off_route_text: w.off_route_text,
+        gps_no_signal_text: w.gps_no_signal_text,
+        gps_low_accuracy_text: w.gps_low_accuracy_text,
+        speed_hint_text: w.speed_hint_text,
         ...(ownWalkingMasterIds.has(w.id) ? { waypoints: (w.waypoints || []).map(wp => ({ name: wp.name || '', description: wp.description || '' })) } : {}),
       }));
 
