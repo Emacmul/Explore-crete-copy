@@ -26,7 +26,6 @@ function escapeSsmlText(text: string): string {
   return result;
 }
 
-
 Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
