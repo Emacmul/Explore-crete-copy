@@ -11,6 +11,7 @@ import { parseScript, rebuildScript, countCharacters, countBreaks } from '@/lib/
 import TtsSegmentCard from './TtsSegmentCard';
 import TranslationPanel from './TranslationPanel';
 import OriginalScriptReference from './OriginalScriptReference';
+import { useEnglishReferenceHidden } from '@/lib/englishReference';
 import { isRtlLanguage } from '@/lib/textDirection';
 import PronunciationCheckPanel from './PronunciationCheckPanel';
 import AudioPlayer from '@/components/ui/AudioPlayer';
@@ -455,11 +456,16 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
   // TranslationPanel, read-only on screen), shown above the RTL script box; `originalHidden`
   // is the narrator's own "I'm happy with this" — they remove the reference and keep only
   // their translation. Scoped to RTL clones only: every other language keeps the previous
-  // behaviour untouched. State lives here rather than in the panel because this component is
-  // remounted per waypoint, so a fresh waypoint always starts with its own reference.
+  // behaviour untouched.
+  //
+  // Per the Hebrew narrator's request (2026-11-12): "remove the original" now clears the
+  // English for the WHOLE clone, not just the stop on screen — this component is remounted
+  // per waypoint, so the old per-stop flag brought the English straight back at the next
+  // stop, and there was no point at which the clone was actually clear of it. The flag is
+  // shared with EnglishReferenceBar (WalkEditor's tabs), so one click settles every stop.
   const rtlClone = !!fixedLanguage && isRtlLanguage(fixedLanguage);
   const [originalText, setOriginalText] = useState('');
-  const [originalHidden, setOriginalHidden] = useState(false);
+  const [originalHidden, setOriginalHidden] = useEnglishReferenceHidden(currentWalkId);
   const [originalLoading, setOriginalLoading] = useState(false);
 
   // Per Enda (2026-11-05): the reference box only ever filled up when the panel below
@@ -1784,9 +1790,10 @@ export default function NarrationTtsEditor({ script, audioUrl, onScriptChange, o
           through the per-part editing below) because comparing is exactly what's needed in
           both, and shown even while it's still loading or when the master has no English
           text for this stop — the earlier "only once text has arrived" version made the whole
-          feature invisible on exactly those waypoints. "Remove original" clears it for the
-          rest of this waypoint once the narrator is happy with their translation — the
-          translated text below is untouched either way. */}
+          feature invisible on exactly those waypoints. "Remove original" now clears the
+          English for every stop of the clone at once (see the shared flag above) — the
+          translated text below is untouched either way, and EnglishReferenceBar in the
+          editor's tabs can bring it back. */}
       {rtlClone && !originalHidden && (
         <OriginalScriptReference text={originalText} loading={originalLoading} onRemove={() => setOriginalHidden(true)} />
       )}

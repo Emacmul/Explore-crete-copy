@@ -1095,6 +1095,11 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
 
                         {/* Editable: Narration Script & TTS */}
                         <NarrationTtsEditor
+                          // Per the Hebrew narrator's request (2026-11-12): without the
+                          // clone's own id, NarrationTtsEditor can neither fetch this stop's
+                          // English master script nor clear the English reference for the
+                          // whole tour — a walkabout/driveabout clone had no reference at all.
+                          currentWalkId={walkId}
                           script={wp.narration_script || ''}
                           audioUrl={wp.audio_clip_url || ''}
                           onScriptChange={(val) => updateWaypoint(index, 'narration_script', val)}
@@ -1218,6 +1223,9 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
 
                         {/* Narration Script & TTS generation */}
                         <NarrationTtsEditor
+                          // Same as the narrator branch above — the clone's own id, so the
+                          // English reference and its one-time removal behave identically.
+                          currentWalkId={walkId}
                           script={wp.narration_script || ''}
                           audioUrl={wp.audio_clip_url || ''}
                           onScriptChange={(val) => updateWaypoint(index, 'narration_script', val)}

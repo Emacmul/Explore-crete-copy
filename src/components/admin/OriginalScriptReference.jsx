@@ -35,7 +35,7 @@ export default function OriginalScriptReference({ text, loading = false, onRemov
             variant="ghost"
             onClick={onRemove}
             className="ml-auto h-6 px-2 text-xs gap-1 text-slate-400 hover:text-red-300 hover:bg-red-900/30"
-            title="Remove this after you're happy with the translation"
+            title="Removes the English original from this whole tour, at every stop — do this once the complete translation is finished. You can bring it back from the bar above the tabs."
           >
             <Trash2 className="w-3 h-3" /> Remove original
           </Button>

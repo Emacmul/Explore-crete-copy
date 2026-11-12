@@ -7,6 +7,9 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, Save, Loader2, Pencil, Check, X, Upload, FileUp, CheckCircle2, AlertTriangle, FileDown, RefreshCw, Send, EyeOff, Languages, ChevronDown, Images, FileText } from 'lucide-react';
 import { isRtlLanguage } from '@/lib/textDirection';
+import { useEnglishReferenceHidden } from '@/lib/englishReference';
+import EnglishReferenceBar from './EnglishReferenceBar';
+import OriginalEnglishText from './OriginalEnglishText';
 import { base44 } from '@/api/base44Client';
 import { LANGUAGE_CODE_BY_NAME, getGoogleTranslateCode } from '@/lib/i18n';
 import { getFnErrorMessage } from '@/lib/utils';
@@ -115,6 +118,11 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
   // allWalks may not (yet) include the master on a very fresh clone, in which case the
   // warning simply doesn't show rather than showing something wrong.
   const masterWalk = form.clone_of ? allWalks.find(w => w.id === form.clone_of) : null;
+  // Per the Hebrew narrator's request (2026-11-12): the English original stays beside her
+  // translation on every tab of a clone until she removes it from the whole clone, in one
+  // action (EnglishReferenceBar). This is the same flag the waypoint and script reference
+  // panels read, so one click clears it everywhere.
+  const [englishReferenceHidden] = useEnglishReferenceHidden(form.id);
   const [saving, setSaving] = useState(false);
   // Per Enda's follow-up 39 report: a full morning of editing BOR1 (scripts, audio,
   // "Mark Waypoint as Done") never reached the server. "Save this line" and "Mark
@@ -308,29 +316,13 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
             </span>
           )}
         </div>
-        {/* Per Enda (2026-11-05): a Hebrew/Arabic narrator sees this box already filled with
-            the auto-translated text and nothing to check it against. Read-only English
-            original, straight from the master tour, directly above the editable box — same
-            idea as the waypoint reference in WalkingCloneWaypointEditor. Scoped to RTL clones
-            because that's the flow that arrives pre-translated with no other trace of the
-            English; `masterWalk` is best-effort (see its own comment) so a missing master
-            just shows a short note instead of an empty gap. */}
-        {isRtlLanguage(form.target_language) && (
-          <div className="rounded-md border border-slate-600/60 bg-slate-900/70 p-2 space-y-1">
-            <div className="flex items-center gap-2">
-              <FileText className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <span className="text-slate-300 text-xs font-medium">
-                Original English (reference only — cannot be edited)
-              </span>
-            </div>
-            {!masterWalk ? (
-              <p className="text-xs text-slate-500">The English original could not be loaded.</p>
-            ) : String(masterWalk[field] || '').trim() ? (
-              <p dir="ltr" className="text-xs text-slate-400 whitespace-pre-wrap">{masterWalk[field]}</p>
-            ) : (
-              <p className="text-xs text-slate-500">No English text is stored for this field.</p>
-            )}
-          </div>
+        {/* Per Enda (2026-11-05): a Hebrew/Arabic narrator sees this box already filled
+            with the auto-translated text and nothing to check it against — the read-only
+            English original from the master tour sits directly above the editable box.
+            Per the Hebrew narrator's request (2026-11-12) it stays on screen until she
+            removes it from the whole clone — see EnglishReferenceBar. */}
+        {isRtlLanguage(form.target_language) && !englishReferenceHidden && (
+          <OriginalEnglishText text={masterWalk?.[field]} unavailable={!masterWalk} />
         )}
         <AutoGrowTextarea
           value={form[field] || ''}
@@ -1652,6 +1644,10 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
           </button>
         ))}
       </div>
+
+      {/* The English original's one remove/restore control — under the tabs, so it is on
+          screen in every tab of a walk, walkabout or driveabout clone. */}
+      {form.clone_of && isRtlLanguage(form.target_language) && <EnglishReferenceBar walkId={form.id} />}
 
       {/* Tab content */}
       <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">

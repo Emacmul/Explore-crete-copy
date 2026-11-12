@@ -7,6 +7,9 @@ import { translateWalkField, stillMatchesMaster } from '@/lib/fieldTranslation';
 import { blobToBase64 } from '@/lib/audioCombiner';
 import { base44 } from '@/api/base44Client';
 import { getFnErrorMessage } from '@/lib/utils';
+import { isRtlLanguage } from '@/lib/textDirection';
+import { useEnglishReferenceHidden } from '@/lib/englishReference';
+import OriginalEnglishText from '@/components/admin/OriginalEnglishText';
 
 // Per Enda (follow-up, 2026-09-22): the spoken off-route/GPS/speed alerts use the
 // phone's own built-in robotic voice (browser speechSynthesis, English-only) — "sound
@@ -30,6 +33,7 @@ const MESSAGES = [
 ];
 
 export default function SystemMessagesPanel({ form, set, masterWalk }) {
+  const [referenceHidden] = useEnglishReferenceHidden(form.id);
   const { keys: apiKeys } = useNarratorApiKeys();
   const [translating, setTranslating] = useState(null); // field currently translating, or null
   const [importing, setImporting] = useState(null); // field currently uploading an imported .wav, or null
@@ -153,6 +157,17 @@ export default function SystemMessagesPanel({ form, set, masterWalk }) {
                 </span>
               )}
             </div>
+            {/* Per the Hebrew narrator's request (2026-11-12): these four spoken alerts are
+                part of a walkabout/driveabout clone's translation, so the English original
+                stays beside each one until she removes it from the whole clone (see
+                EnglishReferenceBar in WalkEditor's tabs). */}
+            {isRtlLanguage(form.target_language) && !referenceHidden && (
+              <OriginalEnglishText
+                text={masterWalk?.[field]}
+                unavailable={!masterWalk}
+                empty="No English text is stored for this message."
+              />
+            )}
             <AutoGrowTextarea
               value={form[field] || ''}
               onChange={e => {

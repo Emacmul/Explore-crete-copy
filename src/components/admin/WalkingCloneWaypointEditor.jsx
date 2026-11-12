@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { setWaypointCaption } from '@/lib/waypointImages';
 import WaypointCaptionEditor from '@/components/admin/WaypointCaptionEditor';
 import OriginalWaypointReference from '@/components/admin/OriginalWaypointReference';
+import { useEnglishReferenceHidden } from '@/lib/englishReference';
 
 // Per Enda (2026-10-22): the editor no longer translates on mount — ALL translation
 // (tour-level fields + every waypoint name/description) is done in ONE parallel batch
@@ -23,6 +24,10 @@ import OriginalWaypointReference from '@/components/admin/OriginalWaypointRefere
 // the waypoint list.
 export default function WalkingCloneWaypointEditor({ walk, onChange, onAutoSave, masterWaypoints = null }) {
   const locked = !!walk.finished;
+  // Per the Hebrew narrator's request (2026-11-12): the English stays beside every stop
+  // until she removes it from the whole clone (EnglishReferenceBar in WalkEditor) — one
+  // switch, every stop, no clearing it stop by stop.
+  const [referenceHidden] = useEnglishReferenceHidden(walk.id);
   const update = (index, field, value) => onChange(walk.waypoints.map((wp, i) => i === index ? { ...wp, [field]: value } : wp));
   return <div className="space-y-4">
     <p className="text-sm text-slate-300">Review and edit the translated waypoint names and descriptions. Locations, codes and photos remain unchanged.</p>
@@ -30,7 +35,7 @@ export default function WalkingCloneWaypointEditor({ walk, onChange, onAutoSave,
     {!walk.waypoints.length && <p className="text-sm text-slate-400">This walk has no waypoints.</p>}
     {walk.waypoints.map((wp, index) => <section key={index} className="rounded-lg border border-slate-600 bg-slate-800 p-4 space-y-3">
       <h3 className="font-medium text-white">{wp.segment_id || `Waypoint ${index + 1}`}</h3>
-      <OriginalWaypointReference original={masterWaypoints ? masterWaypoints[index] || null : null} />
+      {!referenceHidden && <OriginalWaypointReference original={masterWaypoints ? masterWaypoints[index] || null : null} />}
       <label className="block text-sm text-slate-300">Name<Input aria-label={`Waypoint ${index + 1} name`} value={wp.name || ''} disabled={locked} onChange={event => update(index, 'name', event.target.value)} className="bg-slate-700 border-slate-600 text-white" /></label>
       <label className="block text-sm text-slate-300">Description<AutoGrowTextarea aria-label={`Waypoint ${index + 1} description`} value={wp.description || ''} disabled={locked} onChange={event => update(index, 'description', event.target.value)} rows={3} className="bg-slate-700 border-slate-600 text-white" /></label>
       <WaypointCaptionEditor
