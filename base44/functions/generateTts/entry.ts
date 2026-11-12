@@ -79,7 +79,16 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'No Google TTS API key found for your account. Add your own key under "API Keys" in the Admin Panel header.' }, { status: 400 });
     }
 
-    const escapedText = escapeSsmlText(text.trim());
+    // A break tag at the VERY START of a stop's script is dead air, not pacing: the clip
+    // is played the moment its waypoint triggers, so a leading <break time="3s"/> means
+    // three seconds of silence before the narration starts — the trigger point is exactly
+    // right, but the voice "kicks in way too late" (Enda's BOR1b report, 2026-11-12,
+    // whose script opens with exactly that tag). Pauses BETWEEN sentences are untouched;
+    // only a break with nothing spoken before it is dropped. A script that is nothing but
+    // breaks keeps them rather than synthesising silence.
+    const escapedRaw = escapeSsmlText(text.trim());
+    const strippedLeading = escapedRaw.replace(/^(?:\s*<break\s+time="[\d.]+s"\s*\/>\s*)+/i, '').trim();
+    const escapedText = strippedLeading || escapedRaw;
 
     // Pronunciation (Enda, 2026-11-05): the script text is deliberately left EXACTLY as
     // written, with no IPA added — the finished narration is recorded by the ElevenLabs PCV,
