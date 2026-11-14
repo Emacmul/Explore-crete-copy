@@ -117,24 +117,25 @@ function FitBounds({ trailPath, waypoints }) {
 
 
 
-const trailDot = (mode) => L.divIcon({
+// 20px hit area around a 13px dot: dragging a 13px circle with a mouse was fiddly, and the
+// whole point of this editor is now grabbing a dot and moving it.
+const trailDot = (mode, highlight) => L.divIcon({
   className: '',
-  html: `<div style="width:13px;height:13px;border-radius:50%;background:${mode === 'delete' ? '#ef4444' : '#f59e0b'};border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.5);cursor:${mode === 'delete' ? 'pointer' : 'move'}"></div>`,
-  iconSize: [13, 13],
-  iconAnchor: [6.5, 6.5],
+  html: `<div style="width:20px;height:20px;display:flex;align-items:center;justify-content:center;cursor:${mode === 'delete' ? 'pointer' : 'grab'}"><div style="width:13px;height:13px;border-radius:50%;background:${highlight ? '#22c55e' : mode === 'delete' ? '#ef4444' : '#f59e0b'};border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.5)"></div></div>`,
+  iconSize: [20, 20],
+  iconAnchor: [10, 10],
 });
 
-// Below this zoom, individual GPS points are too close together to usefully click or
-// drag anyway, and long imports (a full driving route easily has several thousand raw
-// points) made zooming unusable when every single one was a real Leaflet marker —
-// Leaflet has to reposition every mounted marker on every zoom/pan frame. Point markers
-// only mount once you're zoomed in this far, and even then only for points inside the
-// current view (+30% padding so they don't pop in/out right at the edge while panning).
-// Add/Delete/Cut all still work fully zoomed out — click-to-add, box-delete and
-// segment-cut are all position/geometry-based, not marker-based.
-const POINT_MARKER_MIN_ZOOM = 15;
+// Every point in the current view is draggable, at any zoom — fixing a route is mostly
+// "drag this dot off the fence and back onto the path", and having no grabbable dot until
+// you happened to zoom past a hidden threshold read as "dragging doesn't work". A long
+// imported route can carry thousands of raw points though, so only points in view (+30%
+// padding, so they don't pop in/out at the edge while panning) are mounted, capped at
+// MAX_POINT_MARKERS: on a huge route zoomed out, every nth point is shown (the hint under
+// the map says when that's happening) and zooming in brings the rest back at full detail.
+const MAX_POINT_MARKERS = 250;
 
-function PointMarkers({ trailPath, mode, onMove, onDeleteClick }) {
+function PointMarkers({ trailPath, mode, onMove, onDeleteClick, highlightIndex }) {
   const map = useMap();
   const [view, setView] = useState(() => ({ zoom: map.getZoom(), bounds: map.getBounds() }));
   useMapEvents({
@@ -142,14 +143,25 @@ function PointMarkers({ trailPath, mode, onMove, onDeleteClick }) {
     moveend: () => setView({ zoom: map.getZoom(), bounds: map.getBounds() }),
   });
 
-  if (view.zoom < POINT_MARKER_MIN_ZOOM) return null;
+  const visibleIdx = useMemo(() => {
+    const padded = view.bounds.pad(0.3);
+    const inView = [];
+    for (let i = 0; i < trailPath.length; i++) {
+      const p = trailPath[i];
+      if (padded.contains([p.lat, p.lng])) inView.push(i);
+    }
+    const stride = Math.max(1, Math.ceil(inView.length / MAX_POINT_MARKERS));
+    const shown = stride === 1 ? inView : inView.filter((_, k) => k % stride === 0);
+    // Never hide the point that was just added — that's the one being worked on.
+    if (Number.isInteger(highlightIndex) && trailPath[highlightIndex] && !shown.includes(highlightIndex)) {
+      shown.push(highlightIndex);
+    }
+    return shown;
+  }, [view, trailPath, highlightIndex]);
 
-  const padded = view.bounds.pad(0.3);
-  const visibleIdx = [];
-  for (let i = 0; i < trailPath.length; i++) {
-    const p = trailPath[i];
-    if (padded.contains([p.lat, p.lng])) visibleIdx.push(i);
-  }
+  // Delete mode keeps its click-to-remove dots (and its drag-a-box gesture); every other
+  // mode treats a dot as a drag handle.
+  const draggable = mode !== 'delete';
 
   return visibleIdx.map((i) => {
     const p = trailPath[i];
@@ -157,8 +169,8 @@ function PointMarkers({ trailPath, mode, onMove, onDeleteClick }) {
       <Marker
         key={`pt-${i}`}
         position={[p.lat, p.lng]}
-        icon={trailDot(mode)}
-        draggable={mode === 'add'}
+        icon={trailDot(mode, i === highlightIndex)}
+        draggable={draggable}
         eventHandlers={{
           dragend: (e) => {
             const ll = e.target.getLatLng();
@@ -178,6 +190,9 @@ function PointMarkers({ trailPath, mode, onMove, onDeleteClick }) {
 
 export default function TrailPathMapEditor({ trailPath, onChange, trailBreaks = [], onBreaksChange, waypoints = [], initialMode = 'add' }) {
   const [mode, setMode] = useState(initialMode); // 'add' | 'delete' | 'cut'
+  // Index of the point just dropped on the map — shown green so it's obvious where it
+  // landed (and it stays visible even when a very long route is thinning its dots out).
+  const [lastAdded, setLastAdded] = useState(null);
 
   // Toggle a cut at the segment between point idx and point idx+1.
   const toggleBreak = (idx) => {
@@ -187,12 +202,16 @@ export default function TrailPathMapEditor({ trailPath, onChange, trailBreaks = 
     onBreaksChange?.(Array.from(set).sort((a, b) => a - b));
   };
 
+  // Clicking in Add mode drops a point at the clicked spot, slotted in between the two
+  // points of the nearest segment (nearestInsertIndex picks that segment geometrically),
+  // so the line runs through it immediately and it's draggable straight away.
   const insertAt = (latlng) => {
     const idx = nearestInsertIndex(trailPath, latlng);
     const next = [...trailPath];
     next.splice(idx, 0, { lat: latlng.lat, lng: latlng.lng });
     onChange(next);
     onBreaksChange?.(reindexAfterInsert(trailBreaks, idx));
+    setLastAdded(idx);
   };
 
   const movePoint = (index, latlng) => {
@@ -205,6 +224,7 @@ export default function TrailPathMapEditor({ trailPath, onChange, trailBreaks = 
     const next = trailPath.filter((_, i) => i !== index);
     onChange(next);
     onBreaksChange?.(reindexAfterDeleteOne(trailBreaks, index));
+    setLastAdded(null); // indices shifted — the green marker would point at the wrong dot
   };
 
   const rebuildFromWaypoints = () => {
@@ -280,7 +300,7 @@ export default function TrailPathMapEditor({ trailPath, onChange, trailBreaks = 
 
       <p className="text-xs text-slate-400">
         {mode === 'add'
-          ? 'Click anywhere on the map to drop a trail point — it inserts at the nearest spot along the line. Drag any amber dot to move it onto the visible trail.'
+          ? 'Click between two points to drop a new one there (it shows green), then drag any amber dot to move it — the line follows as soon as you let go. Works at any zoom level.'
           : mode === 'delete'
           ? 'Drag on the map to draw a box and delete every point inside it at once — great for clearing a dense surplus. Or click a single red dot to remove just that one. Deleted points also vanish from the Route Path list below.'
           : 'Click any amber line segment to break it — the non-existing link between two trail sections disappears and is shown as a dashed red line. Click the dashed red segment again to rejoin. Use this to remove straight "bridge" lines the import drew across gaps.'}
@@ -290,7 +310,7 @@ export default function TrailPathMapEditor({ trailPath, onChange, trailBreaks = 
         <MapContainer center={center} zoom={14} className="w-full h-full" style={{ minHeight: '420px' }}>
           <ClickToAdd onAdd={insertAt} active={mode === 'add'} />
           <DragController mode={mode} />
-          <BoxDelete active={mode === 'delete'} trailPath={trailPath} onDelete={onChange} trailBreaks={trailBreaks} onBreaksChange={onBreaksChange} />
+          <BoxDelete active={mode === 'delete'} trailPath={trailPath} onDelete={(next) => { onChange(next); setLastAdded(null); }} trailBreaks={trailBreaks} onBreaksChange={onBreaksChange} />
 
           {/* OSM tiles — same base map users see */}
           <TileLayer
@@ -361,7 +381,7 @@ export default function TrailPathMapEditor({ trailPath, onChange, trailBreaks = 
           })()}
 
           {/* Draggable trail points — only mounted once zoomed in enough, see PointMarkers */}
-          <PointMarkers trailPath={trailPath} mode={mode} onMove={movePoint} onDeleteClick={removePoint} />
+          <PointMarkers trailPath={trailPath} mode={mode} onMove={movePoint} onDeleteClick={removePoint} highlightIndex={lastAdded} />
         </MapContainer>
       </div>
 
@@ -370,7 +390,7 @@ export default function TrailPathMapEditor({ trailPath, onChange, trailBreaks = 
         <span className="flex items-center gap-1"><Scissors className="w-3 h-3 text-purple-400" /> Cuts: {(trailBreaks || []).filter(b => Number.isInteger(b) && b >= 0 && b < trailPath.length - 1).length}</span>
         <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full bg-blue-500" /> Waypoints: {waypoints.length}</span>
         {trailPath.length > 500 && (
-          <span className="text-slate-500">Individual points appear once you zoom in closer — this keeps a {trailPath.length.toLocaleString()}-point route responsive.</span>
+          <span className="text-slate-500">This route has {trailPath.length.toLocaleString()} points, so only a thin sample of the dots in view is drawn — zoom in to see and drag every one of them.</span>
         )}
       </div>
     </div>
