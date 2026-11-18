@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useImperativeHandle, forwardRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { Play, Pause, Square, Bug, AlertTriangle, Home, CheckCircle2, Gauge, Map } from 'lucide-react';
+import { Play, Pause, Square, Bug, AlertTriangle, Home, CheckCircle2, Gauge, Map, Camera } from 'lucide-react';
 import * as gpsService from '@/lib/gpsService';
 import * as audioService from '@/lib/audioService';
 import { loadResumeSnapshot, saveResumeSnapshot, touchResumeTime, clearResumeSnapshot } from '@/lib/drivingResume';
@@ -21,6 +21,7 @@ import { startTestLogUpload } from '@/lib/tourLogUpload';
 import TourDebugLog from './TourDebugLog';
 import DrivingPlayerStatusCards from './DrivingPlayerStatusCards';
 import DrivingPlayerMapModal from './DrivingPlayerMapModal';
+import InAppCamera from './InAppCamera';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { useOfflineWalks } from '../offline/useOfflineWalks';
 
@@ -98,6 +99,10 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
   const [showDebug, setShowDebug] = useState(false);
   // Full-screen "Show map" overlay (Enda, 2026-10-24) — see handleShowMap below.
   const [mapOpen, setMapOpen] = useState(false);
+  // In-app camera overlay (Enda, 2026-11-18): taking photos with the phone's own camera app
+  // could lose the running tour entirely on Android. This keeps the customer inside the
+  // app, so the tour's GPS watch, position and narration are untouched while they shoot.
+  const [cameraOpen, setCameraOpen] = useState(false);
   const [gpsAccuracy, setGpsAccuracy] = useState(null);
   // Non-null while GPS has sustained-failed OR sustained-stayed-too-imprecise-to-use (see
   // GPS_ERROR_STREAK_THRESHOLD above) — { kind: 'no_signal' | 'low_accuracy', message }.
@@ -1545,13 +1550,22 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
             driving, above Pause/Resume/Stop. Only offered mid-tour (running or
             paused): before starting there's no position worth orienting on. */}
         {(status === 'running' || status === 'paused') && (
-          <Button
-            onClick={handleShowMap}
-            size="lg"
-            className="w-full gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-base shadow-lg shadow-blue-900/40"
-          >
-            <Map className="w-5 h-5" /> {t('player.showMap')}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={handleShowMap}
+              size="lg"
+              className="flex-1 gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-base shadow-lg shadow-blue-900/40"
+            >
+              <Map className="w-5 h-5" /> {t('player.showMap')}
+            </Button>
+            <Button
+              onClick={() => setCameraOpen(true)}
+              size="lg"
+              className="flex-1 gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-base shadow-lg shadow-indigo-900/40"
+            >
+              <Camera className="w-5 h-5" /> {t('player.camera')}
+            </Button>
+          </div>
         )}
         <div className="flex items-center gap-2">
           {status === 'idle' && !tourComplete && (
@@ -1640,6 +1654,12 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
         <div className="px-4 pb-3">
           <TourDebugLog />
         </div>
+      )}
+
+      {/* In-app camera overlay — fixed-position, renders above everything and leaves the
+          tour running underneath (no pause, no resume prompt on the way back). */}
+      {cameraOpen && (
+        <InAppCamera t={t} onClose={() => setCameraOpen(false)} />
       )}
 
       {/* Full-screen map overlay — fixed-position, so it renders above everything. */}
