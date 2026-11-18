@@ -258,6 +258,10 @@ export const translations = {
     // reading — this makes reading it a deliberate, logged action instead.
     'detail.confirmSafety': "I've Read This — Confirm",
     'detail.safetyConfirmed': "Confirmed — thanks for reading this",
+    // Once confirmed, the long safety text collapses to a single line; these reopen and
+    // re-hide it so it's still there mid-tour if they want to re-read it.
+    'detail.openSafety': "Open safety recommendations",
+    'detail.hideSafety': "Hide",
     'detail.mustConfirmSafetyFirst': "Please confirm you've read \"Before You Set Off\" above before starting.",
     'detail.returnHome': "Return to Home",
     'detail.aboutThisWalk': "About this walk",

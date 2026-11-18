@@ -14,6 +14,7 @@ import { preCacheWalkAudio } from '../offline/offlineStorage';
 import WalkProgressBar from './WalkProgressBar';
 import DrivingModeNotice from './DrivingModeNotice';
 import DrivingTourPlayer from './DrivingTourPlayer';
+import SafetyNotesCard from './SafetyNotesCard';
 import { getWaypointImages, getWaypointCaptions } from '@/lib/waypointImages';
 import WaypointPhotoLightbox from './WaypointPhotoLightbox';
 import WalkPaywall from './WalkPaywall';
@@ -467,6 +468,17 @@ export default function WalkDetail({ walk, onClose, accessible = true, allWalks 
               <DrivingModeNotice />
             )}
 
+            {/* Driving tours: the safety notes come BEFORE the Start Tour panel, since
+                confirming them is what unlocks Start Tour at all. */}
+            {walk.route_type === 'driving_audio_tour' && (
+              <SafetyNotesCard
+                safetyNotes={walk.safety_notes}
+                confirmed={safetyConfirmed}
+                submitting={confirmSubmitting}
+                onConfirm={handleConfirmSafety}
+              />
+            )}
+
             {walk.route_type === 'driving_audio_tour' && (
               <div ref={drivingPlayerWrapRef}>
                 <DrivingTourPlayer ref={driverPlayerRef} walk={walk} safetyConfirmed={safetyConfirmed} onClose={onClose} onStatusChange={setPlayerStatus} />
@@ -563,35 +575,15 @@ export default function WalkDetail({ walk, onClose, accessible = true, allWalks 
               </div>
             )}
 
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <ShieldAlert className="w-5 h-5 text-red-600 shrink-0" />
-                <h3 className="font-bold text-red-700">{t('detail.beforeYouSetOff')}</h3>
-              </div>
-
-              <p className="text-red-700 text-sm leading-relaxed whitespace-pre-line">
-                {walk.safety_notes || t('detail.defaultSafetyNotes')}
-              </p>
-
-              {/* This is the deliberate forcing function: Start Walk/Start Tour won't
-                  activate until this is tapped (see canStart above), and every tap is
-                  logged to the database via logSafetyConfirmation. */}
-              {safetyConfirmed ? (
-                <div className="mt-3 flex items-center gap-2 text-emerald-700 text-sm font-medium">
-                  <CheckCircle2 className="w-4 h-4 shrink-0" />
-                  {t('detail.safetyConfirmed')}
-                </div>
-              ) : (
-                <Button
-                  type="button"
-                  onClick={handleConfirmSafety}
-                  disabled={confirmSubmitting}
-                  className="mt-3 w-full sm:w-auto gap-2 bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
-                >
-                  <CheckCircle2 className="w-4 h-4" /> {t('detail.confirmSafety')}
-                </Button>
-              )}
-            </div>
+            {/* Walk/Hike and WalkAbout: same card, sitting directly above Start Walk. */}
+            {!isDrivingTour && (
+              <SafetyNotesCard
+                safetyNotes={walk.safety_notes}
+                confirmed={safetyConfirmed}
+                submitting={confirmSubmitting}
+                onConfirm={handleConfirmSafety}
+              />
+            )}
 
             {/* Walk/Hike and WalkAbout tours have no equivalent of the driving tour's
                 explicit "Start Tour" button — the interactive part of the tour is now
