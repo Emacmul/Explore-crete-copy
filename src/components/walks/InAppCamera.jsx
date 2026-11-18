@@ -34,8 +34,11 @@ export default function InAppCamera({ onClose, t }) {
         return;
       }
       try {
+        // Ask for the largest frame the phone will hand over. Android Chrome honours this
+        // and takePhoto() below then returns full sensor resolution; iOS Safari caps the
+        // in-app stream at 1080p whatever we ask for.
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 4096 }, height: { ideal: 3072 } },
           audio: false,
         });
         if (cancelled) {
@@ -64,13 +67,31 @@ export default function InAppCamera({ onClose, t }) {
   }, []);
 
   const capture = useCallback(async () => {
-    const video = videoRef.current;
-    if (!video || !video.videoWidth) return;
-    const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    canvas.getContext('2d').drawImage(video, 0, 0);
-    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+    const track = streamRef.current?.getVideoTracks?.()[0];
+    let blob = null;
+
+    // ImageCapture.takePhoto() grabs a still straight off the sensor — full resolution on
+    // the phones that support it (Chrome on Android). Everywhere else (iOS Safari has no
+    // ImageCapture) we fall back to a frame off the live preview.
+    if (track && typeof window.ImageCapture === 'function') {
+      try {
+        const still = new window.ImageCapture(track);
+        if (typeof still.takePhoto === 'function') blob = await still.takePhoto();
+      } catch {
+        blob = null;
+      }
+    }
+
+    if (!blob) {
+      const video = videoRef.current;
+      if (!video || !video.videoWidth) return;
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+      blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.95));
+    }
+
     if (!blob) return;
     const name = `explore-crete-${new Date().toISOString().replace(/[:.]/g, '-')}.jpg`;
     const url = URL.createObjectURL(blob);
