@@ -482,7 +482,19 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
     // radius), and only when this walk actually has a recorded route line to compare
     // against. Some tours (e.g. a brand new one not yet routed) have no trail_path at all —
     // skip entirely rather than guess at "off route" with nothing to measure against.
-    if (walk.trail_path && walk.trail_path.length >= 2 && isFixUsable(accuracy, GPS_ACCURACY_HARD_CAP_M)) {
+    //
+    // Never while the visitor is on foot (Enda, 2026-11-18). The whole point of a DriveAbout
+    // stop like BOR3f is to park and explore Prassies, and that can easily mean a kilometre
+    // from the recorded road — a "you seem to be lost" warning there is simply wrong. The
+    // walking guard already knows when this is a person on foot (20s of unbroken walking
+    // pace, released only by 4 consecutive faster fixes), so while it holds, off-route is
+    // neither declared nor kept: the state clears, and it re-evaluates from scratch once
+    // they are back in the car and actually driving.
+    const onFoot = walkingGuardRef.current.isHolding();
+    if (onFoot) {
+      offRouteStreakRef.current = 0;
+      setOffRoute(false);
+    } else if (walk.trail_path && walk.trail_path.length >= 2 && isFixUsable(accuracy, GPS_ACCURACY_HARD_CAP_M)) {
       const trailDistance = nearestTrailDistanceM(lat, lng, walk.trail_path, walk.trail_breaks);
       if (trailDistance > OFF_ROUTE_DISTANCE_M) {
         offRouteStreakRef.current += 1;
