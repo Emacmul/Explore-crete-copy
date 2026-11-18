@@ -51,9 +51,13 @@ function CenterOnFirstFix({ position }) {
  * currentPos/gpsAccuracy arrive as props from the player's own GPS watch (which stays
  * running while paused), so no second watcher is spawned here.
  */
-export default function DrivingPlayerMapModal({ walk, currentPos, gpsAccuracy, onClose, t }) {
+export default function DrivingPlayerMapModal({ walk, currentPos, gpsAccuracy, focusPoint, onClose, t }) {
   const trailPath = walk?.trail_path || [];
-  const center = currentPos
+  // With no live fix (GPS lost, or the tour stopped), focusPoint is the last stop the
+  // driver actually reached — the map opens there rather than jumping back to the tour's
+  // very start, which is what made "where was I?" unanswerable before.
+  const shownPos = currentPos || focusPoint || null;
+  const center = shownPos
     || (trailPath.length > 0
       ? [trailPath[0].lat, trailPath[0].lng]
       : [Number(walk?.start_lat) || 35.24, Number(walk?.start_lng) || 24.81]);
@@ -84,7 +88,7 @@ export default function DrivingPlayerMapModal({ walk, currentPos, gpsAccuracy, o
             url="https://tile.openstreetmap.de/{z}/{x}/{y}.png"
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           />
-          <CenterOnFirstFix position={currentPos} />
+          <CenterOnFirstFix position={shownPos} />
 
           {splitTrailRuns(trailPath, walk?.trail_breaks).map((run, ri) => run.length > 1 && (
             <Polyline
@@ -94,14 +98,18 @@ export default function DrivingPlayerMapModal({ walk, currentPos, gpsAccuracy, o
             />
           ))}
 
-          {currentPos && (
+          {shownPos && (
             <>
-              <Circle
-                center={currentPos}
-                radius={gpsAccuracy || 20}
-                pathOptions={{ color: '#2563eb', fillColor: '#2563eb', fillOpacity: 0.1, weight: 1 }}
-              />
-              <Marker position={currentPos} icon={positionIcon} zIndexOffset={1000} />
+              {/* Accuracy circle only for a real live fix — a stale "last known" point has
+                  no accuracy to draw. */}
+              {currentPos && (
+                <Circle
+                  center={currentPos}
+                  radius={gpsAccuracy || 20}
+                  pathOptions={{ color: '#2563eb', fillColor: '#2563eb', fillOpacity: 0.1, weight: 1 }}
+                />
+              )}
+              <Marker position={shownPos} icon={positionIcon} zIndexOffset={1000} />
             </>
           )}
         </MapContainer>

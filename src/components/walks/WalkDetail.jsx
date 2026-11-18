@@ -5,7 +5,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   X, Clock, Route, TrendingUp, MapPin, AlertTriangle,
   Eye, Droplets, TreePine, Navigation, Crosshair, ShieldAlert,
-  CheckCircle2, Circle, RotateCcw, Mountain, Play, FlaskConical, Home, ChevronRight
+  CheckCircle2, Circle, RotateCcw, Mountain, FlaskConical, Home, ChevronRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import WalkDetailMap from '../map/WalkDetailMap';
@@ -169,22 +169,6 @@ export default function WalkDetail({ walk, onClose, accessible = true, allWalks 
   // signal) AND the safety notes actively confirmed (so it's a genuine, logged read, not
   // just something scrolled past).
   const canStart = savedOffline && safetyConfirmed;
-
-  // Handle onto DrivingTourPlayer's playWaypoint, so the manual "Play" button on each Tour
-  // Stop below can trigger that stop's narration directly — see the comment on
-  // DrivingTourPlayer's forwardRef for why: a GPS problem should never leave a driver with
-  // no way to hear a clip that didn't auto-trigger. manuallyPlayedKeys is purely this list's
-  // own "tapped" feedback (turns the button into a checkmark) — DrivingTourPlayer tracks the
-  // real triggered/played state itself; this is just so the driver can see the tap worked.
-  const driverPlayerRef = React.useRef(null);
-  // The player reports whether the tour is running, so the per-stop Play buttons can stay off until
-  // Start has really been pressed. (They used to depend on a flag that only Walk/Hike tours ever set,
-  // so on WalkAbouts and DriveAbouts they never appeared at all.)
-  const [playerStatus, setPlayerStatus] = React.useState('idle');
-  const [manuallyPlayedKeys, setManuallyPlayedKeys] = React.useState(new Set());
-  React.useEffect(() => {
-    setManuallyPlayedKeys(new Set());
-  }, [walk?.id]);
 
   // Per Enda (2026-09-27): waypoint photos were shown as static thumbnails only.
   // A customer mid-tour needs to tap one for a closer look — it opens as a
@@ -481,7 +465,7 @@ export default function WalkDetail({ walk, onClose, accessible = true, allWalks 
 
             {walk.route_type === 'driving_audio_tour' && (
               <div ref={drivingPlayerWrapRef}>
-                <DrivingTourPlayer ref={driverPlayerRef} walk={walk} safetyConfirmed={safetyConfirmed} onClose={onClose} onStatusChange={setPlayerStatus} />
+                <DrivingTourPlayer walk={walk} safetyConfirmed={safetyConfirmed} onClose={onClose} />
               </div>
             )}
 
@@ -621,11 +605,17 @@ export default function WalkDetail({ walk, onClose, accessible = true, allWalks 
               </div>
             ) : null}
 
-            {waypoints.length > 0 && (isDrivingTour || effectiveStarted) && (
+            {/* Per Enda (2026-11-18): the Tour Stops list is gone for driving tours. Its
+                per-stop Play buttons duplicated the player's own "Next stop" Play card, and
+                its Start/Stop pills looked like buttons that did nothing when tapped. A
+                driver who loses GPS now taps the "last known position" card in the player to
+                see that spot on the map instead of hunting through a list. Walk/Hike tours
+                keep their Key Points list, which is the progress-tick feature, not this. */}
+            {!isDrivingTour && waypoints.length > 0 && effectiveStarted && (
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <h3 className="font-semibold text-gray-900">
-                    {isDrivingTour ? t('detail.tourStops') : t('detail.keyPoints')}
+                    {t('detail.keyPoints')}
                   </h3>
                   {!isDrivingTour && reachedIds.size > 0 && (
                     <button
@@ -718,39 +708,6 @@ export default function WalkDetail({ walk, onClose, accessible = true, allWalks 
                               <Badge className="text-xs bg-blue-600 hover:bg-blue-600">{t('detail.youWereLastHere')}</Badge>
                             )}
 
-                            {/* Manual "Play" — lets the driver hear this stop's narration on
-                                demand, so a GPS problem (weak signal, wrong angle, a missed
-                                trigger) never leaves them stuck with no way to continue. Only
-                                shown for driving-tour stops that actually have narration.
-                                Per Enda (follow-up 190): this must stay off until Start Tour
-                                has actually been pressed — the Tour Stops list itself is
-                                visible before that (so someone can preview the stops), but
-                                letting them play real narration audio before downloading and
-                                confirming safety was a genuine gap, since `canStart`'s gate on
-                                the Start button did nothing to stop this separate button. */}
-                            {isDrivingTour && (playerStatus === 'running' || playerStatus === 'paused') && waypoint.trigger_audio && waypoint.audio_clip_url && (
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  driverPlayerRef.current?.playWaypoint(waypoint);
-                                  setManuallyPlayedKeys(prev => new Set(prev).add(key));
-                                }}
-                                title={t('detail.playStopTitle')}
-                                className="h-7 gap-1 px-2 border-blue-400 text-blue-600 hover:bg-blue-50"
-                              >
-                                {manuallyPlayedKeys.has(key) ? (
-                                  <>
-                                    <CheckCircle2 className="w-3.5 h-3.5" /> {t('detail.stopPlayed')}
-                                  </>
-                                ) : (
-                                  <>
-                                    <Play className="w-3.5 h-3.5" /> {t('detail.playStop')}
-                                  </>
-                                )}
-                              </Button>
-                            )}
                           </div>
 
                           {waypoint.description && (
@@ -806,6 +763,19 @@ export default function WalkDetail({ walk, onClose, accessible = true, allWalks 
                   <Home className="w-4 h-4" /> {t('detail.returnHome')}
                 </Button>
               </div>
+            )}
+
+            {/* Driving tours: the list is gone, but "Return to Home" still belongs on the
+                page — the player only offers it once the tour is finished. */}
+            {isDrivingTour && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onClose}
+                className="w-full gap-2"
+              >
+                <Home className="w-4 h-4" /> {t('detail.returnHome')}
+              </Button>
             )}
             </>
             ) : (

@@ -322,6 +322,7 @@ export const translations = {
     'player.tourComplete': "🎉 Tour complete!",
     'player.returnHome': "Return to Home",
     'player.lastKnownPosition': "This was your last known position",
+    'player.lastKnownPositionTap': "Tap to see it on the map",
     'player.testFromLocation': "Test from location...",
     'player.testFromLocationNote': "Admin preview: start the live tour at one location. Every earlier stop counts as already played.",
     'player.testFromLocationGo': "Start here",
@@ -364,7 +365,7 @@ export const translations = {
     // audio continuing in the background — that genuinely differs between phones.
     'player.resumeNarration': "Resume narration",
     'player.resumeNarrationNote': "Narration was interrupted — for example by opening the camera or another app. Tap to carry on where it left off.",
-    'player.resumeUnavailable': "That narration clip couldn't be loaded, so it can't be resumed here. Scroll down to the Tour Stops list and tap Play next to the stop you were listening to.",
+    'player.resumeUnavailable': "That narration clip couldn't be loaded, so it can't be resumed here. Tap Play on the next stop card to carry on with the tour.",
 
     'download.savingPct': "Saving {n}%",
     'download.removing': "Removing…",

@@ -1423,12 +1423,20 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
           still here when they come back. */}
       {lastKnownWaypoint && (
         <div className="mx-4 mb-3 flex items-center justify-between gap-3 bg-blue-900/20 border border-blue-700/40 rounded-lg px-3 py-2">
-          <div className="min-w-0">
+          {/* Per Enda (2026-11-18): tapping this card opens the map centred on that last
+              known position — the driver sees exactly where they were instead of hunting
+              through a list of stops. */}
+          <button
+            type="button"
+            onClick={handleShowMap}
+            className="min-w-0 flex-1 text-left rounded-md -mx-1 px-1 py-0.5 hover:bg-blue-900/30"
+          >
             <p className="text-xs text-blue-300">{t('player.lastKnownPosition')}</p>
-            <p className="text-sm font-medium text-blue-100 truncate">
+            <p className="text-sm font-medium text-blue-100 truncate underline decoration-blue-400/60">
               {lastKnownWaypoint.segment_title || lastKnownWaypoint.name}
             </p>
-          </div>
+            <p className="text-xs text-blue-400">{t('player.lastKnownPositionTap')}</p>
+          </button>
           {status === 'idle' && !tourComplete && (
             <Button
               type="button"
@@ -1668,6 +1676,9 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
           walk={walk}
           currentPos={currentPos}
           gpsAccuracy={gpsAccuracy}
+          // Opened from the "last known position" card while GPS is dead: there's no live
+          // fix to centre on, so the map centres on that stop instead of the tour's start.
+          focusPoint={lastKnownWaypoint?.lat && lastKnownWaypoint?.lng ? [lastKnownWaypoint.lat, lastKnownWaypoint.lng] : null}
           t={t}
           onClose={() => setMapOpen(false)}
         />
