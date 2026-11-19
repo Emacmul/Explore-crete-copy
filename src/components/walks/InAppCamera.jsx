@@ -162,9 +162,16 @@ export default function InAppCamera({ onClose, t }) {
             className="absolute inset-0 w-full h-full object-cover"
           />
         )}
-        <p className="absolute top-2 left-0 right-0 px-4 text-center text-xs text-white/80">
-          {t('camera.keepOpen')}
-        </p>
+        {/* Enda (2026-11-19): the old white/80 hairline text over a bright viewfinder was
+            effectively invisible outdoors. This is the one thing on this screen the customer
+            MUST read (their tour is still running underneath), so it now sits on the app's
+            amber warning colour, bold and dark-on-orange — the same colour as the Pause
+            button, so it reads as "the app is still doing something". */}
+        <div className="absolute top-0 left-0 right-0 flex justify-center p-3 pointer-events-none">
+          <p className="max-w-md rounded-lg bg-amber-500 px-3 py-2 text-center text-sm font-bold leading-snug text-amber-950 shadow-lg shadow-black/40">
+            {t('camera.keepOpen')}
+          </p>
+        </div>
       </div>
 
       <div className="bg-black/80 px-4 pt-3 pb-4 space-y-3">

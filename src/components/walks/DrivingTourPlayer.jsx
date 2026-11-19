@@ -1570,20 +1570,22 @@ const DrivingTourPlayer = forwardRef(function DrivingTourPlayer({ walk, safetyCo
             driving, above Pause/Resume/Stop. Only offered mid-tour (running or
             paused): before starting there's no position worth orienting on. */}
         {(status === 'running' || status === 'paused') && (
-          <div className="flex items-center gap-2">
+          /* Two equal columns rather than two flex-1 buttons: a flex row refuses to shrink
+             a button below its own text width (Enda, 2026-11-19 — "Take photos" spilled out
+             of the player on his phone), whereas a grid column can, and whitespace-normal
+             lets a longer translation wrap inside the button instead of pushing it out. */
+          <div className="grid grid-cols-2 gap-2">
             <Button
               onClick={handleShowMap}
-              size="lg"
-              className="flex-1 gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-base shadow-lg shadow-blue-900/40"
+              className="h-auto min-h-12 min-w-0 gap-2 px-2 py-2.5 whitespace-normal text-center leading-tight bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-lg shadow-blue-900/40"
             >
-              <Map className="w-5 h-5" /> {t('player.showMap')}
+              <Map className="w-5 h-5 shrink-0" /> {t('player.showMap')}
             </Button>
             <Button
               onClick={() => setCameraOpen(true)}
-              size="lg"
-              className="flex-1 gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-base shadow-lg shadow-indigo-900/40"
+              className="h-auto min-h-12 min-w-0 gap-2 px-2 py-2.5 whitespace-normal text-center leading-tight bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-lg shadow-indigo-900/40"
             >
-              <Camera className="w-5 h-5" /> {t('player.camera')}
+              <Camera className="w-5 h-5 shrink-0" /> {t('player.camera')}
             </Button>
           </div>
         )}
