@@ -31,11 +31,16 @@ export default function GiftWalkDialog({ appUser, onClose, narrAuth = {} }) {
 
   const selectedWalk = walks.find(w => w.id === walkId);
   const grantable = !!walkId;
-  // A tour that isn't ready to sell yet has no Creem product id, so there is nothing for a
-  // Purchase to key on — it is given as tester access instead (grantTesterAccess): the same
-  // free copy, visible and unlocked for this one person, while the tour stays unpublished
-  // and absent from everyone else's catalogue.
-  const asTesterAccess = !!selectedWalk && !selectedWalk.creem_product_id;
+  // A draft tour is never gifted as a Purchase (per Enda, 2026-11-21), even if a Creem
+  // product id has already been filled in ahead of launch: a Purchase only makes a tour
+  // visible once it is approved, so purchase-gifting a draft would silently give the
+  // tester nothing. Drafts therefore always go through tester access
+  // (grantTesterAccess) — the same free copy, visible and unlocked for this one person,
+  // while the tour stays unpublished and absent from everyone else's catalogue. A
+  // published tour with no product id still needs tester access too, since a Purchase
+  // would have nothing to key on.
+  const needsTesterAccess = (walk) => !!walk && (walk.approved !== true || !walk.creem_product_id);
+  const asTesterAccess = needsTesterAccess(selectedWalk);
 
   const handleGrant = async () => {
     if (!grantable) return;
@@ -86,7 +91,7 @@ export default function GiftWalkDialog({ appUser, onClose, narrAuth = {} }) {
                 <SelectContent>
                   {walks.map(w => (
                     <SelectItem key={w.id} value={w.id}>
-                      {w.name} ({w.code}){w.creem_product_id ? '' : ' — tester access'}
+                      {w.name} ({w.code}){needsTesterAccess(w) ? ' — tester access' : ''}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -94,8 +99,10 @@ export default function GiftWalkDialog({ appUser, onClose, narrAuth = {} }) {
             )}
             {asTesterAccess && (
               <p className="text-xs text-amber-400 mt-1.5">
-                This tour has no Creem product id, so it will be given as tester access: it appears
-                in {appUser.email}'s library only, unlocked, and stays unpublished for everyone else.
+                {selectedWalk?.approved !== true
+                  ? 'This tour is still a draft, so it will be given as tester access: it appears in '
+                  : 'This tour has no Creem product id, so it will be given as tester access: it appears in '}
+                {appUser.email}'s library only, unlocked, and stays unpublished for everyone else.
               </p>
             )}
           </div>

@@ -32,6 +32,14 @@ export default async function(req) {
     if (!walk) {
       return Response.json({ error: 'Walk not found' }, { status: 404 });
     }
+    // An unapproved (draft) tour is never gifted as a Purchase, even with a Creem product id
+    // already filled in ahead of launch (per Enda, 2026-11-21): a Purchase only makes a tour
+    // visible once it is approved, so a purchase-gift on a draft would silently give the
+    // customer nothing. Drafts go through grantTesterAccess, which is both visibility and
+    // entitlement for that one tester.
+    if (walk.approved !== true) {
+      return Response.json({ error: 'This tour is still a draft — gift it as tester access instead.' }, { status: 400 });
+    }
     if (!walk.creem_product_id) {
       return Response.json({ error: 'This walk has no Creem product id set — add one in the Walk editor before granting it.' }, { status: 400 });
     }
