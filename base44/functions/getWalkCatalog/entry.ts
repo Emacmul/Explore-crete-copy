@@ -25,7 +25,6 @@ async function logOnce(base44, note) {
   } catch { /* logging must never break serving */ }
 }
 
-
 // The walk catalogue, collapsed to one STABLE entry per tour (not per language).
 //
 // A translated tour is stored as its own Walk record (a "clone") pointing back at the
