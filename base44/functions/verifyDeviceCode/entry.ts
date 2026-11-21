@@ -15,6 +15,7 @@ export default async function (req: Request): Promise<Response> {
       return Response.json({ error: "Email, password, device_id and code are required" }, { status: 400 });
     }
 
+
     // Normalize for OUR OWN device/session records only (audit re-check, 2026-09-09 —
     // finding U-01) — see loginWithDeviceCheck/entry.ts for the full reasoning. Must match
     // the normalization used there, since this function looks up the SAME challenge/device
