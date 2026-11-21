@@ -177,6 +177,18 @@ export default async function(req) {
       ownedSet = new Set(purchases.filter(p => p.status !== 'revoked').map(p => p.creem_product_id).filter(Boolean));
     }
 
+    // Tester grants (2026-11-21): a free copy of ONE tour given to ONE person, for a tour that
+    // isn't ready to sell yet — so no Creem product id is involved (a Purchase gift keys on
+    // that id, a grant keys on the tour's stable family id). A grant is BOTH visibility and
+    // entitlement for that tester: the tour is listed for them even while it is still a draft,
+    // and served unlocked. It changes nothing for anybody else, and the tour is never for sale.
+    // Admins already see every draft, so the set stays empty for them.
+    let testerFamilyIds = new Set();
+    if (email && !sessionRevoked && !isAdmin) {
+      const grants = await base44.asServiceRole.entities.TesterGrant.filter({ tester_email: email });
+      testerFamilyIds = new Set((Array.isArray(grants) ? grants : []).map(g => g.walk_id).filter(Boolean));
+    }
+
     const all = await base44.asServiceRole.entities.Walk.list('-created_date', 1000);
 
     // ---- Active published versions, grouped per (family, language) pair ----
@@ -230,6 +242,13 @@ export default async function(req) {
       const fid = c.clone_of;
       if (!families.has(fid)) families.set(fid, { original: null, clones: [] });
       families.get(fid).clones.push(c);
+    }
+    // A tester-granted tour is included even when it is still a draft — the grant itself is
+    // the entitlement, so its tester must be able to open it in the real customer app.
+    for (const fid of testerFamilyIds) {
+      if (!families.has(fid) && originalsById.has(fid)) {
+        families.set(fid, { original: originalsById.get(fid), clones: [] });
+      }
     }
     if (!isAdmin) {
       for (const fid of versionsByFamily.keys()) {
@@ -296,6 +315,14 @@ export default async function(req) {
         }
         if (fam.original && !legacyByLang.has('English')) legacyByLang.set('English', fam.original);
 
+        // A tester-granted tour is served from its own working record: the snapshot and
+        // legacy fallbacks only exist for tours that have been published at least once.
+        const testerGranted = testerFamilyIds.has(familyId);
+        if (testerGranted && fam.original) {
+          const l = String(fam.original.target_language || 'English').trim() || 'English';
+          if (!legacyByLang.has(l)) legacyByLang.set(l, fam.original);
+        }
+
         const langs = new Set([...snapshotLangs.keys(), ...legacyByLang.keys()]);
         if (langs.size === 0) continue;
         // Real priority list, same as before the cutover: the caller's narration
@@ -309,7 +336,13 @@ export default async function(req) {
           const version = snapshotLangs.get(l);
           if (version) { served = { lang: l, kind: 'published', content: version.content || {}, version }; break; }
           const legacy = legacyByLang.get(l);
-          if (legacy) { served = { lang: l, kind: 'legacy', content: legacy, version: null }; break; }
+          if (legacy) {
+            // 'tester' = only here because of a tester grant, not because it is published —
+            // kept a distinct kind so it is never logged as a legacy-fallback pair.
+            const testerOnly = testerGranted && !isWalkPublic(legacy);
+            served = { lang: l, kind: testerOnly ? 'tester' : 'legacy', content: legacy, version: null };
+            break;
+          }
         }
         if (!served) continue;
         if (served.kind === 'legacy') {
@@ -331,6 +364,10 @@ export default async function(req) {
           out._active_id = served.version.id;
         } else {
           out._active_id = served.content.id;
+          // A tester-granted draft is listed for its tester exactly like a published tour
+          // (Home keeps approved !== false), while the record itself stays unapproved for
+          // everyone else and is never for sale.
+          if (served.kind === 'tester') out.approved = true;
         }
         out._available_langs = [...langs].sort((a, b) => a.localeCompare(b));
       }
@@ -374,7 +411,8 @@ export default async function(req) {
       // trail_path/waypoints — exactly the content they need to actually test it.
       const accessible = out.is_sample_walk === true
         || !!(out.creem_product_id && ownedSet.has(out.creem_product_id))
-        || isDraftPreview;
+        || isDraftPreview
+        || testerFamilyIds.has(familyId);
       if (!accessible) {
         // Allowlist enforcement (finding U1): drop everything not explicitly public —
         // never a delete-list again, so a future forgotten field can't re-open the leak.

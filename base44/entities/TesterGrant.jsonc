@@ -1,0 +1,62 @@
+{
+  "name": "TesterGrant",
+  "type": "object",
+  "properties": {
+    "walk_id": {
+      "type": "string",
+      "description": "The tour's STABLE family id (the original tour's own Walk id) this grant is for. A translation clone is never granted separately \u2014 one grant covers the whole tour, every language."
+    },
+    "walk_code": {
+      "type": "string",
+      "description": "Snapshot of the tour's code at grant time, for admin reference."
+    },
+    "walk_name": {
+      "type": "string",
+      "description": "Snapshot of the tour's name at grant time, for admin reference."
+    },
+    "tester_email": {
+      "type": "string",
+      "description": "Email of the person this free copy was given to (lowercased). getWalkCatalog matches this against the caller's verified email \u2014 nobody else sees or unlocks the tour."
+    },
+    "granted_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this tester copy was granted."
+    },
+    "granted_by_email": {
+      "type": "string",
+      "description": "Email of the Super Admin who gave it."
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 1000,
+      "description": "Optional free-text notes for internal reference."
+    }
+  },
+  "required": [
+    "walk_id",
+    "tester_email"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

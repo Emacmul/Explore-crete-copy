@@ -30,19 +30,31 @@ export default function GiftWalkDialog({ appUser, onClose, narrAuth = {} }) {
   }, []);
 
   const selectedWalk = walks.find(w => w.id === walkId);
-  const grantable = !!walkId && !!selectedWalk?.creem_product_id;
+  const grantable = !!walkId;
+  // A tour that isn't ready to sell yet has no Creem product id, so there is nothing for a
+  // Purchase to key on — it is given as tester access instead (grantTesterAccess): the same
+  // free copy, visible and unlocked for this one person, while the tour stays unpublished
+  // and absent from everyone else's catalogue.
+  const asTesterAccess = !!selectedWalk && !selectedWalk.creem_product_id;
 
   const handleGrant = async () => {
     if (!grantable) return;
     setGranting(true);
     try {
-      const res = await base44.functions.invoke('grantWalk', { walkId, buyerEmail: appUser.email, ...narrAuth });
+      const res = asTesterAccess
+        ? await base44.functions.invoke('grantTesterAccess', { walkId, testerEmail: appUser.email, ...narrAuth })
+        : await base44.functions.invoke('grantWalk', { walkId, buyerEmail: appUser.email, ...narrAuth });
       const data = res.data || {};
       if (data.granted) {
-        toast({ title: 'Walk gifted', description: `${appUser.email} now has "${data.walk_name}".` });
+        toast({
+          title: asTesterAccess ? 'Tester access given' : 'Walk gifted',
+          description: asTesterAccess
+            ? `${appUser.email} can now open "${data.walk_name}". It stays unpublished for everyone else.`
+            : `${appUser.email} now has "${data.walk_name}".`,
+        });
         onClose();
-      } else if (data.reason === 'already_owned') {
-        toast({ title: 'Already in library', description: `${appUser.email} already owns "${data.walk_name}".` });
+      } else if (data.reason === 'already_owned' || data.reason === 'already_granted') {
+        toast({ title: 'Already has it', description: `${appUser.email} already has "${data.walk_name}".` });
         onClose();
       } else {
         toast({ variant: 'destructive', title: 'Could not gift walk', description: data.error || data.reason || 'Unknown error.' });
@@ -73,16 +85,17 @@ export default function GiftWalkDialog({ appUser, onClose, narrAuth = {} }) {
                 <SelectTrigger className="bg-slate-700 border-slate-600 text-white"><SelectValue placeholder="Select a tour" /></SelectTrigger>
                 <SelectContent>
                   {walks.map(w => (
-                    <SelectItem key={w.id} value={w.id} disabled={!w.creem_product_id}>
-                      {w.name} ({w.code}){w.creem_product_id ? '' : ' — no product id'}
+                    <SelectItem key={w.id} value={w.id}>
+                      {w.name} ({w.code}){w.creem_product_id ? '' : ' — tester access'}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             )}
-            {selectedWalk && !selectedWalk.creem_product_id && (
+            {asTesterAccess && (
               <p className="text-xs text-amber-400 mt-1.5">
-                This tour has no Creem product id set, so it can't be gifted yet — add one in the Walk editor first.
+                This tour has no Creem product id, so it will be given as tester access: it appears
+                in {appUser.email}'s library only, unlocked, and stays unpublished for everyone else.
               </p>
             )}
           </div>
