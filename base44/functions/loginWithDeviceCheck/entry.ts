@@ -15,7 +15,6 @@ export default async function (req: Request): Promise<Response> {
       return Response.json({ error: "Email, password and device_id are required" }, { status: 400 });
     }
 
-
     // Normalize for OUR OWN device/session records only (audit re-check, 2026-09-09 —
     // finding U-01). Matches the .toLowerCase().trim() convention already used everywhere
     // else in this app (purchaseRecorder.ts, membershipRecorder.ts, useOfflineWalks.jsx).
