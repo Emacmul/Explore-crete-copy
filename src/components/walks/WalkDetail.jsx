@@ -5,7 +5,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   X, Clock, Route, TrendingUp, MapPin, AlertTriangle,
   Eye, Droplets, TreePine, Navigation, Crosshair, ShieldAlert,
-  CheckCircle2, Circle, RotateCcw, Mountain, FlaskConical, Home, ChevronRight
+  CheckCircle2, Circle, RotateCcw, Mountain, FlaskConical, Home, ChevronRight, Camera
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import WalkDetailMap from '../map/WalkDetailMap';
@@ -15,6 +15,7 @@ import WalkProgressBar from './WalkProgressBar';
 import DrivingModeNotice from './DrivingModeNotice';
 import DrivingTourPlayer from './DrivingTourPlayer';
 import SafetyNotesCard from './SafetyNotesCard';
+import InAppCamera from './InAppCamera';
 import { getWaypointImages, getWaypointCaptions } from '@/lib/waypointImages';
 import WaypointPhotoLightbox from './WaypointPhotoLightbox';
 import WalkPaywall from './WalkPaywall';
@@ -176,6 +177,12 @@ export default function WalkDetail({ walk, onClose, accessible = true, allWalks 
   // so the tour, the narration audio and the GPS watch all keep running
   // underneath instead of the app navigating away. Null when closed.
   const [photoViewer, setPhotoViewer] = React.useState(null); // { images: string[], index: number }
+
+  // In-app camera for walks/hikes (Enda, 2026-11-19): exactly the overlay the driving player
+  // already offers, so taking a photo never means leaving the app — on many Android phones
+  // the phone's own camera app discards the browser tab, which would lose this walk, its map
+  // and its GPS tracking.
+  const [cameraOpen, setCameraOpen] = React.useState(false);
 
   // If the offline copy is removed (e.g. from "My Library", to free up phone storage)
   // while this exact tour is still open and already started, the gate must re-lock
@@ -596,6 +603,18 @@ export default function WalkDetail({ walk, onClose, accessible = true, allWalks 
               <div ref={progressSectionRef} className="space-y-4">
                 <WalkProgressBar walk={walk} />
 
+                {/* In-app camera for walks/hikes (Enda, 2026-11-19) — the same overlay the
+                    driving player offers, right beside the map where a walker would reach for
+                    it. Kept identical across all three tour types so the tour carries on
+                    underneath while photos are taken. */}
+                <Button
+                  type="button"
+                  onClick={() => setCameraOpen(true)}
+                  className="w-full h-auto min-h-12 gap-2 px-3 py-3 whitespace-normal text-center leading-tight bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-lg shadow-indigo-900/20"
+                >
+                  <Camera className="w-5 h-5 shrink-0" /> {t('player.camera')}
+                </Button>
+
                 <div className="h-64 rounded-xl overflow-hidden border">
                   <WalkDetailMap
                     walk={walk}
@@ -793,6 +812,12 @@ export default function WalkDetail({ walk, onClose, accessible = true, allWalks 
             startIndex={photoViewer.index}
             onClose={() => setPhotoViewer(null)}
           />
+        )}
+
+        {/* In-app camera — fixed-position overlay, so the walk, its GPS tracking and its
+            progress all keep running underneath. */}
+        {cameraOpen && (
+          <InAppCamera t={t} onClose={() => setCameraOpen(false)} />
         )}
       </motion.div>
     </AnimatePresence>
