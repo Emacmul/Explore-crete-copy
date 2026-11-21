@@ -2,7 +2,7 @@ import { createClientFromRequest } from "npm:@base44/sdk@0.8.40";
 import { secrets } from "base44:runtime";
 import {
   CODE_EXPIRY_MIN, generateSixDigitCode, isoPlusMinutes, isoNow,
-  findDevice, getActiveSessionForUser, upsertSession, deactivateOtherSessions,
+  findDevice, upsertSession, deactivateOtherSessions,
   sendDeviceCodeEmail, fetchWpToken,
 } from "../../shared/deviceAuth.ts";
 
@@ -70,14 +70,12 @@ export default async function (req: Request): Promise<Response> {
       return Response.json({ status: "ok", token: wpData.token, user: wpData.user });
     }
 
-    // 2. Concurrent session check: block if ANOTHER device already has an active session.
-    const activeSession = await getActiveSessionForUser(svc, email);
-    if (activeSession && activeSession.device_id !== device_id) {
-      return Response.json(
-        { error: "This account is already in use on another device. Please sign out there and try again." },
-        { status: 409 }
-      );
-    }
+    // 2. No concurrent-session lock (per Enda, 2026-11-21). Signing in on a device always
+    // works: whatever session the account still holds elsewhere is simply ended by the
+    // login below (deactivateOtherSessions), so a new device takes over instead of being
+    // refused. This replaced a hard 409 "already in use" refusal that could deadlock an
+    // account: clearing site data gave the same phone a new device id, and the ghost row
+    // left on the old id then blocked every sign-in with no way out but waiting or an admin.
 
     // 3. Known device? -> complete login immediately.
     const known = await findDevice(svc, email, device_id);

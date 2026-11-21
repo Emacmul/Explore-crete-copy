@@ -2,7 +2,7 @@ import { createClientFromRequest } from "npm:@base44/sdk@0.8.40";
 import { secrets } from "base44:runtime";
 import {
   DEVICE_LIMIT, MAX_ATTEMPTS, LOCKOUT_MIN,
-  isoNow, isoPlusMinutes, findDevice, listDevicesForUser, getActiveSessionForUser, upsertSession,
+  isoNow, isoPlusMinutes, findDevice, listDevicesForUser, upsertSession,
   deactivateOtherSessions, fetchWpToken,
 } from "../../shared/deviceAuth.ts";
 
@@ -73,15 +73,10 @@ export default async function (req: Request): Promise<Response> {
     } catch (err: any) {
       return Response.json({ error: err.message || "Invalid email or password" }, { status: 401 });
     }
-    // Re-check concurrent session right before completing (another device may have logged in meanwhile).
-    const activeSession = await getActiveSessionForUser(svc, email);
-    if (activeSession && activeSession.device_id !== device_id) {
-      // Leave the challenge pending so the user can retry once the other session ends.
-      return Response.json(
-        { error: "This account is already in use on another device. Please sign out there and try again." },
-        { status: 409 }
-      );
-    }
+    // No concurrent-session re-check (per Enda, 2026-11-21): a device that has just proved
+    // control of the account with the emailed code takes over — the session rows it still
+    // holds on other devices are ended below. See loginWithDeviceCheck for the full reason
+    // the old "already in use" refusal was removed.
 
     await svc.entities.DeviceChallenge.update(challenge.id, { status: "verified" });
 
