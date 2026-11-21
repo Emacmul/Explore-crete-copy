@@ -28,6 +28,7 @@ export default async function(req) {
       return Response.json({ error: 'walkId and buyerEmail are required' }, { status: 400 });
     }
 
+
     const walk = await base44.asServiceRole.entities.Walk.get(walkId);
     if (!walk) {
       return Response.json({ error: 'Walk not found' }, { status: 404 });
