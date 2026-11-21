@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Loader2, Gift } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
@@ -86,16 +85,25 @@ export default function GiftWalkDialog({ appUser, onClose, narrAuth = {} }) {
             {loading ? (
               <div className="flex items-center gap-2 text-slate-400 text-sm"><Loader2 className="w-4 h-4 animate-spin" /> Loading tours…</div>
             ) : (
-              <Select value={walkId} onValueChange={setWalkId}>
-                <SelectTrigger className="bg-slate-700 border-slate-600 text-white"><SelectValue placeholder="Select a tour" /></SelectTrigger>
-                <SelectContent>
+              <>
+                {/* A plain native dropdown, deliberately not the shared Radix Select: inside
+                    this dialog its popup list could be seen but no row could be picked from it
+                    (Enda, 2026-11-21 — the tour was in the list, but selecting it did nothing).
+                    A native select draws the list itself, so the dialog's overlay and focus trap
+                    cannot swallow the click, and a long tour list gets type-ahead search free. */}
+                <select
+                  value={walkId}
+                  onChange={(e) => setWalkId(e.target.value)}
+                  className="w-full h-9 rounded-md border border-slate-600 bg-slate-700 px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-slate-400"
+                >
+                  <option value="" className="bg-slate-800 text-white">Select a tour…</option>
                   {walks.map(w => (
-                    <SelectItem key={w.id} value={w.id}>
+                    <option key={w.id} value={w.id} className="bg-slate-800 text-white">
                       {w.name} ({w.code}){needsTesterAccess(w) ? ' — tester access' : ''}
-                    </SelectItem>
+                    </option>
                   ))}
-                </SelectContent>
-              </Select>
+                </select>
+              </>
             )}
             {asTesterAccess && (
               <p className="text-xs text-amber-400 mt-1.5">
