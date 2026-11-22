@@ -300,14 +300,21 @@ export default function TrailPathMapEditor({ trailPath, onChange, trailBreaks = 
 
       <p className="text-xs text-slate-400">
         {mode === 'add'
-          ? 'Click between two points to drop a new one there (it shows green), then drag any amber dot to move it — the line follows as soon as you let go. Works at any zoom level.'
+          ? 'Click between two points to drop a new one there (it shows green), then drag any amber dot to move it — the line follows as soon as you let go. Where dots sit on top of each other, keep zooming in: the map goes far past its normal limit so each dot separates, and the tiles just enlarge (blurry, but the dots and the line stay exact).'
           : mode === 'delete'
           ? 'Drag on the map to draw a box and delete every point inside it at once — great for clearing a dense surplus. Or click a single red dot to remove just that one. Deleted points also vanish from the Route Path list below.'
           : 'Click any amber line segment to break it — the non-existing link between two trail sections disappears and is shown as a dashed red line. Click the dashed red segment again to rejoin. Use this to remove straight "bridge" lines the import drew across gaps.'}
       </p>
 
       <div className="h-[420px] rounded-xl overflow-hidden border border-slate-600">
-        <MapContainer center={center} zoom={14} className="w-full h-full" style={{ minHeight: '420px' }}>
+        {/* maxZoom is deliberately well past what the tiles are drawn at: on a dense
+            imported route the raw points can sit less than a metre apart, and at the tile
+            servers' own top zoom (19) the dots still overlap into one blob, so individual
+            points can't be grabbed to move. Past 19 Leaflet simply enlarges the last real
+            tile — blurry, but the dots separate properly and stay draggable (Enda,
+            2026-11-22). maxNativeZoom stops Leaflet asking the server for tiles it
+            doesn't have (which would come back blank). */}
+        <MapContainer center={center} zoom={14} maxZoom={23} className="w-full h-full" style={{ minHeight: '420px' }}>
           <ClickToAdd onAdd={insertAt} active={mode === 'add'} />
           <DragController mode={mode} />
           <BoxDelete active={mode === 'delete'} trailPath={trailPath} onDelete={(next) => { onChange(next); setLastAdded(null); }} trailBreaks={trailBreaks} onBreaksChange={onBreaksChange} />
@@ -316,6 +323,8 @@ export default function TrailPathMapEditor({ trailPath, onChange, trailBreaks = 
           <TileLayer
             url="https://tile.openstreetmap.de/{z}/{x}/{y}.png"
             attribution='&copy; OpenStreetMap contributors'
+            maxNativeZoom={19}
+            maxZoom={23}
           />
 
           <FitBounds trailPath={trailPath} waypoints={waypoints} />
