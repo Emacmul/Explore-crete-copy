@@ -263,13 +263,17 @@ const routeWaypoints = async (points) => {
   return res.data.trail;
 };
 
-export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCode, tourCategory, onSave, saving, onAutoSave, userRole = 'admin', focusWaypointIndex, onTrailPathChange, defaultDrivingSpeedKmh, targetLanguage, walkId, importFiles = [], onImportFilesChange, onOpenSimulator }) {
+export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCode, tourCategory, onSave, saving, onAutoSave, userRole = 'admin', focusWaypointIndex, onTrailPathChange, defaultDrivingSpeedKmh, targetLanguage, walkId, importFiles = [], onImportFilesChange, onOpenSimulator, audioEnabled = true }) {
+  // Per Enda (2026-11-23): a Walk/Hike is the same thing as a WalkAbout/DriveAbout
+  // without audio and without a simulator — it uses this exact editor, so the only
+  // difference inside it is whether the narration/TTS and audio-trigger blocks render.
+  const isWalk = tourCategory === 'WHT';
   const isNarrator = userRole === 'narrator';
   // WBT is always fixed at 3.5 km/h. DDV falls back to the Admin-set default
   // driving speed from the Details tab (form.default_driving_speed_kmh) until a
   // Primary-Start waypoint sets its own avg_segment_speed_kmh; 50 is the last-resort
   // fallback only if an Admin hasn't set anything yet.
-  const defaultSpeed = tourCategory === 'WBT' ? 3.5 : (defaultDrivingSpeedKmh || 50);
+  const defaultSpeed = (tourCategory === 'WBT' || isWalk) ? 3.5 : (defaultDrivingSpeedKmh || 50);
   // Per Enda's report: a WalkAbout ('WBT') needs a tight trigger radius (5m) since a
   // pedestrian can be positioned far more precisely than a car — the same reasoning
   // that already gives WBT its own fixed walking-pace speed just above. DDV keeps this
@@ -383,7 +387,13 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
   // Auto-fill missing segment_number and segment_id on mount
   useEffect(() => {
     if (!waypoints || waypoints.length === 0) return;
-    const needsUpdate = waypoints.some(wp => !wp.segment_number || (!wp.segment_id && wp.segment_number));
+    // A walk's older waypoints (imported before walks used this editor) already carry
+    // their own codes ("MXR4", or a typed description) but no segment number — those are
+    // left exactly as they are rather than being renumbered on mount. Only a point with
+    // neither gets one.
+    const needsUpdate = waypoints.some(wp => isWalk
+      ? (!wp.segment_number && !wp.segment_id)
+      : (!wp.segment_number || (!wp.segment_id && wp.segment_number)));
     if (!needsUpdate) return;
     let nextSeg = 1;
     const updated = waypoints.map(wp => {
@@ -511,7 +521,9 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
       const next = { ...wp, ...fields };
       if ('waypoint_role' in fields) {
         next.waypoint_colour = autoColour(fields.waypoint_role);
-        next.type = fields.waypoint_role;
+        // A walk keeps its real point type (landmark, water, viewpoint…) — the role here
+        // is the segment/narration role, not the customer-facing marker type.
+        if (!isWalk) next.type = fields.waypoint_role;
         // Per Enda's front-end audit (2026-09-05): a Secondary waypoint is allowed to
         // have no driving speed set (only a Primary-Start one actually uses it), but
         // promoting an EXISTING waypoint to Primary-Start via this dropdown used to
@@ -668,7 +680,9 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
           bearing_tolerance: 30,
           waypoint_colour: autoColour(role),
           name: pt.name || (segId ? `${segId} — Segment ${segNum}` : `Segment ${segNum}`),
-          type: role,
+          // A walk keeps a real customer-facing point type; the role above is its
+          // segment role, not its marker type.
+          type: isWalk ? 'landmark' : role,
           image_urls: [],
         };
       });
@@ -730,13 +744,15 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
   return (
     <div className="space-y-5">
       <div>
-        <h3 className="text-white font-semibold mb-1">Tour Waypoints</h3>
+        <h3 className="text-white font-semibold mb-1">{isWalk ? 'Route Waypoints' : 'Tour Waypoints'}</h3>
         <div className="flex items-start gap-2 bg-purple-900/30 border border-purple-700/50 rounded-lg p-3 text-sm text-purple-300">
           <Info className="w-4 h-4 mt-0.5 shrink-0" />
           <span>
             {isNarrator
               ? 'Edit narration scripts and audio triggers for each waypoint below. All other fields are managed by the admin.'
-              : `Define Primary-Start, Primary-Stop and Secondary points. Location IDs are built from the Tour Code (${tourCode || '—'}) + the location number (e.g. BRZ1, BRZ2).`}
+              : isWalk
+                ? `Every point in the route's GPX is listed here, in order. Its location code is built from the Route Code (${tourCode || '—'}) + the location number (e.g. ${tourCode || 'API'}1), and the original GPX point name (e.g. ${tourCode || 'API'}1a-PS) is kept as the Location Title.`
+                : `Define Primary-Start, Primary-Stop and Secondary points. Location IDs are built from the Tour Code (${tourCode || '—'}) + the location number (e.g. BRZ1, BRZ2).`}
           </span>
         </div>
       </div>
@@ -1221,6 +1237,8 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                           />
                         </div>
 
+                        {/* Audio-only blocks — never rendered for a Walk/Hike. */}
+                        {audioEnabled && (<>
                         {/* Narration Script & TTS generation */}
                         <NarrationTtsEditor
                           // Same as the narrator branch above — the clone's own id, so the
@@ -1298,6 +1316,7 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                             Radius and bearing are also editable in the simulator — drag the white arrow to rotate bearing, drag the circle edge to resize radius.
                           </p>
                         </div>
+                        </>)}
                       </>
                     )}
 

@@ -664,9 +664,11 @@ export default function WalkDetail({ walk, onClose, accessible = true, allWalks 
                     const displayIcon = roleConfig ? roleConfig.icon : Icon;
                     const displayBg = roleConfig ? roleConfig.bg : config.bg;
                     const displayColor = roleConfig ? roleConfig.color : config.color;
-                    const displayName = isDrivingTour
-                      ? (waypoint.segment_title || waypoint.name)
-                      : (waypoint.segment_id && waypoint.name ? `${waypoint.segment_id} — ${waypoint.name}` : (waypoint.segment_id || waypoint.name));
+                    // Every tour type now carries the GPX point name as segment_title
+                    // ("API1a-PS"), so the list shows the real location code first — a
+                    // walk's points used to fall back to the plain running code (API1).
+                    const displayName = waypoint.segment_title
+                      || (waypoint.segment_id && waypoint.name ? `${waypoint.segment_id} — ${waypoint.name}` : (waypoint.segment_id || waypoint.name));
                     const displayLabel = roleConfig ? roleConfig.label : (waypoint.type ? t('wpType.' + waypoint.type) : null);
 
                     const key = waypointKey(waypoint, index);

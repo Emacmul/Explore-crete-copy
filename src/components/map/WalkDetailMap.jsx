@@ -120,9 +120,9 @@ export default function WalkDetailMap({ walk, followGps = false }) {
           iconSize: [32, 32],
           iconAnchor: [16, 16],
         });
-        let wpName = isDrivingTour
-          ? (wp.segment_title || wp.name)
-          : (wp.name || wp.segment_id);
+        // Every tour type carries the GPX point name as segment_title ("API1a-PS Car
+        // park") — shown first so a walk's popup reads the same as a driving tour's.
+        let wpName = wp.segment_title || wp.name || wp.segment_id;
         // Per Enda (repeated, explicit, unconditional): the popup on ANY waypoint, on
         // ANY tour type (walk, walkabout, or driving tour), and on EVERY screen that
         // shows this map — the real customer-facing page and this same component's use

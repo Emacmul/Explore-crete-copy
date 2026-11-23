@@ -15,7 +15,6 @@ import { LANGUAGE_CODE_BY_NAME, getGoogleTranslateCode } from '@/lib/i18n';
 import { getFnErrorMessage } from '@/lib/utils';
 import { translateWalkField, stillMatchesMaster } from '@/lib/fieldTranslation';
 import FitParser from 'fit-file-parser';
-import WaypointEditor from './WaypointEditor';
 import WalkingCloneWaypointEditor from '@/components/admin/WalkingCloneWaypointEditor';
 import AutoGrowTextarea from '@/components/admin/AutoGrowTextarea';
 import DrivingTourWaypointEditor from './DrivingTourWaypointEditor';
@@ -666,7 +665,8 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
       const waypoints = buildImportedWaypoints(wpts, {
         code: form.code,
         isDrivingAudioTour,
-        defaultSegmentSpeedKmh: DEFAULT_SEGMENT_SPEED_KMH,
+        // A walk is paced on foot, a DriveAbout at driving speed — same field, sensible default.
+        defaultSegmentSpeedKmh: isDrivingAudioTour ? DEFAULT_SEGMENT_SPEED_KMH : 3.5,
         defaultTriggerRadiusM: DEFAULT_TRIGGER_RADIUS_M,
       });
 
@@ -2285,7 +2285,12 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
           <div className="space-y-4">
             {form.clone_of && !isDrivingAudioTour ? (
               <WalkingCloneWaypointEditor walk={form} onChange={wps => set('waypoints', wps)} onAutoSave={requestAutoSave} masterWaypoints={masterWalk?.waypoints || null} />
-            ) : isDrivingAudioTour ? (
+            ) : (
+              // Per Enda (2026-11-23): a Walk/Hike now uses the SAME Waypoints editor as a
+              // WalkAbout and a DriveAbout — waypoint role, segment number, location code,
+              // location title, speed, photos. The only differences are that a walk has no
+              // audio (audioEnabled={false} hides the narration/TTS and audio-trigger
+              // fields) and no simulator (onOpenSimulator left undefined below).
               <DrivingTourWaypointEditor
                 waypoints={form.waypoints}
                 onChange={wps => set('waypoints', wps)}
@@ -2303,51 +2308,28 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 walkId={form.id}
                 importFiles={form.import_files || []}
                 onImportFilesChange={files => set('import_files', files)}
-                onOpenSimulator={rawIndex => {
+                audioEnabled={isDrivingAudioTour}
+                onOpenSimulator={isDrivingAudioTour ? (rawIndex) => {
                   setSimulatorJumpIndex(rawIndex);
                   setActiveTab('narrate');
-                  // Per Enda's request: opening the Narration & Simulate tab from a
-                  // divider button way down the Waypoints list left the page
-                  // scrolled to wherever the button was — so the new tab "opened
-                  // at the bottom end". The editor scrolls with the window (no
-                  // inner scroll container), so snap the window back to the top
-                  // so the tab always opens at its own start, wherever you
-                  // launched it from.
                   window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
+                } : undefined}
               />
-            ) : (
-              <WaypointEditor
-                waypoints={form.waypoints}
-                onChange={wps => {
-                  // Only update the waypoint markers here. The route LINE (trail_path) is the
-                  // actual GPS track recorded on the ground — a separate, denser set of points
-                  // than the named waypoints. It must not be rebuilt from the sparse waypoint
-                  // list: doing that replaces the real curved trail with straight lines jumping
-                  // point-to-point (this was happening on every waypoint add/delete/edit, and is
-                  // why edited routes started cutting straight across bends instead of following
-                  // the road/path). To actually change the route line itself, use the dedicated
-                  // trail-path map editor above (the `trailPath`/`onChange` pair a few lines
-                  // below), not the waypoint list.
-                  set('waypoints', wps);
-                }}
-                onSave={triggerSave}
-                saving={saving}
-                code={form.code}
-                // Per Enda's GPX/KML audit (follow-up 143): this button generates and
-                // downloads a real GPX file — an admin-only backup tool, exactly like
-                // DrivingTourExportPanel's own export a few tabs over. It used to rely
-                // purely on the Waypoints tab being hidden from narrators (WaypointEditor
-                // isn't rendered at all today unless this tab is reachable) — that's still
-                // true, but per the same lesson learned in follow-up 47 (a hidden tab is a
-                // UI convenience, not a security boundary), the button itself now also
-                // checks the role directly, so it can never be handed to a narrator even if
-                // something upstream ever changed. Only admins ever get onSaveAndDownload;
-                // a narrator gets undefined, so WaypointEditor doesn't render the button at
-                // all (see its own `{onSaveAndDownload && (...)}` guard).
-                onSaveAndDownload={isNarrator ? undefined : handleSaveAndDownloadGpx}
-                downloadingGpx={downloadingGpx}
-              />
+            )}
+            {/* Walk/Hike only: the GPX backup export that used to sit inside the old
+                walk-only waypoint editor — kept here so it isn't lost with that editor. */}
+            {!isDrivingAudioTour && !isNarrator && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSaveAndDownloadGpx}
+                disabled={downloadingGpx || saving}
+                title="Save the route, then download it as a GPX backup file"
+                className="border-slate-500 text-slate-300 hover:text-white gap-2"
+              >
+                {downloadingGpx ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
+                Save &amp; Download GPX
+              </Button>
             )}
             <SaveButton onSave={triggerSave} saving={saving} canSave={canSave} />
           </div>
