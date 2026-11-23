@@ -467,7 +467,9 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
       bearing_tolerance: Number(newWp.bearing_tolerance) || 30,
       waypoint_colour: autoColour(role),
       name: newWp.segment_title.trim(),
-      type: role,
+      // Same rule as the GPX import: a walk's marker type is a real point type, the
+      // role above is only its segment role.
+      type: isWalk ? 'landmark' : role,
     };
 
     onChange([...waypoints, wp]);
