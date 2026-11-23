@@ -63,7 +63,7 @@ function renumberWaypoints(list, code) {
   });
 }
 
-function AddWaypointForm({ newWp, setNewWp, addError, onSave, onCancel, onImageUpload, uploading }) {
+function AddWaypointForm({ newWp, setNewWp, addError, onSave, onCancel, onImageUpload, uploading, bare = false, code = '', nextNumber = null }) {
   const handlePaste = (e) => {
     const text = e.clipboardData.getData('text');
     const match = text.match(/(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)/);
@@ -74,7 +74,7 @@ function AddWaypointForm({ newWp, setNewWp, addError, onSave, onCancel, onImageU
   };
 
   return (
-    <div className="bg-slate-700/50 rounded-lg border border-amber-600/50 p-4 space-y-4">
+    <div className={bare ? 'space-y-4' : 'bg-slate-700/50 rounded-lg border border-amber-600/50 p-4 space-y-4'}>
       <div className="grid grid-cols-2 gap-3">
         <div>
           <Label className="text-slate-400 text-xs mb-1 block">Latitude *</Label>
@@ -114,7 +114,7 @@ function AddWaypointForm({ newWp, setNewWp, addError, onSave, onCancel, onImageU
           </Select>
         </div>
         <div>
-          <Label className="text-slate-400 text-xs mb-1 block">Name (optional)</Label>
+          <Label className="text-slate-400 text-xs mb-1 block">Location Title</Label>
           <Input
             value={newWp.name}
             onChange={e => setNewWp(p => ({ ...p, name: e.target.value }))}
@@ -149,6 +149,14 @@ function AddWaypointForm({ newWp, setNewWp, addError, onSave, onCancel, onImageU
         )}
       </div>
 
+      {code && nextNumber != null && (
+        <div className="flex items-center gap-2 text-xs text-slate-400">
+          <span>Location code:</span>
+          <code className="bg-slate-800 px-2 py-0.5 rounded text-amber-300 font-mono">{code}{nextNumber}</code>
+          <span className="text-slate-500">auto-assigned from the tour code</span>
+        </div>
+      )}
+
       {addError && (
         <div className="text-red-400 text-sm bg-red-900/30 border border-red-700/50 rounded-lg px-3 py-2">
           {addError}
@@ -156,7 +164,7 @@ function AddWaypointForm({ newWp, setNewWp, addError, onSave, onCancel, onImageU
       )}
       <div className="flex gap-2">
         <Button onClick={onSave} className="bg-green-600 hover:bg-green-700 gap-2 flex-1 text-white font-semibold">
-          <Plus className="w-4 h-4" /> Save Key Point
+          <Plus className="w-4 h-4" /> Add Waypoint
         </Button>
         <Button onClick={onCancel} variant="outline" className="bg-slate-700 border-slate-500 text-slate-300 hover:text-white hover:bg-slate-600">
           Cancel
@@ -170,6 +178,7 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving, co
   const [expanded, setExpanded] = useState(null);
   const [newWp, setNewWp] = useState(EMPTY_WAYPOINT);
   const [addingBeforeIndex, setAddingBeforeIndex] = useState(null); // null = not adding; number = inserting before this position
+  const [showAddForm, setShowAddForm] = useState(false); // the top "Add New Waypoint" panel — same as the tour editor
   const [addError, setAddError] = useState('');
 
   // Per Enda's MXR report (2026-10-26): GPX import leaves each waypoint's descriptive
@@ -200,11 +209,11 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving, co
     const lng = parseFloat(String(newWp.lng).replace(',', '.'));
     if (isNaN(lat) || String(newWp.lat).trim() === '') {
       setAddError('Please enter a valid latitude (e.g. 35.3019).');
-      return;
+      return false;
     }
     if (isNaN(lng) || String(newWp.lng).trim() === '') {
       setAddError('Please enter a valid longitude (e.g. 23.9633).');
-      return;
+      return false;
     }
     const updated = [
       ...waypoints.slice(0, beforeIndex),
@@ -215,6 +224,7 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving, co
     setNewWp(EMPTY_WAYPOINT);
     setAddingBeforeIndex(null);
     setExpanded(null);
+    return true;
   };
 
   const removeWaypoint = (index) => {
@@ -258,15 +268,50 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving, co
   return (
     <div className="space-y-5">
       <div>
-        <h3 className="text-white font-semibold mb-1">Key Points Along the Trail</h3>
+        <h3 className="text-white font-semibold mb-1">Tour Waypoints</h3>
         <div className="flex items-start gap-2 bg-amber-900/30 border border-amber-700/50 rounded-lg p-3 text-sm text-amber-300">
           <Info className="w-4 h-4 mt-0.5 shrink-0" />
           <span>
-            Add important places: turnoffs, danger spots, viewpoints, water sources etc.
-            Each point appears as a labelled marker on the walk's detail map. To import a full set of
+            Every point is a stop on the route: its code is built from the tour code ({code || '—'}1, {code || '—'}2…)
+            and its Location Title is what customers see beside it. Add turnoffs, danger spots, viewpoints, water
+            sources etc. — each appears as a labelled marker on the walk's detail map. To import a full set of
             waypoints from a GPX/FIT file, use Import on the General tab.
           </span>
         </div>
+      </div>
+
+      {/* Add new waypoint form — the same collapsed "Add New Waypoint" panel the
+          WalkAbout/DriveAbout waypoint tab uses, so every tour type's Waypoints tab
+          opens the same way (Enda, 2026-11-23). Points are still numbered from the
+          tour code and renumbered on drag/delete exactly as before. */}
+      <div className="bg-slate-700/50 rounded-lg border border-slate-600 overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setShowAddForm(v => !v)}
+          className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-700/60 transition-colors"
+        >
+          <span className="flex items-center gap-2">
+            <Plus className="w-4 h-4 text-amber-400" />
+            Add New Waypoint
+          </span>
+          {showAddForm ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+        </button>
+        {showAddForm && (
+          <div className="px-4 pb-4 pt-1 border-t border-slate-600">
+            <AddWaypointForm
+              bare
+              newWp={newWp}
+              setNewWp={setNewWp}
+              addError={addError}
+              onSave={() => { if (addWaypointBefore(waypoints.length)) setShowAddForm(false); }}
+              onCancel={() => { setShowAddForm(false); setNewWp(EMPTY_WAYPOINT); setAddError(''); }}
+              onImageUpload={(file) => handleImageUpload(file)}
+              uploading={uploadingIndex === 'new'}
+              code={code}
+              nextNumber={waypoints.length + 1}
+            />
+          </div>
+        )}
       </div>
 
       {/* Existing waypoints */}
@@ -301,22 +346,19 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving, co
                   >
                     <GripVertical className="w-5 h-5" />
                   </div>
-                  <span className="text-xs text-slate-600 font-mono w-5 text-center">{index + 1}</span>
-                  <span className="text-sm">{typeInfo?.label.split(' ')[0]}</span>
+                  <span className="text-sm w-4 text-center shrink-0">{typeInfo?.label.split(' ')[0]}</span>
                   <div className="flex-1 min-w-0">
-                    {wp.segment_id && (
-                      <span className="font-mono text-xs bg-slate-600 text-amber-300 px-1.5 py-0.5 rounded font-bold mr-2">{wp.segment_id}</span>
-                    )}
+                    <span className="font-mono text-xs bg-slate-600 text-amber-300 px-1.5 py-0.5 rounded font-bold mr-2">{wp.segment_id || '—'}</span>
                     <span className={wp.name ? "text-white font-medium" : "text-slate-500 italic"}>
-                      {wp.name || 'No description yet'}
-                    </span>
-                    <span className={`ml-2 text-xs ${typeInfo?.color}`}>
-                      {typeInfo?.label.split(' ').slice(1).join(' ')}
+                      {wp.name || 'No location title yet'}
                     </span>
                     {wp.elevation != null && wp.elevation !== '' && (
-                      <span className="ml-2 text-xs text-slate-400">{wp.elevation}m</span>
+                      <span className="ml-2 text-xs text-amber-400 font-medium">{wp.elevation} m</span>
                     )}
                   </div>
+                  <span className={`text-xs ${typeInfo?.color}`}>
+                    {typeInfo?.label.split(' ').slice(1).join(' ')}
+                  </span>
                   {expanded === index ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
                   <Button
                     variant="ghost" size="icon"
@@ -330,25 +372,6 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving, co
 
                 {expanded === index && (
                   <div className="px-4 pb-4 border-t border-slate-600 pt-4 space-y-3">
-                    {addingBeforeIndex === index ? (
-                      <AddWaypointForm
-                        newWp={newWp}
-                        setNewWp={setNewWp}
-                        addError={addError}
-                        onSave={() => addWaypointBefore(index)}
-                        onCancel={() => { setAddingBeforeIndex(null); setNewWp(EMPTY_WAYPOINT); setAddError(''); }}
-                        onImageUpload={(file) => handleImageUpload(file)}
-                        uploading={uploadingIndex === 'new'}
-                      />
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setAddingBeforeIndex(index)}
-                        className="flex items-center gap-2 w-full justify-center bg-blue-600 hover:bg-blue-500 border border-blue-400 rounded-lg py-2 text-sm text-white font-semibold transition-colors"
-                      >
-                        <Plus className="w-4 h-4" /> Add waypoint before {wp.segment_id || `this one`}
-                      </button>
-                    )}
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <Label className="text-slate-400 text-xs mb-1 block">Latitude</Label>
@@ -376,7 +399,7 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving, co
                       </div>
                     )}
                     <div>
-                      <Label className="text-slate-400 text-xs mb-1 block">Name (optional description)</Label>
+                      <Label className="text-slate-400 text-xs mb-1 block">Location Title</Label>
                       <Input
                         value={wp.name}
                         onChange={e => updateWaypoint(index, 'name', e.target.value)}
@@ -453,6 +476,28 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving, co
                           </Button>
                         )}
                       </div>
+                    )}
+                    {/* Inserting mid-list is still possible here — same form, opened at the
+                        bottom of the row instead of replacing its fields, so the expanded
+                        row always starts with the coordinates like every tour type does. */}
+                    {addingBeforeIndex === index ? (
+                      <AddWaypointForm
+                        newWp={newWp}
+                        setNewWp={setNewWp}
+                        addError={addError}
+                        onSave={() => addWaypointBefore(index)}
+                        onCancel={() => { setAddingBeforeIndex(null); setNewWp(EMPTY_WAYPOINT); setAddError(''); }}
+                        onImageUpload={(file) => handleImageUpload(file)}
+                        uploading={uploadingIndex === 'new'}
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setAddingBeforeIndex(index)}
+                        className="flex items-center gap-2 w-full justify-center bg-slate-800 hover:bg-slate-700 border border-slate-500 rounded-lg py-2 text-sm text-slate-300 font-medium transition-colors"
+                      >
+                        <Plus className="w-4 h-4" /> Insert a waypoint before {wp.segment_id || 'this one'}
+                      </button>
                     )}
                   </div>
                 )}
