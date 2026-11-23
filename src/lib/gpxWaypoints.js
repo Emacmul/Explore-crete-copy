@@ -1,15 +1,18 @@
 import { buildSegmentId, generateWaypointUid, getRoleColour } from '@/lib/routeExport';
 import { MAX_WAYPOINT_IMAGES } from '@/lib/waypointImages';
-import { mergeWalkSubPoints } from '@/lib/walkWaypoints';
 
 // Turns the <wpt> elements of an imported GPX into Walk.waypoints. Extracted from
 // WalkEditor so the two very different shapes stay side by side and readable:
 //  - a driving_audio_tour (WalkAbout / DriveAbout) keeps every point — each one is a
 //    real narration stop with a role, a segment number and a geofence;
-//  - a plain walk/hike keeps ONE marker per location (see mergeWalkSubPoints), because
-//    a tour-style GPX names several points per location ("API1a-PS", "API1b", "API1c"…)
-//    and importing each of them separately gave a Key Points list of rows titled "b",
-//    "c", "d" that meant nothing (Enda, 2026-11-23).
+//  - a plain walk/hike also keeps EVERY point in the file.
+//
+// Per Enda (2026-11-23): an earlier attempt folded each location's sub-points
+// ("API1a-PS", "API1b", "API1c"…) down to one marker per location, which silently threw
+// away most of the file — importing a full 27-point waypoints GPX produced 6 markers.
+// Losing stops is far worse than the ugly bare-letter titles that motivated it, so every
+// point is imported now. The titles themselves are cleaned instead (cleanWaypointTitle,
+// applied on the waypoints list), so a row never shows a meaningless "b" or "c".
 export function buildImportedWaypoints(wpts, {
   code,
   isDrivingAudioTour,
@@ -76,5 +79,5 @@ export function buildImportedWaypoints(wpts, {
     };
   }).filter(p => !isNaN(p.lat) && !isNaN(p.lng));
 
-  return isDrivingAudioTour ? built : mergeWalkSubPoints(built, code);
+  return built;
 }

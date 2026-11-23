@@ -18,6 +18,10 @@ export function cleanWaypointTitle(text) {
   if (!t) return '';
   t = t.replace(/^[A-Za-z](-PS)?\s*[-–—:.]\s+/i, '').trim();
   t = t.replace(/^[A-Za-z]{1,6}\d+[A-Za-z]?(-PS)?\s*[-–—:.]?\s+/i, '').trim();
+  // Nothing but a bare code left ("API1b", "MXR4") — that is the marker's badge, not a
+  // title. Returning '' keeps the row showing only its code instead of "API7 — API1b"
+  // (Enda, 2026-11-23: every point is imported now, so this happens a lot).
+  if (/^[A-Za-z]{1,6}\d+[A-Za-z]?(-PS)?$/i.test(t)) return '';
   return SUB_POINT_ONLY.test(t) ? '' : t;
 }
 
