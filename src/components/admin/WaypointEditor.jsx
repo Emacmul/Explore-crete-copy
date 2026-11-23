@@ -28,6 +28,7 @@ const WAYPOINT_TYPES = [
 const EMPTY_WAYPOINT = { lat: '', lng: '', type: 'landmark', name: '', description: '', image_urls: [] };
 
 import { compressImage, MAX_WAYPOINT_IMAGES, getWaypointImages, addWaypointImage, removeWaypointImage, setWaypointCaption } from '@/lib/waypointImages';
+import { cleanWaypointTitle } from '@/lib/walkWaypoints';
 import WaypointPhotoGrid from './WaypointPhotoGrid';
 
 // Renumbers waypoints sequentially (MXR1, MXR2, MXR3...) based on the tour's code and their current
@@ -53,12 +54,12 @@ function renumberWaypoints(list, code) {
   // rather than the same words twice. If nothing remains after stripping (the slot
   // held a bare code variant), the original text is kept as-is.
   return list.map((wp, i) => {
-    let carried = '';
-    if (!wp.name && wp.segment_id && !positional.test(wp.segment_id)) {
-      const stripped = wp.segment_id.replace(/^\s*[A-Za-z]{2,5}\s*\d+\s*[:.\-]?\s*/, '').trim();
-      carried = stripped || wp.segment_id.trim();
-    }
-    const name = wp.name || carried;
+    // Only real descriptive text is carried across — a bare sub-point token
+    // ("b", "c", "a-PS") or a bare code is not a title, and must never become one.
+    const carried = (!wp.name && wp.segment_id && !positional.test(wp.segment_id))
+      ? cleanWaypointTitle(wp.segment_id)
+      : '';
+    const name = wp.name ? cleanWaypointTitle(wp.name) : carried;
     return { ...wp, name, segment_id: `${code}${i + 1}` };
   });
 }
@@ -195,7 +196,11 @@ export default function WaypointEditor({ waypoints, onChange, onSave, saving, co
     const escaped = code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const positional = new RegExp(`^${escaped}\\d+$`);
     const needsCarry = waypoints.some(wp => wp.segment_id && !positional.test(wp.segment_id));
-    if (!needsCarry) return;
+    // Imported titles also carry their old sub-point prefix ("a-PS - Agios…",
+    // "b - Church of…") — cleaned here too, but only when something really changes,
+    // so opening an already-clean tour marks nothing dirty.
+    const needsTitleClean = waypoints.some(wp => wp.name && cleanWaypointTitle(wp.name) !== wp.name);
+    if (!needsCarry && !needsTitleClean) return;
     onChange(renumberWaypoints(waypoints, code));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

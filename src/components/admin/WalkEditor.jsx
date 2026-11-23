@@ -27,6 +27,7 @@ import WalkDetail from '../walks/WalkDetail';
 import { generateWalkGpx, downloadTextFile, buildSegmentId, getRoleColour, generateWaypointUid } from '@/lib/routeExport';
 import { getRouteTypeForCategory, defaultPriceForCategory } from '@/lib/tourCategories';
 import { MAX_WAYPOINT_IMAGES, compressImage } from '@/lib/waypointImages';
+import { buildImportedWaypoints } from '@/lib/gpxWaypoints';
 import { toast } from '@/components/ui/use-toast';
 import { buildTourBackupZip } from '@/lib/tourBackupZip';
 import { DEFAULT_SAFETY_NOTES } from '@/lib/defaultSafetyNotes';
@@ -660,65 +661,14 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
         lng: parseFloat(pt.getAttribute('lon')),
       })).filter(p => !isNaN(p.lat) && !isNaN(p.lng));
 
-      const waypoints = wpts.map((wpt, i) => {
-        const eleTxt = wpt.querySelector('ele')?.textContent;
-        const ele = (eleTxt && parseFloat(eleTxt) > 0) ? parseFloat(eleTxt) : null;
-        const nameTxt = wpt.querySelector('name')?.textContent || `Waypoint ${i + 1}`;
-        const descTxt = wpt.querySelector('desc')?.textContent || '';
-
-        if (isDrivingAudioTour) {
-          const isPS = nameTxt.includes('-PS') || /^\D*\d+a\b/.test(nameTxt);
-          const role = isPS ? 'primary_start' : 'secondary';
-          const segMatch = nameTxt.match(/^\D*(\d+)/);
-          const segNum = segMatch ? String(parseInt(segMatch[1], 10)).padStart(2, '0').slice(-2) : String(i + 1).padStart(2, '0').slice(-2);
-          const segId = buildSegmentId(form.code, segNum) || '';
-          return {
-            lat: parseFloat(wpt.getAttribute('lat')),
-            lng: parseFloat(wpt.getAttribute('lon')),
-            waypoint_uid: generateWaypointUid(),
-            waypoint_role: role,
-            segment_number: segNum,
-            segment_id: segId,
-            segment_title: nameTxt,
-            avg_segment_speed_kmh: role === 'primary_start' ? DEFAULT_SEGMENT_SPEED_KMH : null,
-            description: descTxt,
-            narration_script: '',
-            trigger_audio: false,
-            audio_clip_url: '',
-            trigger_radius_m: DEFAULT_TRIGGER_RADIUS_M,
-            trigger_once: true,
-            use_bearing: false,
-            bearing_direction: 0,
-            bearing_tolerance: 30,
-            waypoint_colour: getRoleColour(role),
-            name: nameTxt,
-            type: role,
-            ...(ele !== null && !isNaN(ele) ? { elevation: Math.round(ele) } : {}),
-          };
-        }
-
-        // Optional extension tags — present when a GPX was exported by this app (Save and
-        // Download GPX) or hand-annotated from notes before import. A plain Garmin Explore
-        // export has none of these, so every field falls back to its old default and import
-        // behaves exactly as it did before.
-        const typeTxt = wpt.getElementsByTagName('mc:type')[0]?.textContent?.trim();
-        const labelTxt = wpt.getElementsByTagName('mc:label')[0]?.textContent?.trim();
-        const imageUrls = Array.from(wpt.getElementsByTagName('mc:imageUrl'))
-          .map(el => el.textContent?.trim())
-          .filter(Boolean)
-          .slice(0, MAX_WAYPOINT_IMAGES);
-
-        return {
-          lat: parseFloat(wpt.getAttribute('lat')),
-          lng: parseFloat(wpt.getAttribute('lon')),
-          segment_id: nameTxt,
-          name: labelTxt || '',
-          description: descTxt,
-          type: typeTxt || 'landmark',
-          image_urls: imageUrls,
-          ...(ele !== null && !isNaN(ele) ? { elevation: Math.round(ele) } : {}),
-        };
-      }).filter(p => !isNaN(p.lat) && !isNaN(p.lng));
+      // Waypoint building lives in lib/gpxWaypoints (see its own comment): a driving
+      // tour keeps every point, a plain walk keeps one marker per location.
+      const waypoints = buildImportedWaypoints(wpts, {
+        code: form.code,
+        isDrivingAudioTour,
+        defaultSegmentSpeedKmh: DEFAULT_SEGMENT_SPEED_KMH,
+        defaultTriggerRadiusM: DEFAULT_TRIGGER_RADIUS_M,
+      });
 
       // If the GPX had no recorded track/route (only sparse waypoints), build a
       // path-following line between the ordered waypoints instead of straight lines.
