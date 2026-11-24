@@ -13,6 +13,7 @@ import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { getRoleColour, getRoleLabel, buildSegmentId, uniqueWaypointSegmentId, generateWaypointUid, waypointDepositoryKey } from '@/lib/routeExport';
 import { compressImage, MAX_WAYPOINT_IMAGES, getWaypointImages, addWaypointImage, removeWaypointImage, setWaypointCaption } from '@/lib/waypointImages';
 import WaypointPhotoGrid from './WaypointPhotoGrid';
+import AutoGrowTextarea from './AutoGrowTextarea';
 import WaypointPhotoThumbs from '@/components/walks/WaypointPhotoThumbs';
 import { base44 } from '@/api/base44Client';
 import AudioTriggerFields from './AudioTriggerFields';
@@ -870,6 +871,17 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
               </div>
 
               <div>
+                <Label className="text-slate-400 text-xs mb-1 block">Description</Label>
+                <AutoGrowTextarea
+                  rows={2}
+                  value={newWp.description}
+                  onChange={e => setNewWp(p => ({ ...p, description: e.target.value }))}
+                  placeholder="What to look for here, or a simple instruction (e.g. turn left at the crossroads)"
+                  className="bg-slate-700 border-slate-500 text-white"
+                />
+              </div>
+
+              <div>
                 <Label className="text-slate-400 text-xs mb-1 block">
                   Average Segment Speed (km/h)
                   <span className="ml-1 text-purple-400">defaults to {defaultSpeed}</span>
@@ -1217,6 +1229,22 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                             value={wp.segment_title || ''}
                             onChange={e => updateWaypoint(index, 'segment_title', e.target.value)}
                             className="bg-slate-700 border-slate-500 text-white h-8 text-sm"
+                          />
+                        </div>
+                        {/* Short note shown to the customer at this point (walk key-point list
+                            and map popup, and as segment context in the driving player):
+                            what to look out for here — a particular flower, the vulture
+                            nests — or a plain instruction like "turn left at this
+                            crossroads". Same field for every tour type; the GPX <desc> tag
+                            fills it on import. */}
+                        <div>
+                          <Label className="text-slate-400 text-xs mb-1 block">Description</Label>
+                          <AutoGrowTextarea
+                            rows={2}
+                            value={wp.description || ''}
+                            onChange={e => updateWaypoint(index, 'description', e.target.value)}
+                            placeholder="What to look for here, or a simple instruction (e.g. turn left at the crossroads)"
+                            className="bg-slate-700 border-slate-500 text-white text-sm"
                           />
                         </div>
                         <div>
