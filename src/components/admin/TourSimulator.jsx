@@ -1,17 +1,15 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
-import AutoGrowTextarea from '@/components/admin/AutoGrowTextarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Play, Pause, Square, Gauge, Clock, Volume2, AlertTriangle, CheckCircle2, MapPin, Radio, Flag, ChevronDown, ChevronUp, Save, Loader2, Lock, SkipBack, ArrowLeft, Languages } from 'lucide-react';
+import { Play, Pause, Square, Gauge, Clock, Volume2, AlertTriangle, CheckCircle2, MapPin, Radio, Flag, ChevronDown, ChevronUp, Save, Loader2, Lock, SkipBack, ArrowLeft } from 'lucide-react';
 import { calculateBearing, isBearingInRange, uniqueWaypointSegmentId, waypointDepositoryKey } from '@/lib/routeExport';
 import { uploadToImportDepository } from './DrivingTourWaypointEditor';
 import TourSimulatorMap from './TourSimulatorMap';
 import WaypointPaceEditor from './WaypointPaceEditor';
 import NarrationTtsEditor from './NarrationTtsEditor';
 import { toast } from '@/components/ui/use-toast';
-import { stillMatchesMaster } from '@/lib/fieldTranslation';
+import StopTextTranslationPanel from './StopTextTranslationPanel';
 import { useStopFieldTranslation } from '@/lib/useStopFieldTranslation';
 import { testSpanStartDist, testSpanEndDist } from '@/lib/simulatorSpans';
 // Pure helpers extracted to their own module (2026-09-27) — see that file for why.
@@ -1980,71 +1978,21 @@ export default function TourSimulator({ form, onWaypointUpdate, targetLanguage, 
               {/* Per Enda (follow-up 245): this stop's own customer-facing name and short
                   description — shown in the app's "Tour Stops" list and while driving,
                   same as the tour's overall Description/Safety Notes. Auto-translated the
-                  moment this stop is opened (see the effect above); this box is where a
-                  narrator checks and corrects that draft, same "Translate" + editable-box
-                  pattern used for Description/Safety Notes and for narration scripts. */}
-              {selectedWp && form.clone_of && (
-                <div className="bg-slate-800/60 border border-amber-600/30 rounded-lg px-3 py-2 space-y-2.5">
-                  <div className="flex items-center gap-2">
-                    <Languages className="w-4 h-4 text-amber-400 shrink-0" />
-                    <span className="text-xs text-slate-400 shrink-0">Stop name:</span>
-                    {form.target_language && (
-                      <Button
-                        type="button" size="sm" variant="outline"
-                        onClick={() => translateStopField('segment_title')}
-                        disabled={translatingStopField === 'segment_title'}
-                        title={`Translate this stop's name into ${form.target_language} and fill this box with it.`}
-                        className="bg-blue-700/30 hover:bg-blue-700/50 border-blue-600/50 text-amber-400 hover:text-amber-300 shrink-0 gap-1.5 h-8"
-                      >
-                        {translatingStopField === 'segment_title' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Languages className="w-3.5 h-3.5" />}
-                        Translate
-                      </Button>
-                    )}
-                    {form.target_language && form.target_language !== 'English' && masterWp && stillMatchesMaster(selectedWp.segment_title, masterWp.segment_title) && (
-                      <span className="flex items-center gap-1 text-xs font-medium text-amber-400 bg-amber-900/30 border border-amber-700/50 rounded-full px-2 py-0.5 shrink-0">
-                        <AlertTriangle className="w-3 h-3" /> Still English
-                      </span>
-                    )}
-                  </div>
-                  <Input
-                    value={selectedWp.segment_title || ''}
-                    onChange={e => onWaypointUpdate(toRawIndex(selectedWpIndex), 'segment_title', e.target.value)}
-                    placeholder="This stop's name, as shown to a customer"
-                    className="bg-slate-700 border-slate-600 text-white text-sm"
-                  />
-                  {stopFieldError.segment_title && <p className="text-xs text-red-400">{stopFieldError.segment_title}</p>}
-
-                  <div className="flex items-center gap-2">
-                    <Languages className="w-4 h-4 text-amber-400 shrink-0" />
-                    <span className="text-xs text-slate-400 shrink-0">Stop description:</span>
-                    {form.target_language && (
-                      <Button
-                        type="button" size="sm" variant="outline"
-                        onClick={() => translateStopField('description')}
-                        disabled={translatingStopField === 'description'}
-                        title={`Translate this stop's description into ${form.target_language} and fill this box with it.`}
-                        className="bg-blue-700/30 hover:bg-blue-700/50 border-blue-600/50 text-amber-400 hover:text-amber-300 shrink-0 gap-1.5 h-8"
-                      >
-                        {translatingStopField === 'description' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Languages className="w-3.5 h-3.5" />}
-                        Translate
-                      </Button>
-                    )}
-                    {form.target_language && form.target_language !== 'English' && masterWp && stillMatchesMaster(selectedWp.description, masterWp.description) && (
-                      <span className="flex items-center gap-1 text-xs font-medium text-amber-400 bg-amber-900/30 border border-amber-700/50 rounded-full px-2 py-0.5 shrink-0">
-                        <AlertTriangle className="w-3 h-3" /> Still English
-                      </span>
-                    )}
-                  </div>
-                  <AutoGrowTextarea
-                    value={selectedWp.description || ''}
-                    onChange={e => onWaypointUpdate(toRawIndex(selectedWpIndex), 'description', e.target.value)}
-                    placeholder="A short description of this stop, as shown to a customer"
-                    rows={3}
-                    className="bg-slate-700 border-slate-600 text-white text-sm"
-                  />
-                  {stopFieldError.description && <p className="text-xs text-red-400">{stopFieldError.description}</p>}
-                </div>
-              )}
+                  moment this stop is opened (see the effect above); this panel is where a
+                  narrator checks and corrects that draft. Extracted to its own component
+                  (2026-11-24) so it can also carry the read-only English original above each
+                  box in an RTL clone — see StopTextTranslationPanel. */}
+              <StopTextTranslationPanel
+                form={form}
+                selectedWp={selectedWp}
+                selectedWpIndex={selectedWpIndex}
+                toRawIndex={toRawIndex}
+                onWaypointUpdate={onWaypointUpdate}
+                masterWp={masterWp}
+                translateStopField={translateStopField}
+                translatingStopField={translatingStopField}
+                stopFieldError={stopFieldError}
+              />
 
               {/* Per Enda's follow-up 61 live-testing report: this panel must NOT default
                   to the purpose-built speed-matching tool (WaypointPaceEditor) — that's a

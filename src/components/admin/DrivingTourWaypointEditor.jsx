@@ -14,6 +14,7 @@ import { getRoleColour, getRoleLabel, buildSegmentId, uniqueWaypointSegmentId, g
 import { compressImage, MAX_WAYPOINT_IMAGES, getWaypointImages, addWaypointImage, removeWaypointImage, setWaypointCaption } from '@/lib/waypointImages';
 import WaypointPhotoGrid from './WaypointPhotoGrid';
 import AutoGrowTextarea from './AutoGrowTextarea';
+import WaypointEnglishReference from './WaypointEnglishReference';
 import WaypointPhotoThumbs from '@/components/walks/WaypointPhotoThumbs';
 import { base44 } from '@/api/base44Client';
 import AudioTriggerFields from './AudioTriggerFields';
@@ -264,7 +265,7 @@ const routeWaypoints = async (points) => {
   return res.data.trail;
 };
 
-export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCode, tourCategory, onSave, saving, onAutoSave, userRole = 'admin', focusWaypointIndex, onTrailPathChange, defaultDrivingSpeedKmh, targetLanguage, walkId, importFiles = [], onImportFilesChange, onOpenSimulator, audioEnabled = true }) {
+export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCode, tourCategory, onSave, saving, onAutoSave, userRole = 'admin', focusWaypointIndex, onTrailPathChange, defaultDrivingSpeedKmh, targetLanguage, walkId, importFiles = [], onImportFilesChange, onOpenSimulator, audioEnabled = true, masterWaypoints = null }) {
   // Per Enda (2026-11-23): a Walk/Hike is the same thing as a WalkAbout/DriveAbout
   // without audio and without a simulator — it uses this exact editor, so the only
   // difference inside it is whether the narration/TTS and audio-trigger blocks render.
@@ -1224,6 +1225,16 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                           </div>
                         </div>
                         <div>
+                          {/* Per Enda (2026-11-24): in an RTL clone the English original sits
+                              above the box, which holds the translation — see
+                              WaypointEnglishReference. */}
+                          <WaypointEnglishReference
+                            walkId={walkId}
+                            targetLanguage={targetLanguage}
+                            masterWp={masterWaypoints ? masterWaypoints[index] || null : null}
+                            unavailable={!masterWaypoints}
+                            field="segment_title"
+                          />
                           <Label className="text-slate-400 text-xs mb-1 block">Location Title</Label>
                           <Input
                             value={wp.segment_title || ''}
@@ -1238,6 +1249,13 @@ export default function DrivingTourWaypointEditor({ waypoints, onChange, tourCod
                             crossroads". Same field for every tour type; the GPX <desc> tag
                             fills it on import. */}
                         <div>
+                          <WaypointEnglishReference
+                            walkId={walkId}
+                            targetLanguage={targetLanguage}
+                            masterWp={masterWaypoints ? masterWaypoints[index] || null : null}
+                            unavailable={!masterWaypoints}
+                            field="description"
+                          />
                           <Label className="text-slate-400 text-xs mb-1 block">Description</Label>
                           <AutoGrowTextarea
                             rows={2}

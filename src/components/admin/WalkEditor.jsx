@@ -2309,6 +2309,9 @@ export default function WalkEditor({ walk, onSave, onCancel, userRole = 'admin',
                 importFiles={form.import_files || []}
                 onImportFilesChange={files => set('import_files', files)}
                 audioEnabled={isDrivingAudioTour}
+                // Master's own waypoints: an RTL clone shows each stop's English original
+                // beside the translation box — see WaypointEnglishReference.
+                masterWaypoints={masterWalk?.waypoints || null}
                 onOpenSimulator={isDrivingAudioTour ? (rawIndex) => {
                   setSimulatorJumpIndex(rawIndex);
                   setActiveTab('narrate');
